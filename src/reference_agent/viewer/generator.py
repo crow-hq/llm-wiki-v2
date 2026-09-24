@@ -1,4 +1,5 @@
 # Copyright 2026 Google LLC
+# Modified 2026 by Federico Cesarini: log.md, reserved by OKF §3.1, is not drawn as a concept.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -103,7 +104,7 @@ def _extract_links(body: str, doc_dir: Path, bundle_root: Path) -> list[str]:
 def _walk_concepts(bundle_root: Path) -> list[Concept]:
     concepts: list[Concept] = []
     for md_path in sorted(bundle_root.rglob("*.md")):
-        if md_path.name == _INDEX_NAME:
+        if md_path.name in (_INDEX_NAME, "log.md"):
             continue
         rel = md_path.relative_to(bundle_root).with_suffix("")
         concept_id = "/".join(rel.parts)

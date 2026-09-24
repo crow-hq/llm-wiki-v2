@@ -10,3 +10,11 @@ dist/
 .DS_Store
 .env
 .claude/
+# Docker stack: your wiki (/wiki, not tests/wiki or docs/wiki) and Bifrost state
+/wiki/
+/docker/bifrost/*
+!/docker/bifrost/config.json
+.kilo/
+# Benchmarks: your documents and the runs
+/bench-data/
+/bench-runs/

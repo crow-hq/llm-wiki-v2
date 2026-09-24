@@ -1,220 +1,239 @@
-# Open Knowledge Format (OKF)
+# llm-wiki-v2
 
-### 📖 [Read the Open Knowledge Format v0.2 specification → SPEC.md](SPEC.md)
+An LLM wiki you can run on your own machine. A **Librarian** files every source
+you give it into a folder tree of Markdown notes: it picks the best folder, or
+creates one when none fits, merges updates into the existing note instead of
+duplicating it, and links related notes. A **Researcher** navigates the tree to
+answer questions, citing the notes it used. Any provider and model work
+through the [Bifrost](https://github.com/maximhq/bifrost) gateway (OpenRouter,
+Gemini, Vertex AI, …). An optional **CROW** mode lets a typed classifier take the
+filing decisions while the LLM only writes the text.
 
-> **This repository is primarily about the [Open Knowledge Format
-> (OKF)](SPEC.md).**
->
-> OKF is a **universal, vendor-neutral format** for representing knowledge
-> as plain markdown files with YAML frontmatter. It is **not tied to any
-> particular agent, framework, model provider, or serving system**. The
-> goal is simple:
->
-> - **Anyone can produce** OKF — humans authoring by hand, agents built on
->   any framework (Google ADK, LangChain, custom), export pipelines from
->   existing catalogs (Dataplex, Unity Catalog, Collibra, …), or scripts
->   walking a database.
-> - **Anyone can serve and consume** OKF — a static file server, a
->   knowledge-management UI (Obsidian, Notion, MkDocs), an LLM loading
->   files into context, a search index, or a graph viewer like the one
->   bundled in this repo.
->
-> The agent below is a **proof of concept** demonstrating *one* way to
-> produce OKF bundles automatically. The format itself is the
-> contribution; this agent and the visualizer exist to make the format
-> tangible at both ends — production and consumption.
->
-> **See OKF in practice** — three ready-to-browse bundles produced by this
-> agent, checked into [`bundles/`](bundles/):
->
-> - [`bundles/ga4/`](bundles/ga4/) — GA4 e-commerce dataset
->   ([viz.html](bundles/ga4/viz.html))
-> - [`bundles/stackoverflow/`](bundles/stackoverflow/) — Stack Overflow
->   public dataset ([viz.html](bundles/stackoverflow/viz.html))
-> - [`bundles/crypto_bitcoin/`](bundles/crypto_bitcoin/) — Bitcoin
->   blocks/transactions ([viz.html](bundles/crypto_bitcoin/viz.html))
-> - [`bundles/acme_retail/`](bundles/acme_retail/) — Acme Retail
->   ([viz.html](bundles/acme_retail/viz.html))
+> Built on Google's **[Open Knowledge Format (OKF)](https://github.com/GoogleCloudPlatform/open-knowledge-format)**
+> (Copyright 2026 Google LLC, Apache-2.0). The wiki is a standard OKF v0.2
+> bundle ([SPEC.md](SPEC.md)), and the OKF reference agent and viewer are still
+> included. See [NOTICE](NOTICE) for what changed and
+> [docs/okf-reference-agent.md](docs/okf-reference-agent.md) for the original README.
 
-## Why OKF?
+## Quick start (Docker)
 
-OKF represents catalog knowledge as plain markdown files with YAML
-frontmatter, organized in a directory hierarchy. That choice unlocks a few
-properties that are hard to get from a service-owned metadata store:
+```bash
+git clone https://github.com/fed3c3sa/llm-wiki-v2 && cd llm-wiki-v2
+cp .env.example .env          # set OPENROUTER_API_KEY (or Gemini / Vertex keys) and the model
+docker compose up -d --build  # Bifrost on :8080, the wiki API on :8000 (OKF_PORT / BIFROST_PORT to change)
 
-- **Human- and agent-readable.** No SDK or query language stands between a
-  reader and the content. An engineer can `cat` a concept; an LLM can ingest
-  it verbatim into context.
-- **Version-controllable out of the box.** Bundles live in git. Pull
-  requests, line-by-line diffs, blame, and review workflows just work —
-  knowledge curation becomes a normal software-engineering activity.
-- **Portable and lock-in free.** A bundle is a directory. Ship it as a
-  tarball, host it in any repo, mount it from any filesystem, or sync it to
-  any system that speaks files. No proprietary API stands between you and
-  your metadata.
-- **Mixes structured and unstructured data deliberately.** Use frontmatter
-  for the few fields you want to query, filter, or index on (`type`,
-  `resource`, `tags`, `generated`, `status`); use the markdown body for the
-  prose, schemas, and example queries that LLMs and humans actually read.
-- **Trust, provenance, and freshness are first-class.** v0.2 puts queryable
-  signals in frontmatter — where a concept came from (`sources` with per-source
-  credibility signals), who produced and confirmed it (`generated`, `verified`,
-  from which consumers derive a trust tier), and whether it is still current
-  (`status`, `stale_after`) — so an agent-maintained corpus stays trustable
-  without any bespoke runtime.
-- **Minimally opinionated, freely extensible.** A small set of required
-  keys ensures interoperability, but bundles can carry arbitrary extra
-  frontmatter keys and arbitrary body sections without breaking
-  consumers.
-- **Composes with existing tooling.** Many knowledge tools — Notion,
-  Obsidian, MkDocs, Hugo, Jekyll — already speak markdown plus YAML
-  frontmatter, so bundles can be browsed, edited, or rendered without
-  custom UI.
-- **Progressive disclosure built in.** Auto-generated `index.md` files
-  let an agent or human navigate the hierarchy one level at a time
-  instead of loading the entire bundle into context.
-- **Graph-shaped, not just tree-shaped.** Concepts link to each other via
-  normal markdown links, expressing relationships richer than the
-  parent/child implied by the directory layout.
-
-The net effect is that reference agents, consumption agents, and humans
-collaborate on the same artifacts in the same way they already collaborate
-on source code.
-
-## Install
-
-```
-python3.13 -m venv .venv
-.venv/bin/pip install --index-url https://pypi.org/simple/ -e .[dev]
+open http://localhost:8000        # the wiki in your browser
 ```
 
-## Credentials
+**The web UI** at http://localhost:8000 shows the folder tree, renders each note
+(with its See-also links and sources), answers questions with clickable
+citations, and shows the tokens spent by the LLM and by the classifier. Drop
+`.txt`, `.md` or `.pdf` files anywhere on the page and each one is catalogued
+automatically; PDFs need a text layer (scanned PDFs need OCR first).
 
-- BigQuery: `gcloud auth application-default login` plus a project for billing
-  (`gcloud config set project <id>`). Public datasets are readable, but the
-  caller's project is billed for query bytes.
-- Gemini: set `GEMINI_API_KEY` (AI Studio) **or** use Vertex AI by setting
-  `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT=<id>`, and
-  `GOOGLE_CLOUD_LOCATION=<region>`.
+The same through the API:
 
-## How the reference agent works
-
-The reference agent runs in two passes. The **BQ pass** writes one OKF
-doc per concept the source advertises, using BigQuery metadata alone.
-The **web pass** then runs the LLM as its own crawler: it receives a
-list of seed URLs (provided via `--web-seed` or `--web-seed-file`),
-fetches the seeds via the `fetch_url` tool, and decides which outbound
-links are worth following based on whether they look like authoritative
-documentation for the existing concepts. For each page it fetches, the
-agent chooses to (a) enrich one or more existing concept docs, (b) mint
-a standalone `references/<slug>` doc, or (c) skip. A hard
-`--web-max-pages` cap and a same-domain allowed-hosts filter
-(configurable via `--web-allowed-host`) are enforced inside the tool,
-so the agent cannot overrun. Use `--no-web` to skip the web pass.
-
-## Run
-
-Minimum invocation — point at a BigQuery dataset and a bundle output
-directory. Seeds for the web pass are explicit; omit them (or pass
-`--no-web`) to run BQ-only:
-
-```
-.venv/bin/python -m reference_agent enrich \
-    --source bq \
-    --dataset <project>.<dataset> \
-    --web-seed-file <path/to/seeds.txt> \
-    --out ./bundles/<name>
+```bash
+curl -X POST localhost:8000/ingest -H 'content-type: application/json' \
+     -d '{"text": "Acme refunds orders within 30 days of delivery.", "title": "Refund policy"}'
+curl -X POST 'localhost:8000/upload?filename=minutes.pdf' --data-binary @minutes.pdf
+curl -X POST localhost:8000/ask -H 'content-type: application/json' \
+     -d '{"question": "How long do customers have to ask for a refund?"}'
 ```
 
-Iterate on a single concept by adding `--concept <type>/<name>` (e.g.
-`--concept tables/events_`); repeatable.
+The wiki lives in `./wiki` as plain Markdown files you can read, edit and keep
+in git. The Bifrost console (providers, keys, logs) is at http://localhost:8080,
+the API docs at http://localhost:8000/docs, and the CLI runs in the same image:
+`docker compose run --rm wiki okf-wiki check`.
 
-## Samples
+| Endpoint | What it does |
+|---|---|
+| `GET /` | the web UI |
+| `POST /ingest` `{text, title?, resource?}` | file a source; returns the note, folders created, links and token usage |
+| `POST /upload?filename=…` (raw file body) | file a `.txt`, `.md` or `.pdf` file |
+| `POST /ask` `{question}` | answer with citations; returns the notes read and token usage |
+| `GET /tree` · `GET /note?path=…` | folder tree · one note (frontmatter and Markdown body) |
+| `GET /check` · `GET /viz` | lint problems · OKF graph viewer |
+| `GET /usage` · `GET /health` | token totals per ledger and model · status |
 
-Each sample pairs a **recipe** (`samples/<name>/`, with the seed URLs and
-exact `enrich` command) with the **produced bundle** (`bundles/<name>/`)
-that the recipe generated. Open the recipe to reproduce; open the bundle
-to browse the result directly.
+## Python library
 
-- **GA4 Google Merchandise Store** — public e-commerce dataset, seeded
-  with canonical GA4 BigQuery Export documentation URLs.
-  · [recipe](samples/ga4_merch_store/README.md)
-  · [bundle](bundles/ga4/)
-  · [viz.html](bundles/ga4/viz.html)
-- **Stack Overflow** — public dataset (mirror of the Stack Exchange Data
-  Dump), seeded with the community's canonical schema references.
-  Exercises multi-concept enrichment from cross-cutting docs pages.
-  · [recipe](samples/stackoverflow/README.md)
-  · [bundle](bundles/stackoverflow/)
-  · [viz.html](bundles/stackoverflow/viz.html)
-- **Bitcoin (crypto)** — public dataset (blocks, transactions, inputs,
-  outputs) from the `bitcoin-etl` pipeline. Exercises cross-table
-  foreign-key relationships in prose.
-  · [recipe](samples/crypto_bitcoin/README.md)
-  · [bundle](bundles/crypto_bitcoin/)
-  · [viz.html](bundles/crypto_bitcoin/viz.html)
-
-## Visualize
-
-The `visualize` subcommand renders any OKF bundle as a **self-contained
-interactive HTML file** — one file, no backend, no install on the
-viewing side. Open it in any modern browser, share it as an artifact,
-host it on a static file server, or commit it next to the bundle (as
-this repo does).
-
-The viewer is itself a proof-of-concept *consumer* of OKF, mirroring
-the way the reference agent is a proof-of-concept *producer*. OKF
-bundles can be consumed by anything that reads markdown; this is just
-one shape.
-
-### What it shows
-
-- A **force-directed graph** of every concept in the bundle, with
-  colored nodes by type (datasets, tables, references, …) and directed
-  edges drawn from each cross-link in the markdown bodies.
-- A **detail panel** for the selected concept showing its frontmatter
-  (description, resource link, tags) and its rendered markdown body —
-  with internal `[…](/path/to/concept.md)` links rewired to navigate
-  within the viewer instead of following the path.
-- A **"Cited by" backlinks** list under each concept (computed from the
-  reverse of the link graph).
-- A **search box** (matches title, concept id, and tags), a **type
-  filter**, and switchable graph layouts (cose / concentric /
-  breadth-first / circle / grid).
-
-### Generate
-
-```
-.venv/bin/python -m reference_agent visualize --bundle ./bundles/<name>
+```bash
+pip install "llm-wiki-v2[server] @ git+https://github.com/fed3c3sa/llm-wiki-v2"
 ```
 
-That writes `bundles/<name>/viz.html`. Flags:
+```python
+from okf_wiki import Wiki
 
-| Flag           | Default                | Description                                 |
-|----------------|------------------------|---------------------------------------------|
-| `--bundle`     | *(required)*           | Bundle root directory.                      |
-| `--out`        | `<bundle>/viz.html`    | Output HTML path.                           |
-| `--name`       | bundle directory name  | Display name shown in the viewer header.    |
+wiki = Wiki.from_env(bundle="./wiki")        # OKF_* variables; Bifrost at localhost:8080
+wiki.init()
 
-Example, writing the output somewhere else and overriding the header:
+result = wiki.ingest(open("meeting.md").read(), title="Pricing meeting")
+wiki.ingest_file(open("minutes.pdf", "rb").read(), "minutes.pdf")   # .txt, .md or .pdf
+print(result.action, result.note, result.created_folders, result.related)
+
+answer = wiki.ask("What did we decide about enterprise pricing?")
+print(answer.text, answer.citations)
+
+print(wiki.usage.to_dict())                  # {"llm": …, "classifier": …, "by_model": …}
+```
+
+The same operations are on the command line:
+
+```bash
+okf-wiki --bundle ./wiki init
+okf-wiki --bundle ./wiki ingest meeting.md     # or a .txt / .pdf
+okf-wiki --bundle ./wiki --mode crow ask "What did we decide about pricing?"
+okf-wiki --bundle ./wiki check        # lint: OKF conformance, index drift, broken links
+okf-wiki --bundle ./wiki visualize    # writes wiki/viz.html
+okf-wiki --bundle ./wiki serve        # the HTTP API (needs the [server] extra)
+```
+
+Everything is a class you can subclass. `Librarian` and `Researcher` share an
+`Agent` base; the CROW versions override only their decision hooks. To change a
+behaviour, override one method and hand your class to `Wiki`:
+
+```python
+from okf_wiki import Wiki
+from okf_wiki.librarian import Librarian
+
+class QuietLibrarian(Librarian):
+    def pick_related(self, note, others):
+        return []                            # never add See-also links
+
+class MyWiki(Wiki):
+    def librarian(self):
+        return QuietLibrarian(self.store, self.llm, self.prompts, self.cfg)
+```
+
+## How it works
 
 ```
-.venv/bin/python -m reference_agent visualize \
-    --bundle ./bundles/crypto_bitcoin \
-    --out /tmp/btc.html \
-    --name "Bitcoin OKF"
+ingest:  summarize → route → find match → merge or (new folder →) write → relate → link, index, log
+ask:     select notes (navigate the tree) → answer from them, with [path.md] citations
 ```
 
-### How it's built
+| Step | Classic mode (`OKF_MODE=classic`) | CROW mode (`OKF_MODE=crow`) |
+|---|---|---|
+| Summarize the source into a note | LLM | LLM (optional, `OKF_SUMMARIZE=false` files it verbatim) |
+| Route: best folder, or a new one | LLM, one level at a time | classifier Choice per level, beam search, LLM fallback |
+| Same subject as an existing note? | LLM | classifier Noul per note |
+| Merge into it, or write a new note? | LLM | classifier Choice, unsure → new note |
+| Name a new folder · rewrite a merged note | LLM | LLM |
+| Related notes (See also) | LLM | classifier Noul per note |
+| Find the notes for a question | LLM navigation | classifier Noul per folder and note, LLM fallback |
+| Write the answer | LLM | LLM |
 
-The HTML embeds the bundle as a JSON blob and uses
-[Cytoscape.js](https://js.cytoscape.org/) for the graph and
-[marked](https://marked.js.org/) for in-browser markdown rendering,
-both loaded from a CDN. No data leaves the page; the bundle is parsed
-once at generation time and serialized into the file.
+Both modes run the same pipeline and write the same kind of wiki: only the
+decider changes. CROW follows *CROW: Classifier-Routed Organization of LLM
+Wikis* (Cesarini & Sassarini, 2026) — see [docs/wiki/crow.md](docs/wiki/crow.md)
+for thresholds and fallbacks.
 
-## Tests
+**Tokens are tracked in two separate ledgers**, `llm` and `classifier`, per
+model and per operation: every `IngestResult` and `Answer` carries its own
+usage, `wiki.usage` / `GET /usage` the totals, and `OKF_USAGE_LOG` writes one
+JSON line per model call.
+
+## Benchmark: classic vs CROW
+
+```bash
+okf-wiki bench                      # every .md under ./bench-data, any depth
+okf-wiki bench --data ~/notes --limit 50
+okf-wiki bench --resume bench-runs/<run> [--limit 200]   # continue a stopped run (or extend it)
+okf-wiki bench --report bench-runs/<run>                 # rebuild the analysis from saved data, no model calls
+```
+
+The same files, in a random order (seeded, saved in `run.json`), are catalogued into a classic wiki and a CROW wiki: each file goes to both at the same time.
+For every ingest the bench records latency, tokens, model time and cost, split
+into LLM and classifier and per step (route, match, relate, …), plus how many
+notes the wiki already held. The report in `bench-runs/<timestamp>/` compares
+the two modes, fits **how token consumption grows with the notes already
+saved** (overall and per step), and prints the command to open each wiki in
+the UI. Output files:
+
+- `report.md`
+- `report.html` (charts)
+- `rows.jsonl` (one line per ingest)
+- `<mode>-calls.jsonl` (one line per model call)
+
+Every run also writes `report.pdf` (headline numbers, growth curves, per-step
+analysis) when the `pdf` extra is installed (`pip install "llm-wiki-v2[pdf]"`; `--no-pdf` skips it). LLM and classifier tokens are never added together, since they are priced about ten times apart.
+Costs are shown twice: as reported by OpenRouter, and at list price for the
+pinned provider. Every ingest is saved the moment it finishes. The first Ctrl+C lets
+the notes being filed finish, then writes the report and prints the `--resume`
+command. A resumed run reuses the settings saved in `run.json` and the same two
+wikis. It retries files that failed, and `--limit` can extend it.
+
+## The wiki on disk
 
 ```
+wiki/
+  index.md                     # root index (okf_version "0.2")
+  log.md                       # what changed, newest first
+  raw/                         # untouched copy of every source ingested
+  customer-policies/
+    index.md                   # * [Refund policy](refund-policy.md) - How Acme refunds orders…
+    refund-policy.md           # type: Note, title, description, tags, generated, sources
+```
+
+Every note is an OKF concept (`type: Note`) whose `description` is its one-line
+summary and whose `sources` point to the raw copies it was written from. Each
+folder's one-line description sits in its parent's `index.md`, where both people
+and the Librarian read it. Related notes are joined by a `# See also` section
+with relative links. `okf-wiki check` verifies all of this.
+
+## Configuration
+
+Set these in `.env` for Docker, or in the environment for the library and CLI.
+The full list is in [.env.example](.env.example).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OKF_BUNDLE` | — (`/data/wiki` in Docker) | wiki folder |
+| `OKF_MODE` | `classic` | `classic` or `crow` |
+| `OKF_LLM_MODEL` | `openrouter/google/gemini-2.5-flash` | any Bifrost model: `openrouter/…`, `gemini/…`, `vertex/…` |
+| `OKF_LLM_BASE_URL` | `http://localhost:8080/v1` | Bifrost's OpenAI-compatible API |
+| `OKF_CLASSIFIER_MODEL` | `typesafe/jev-1.13` | CROW classifier, pinned |
+| `OKF_CLASSIFIER_BASE_URL` | `https://openrouter.ai/api/v1` | System One endpoint; `http://bifrost:8080/typesafe/v1` for full Bifrost |
+| `OPENROUTER_API_KEY` | — | used by Bifrost and by the classifier |
+| `OKF_PROMPTS_DIR` | — | folder whose prompt files replace the packaged ones |
+| `OKF_LLM_EXTRA_BODY` | — | JSON added to every LLM request, e.g. `'{"provider":{"order":["together"]}}'` to pin fast OpenRouter providers |
+
+Providers and the classifier route: [docs/wiki/providers.md](docs/wiki/providers.md).
+Prompts, one Markdown file each: [docs/wiki/prompts.md](docs/wiki/prompts.md).
+
+## Project layout
+
+```
+src/okf_wiki/            the LLM wiki: config, usage, llm, classifier, store, files, librarian, researcher, wiki, cli, server
+src/okf_wiki/web/        the single-page web UI (index.html)
+src/okf_wiki/bench.py    the classic-vs-CROW benchmark (okf-wiki bench)
+src/okf_wiki/prompts/    shared/, librarian/, researcher/, classifier/ — one prompt per file
+tests/wiki/              tests for every feature, with scripted fake models (no network)
+docs/wiki/               providers, CROW, prompts
+src/reference_agent/     Google's OKF reference agent and viewer (BigQuery → OKF)
+SPEC.md, bundles/        the OKF v0.2 specification and sample bundles, from Google
+```
+
+## Development
+
+```bash
+python3.13 -m venv .venv && .venv/bin/pip install -e ".[dev,bq]"
 .venv/bin/pytest
 ```
+
+## Credits and license
+
+- **Open Knowledge Format** by Google LLC —
+  [GoogleCloudPlatform/open-knowledge-format](https://github.com/GoogleCloudPlatform/open-knowledge-format),
+  Apache-2.0. This repository is a derivative work; the specification, the
+  reference agent, the viewer and the sample bundles are Google's.
+- **CROW** — F. Cesarini, M. Sassarini, *CROW: Classifier-Routed Organization of
+  LLM Wikis*, preprint, 2026, [doi:10.5281/zenodo.22900601](https://doi.org/10.5281/zenodo.22900601).
+- **LLM Wiki** — A. Karpathy, [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), 2026.
+- The Librarian / Researcher design follows F. Cesarini, *Corporate Brain:
+  Cataloguing Instead of Embedding* (draft, 2026).
+- [Bifrost](https://github.com/maximhq/bifrost) by Maxim AI, run from its published image.
+
+Licensed under the [Apache License 2.0](LICENSE.md). To cite this software, see
+[CITATION.cff](CITATION.cff).

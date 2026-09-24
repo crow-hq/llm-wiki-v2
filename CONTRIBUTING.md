@@ -1,43 +1,24 @@
 # Contributing
 
-Thanks for your interest in contributing to the Open Knowledge Format (OKF)!
+Thanks for your interest in llm-wiki-v2.
 
-Contributions generally fall into two categories, and they are reviewed
-differently:
+- **The Open Knowledge Format itself** ([`SPEC.md`](SPEC.md)) is maintained
+  by Google at
+  [GoogleCloudPlatform/open-knowledge-format](https://github.com/GoogleCloudPlatform/open-knowledge-format).
+  Propose format changes there; this repository follows the upstream spec.
+- **The LLM wiki** (`src/okf_wiki`, prompts, Docker stack, docs): issues and
+  pull requests are welcome here.
 
-- **The format itself** ([`SPEC.md`](SPEC.md)) — OKF aims to be a universal,
-  vendor-neutral format, so spec changes are held to a higher bar. Open an
-  issue describing the problem and the proposed change before sending a pull
-  request, so the design can be discussed first.
-- **The reference agent, viewer, samples, and bundles** — proof-of-concept
-  tooling that demonstrates producing and consuming OKF. Ordinary pull
-  requests are welcome.
+Before sending a pull request:
 
-To get started contributing:
+1. Keep changes small and in the style of the surrounding code (typed,
+   class-based, one prompt per file under `src/okf_wiki/prompts/`).
+2. Add or update tests under `tests/wiki/` for every behaviour you change;
+   tests never call a real model (use `tests/wiki/fakes.py`).
+3. Run the whole suite: `.venv/bin/pytest` (setup in [README.md](README.md)).
+4. New files carry the Apache-2.0 header; files that came from Google's OKF
+   keep theirs (see [NOTICE](NOTICE)).
 
-1. Sign a Contributor License Agreement (see details below).
-1. Fork the repo, develop and test your code changes.
-1. Ensure that your code adheres to the existing style.
-1. Ensure that your code has an appropriate set of unit tests which all pass.
-1. Ensure that all tests pass by running `.venv/bin/pytest` (see
-   [README.md](README.md) for environment setup).
-1. Submit a pull request.
-
-## Contributor License Agreement
-
-Contributions to this project must be accompanied by a Contributor License
-Agreement. You (or your employer) retain the copyright to your contribution;
-this simply gives us permission to use and redistribute your contributions as
-part of the project. Head over to <https://cla.developers.google.com/> to see
-your current agreements on file or to sign a new one.
-
-You generally only need to submit a CLA once, so if you've already submitted one
-(even if it was for a different project), you probably don't need to do it
-again.
-
-## Code reviews
-
-All submissions, including submissions by project members, require review. We
-use GitHub pull requests for this purpose. Consult
-[GitHub Help](https://help.github.com/articles/about-pull-requests/) for more
-information on using pull requests.
+This file replaces the upstream CONTRIBUTING.md, which asks for Google's
+Contributor License Agreement; that agreement applies to contributions to
+Google's repository, not to this one.

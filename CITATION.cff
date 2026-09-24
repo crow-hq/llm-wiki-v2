@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it as below, together with the
+  Open Knowledge Format by Google LLC on which it is built.
+title: "llm-wiki-v2: an LLM wiki on the Open Knowledge Format, with CROW classifier routing"
+type: software
+authors:
+  - family-names: Cesarini
+    given-names: Federico
+version: 0.2.0
+date-released: 2026-09-24
+license: Apache-2.0
+repository-code: "https://github.com/fed3c3sa/llm-wiki-v2"
+keywords:
+  - LLM wiki
+  - knowledge base
+  - Open Knowledge Format
+  - typed classifier
+  - CROW
+references:
+  - type: software
+    title: "Open Knowledge Format (OKF)"
+    authors:
+      - name: "Google LLC"
+    version: "0.2"
+    license: Apache-2.0
+    repository-code: "https://github.com/GoogleCloudPlatform/open-knowledge-format"
+  - type: article
+    title: "CROW: Classifier-Routed Organization of LLM Wikis"
+    authors:
+      - family-names: Cesarini
+        given-names: Federico
+      - family-names: Sassarini
+        given-names: Marco
+    year: 2026
+    doi: 10.5281/zenodo.22900601
+    notes: Preprint
+  - type: generic
+    title: "LLM Wiki"
+    authors:
+      - family-names: Karpathy
+        given-names: Andrej
+    year: 2026
+    url: "https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f"
