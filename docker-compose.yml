@@ -1,0 +1,57 @@
+# Copyright 2026 Federico Cesarini
+# SPDX-License-Identifier: Apache-2.0
+#
+# llm-wiki-v2 + the Bifrost LLM gateway (any provider, any model).
+#   cp .env.example .env          # add at least one provider key
+#   docker compose up -d --build
+#   wiki API  http://localhost:8000/docs     Bifrost UI  http://localhost:8080
+#   CLI       docker compose run --rm wiki okf-wiki ask "..."
+# Your wiki is plain OKF markdown in ./wiki: browse it, edit it, git it.
+
+name: llm-wiki-v2
+
+services:
+  bifrost:
+    image: maximhq/bifrost:v2.2.2
+    ports:
+      - "${BIFROST_PORT:-8080}:8080"
+    environment:
+      APP_HOST: 0.0.0.0
+      # Read by docker/bifrost/config.json as env.*; an empty key leaves that provider unused.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      VERTEX_PROJECT_ID: ${VERTEX_PROJECT_ID:-}
+      VERTEX_AUTH_CREDENTIALS: ${VERTEX_AUTH_CREDENTIALS:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+    volumes:
+      - ./docker/bifrost:/app/data # config.json in; Bifrost's config.db and logs.db stay local
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+    restart: unless-stopped
+
+  wiki:
+    build: .
+    image: llm-wiki-v2
+    depends_on:
+      bifrost:
+        condition: service_healthy
+    ports:
+      - "${OKF_PORT:-8000}:8000"
+    env_file: # every OKF_* setting in .env (thresholds, summarize, prompts dir, …)
+      - path: .env
+        required: false
+    environment:
+      OKF_MODE: ${OKF_MODE:-classic}
+      OKF_USAGE_LOG: /data/wiki/.usage.jsonl # one JSON line per model call, next to your wiki
+      OKF_LLM_BASE_URL: http://bifrost:8080/v1
+      OKF_LLM_MODEL: ${OKF_LLM_MODEL:-openrouter/google/gemini-2.5-flash}
+      OKF_CLASSIFIER_BASE_URL: ${OKF_CLASSIFIER_BASE_URL:-https://openrouter.ai/api/v1}
+      OKF_CLASSIFIER_MODEL: ${OKF_CLASSIFIER_MODEL:-typesafe/jev-1.13}
+      OKF_CLASSIFIER_API_KEY: ${OKF_CLASSIFIER_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    volumes:
+      - ./wiki:/data/wiki
+    restart: unless-stopped

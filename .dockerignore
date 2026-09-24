@@ -1,0 +1,11 @@
+# Allowlist: the image only needs the package and its notices. Everything else
+# (.venv, .git, .kilo, .env, wiki/, bundles/, tests/, docker/bifrost db files) stays out.
+*
+!pyproject.toml
+!README.md
+!LICENSE.md
+!NOTICE
+!src/
+**/__pycache__
+**/*.egg-info
+**/.DS_Store

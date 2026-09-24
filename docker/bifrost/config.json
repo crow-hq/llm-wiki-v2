@@ -1,0 +1,29 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "providers": {
+    "openrouter": {
+      "keys": [{ "name": "openrouter", "value": "env.OPENROUTER_API_KEY", "models": ["*"], "weight": 1.0 }]
+    },
+    "gemini": {
+      "keys": [{ "name": "gemini", "value": "env.GEMINI_API_KEY", "models": ["*"], "weight": 1.0 }]
+    },
+    "vertex": {
+      "keys": [
+        {
+          "name": "vertex",
+          "value": "",
+          "models": ["*"],
+          "weight": 1.0,
+          "vertex_key_config": {
+            "project_id": "env.VERTEX_PROJECT_ID",
+            "region": "us-central1",
+            "auth_credentials": "env.VERTEX_AUTH_CREDENTIALS"
+          }
+        }
+      ]
+    },
+    "typesafe": {
+      "keys": [{ "name": "typesafe", "value": "env.TYPESAFE_API_KEY", "models": ["*"], "weight": 1.0 }]
+    }
+  }
+}
