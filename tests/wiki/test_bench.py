@@ -105,7 +105,9 @@ def test_run_catalogues_the_same_files_into_both_wikis(data: Path, tmp_path: Pat
     assert all(r["classifier"]["calls"] >= 1 and r["classifier"]["input_tokens"] > 0 for r in results["crow"])
     assert "llm:librarian/summarize" in results["crow"][0]["by_op"] and "classifier:route" in results["crow"][0]["by_op"]
     assert len((out / "rows.jsonl").read_text(encoding="utf-8").splitlines()) == 6
-    assert len(lines) == 6 and "eta" in lines[0]
+    progress = [line for line in lines if line.startswith("[")]
+    assert len(progress) == 6 and "eta" in progress[0]
+    assert lines[0] == f"… 1/3 {files[0].relative_to(data).as_posix()} → classic + crow"
 
 
 def test_a_failing_file_becomes_an_error_row(data: Path, tmp_path: Path) -> None:
@@ -183,7 +185,8 @@ def test_stop_lets_the_current_notes_finish_and_keeps_them(data: Path, tmp_path:
     out = tmp_path / "run"
 
     def echo(line: str) -> None:
-        stop.set()  # "Ctrl+C" right after the first note is filed
+        if line.startswith("["):
+            stop.set()  # "Ctrl+C" right after the first note is filed
 
     results = bench.run(bench.collect(data), data, out, WikiConfig(bundle=out), ["classic"], make_wiki=fake_wiki_factory(3), echo=echo, stop=stop)
 
@@ -278,7 +281,8 @@ def test_modes_run_in_lockstep_so_a_stop_leaves_them_even(data: Path, tmp_path: 
 
     def echo(line: str) -> None:
         lines.append(line)
-        stop.set()  # stop as soon as the first pair is reported
+        if line.startswith("["):
+            stop.set()  # stop as soon as the first pair is reported
 
     results = bench.run(bench.collect(data), data, out, WikiConfig(bundle=out), ["classic", "crow"],
                         make_wiki=fake_wiki_factory(3), echo=echo, stop=stop)
@@ -318,7 +322,7 @@ def test_resume_first_realigns_a_mode_that_fell_behind(data: Path, tmp_path: Pat
     rows = bench.load_rows(out)
     assert [r["file"] for r in rows["crow"]] == ["a.md", "sub/b.md", "sub/deeper/c.md"]
     assert [r["file"] for r in rows["classic"]] == ["a.md", "sub/b.md", "sub/deeper/c.md"]
-    assert lines[0].startswith("[crow ") and "1/3" in lines[0]  # only crow needed a.md
+    assert lines[0].endswith("→ crow") and lines[1].startswith("[crow ") and "1/3" in lines[1]  # only crow needed a.md
 
 
 
@@ -409,3 +413,61 @@ def test_pdf_without_the_extra_says_how_to_install_it(data: Path, tmp_path: Path
     lines: list[str] = []
     assert bench.main(bench_args(data, out, report=str(out), no_pdf=False), WikiConfig(bundle=out), echo=lines.append) == 0
     assert 'pip install "llm-wiki-v2[pdf]"' in lines[-1]
+
+
+# -- outages -----------------------------------------------------------------------------------------
+
+
+def broken_wiki_factory(cfg: WikiConfig) -> Wiki:
+    """Every LLM call fails, like an endpoint that lost DNS."""
+    from okf_wiki.client import ModelError
+
+    class Down(FakeLLM):
+        def chat(self, messages: list[dict[str, str]], *, op: str = "") -> str:
+            raise ModelError("llm 502: lookup openrouter.ai: no such host")
+
+    tracker = UsageTracker(cfg.usage_log)
+    return Wiki(cfg, llm=Down(tracker), classifier=FakeClassifier(tracker) if cfg.mode == "crow" else None)
+
+
+@pytest.fixture
+def many(tmp_path: Path) -> Path:
+    root = tmp_path / "many"
+    root.mkdir()
+    for i in range(6):
+        (root / f"n{i}.md").write_text(f"Note {i}.", encoding="utf-8")
+    return root
+
+
+def test_a_model_outage_stops_the_run_after_three_files(many: Path, tmp_path: Path) -> None:
+    out, lines = tmp_path / "run", []
+
+    results = bench.run(bench.collect(many), many, out, WikiConfig(bundle=out), ["classic", "crow"], make_wiki=broken_wiki_factory, echo=lines.append)
+
+    assert [len(results["classic"]), len(results["crow"])] == [3, 3]
+    assert all(r["error_kind"] == "model" for m in results for r in results[m])
+    assert any("stopping: a model call failed on 3 files in a row" in line and f"--resume {out}" in line for line in lines)
+
+
+def test_files_that_cannot_be_read_do_not_stop_the_run(many: Path, tmp_path: Path) -> None:
+    for i in range(4):
+        (many / f"n{i}.md").write_text("   ", encoding="utf-8")  # empty: a file problem, not an outage
+
+    results = bench.run(bench.collect(many), many, tmp_path / "run", WikiConfig(bundle=tmp_path), ["classic"],
+                        make_wiki=fake_wiki_factory(6), echo=lambda _: None)
+
+    assert len(results["classic"]) == 6
+    assert sum(r.get("error_kind") == "file" for r in results["classic"]) == 4
+
+
+def test_failed_attempts_are_kept_and_counted_after_a_resume(many: Path, tmp_path: Path) -> None:
+    out = tmp_path / "run"
+    bench.main(bench_args(many, out, limit=2, modes="classic"), WikiConfig(bundle=out), make_wiki=broken_wiki_factory, echo=lambda _: None)
+
+    bench.main(bench_args(many, None, resume=str(out)), WikiConfig(bundle=out), make_wiki=fake_wiki_factory(3), echo=lambda _: None)
+
+    assert len((out / "rows.jsonl").read_text(encoding="utf-8").splitlines()) == 4  # 2 failures + 2 retries, nothing lost
+    assert [len(v) for v in bench.retried(out).values()] == [2]
+    summary = json.loads((out / "results.json").read_text(encoding="utf-8"))["summary"]["classic"]
+    assert (summary["ingests"], summary["errors"], summary["retried_attempts"]) == (2, 0, 2)
+    assert "failed attempts retried later" in (out / "report.md").read_text(encoding="utf-8")

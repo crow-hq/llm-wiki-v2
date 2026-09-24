@@ -122,6 +122,7 @@ def run(
     echo: Callable[[str], None] = print,
     stop: threading.Event | None = None,
     skip: dict[str, set[str]] | None = None,
+    max_failures: int = 3,
 ) -> dict[str, list[dict[str, Any]]]:
     """Ingest `files` into one wiki per mode, in lockstep: each file goes to every mode at the same
     time (in parallel), and the next file starts only when all of them are done, so the modes
@@ -129,7 +130,8 @@ def run(
 
     Files in `skip[mode]` were catalogued by an earlier session: a file that only some modes have
     is filed for the others first, which re-aligns them. Setting `stop` (the first Ctrl+C does)
-    lets the current pair finish, then returns.
+    lets the current pair finish, then returns. After `max_failures` files in a row where a model
+    call failed (endpoint down, DNS, credits), the run stops too instead of recording empty errors.
     """
     out.mkdir(parents=True, exist_ok=True)
     stop = stop or threading.Event()
@@ -145,12 +147,13 @@ def run(
     todo = [(i, p) for i, p in enumerate(files, 1) if any(rel[p] not in skip.get(m, set()) for m in modes)]
 
     def loop() -> None:
-        started = time.perf_counter()
+        started, failures = time.perf_counter(), 0
         with ThreadPoolExecutor(max_workers=len(modes)) as pool:
             for n, (i, path) in enumerate(todo, 1):
                 if stop.is_set():
                     return
                 need = [m for m in modes if rel[path] not in skip.get(m, set())]
+                echo(f"… {i}/{len(files)} {rel[path][-70:]} → {' + '.join(need)}")  # so a slow file never looks stuck
                 rows = list(pool.map(lambda m: _ingest(wikis[m], m, i, path, rel[path]), need))
                 with (out / "rows.jsonl").open("a", encoding="utf-8") as f:
                     for row in rows:
@@ -159,6 +162,13 @@ def run(
                 eta = (time.perf_counter() - started) / n * (len(todo) - n)
                 for row in rows:
                     echo(_progress(row, len(files), eta))
+                failures = failures + 1 if any(r.get("error_kind") == "model" for r in rows) else 0
+                if failures >= max_failures:
+                    stop.set()
+                    error = next(r["error"] for r in rows if r.get("error_kind") == "model")
+                    echo(f"\nstopping: a model call failed on {failures} files in a row ({error[:160]})."
+                         f"\nFix it, then continue with: okf-wiki bench --resume {out}")
+                    return
 
     worker = threading.Thread(target=loop, daemon=True)
     worker.start()
@@ -188,8 +198,10 @@ def _ingest(wiki: Wiki, mode: str, index: int, path: Path, rel: str) -> dict[str
     try:
         result = wiki.ingest_file(path.read_bytes(), path.name, resource=rel)
         row.update(action=result.action, note=result.note, folder=result.folder, created_folders=result.created_folders)
-    except (ModelError, ValueError, OSError) as e:
-        row.update(action="error", error=str(e)[:300])
+    except ModelError as e:  # the endpoint failed: worth retrying
+        row.update(action="error", error_kind="model", error=str(e)[:300])
+    except (ValueError, OSError) as e:  # this file cannot be catalogued
+        row.update(action="error", error_kind="file", error=str(e)[:300])
     row["seconds"] = round(time.perf_counter() - start, 3)
     row.update(_delta(before, wiki.usage))
     return row
@@ -214,6 +226,18 @@ def load_rows(out: Path) -> dict[str, list[dict[str, Any]]]:
     for (mode, _), row in latest.items():
         rows.setdefault(mode, []).append(row)
     return rows
+
+
+def retried(out: Path) -> dict[str, list[dict[str, Any]]]:
+    """Attempts that a later row replaced (failures retried on resume): kept to count what they cost."""
+    path = out / "rows.jsonl"
+    raw = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()] if path.exists() else []
+    last = {(r["mode"], r["file"]): i for i, r in enumerate(raw)}
+    out_rows: dict[str, list[dict[str, Any]]] = {}
+    for i, r in enumerate(raw):
+        if last[(r["mode"], r["file"])] != i:
+            out_rows.setdefault(r["mode"], []).append(r)
+    return out_rows
 
 
 def catalogued(rows: dict[str, list[dict[str, Any]]]) -> dict[str, set[str]]:
@@ -259,7 +283,11 @@ SERIES: dict[str, Callable[[dict[str, Any]], float]] = {
 }
 
 
-def summarize(rows: list[dict[str, Any]], llm_p: Price | None, clf_p: Price) -> dict[str, Any]:
+def summarize(
+    rows: list[dict[str, Any]], llm_p: Price | None, clf_p: Price, retries: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """Statistics of the final attempt of each file; `retries` are earlier attempts that failed."""
+    retries = retries or []
     ok = [r for r in rows if r["action"] != "error"]
     lat = sorted(r["seconds"] for r in ok)
 
@@ -283,6 +311,9 @@ def summarize(rows: list[dict[str, Any]], llm_p: Price | None, clf_p: Price) -> 
         **{f"{ledger}_{key}": total(ledger, key) for ledger in ("llm", "classifier") for key in ("calls", "input_tokens", "output_tokens", "seconds", "cost_usd")},
         "llm_cost_list": llm_list,
         "classifier_cost_list": clf_list,
+        "retried_attempts": len(retries),
+        "retried_llm_tokens": sum(r["llm"]["input_tokens"] + r["llm"]["output_tokens"] for r in retries),
+        "retried_cost_usd": sum(r["llm"]["cost_usd"] + r["classifier"]["cost_usd"] for r in retries),
         "growth": {name: fit([r["notes_before"] for r in ok], [f(r) for r in ok]) for name, f in SERIES.items()},
         "growth_by_step": _step_growth(ok),
     }
@@ -335,7 +366,8 @@ def params(cfg: WikiConfig, data: Path, files: list[Path], llm_p: Price | None, 
 
 
 def write_reports(out: Path, meta: dict[str, Any], results: dict[str, list[dict[str, Any]]], llm_p: Price | None, clf_p: Price) -> dict[str, Any]:
-    stats = {m: summarize(rows, llm_p, clf_p) for m, rows in results.items() if rows}
+    earlier = retried(out)
+    stats = {m: summarize(rows, llm_p, clf_p, earlier.get(m)) for m, rows in results.items() if rows}
     (out / "results.json").write_text(json.dumps({"params": meta, "summary": stats}, indent=2, default=str), encoding="utf-8")
     (out / "report.md").write_text(_markdown(meta, stats, results, out), encoding="utf-8")
     (out / "report.html").write_text(_html(meta, stats, results), encoding="utf-8")
@@ -364,6 +396,7 @@ def _table_rows(stats: dict[str, dict[str, Any]]) -> list[tuple[str, list[str]]]
         row("cost reported by provider: LLM · classifier", lambda s: f"{money(s['llm_cost_usd'])} · {money(s['classifier_cost_usd'])}"),
         row("cost at list price: LLM · classifier", lambda s: f"{money(s['llm_cost_list'])} · {money(s['classifier_cost_list'])}"),
         row("cost reported, total", lambda s: money(s["llm_cost_usd"] + s["classifier_cost_usd"])),
+        row("failed attempts retried later (LLM tokens · cost)", lambda s: f"{s['retried_attempts']} ({s['retried_llm_tokens']:,.0f} tok · {money(s['retried_cost_usd'])})"),
         row("cost per ingest (reported)", lambda s: money((s["llm_cost_usd"] + s["classifier_cost_usd"]) / max(s["ingests"], 1))),
     ]
 

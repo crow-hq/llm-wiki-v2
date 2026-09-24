@@ -45,7 +45,8 @@ def write_pdf(out: Path) -> Path:
     llm_p = bench._price(saved["prices"]["llm"])
     clf_p = bench._price(saved["prices"]["classifier"]) or bench.JEV_PRICE
     rows = {m: sorted(r, key=lambda x: x["index"]) for m, r in rows.items() if r}
-    stats = {m: bench.summarize(r, llm_p, clf_p) for m, r in rows.items()}
+    earlier = bench.retried(out)
+    stats = {m: bench.summarize(r, llm_p, clf_p, earlier.get(m)) for m, r in rows.items()}
     path = out / "report.pdf"
     _document(path, saved, rows, stats, llm_p, clf_p)
     return path
