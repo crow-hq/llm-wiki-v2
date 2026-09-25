@@ -85,7 +85,31 @@ def main(argv: list[str] | None = None) -> int:
     again.add_argument("--resume", metavar="RUN", help="continue a stopped run folder (its saved settings are reused)")
     again.add_argument("--report", metavar="RUN", help="rebuild the report of a run folder from its saved data, no model calls")
 
+    r = sub.add_parser("bench-retrieval", help="ask questions of growing cuts of a benchmark's wikis, classic vs CROW")
+    start = r.add_mutually_exclusive_group(required=True)
+    start.add_argument("--from", dest="source", metavar="RUN", help="an ingestion benchmark folder (its wikis are copied, not touched)")
+    start.add_argument("--resume", metavar="RUN", help="continue a stopped retrieval run")
+    start.add_argument("--report", metavar="RUN", help="rebuild the report of a retrieval run, no model calls")
+    start.add_argument("--like", metavar="RUN", help="same snapshot, sizes and questions as an earlier retrieval run, current settings")
+    r.add_argument("--cuts", type=int, default=6, help="how many wiki sizes to test (default 6)")
+    r.add_argument("--questions", type=int, default=20, help="how many questions to write (default 20)")
+    r.add_argument("--workers", type=int, default=4, help="questions asked at the same time (default 4)")
+    r.add_argument("--seed", type=int, help="seed for choosing the documents questions are written from")
+    r.add_argument("--out", help="output folder (default bench-runs/retrieval-<timestamp>)")
+    r.add_argument("--no-pdf", action="store_true", help="skip report.pdf")
+
     args = parser.parse_args(argv)
+    if args.command in ("bench", "bench-retrieval"):  # progress lines reach a log file as they are printed
+        sys.stdout.reconfigure(line_buffering=True)  # type: ignore[union-attr]
+    if args.command == "bench-retrieval":
+        from okf_wiki import bench_retrieval
+
+        try:
+            cfg = WikiConfig.from_env(bundle=Path(args.out or "bench-runs"))
+        except Exception as e:
+            print(f"okf-wiki: {e}", file=sys.stderr)
+            return 2
+        return bench_retrieval.main(args, cfg, make_wiki=make_bench_wiki)
     if args.command == "bench":
         try:
             cfg = WikiConfig.from_env(bundle=Path(args.out or "bench-runs"))

@@ -164,6 +164,32 @@ the notes being filed finish, then writes the report and prints the `--resume`
 command. A resumed run reuses the settings saved in `run.json` and the same two
 wikis. It retries files that failed, and `--limit` can extend it.
 
+### Retrieval benchmark
+
+```bash
+okf-wiki bench-retrieval --from bench-runs/<ingestion run> --cuts 20   # copy the two wikis, ask at 20 sizes
+okf-wiki bench-retrieval --like bench-runs/<retrieval run>             # same questions and sizes, current settings
+okf-wiki bench-retrieval --resume bench-runs/<retrieval run>           # or --report to rebuild the analysis
+```
+
+It works in four steps:
+
+1. It copies the two wikis of an ingestion run, so that run can keep going.
+2. It rebuilds each wiki as it stood at growing points of its ingestion.
+3. It has the LLM write questions from documents both wikis hold, so the right note is known.
+4. It asks every question at every size, classic vs CROW, each system on the wiki it built.
+
+The report (md, html, pdf) covers:
+
+- how often the right note was found and cited;
+- latency;
+- LLM and classifier tokens per question as the wiki grows, and which steps grow;
+- cost at list price and billed.
+
+The two costs differ because repeating the same questions lets the provider's prompt cache discount the bill. List price is the fair comparison.
+
+CROW thresholds should be calibrated on your own wiki (CROW paper §5.3). The rows record the classifier's score and rank for the right note, to help with that.
+
 ## The wiki on disk
 
 ```
@@ -207,7 +233,7 @@ Prompts, one Markdown file each: [docs/wiki/prompts.md](docs/wiki/prompts.md).
 ```
 src/okf_wiki/            the LLM wiki: config, usage, llm, classifier, store, files, librarian, researcher, wiki, cli, server
 src/okf_wiki/web/        the single-page web UI (index.html)
-src/okf_wiki/bench.py    the classic-vs-CROW benchmark (okf-wiki bench)
+src/okf_wiki/bench*.py   the ingestion and retrieval benchmarks (okf-wiki bench, okf-wiki bench-retrieval)
 src/okf_wiki/prompts/    shared/, librarian/, researcher/, classifier/ — one prompt per file
 tests/wiki/              tests for every feature, with scripted fake models (no network)
 docs/wiki/               providers, CROW, prompts
