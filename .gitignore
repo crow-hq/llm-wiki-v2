@@ -13,3 +13,7 @@ dist/
 # Docker: your wiki (/wiki, not tests/wiki or docs/wiki)
 /wiki/
 .kilo/
+
+# Local API keys kept next to the repo: never commit them.
+open_ruoter_key.txt
+*_key.txt

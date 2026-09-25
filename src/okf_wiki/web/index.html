@@ -29,8 +29,8 @@
   <header>
     <form id="ask"><input id="q" placeholder="Ask the wiki…" aria-label="Ask the wiki" autocomplete="off"><button class="btn">Ask →</button></form>
     <button class="btn ghost" id="brain"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><circle cx="2.5" cy="3" r="1.5"/><circle cx="13.5" cy="4" r="1.5"/><circle cx="11" cy="13.5" r="1.5"/><path d="M6.5 7 3.6 4M9.8 7.3l2.4-2.3M8.9 9.8l1.4 2.4"/></svg>Brain</button>
-    <button class="btn ghost" id="add">+ Text</button>
-    <button class="btn ghost" id="pick">↑ Files</button>
+    <button class="btn ghost" id="add" title="Write or paste a note">+ Note</button>
+    <button class="btn ghost" id="pick" title="Add .txt, .md or .pdf files">↑ Files</button>
     <button class="btn ghost icon" id="gear" title="Model and key" aria-label="Settings" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg></button>
     <input type="file" id="files" multiple accept=".txt,.md,.markdown,.pdf" hidden>
   </header>
@@ -40,10 +40,13 @@
 <div id="queue"></div>
 <dialog id="dlg">
   <form method="dialog" id="addform">
-    <h3>Add a source</h3>
-    <input id="t" placeholder="Title (optional)" aria-label="Title">
-    <textarea id="txt" placeholder="Paste text or Markdown…" aria-label="Text" required></textarea>
-    <div class="actions"><button class="btn ghost" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok">File it</button></div>
+    <h3>New note</h3>
+    <p class="dlg-lead">Write or paste anything: the librarian files it in the right folder and links it to related notes.</p>
+    <label for="t">Title <small>(optional)</small></label>
+    <input id="t" placeholder="e.g. Pricing meeting, 12 June">
+    <label for="txt">Text <small>(Markdown is fine)</small></label>
+    <textarea id="txt" placeholder="What do you want the wiki to remember?" required></textarea>
+    <div class="actions"><span class="dlg-hint">Ctrl+Enter to file it</span><button class="btn ghost" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok">File it →</button></div>
   </form>
 </dialog>
 </body>

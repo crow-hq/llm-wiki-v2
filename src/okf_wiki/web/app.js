@@ -84,13 +84,13 @@ function home() {
         <div class="crumbs">YOUR WIKI</div>
         <h2>${title}</h2>
         <p>Drop documents anywhere on this page: the librarian reads each one, picks its folder (or makes a new one), merges it with what the wiki already knows and links related notes.</p>
-        <div class="actions"><label class="btn" for="files">↑ Add files</label><a class="btn ghost" href="#/graph">Open the brain</a></div>
+        <div class="actions"><button class="btn" type="button" data-new-note>+ Write a note</button><label class="btn ghost" for="files">↑ Add files</label><a class="btn ghost" href="#/graph">Open the brain</a></div>
       </div>
       <div class="art" role="img" aria-label="A pixel-art crow under a red moon, beside a glowing graph of notes"></div>
     </div>
     <div class="cards">
       <div class="card">${ICONS.folder}<div><b>${folders} folder${folders === 1 ? "" : "s"}</b><span>New ones appear when nothing fits. Open them in the sidebar.</span></div></div>
-      <div class="card">${ICONS.note}<div><b>.txt · .md · .pdf</b><span>Drop, pick or paste. PDFs need a text layer (scans need OCR first).</span></div></div>
+      <div class="card">${ICONS.note}<div><b>Notes and files</b><span>Write a note with + Note, or drop .txt, .md and .pdf files. PDFs need a text layer.</span></div></div>
       <div class="card">${ICONS.search}<div><b>Ask anything</b><span>Answers cite the notes they come from: click one to read it.</span></div></div>
     </div>`, true);
 }
@@ -183,6 +183,7 @@ async function drain() {
       if (!location.hash) home();
     } catch (e) {
       el.classList.add("err"); el.querySelector(".what").textContent = e.message;
+      if (/\b40[13]\b/.test(e.message)) el.querySelector(".what").insertAdjacentHTML("beforeend", ' · <a href="#/settings">check the API key</a>');
     }
     setTimeout(() => el.remove(), 12000);
   }
@@ -201,11 +202,19 @@ addEventListener("drop", (e) => {
 });
 $("#pick").onclick = () => $("#files").click();
 $("#files").onchange = (e) => { [...e.target.files].forEach(upload); e.target.value = ""; };
-$("#add").onclick = () => $("#dlg").showModal();
+function newNote() {
+  $("#dlg").returnValue = ""; // Escape keeps the last value: never file twice
+  $("#dlg").showModal();
+  $("#txt").focus();
+}
+$("#add").onclick = newNote;
+$("#view").addEventListener("click", (e) => { if (e.target.closest("[data-new-note]")) newNote(); });
+$("#txt").onkeydown = (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("#addform").requestSubmit($("#addform [value=ok]")); };
 $("#brain").onclick = () => (location.hash = "#/graph");
 $("#dlg").onclose = () => {
   if ($("#dlg").returnValue !== "ok") return;
-  const text = $("#txt").value, title = $("#t").value || null;
+  const text = $("#txt").value, title = $("#t").value.trim() || null;
+  if (!text.trim()) return;
   enqueue(title || text.slice(0, 40) + "…", () =>
     post("/ingest", { text, title }));
   $("#txt").value = ""; $("#t").value = "";

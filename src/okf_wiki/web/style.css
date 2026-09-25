@@ -124,9 +124,14 @@ a.cite:hover { background: var(--ember); color: #0b0f1e; }
 .job .what { color: var(--muted); margin-top: 2px; }
 dialog { border: 1px solid var(--edge); border-radius: 12px; background: var(--panel); color: var(--ink); width: min(640px, 92vw); padding: 26px; }
 dialog::backdrop { background: rgba(3, 5, 13, .7); }
-dialog h3 { font: 700 26px var(--display); color: var(--cream); margin: 0 0 14px; }
+dialog h3 { font: 700 30px var(--display); color: var(--cream); margin: 0 0 6px; }
+.dlg-lead { font: 13px/1.6 var(--mono); color: var(--soft); margin: 0 0 18px; }
+dialog label { display: block; font: 13px var(--mono); color: #c7cfe2; margin-bottom: 6px; }
+dialog label small { color: var(--faint); }
+.dlg-hint { margin-right: auto; align-self: center; font: 11px var(--mono); color: var(--faint); }
 dialog input, dialog textarea { width: 100%; font: 15px var(--text); padding: 10px 12px; border: 1px solid var(--edge); border-radius: 8px; background: var(--field); color: var(--ink); margin-bottom: 10px; }
-dialog textarea { height: 240px; resize: vertical; }
+dialog textarea { height: 260px; resize: vertical; margin-bottom: 16px; }
+dialog input { margin-bottom: 16px; }
 dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .empty { color: var(--faint); padding: 6px 8px; font-size: 13px; line-height: 1.6; }
 
