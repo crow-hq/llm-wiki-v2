@@ -7,6 +7,8 @@ type: software
 authors:
   - family-names: Cesarini
     given-names: Federico
+  - family-names: Sassarini
+    given-names: Marco
 version: 0.2.0
 date-released: 2026-09-24
 license: Apache-2.0

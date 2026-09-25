@@ -1,16 +1,17 @@
-# Copyright 2026 Federico Cesarini
+# Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: Apache-2.0
 #
-# The llm-wiki-v2 HTTP API (okf-wiki serve). Run it with docker-compose.yml, next to Bifrost.
+# The llm-wiki-v2 HTTP API and web page (okf-wiki serve). Run it with docker-compose.yml.
 FROM python:3.13-slim
 
 LABEL org.opencontainers.image.title="llm-wiki-v2" \
-      org.opencontainers.image.description="LLM wiki on the Open Knowledge Format by Google LLC (https://github.com/GoogleCloudPlatform/open-knowledge-format)" \
+      org.opencontainers.image.description="LLM wiki in a Markdown format derived from the Open Knowledge Format" \
       org.opencontainers.image.source="https://github.com/fed3c3sa/llm-wiki-v2" \
       org.opencontainers.image.licenses="Apache-2.0"
 
+# Settings come from the environment (.env): OKF_CONFIG names a settings file the image never has.
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_ROOT_USER_ACTION=ignore \
-    OKF_BUNDLE=/data/wiki
+    OKF_BUNDLE=/data/wiki OKF_CONFIG=/app/no-settings-file.json
 
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE.md NOTICE ./

@@ -1,4 +1,4 @@
-# Copyright 2026 Federico Cesarini
+# Copyright 2026 Federico Cesarini, Marco Sassarini
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The writing model: any provider behind Bifrost's OpenAI-compatible `/chat/completions`."""
+"""The writing model: any provider behind an OpenAI-compatible `/chat/completions`."""
 
 from __future__ import annotations
 
@@ -54,8 +54,6 @@ class LLM(HttpModel):
         super().__init__(cfg.base_url, cfg.model, usage, api_key=cfg.api_key, timeout=cfg.timeout, client=client)
         self.temperature = cfg.temperature
         self.extra_body = dict(cfg.extra_body)
-        if self.extra_body:  # Bifrost drops unknown fields unless asked to forward them
-            self.headers["x-bf-passthrough-extra-params"] = "true"
 
     def chat(self, messages: list[dict[str, str]], *, op: str = "") -> str:
         start = time.perf_counter()

@@ -1,4 +1,4 @@
-# Copyright 2026 Federico Cesarini
+# Copyright 2026 Federico Cesarini, Marco Sassarini
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ from okf_wiki.config import LLMConfig
 from okf_wiki.llm import LLM, extract_json
 from okf_wiki.usage import UsageTracker
 
-BASE_URL = "http://bifrost.test/v1"
+BASE_URL = "http://llm.test/v1"
 MODEL = "openrouter/test/writer"
 
 Reply = httpx.Response | Exception
@@ -216,7 +216,7 @@ def test_a_reply_without_a_message_raises(tracker: UsageTracker, payload: dict[s
 
 
 def test_a_non_json_reply_raises(tracker: UsageTracker) -> None:
-    llm, _ = make_llm(tracker, httpx.Response(200, text="<html><body>Bifrost dashboard</body></html>"))
+    llm, _ = make_llm(tracker, httpx.Response(200, text="<html><body>Admin dashboard</body></html>"))
 
     with pytest.raises(ModelError, match="non-JSON"):
         llm.complete("system", "user")
@@ -239,12 +239,12 @@ def test_extract_json(text: str, expected: str) -> None:
     assert extract_json(text) == expected
 
 
-@pytest.mark.parametrize(("usage", "cost"), [({"cost": 0.0021}, 0.0021), ({"cost": {"total_cost": 3.4e-05}}, 3.4e-05), ({}, None), ({"cost": "x"}, None)])
-def test_reported_cost_reads_openrouter_and_bifrost_shapes(usage: dict[str, Any], cost: float | None) -> None:
+@pytest.mark.parametrize(("usage", "cost"), [({"cost": 0.0021}, 0.0021), ({}, None), ({"cost": "x"}, None), ({"cost": True}, None)])
+def test_reported_cost_reads_the_openrouter_number(usage: dict[str, Any], cost: float | None) -> None:
     assert reported_cost(usage) == cost
 
 
-def test_extra_body_is_merged_and_bifrost_asked_to_forward_it() -> None:
+def test_extra_body_is_merged_into_every_request() -> None:
     client, requests = serve(completion("ok"))
     cfg = LLMConfig(base_url=BASE_URL, model=MODEL, extra_body={"provider": {"order": ["together"]}})
 
@@ -252,13 +252,6 @@ def test_extra_body_is_merged_and_bifrost_asked_to_forward_it() -> None:
 
     body = json.loads(requests[0].content)
     assert body["provider"] == {"order": ["together"]} and body["model"] == MODEL
-    assert requests[0].headers["x-bf-passthrough-extra-params"] == "true"
-
-
-def test_no_extra_body_means_no_passthrough_header() -> None:
-    client, requests = serve(completion("ok"))
-    LLM(LLMConfig(base_url=BASE_URL, model=MODEL), UsageTracker(), client=client).complete("sys", "user")
-    assert "x-bf-passthrough-extra-params" not in requests[0].headers
 
 
 def test_cached_tokens_are_read_from_the_usage_block() -> None:

@@ -1,5 +1,5 @@
 llm-wiki-v2
-Copyright 2026 Federico Cesarini
+Copyright 2026 Federico Cesarini, Marco Sassarini
 
 This project started as a fork of the Open Knowledge Format (OKF) project by
 Google LLC: https://github.com/GoogleCloudPlatform/open-knowledge-format
@@ -14,13 +14,17 @@ Files carried over from OKF, modified, and keeping their original headers:
 - LICENSE.md: the Apache License 2.0 text, unchanged.
 - pyproject.toml: distribution renamed to llm-wiki-v2, the reference agent
   and its Google dependencies removed, okf_wiki package added.
-- CONTRIBUTING.md and CODE_OF_CONDUCT.md: contacts and process changed from
-  the Google project to this repository.
 - .gitignore: entries added.
 
-Everything else (Copyright 2026 Federico Cesarini, Apache-2.0): src/okf_wiki/,
-tests/wiki/, docs/wiki/, the Docker stack (Dockerfile, docker-compose.yml,
-docker/), .env.example, NOTICE, CITATION.cff.
+Third-party code shipped unmodified in src/okf_wiki/web/vendor/, each file
+keeping its copyright and license banner:
+- marked 12.0.0 (https://github.com/markedjs/marked), Copyright (c) 2011-2024
+  Christopher Jeffrey, MIT License.
+- DOMPurify 3.1.6 (https://github.com/cure53/DOMPurify), (c) Cure53 and other
+  contributors, Apache License 2.0 or Mozilla Public License 2.0.
+- d3 7.9.0 (https://github.com/d3/d3), Copyright 2010-2023 Mike Bostock, ISC
+  License.
 
-The Docker stack runs Bifrost (https://github.com/maximhq/bifrost, Apache-2.0)
-from its published image; no Bifrost source code is included.
+Everything else (Copyright 2026 Federico Cesarini, Marco Sassarini, Apache-2.0): src/okf_wiki/
+(outside web/vendor/), tests/wiki/, docs/wiki/, Dockerfile, docker-compose.yml,
+.env.example, NOTICE, CITATION.cff.

@@ -1,4 +1,4 @@
-# Copyright 2026 Federico Cesarini
+# Copyright 2026 Federico Cesarini, Marco Sassarini
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,16 @@ import pytest
 from okf_wiki import Wiki, WikiConfig
 from okf_wiki.usage import UsageTracker
 from tests.wiki.fakes import FakeClassifier, FakeLLM
+
+
+@pytest.fixture(autouse=True)
+def home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A fresh home and no model settings from the shell: no test sees ~/.config/llm-wiki or a real key."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    for key in [k for k in os.environ if k.startswith("OKF_") or k.endswith("_API_KEY") or k == "XDG_CONFIG_HOME"]:
+        monkeypatch.delenv(key)
+    return home
 
 
 @pytest.fixture

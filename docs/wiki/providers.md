@@ -1,64 +1,71 @@
 # Providers
 
 The wiki talks to two kinds of model. The **LLM** writes notes, merges, folder
-names and answers, always through the [Bifrost](https://github.com/maximhq/bifrost)
-gateway's OpenAI-compatible API, so changing provider or model is one variable.
-The **classifier** takes the decisions in CROW mode ([crow.md](crow.md)) through
-the System One API. Each model's calls are counted in their own token ledger.
+names and answers, through any OpenAI-compatible `/chat/completions` endpoint:
+no SDK and no gateway, so changing provider or model is a setting. The
+**classifier** takes the decisions in CROW mode ([crow.md](crow.md)) through the
+System One API. Each model's calls are counted in their own token ledger.
 
-## The LLM, through Bifrost
+## Where settings come from
+
+Later sources win:
+
+1. defaults;
+2. the settings file `~/.config/llm-wiki/config.json` (`$XDG_CONFIG_HOME`, or
+   any file named by `OKF_CONFIG`), written by the web page's **Settings** and
+   by `okf-wiki setup`, readable by its owner only;
+3. `OKF_*` variables and the provider's key variable (and a `.env` file in the
+   current folder, for the CLI);
+4. `--bundle` and `--mode` on the command line.
+
+The CLI and `okf-wiki serve` read all four. `Wiki.from_env()` reads only the
+environment: a program using the library is configured by that program. A
+field set by the environment or a flag shows as locked on the settings page.
+
+Any web page you visit can send requests to a server on your machine, so the
+server refuses every cross-site request that changes something (a browser
+always says where a request comes from; curl and scripts are not affected),
+and a server bound to localhost, the default, answers only requests addressed
+to `localhost`, `127.0.0.1` or `[::1]` (against DNS rebinding).
+
+The settings page can change settings only from the machine the server runs
+on: requests must come from a loopback address, name a loopback host (against
+DNS rebinding) and, from a browser, be same-origin (against other sites posting
+to it). Behind Docker every request comes from outside the container, so the
+page shows the settings from `.env` without changing them. Keys are never sent
+back to the page, only their last four characters, and a saved key is dropped
+when the provider changes, so it is never sent to another server.
+
+## The LLM
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `OKF_LLM_BASE_URL` | `http://localhost:8080/v1` | Bifrost's OpenAI-compatible API. `docker-compose.yml` sets `http://bifrost:8080/v1`. |
-| `OKF_LLM_MODEL` | `openrouter/google/gemini-2.5-flash` | `<provider>/<model>`, as Bifrost names it |
-| `OKF_LLM_API_KEY` | empty | Bearer token sent to Bifrost. Needed only if you turn on Bifrost authentication. |
+| `OKF_LLM_PROVIDER` | `openrouter` | a preset below, or `custom` |
+| `OKF_LLM_MODEL` | the provider's first model | as the provider names it |
+| `OKF_LLM_BASE_URL` | the provider's | required for `custom` |
+| `OKF_LLM_API_KEY` | the provider's key variable | Bearer token; wins over the provider's variable |
 | `OKF_LLM_TEMPERATURE` | `0.1` | |
 | `OKF_LLM_TIMEOUT` | `120` | seconds per request |
+| `OKF_LLM_EXTRA_BODY` | — | JSON merged into every request, e.g. OpenRouter provider pinning |
 
-| Provider | `OKF_LLM_MODEL` example | Set in `.env` |
-|---|---|---|
-| OpenRouter | `openrouter/google/gemini-2.5-flash` | `OPENROUTER_API_KEY` |
-| Gemini API | `gemini/gemini-2.5-flash` | `GEMINI_API_KEY` |
-| Vertex AI | `vertex/gemini-2.5-pro` | `VERTEX_PROJECT_ID`, `VERTEX_AUTH_CREDENTIALS` |
+| Provider | Base URL | Key variable | Default model |
+|---|---|---|---|
+| `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `google/gemini-3.8-flash` |
+| `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `gpt-6-luna` |
+| `gemini` | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `gemini-3.8-flash` |
+| `ollama` | `http://localhost:11434/v1` | none | `gemma4` |
+| `custom` | `OKF_LLM_BASE_URL` | `OKF_LLM_API_KEY`, if it wants one | `OKF_LLM_MODEL` |
 
-The client sends `POST {OKF_LLM_BASE_URL}/chat/completions` (up to 3 attempts
-on 408, 429, 500, 502-504, 529) and asks once more if a JSON reply does not
-validate. For the library or CLI without Docker, start only the gateway
-(`docker compose up -d bifrost`); the default base URL points to it.
+`custom` covers every other OpenAI-compatible server: vLLM, LM Studio,
+llama.cpp's server, a gateway such as LiteLLM or Bifrost if you run one.
+Presets live in `PROVIDERS` in `src/okf_wiki/config.py`; adding one is one line.
+Their models are only defaults and suggestions: the settings page also lists
+the models the provider offers right now (`GET {base_url}/models`).
 
-## Adding or enabling a provider
-
-Providers are listed in `docker/bifrost/config.json`. Each one has a list of keys:
-
-```json
-"openrouter": {
-  "keys": [{ "name": "openrouter", "value": "env.OPENROUTER_API_KEY", "models": ["*"], "weight": 1.0 }]
-}
-```
-
-- `"env.OPENROUTER_API_KEY"`: Bifrost reads the key from that variable in its
-  own container. `"models": ["*"]`: the key serves every model of the provider.
-- **Enable** a shipped provider (`openrouter`, `gemini`, `vertex`, `typesafe`)
-  by setting its variable in `.env`. A provider whose key is empty stays unused.
-- **Add** a provider: add a block with Bifrost's provider id and
-  `"value": "env.<VAR>"`, add `<VAR>: ${<VAR>:-}` under
-  `services.bifrost.environment` in `docker-compose.yml` (the container only
-  sees the variables listed there), set `<VAR>` in `.env`, run
-  `docker compose up -d`, and set `OKF_LLM_MODEL=<provider>/<model>`.
-- Or use the Bifrost UI at http://localhost:8080 (`BIFROST_PORT`), which also
-  logs every LLM call. UI changes are saved in `docker/bifrost/config.db`. If you
-  later edit the same provider in `config.json`, the file wins at the next start.
-
-**Vertex AI** uses `vertex_key_config`: `project_id` comes from
-`env.VERTEX_PROJECT_ID`, `region` is `"us-central1"` (edit it in
-`config.json`), and `auth_credentials` comes from `env.VERTEX_AUTH_CREDENTIALS`.
-
-- Service account: paste the JSON key into `VERTEX_AUTH_CREDENTIALS` on one line.
-- Application Default Credentials: leave it empty. Bifrost then looks for
-  credentials inside its container. That works on Google Cloud (attached service
-  account); elsewhere, only if you mount a credentials file into the `bifrost`
-  service, which the shipped `docker-compose.yml` does not do.
+The client sends `POST {base_url}/chat/completions` (up to 3 attempts on 408,
+429, 500, 502-504, 529) and asks once more if a JSON reply does not validate.
+Costs are recorded when the provider reports them in the `usage` block, as
+OpenRouter does.
 
 ## The classifier (CROW), through the System One API
 
@@ -76,21 +83,11 @@ statement holds).
 | `OKF_CLASSIFIER_STATE_CHARS` | `6000` | Size of the compact state each decision reads |
 | `OKF_CLASSIFIER_REQUEST_CHARS` | `90000` | Size limit for state plus questions per request. Noul questions are split into batches to fit. |
 
-**Why OpenRouter directly.** Bifrost cannot route OpenRouter's System One
-endpoint yet ([maximhq/bifrost#7415](https://github.com/maximhq/bifrost/issues/7415);
-related fix in [PR #7448](https://github.com/maximhq/bifrost/pull/7448)), so
-classifier calls bypass Bifrost. They are missing from Bifrost's logs but still
-counted in the `classifier` ledger below.
-
-**Full Bifrost** takes one variable:
-`OKF_CLASSIFIER_BASE_URL=http://bifrost:8080/typesafe/v1`, plus
-`TYPESAFE_API_KEY` in `.env` (read by the `typesafe` provider in `config.json`).
-Calls are then billed to your TypeSafe account instead of OpenRouter.
+With OpenRouter as the LLM provider, one key serves both models.
 
 | Endpoint | `OKF_CLASSIFIER_BASE_URL` | Key |
 |---|---|---|
 | OpenRouter (default) | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` or `OKF_CLASSIFIER_API_KEY` |
-| Bifrost `typesafe` provider | `http://bifrost:8080/typesafe/v1` (`http://localhost:8080/typesafe/v1` outside Docker) | `TYPESAFE_API_KEY`, held by Bifrost |
 | TypeSafe directly | `https://api.typesafe.ai/v1` | `OKF_CLASSIFIER_API_KEY` (a TypeSafe key) |
 | Local Laya server | the URL under which it serves `/systemone` | `OKF_CLASSIFIER_API_KEY`, if it needs one |
 
@@ -121,5 +118,5 @@ for the classifier.
 - `missing` counts calls whose response had no `usage` block (for example, a
   gateway or local server that omits it). They count 0 tokens and log a warning,
   so when `missing` is above 0 the token totals are a lower bound.
-- With Docker, `docker-compose.yml` does not forward `OKF_USAGE_LOG`: add it
-  under `services.wiki.environment` and point it at a mounted folder.
+- With Docker, `docker-compose.yml` sets `OKF_USAGE_LOG` to `.usage.jsonl` in
+  the wiki folder.

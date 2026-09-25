@@ -1,4 +1,4 @@
-# Copyright 2026 Federico Cesarini
+# Copyright 2026 Federico Cesarini, Marco Sassarini
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,10 +29,8 @@ class ModelError(RuntimeError):
 
 
 def reported_cost(usage: dict[str, Any]) -> float | None:
-    """USD cost in a usage block: OpenRouter sends a number, Bifrost {"total_cost": …}."""
+    """USD cost in a usage block, when the provider reports it (OpenRouter does)."""
     cost = usage.get("cost")
-    if isinstance(cost, dict):
-        cost = cost.get("total_cost")
     return float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) else None
 
 

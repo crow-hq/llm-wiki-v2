@@ -55,9 +55,7 @@ The defaults are only a starting point. As the paper advises, calibrate the
 thresholds on a labelled sample of **your own** wiki, and set them again whenever
 the classifier model version changes. This is why `OKF_CLASSIFIER_MODEL` is
 pinned to `typesafe/jev-1.13`. Choice confidence says how concentrated the
-answer is, not whether it is right. With Docker, add these variables under
-`services.wiki.environment` in `docker-compose.yml`, because that file does not
-forward them.
+answer is, not whether it is right. With Docker, put these variables in `.env`.
 
 ## Calibrating with `result.decisions`
 

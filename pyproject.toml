@@ -1,5 +1,5 @@
 # Copyright 2026 Google LLC
-# Modifications copyright 2026 Federico Cesarini
+# Modifications copyright 2026 Federico Cesarini, Marco Sassarini
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,9 +33,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = ["fastapi>=0.110", "uvicorn>=0.29"]
-# PDF report of a benchmark (okf-wiki bench --pdf).
-pdf = ["matplotlib>=3.8", "reportlab>=4.0"]
-dev = ["pytest>=7.0", "fastapi>=0.110", "uvicorn>=0.29", "matplotlib>=3.8", "reportlab>=4.0"]
+dev = ["pytest>=7.0", "fastapi>=0.110", "uvicorn>=0.29"]
 
 [project.scripts]
 okf-wiki = "okf_wiki.cli:main"
@@ -44,7 +42,7 @@ okf-wiki = "okf_wiki.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-okf_wiki = ["prompts/*/*.md", "web/*.html"]
+okf_wiki = ["prompts/*/*.md", "web/*.html", "web/*.css", "web/*.js", "web/vendor/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

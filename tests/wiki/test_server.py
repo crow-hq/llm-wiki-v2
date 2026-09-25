@@ -1,4 +1,4 @@
-# Copyright 2026 Federico Cesarini
+# Copyright 2026 Federico Cesarini, Marco Sassarini
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -27,9 +28,10 @@ pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from okf_wiki import Wiki  # noqa: E402
+from okf_wiki import Wiki, WikiConfig  # noqa: E402
 from okf_wiki.client import ModelError  # noqa: E402
 from okf_wiki.server import create_app  # noqa: E402
+from okf_wiki.settings import Settings  # noqa: E402
 from okf_wiki.store import parse_index  # noqa: E402
 from tests.wiki.fakes import FakeLLM  # noqa: E402
 from tests.wiki.test_files import make_pdf  # noqa: E402
@@ -99,14 +101,14 @@ def test_model_error_during_ingest_is_a_502(
     client: TestClient, classic_wiki: Wiki, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def fail(*_: Any, **__: Any) -> Any:
-        raise ModelError("llm 503 from http://bifrost.test/v1/chat/completions")
+        raise ModelError("llm 503 from http://llm.test/v1/chat/completions")
 
     monkeypatch.setattr(classic_wiki, "ingest", fail)
 
     response = client.post("/ingest", json={"text": "Booked on delivery."})
 
     assert response.status_code == 502
-    assert response.json()["detail"] == "llm 503 from http://bifrost.test/v1/chat/completions"
+    assert response.json()["detail"] == "llm 503 from http://llm.test/v1/chat/completions"
 
 
 def test_invalid_llm_json_during_ask_is_a_502(client: TestClient, classic_wiki: Wiki, llm: FakeLLM) -> None:
@@ -187,7 +189,8 @@ def test_home_serves_the_single_page_ui(client: TestClient) -> None:
     response = client.get("/")
 
     assert response.status_code == 200 and response.headers["content-type"].startswith("text/html")
-    assert "llm<span>·</span>wiki" in response.text and "/upload?filename=" in response.text
+    assert "llm<span>·</span>wiki" in response.text
+    assert "/upload?filename=" in client.get("/web/app.js").text
 
 
 def test_note_returns_frontmatter_and_body(client: TestClient, llm: FakeLLM) -> None:
@@ -250,4 +253,180 @@ def test_graph_returns_nodes_and_links(client: TestClient, llm: FakeLLM) -> None
 
 def test_home_links_to_the_brain_view(client: TestClient) -> None:
     page = client.get("/").text
-    assert 'id="brain"' in page and "#/graph" in page and "d3@7" in page
+    assert 'id="brain"' in page and "/web/app.js" in page
+    assert "#/graph" in client.get("/web/app.js").text and "/web/vendor/d3.min.js" in client.get("/web/graph.js").text
+
+
+# -- settings ------------------------------------------------------------------------------
+
+KEY = "sk-or-v1-0123456789abcdef"
+LOCAL = {"base_url": "http://localhost:8000", "client": ("127.0.0.1", 50000)}
+
+
+@pytest.fixture
+def rebuilt(llm: FakeLLM) -> list[WikiConfig]:
+    """Every config the app rebuilds its wiki from (on the fake LLM)."""
+    return []
+
+
+@pytest.fixture
+def local(classic_wiki: Wiki, llm: FakeLLM, rebuilt: list[WikiConfig]) -> TestClient:
+    def make_wiki(cfg: WikiConfig) -> Wiki:
+        rebuilt.append(cfg)
+        return Wiki(cfg, llm=llm)
+
+    return TestClient(create_app(classic_wiki, settings=Settings({}), make_wiki=make_wiki), **LOCAL)
+
+
+def test_settings_show_masked_values_and_readiness(local: TestClient) -> None:
+    body = local.get("/settings").json()
+
+    assert (body["ready"], body["editable"], body["managed"]) == (False, True, [])
+    assert body["values"]["provider"] == "openrouter" and body["values"]["api_key"] == ""
+    assert set(body["providers"]) == {"openrouter", "openai", "gemini", "ollama", "custom"}
+
+
+def test_saving_settings_rebuilds_the_wiki(local: TestClient, rebuilt: list[WikiConfig], home: Path) -> None:
+    response = local.post("/settings", json={"provider": "openrouter", "api_key": KEY, "model": "openai/gpt-4.1", "mode": "crow"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["ready"], body["values"]["api_key"], body["values"]["mode"]) == (True, "…cdef", "crow")
+    assert KEY not in response.text
+    assert (rebuilt[-1].mode, rebuilt[-1].llm.model, rebuilt[-1].llm.api_key) == ("crow", "openai/gpt-4.1", KEY)
+    assert local.get("/health").json()["mode"] == "crow"
+    assert (home / ".config" / "llm-wiki" / "config.json").is_file()
+
+
+def test_invalid_settings_are_a_422_and_change_nothing(local: TestClient, rebuilt: list[WikiConfig]) -> None:
+    response = local.post("/settings", json={"provider": "custom"})
+
+    assert response.status_code == 422
+    assert "needs a base_url and a model" in response.json()["detail"]
+    assert rebuilt == []
+
+
+def test_the_settings_test_asks_the_model_without_saving(local: TestClient, llm: FakeLLM, home: Path) -> None:
+    llm.add("settings/probe", "OK")
+
+    body = local.post("/settings/test", json={"provider": "ollama", "model": "qwen2.5"}).json()
+
+    assert body == {"ok": True, "model": "qwen2.5", "reply": "OK"}
+    assert not (home / ".config" / "llm-wiki").exists()
+
+
+def test_a_failed_settings_test_reports_the_provider_error(local: TestClient, llm: FakeLLM, monkeypatch: pytest.MonkeyPatch) -> None:
+    def chat(*_: Any, **__: Any) -> str:
+        raise ModelError("llm 401 from https://openrouter.ai/api/v1/chat/completions: invalid key")
+
+    monkeypatch.setattr(llm, "chat", chat)
+
+    body = local.post("/settings/test", json={"api_key": "wrong"}).json()
+
+    assert body["ok"] is False and body["error"].endswith("invalid key")
+
+
+@pytest.mark.parametrize(
+    ("client", "headers"),
+    [
+        ({"client": ("192.168.1.20", 50000), "base_url": "http://localhost:8000"}, {}),  # another machine
+        (LOCAL, {"origin": "https://evil.test"}),  # a web page the user visits, posting cross-site
+        ({"client": ("127.0.0.1", 50000), "base_url": "http://evil.test:8000"}, {"origin": "http://evil.test:8000"}),  # DNS rebinding
+    ],
+    ids=["remote", "cross-origin", "rebinding"],
+)
+def test_settings_change_only_from_this_machine(
+    classic_wiki: Wiki, client: dict[str, Any], headers: dict[str, str], home: Path
+) -> None:
+    app = TestClient(create_app(classic_wiki, settings=Settings({})), **client)
+
+    assert app.post("/settings", json={"api_key": KEY}, headers=headers).status_code == 403
+    assert app.post("/settings/test", json={"base_url": "http://evil.test/v1"}, headers=headers).status_code == 403
+    assert app.get("/settings", headers=headers).json()["editable"] is False
+    assert not (home / ".config" / "llm-wiki").exists()
+
+
+def test_the_same_origin_page_may_change_settings(local: TestClient) -> None:
+    assert local.post("/settings", json={"api_key": KEY}, headers={"origin": "http://localhost:8000"}).status_code == 200
+
+
+def test_without_settings_the_endpoints_are_absent(client: TestClient) -> None:
+    assert client.get("/settings").status_code == 404
+    assert client.post("/settings", json={}).status_code == 404
+
+
+def test_the_page_and_its_modules_load_nothing_from_a_cdn(client: TestClient) -> None:
+    page = client.get("/").text
+    local = re.findall(r'(?:src|href)="(/web/[^"]+)"', page)
+    modules = [f"/web/{m}" for src in local if src.endswith(".js") for m in re.findall(r'from "\./([\w-]+\.js)"', client.get(src).text)]
+
+    assert len(local) == 4 and len(modules) >= 3
+    for src in local + modules:
+        response = client.get(src)
+        assert response.status_code == 200, src
+        assert "cdn." not in response.text, src
+
+
+# -- guards --------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [("post", "/ingest", {"json": {"text": "x"}}), ("post", "/ask", {"json": {"question": "x"}}),
+     ("post", "/upload?filename=a.txt", {"content": b"x"})],
+)
+def test_another_site_cannot_write_or_ask_through_the_browser(
+    client: TestClient, llm: FakeLLM, method: str, path: str, body: dict[str, Any]
+) -> None:
+    response = getattr(client, method)(path, headers={"origin": "https://evil.test"}, **body)
+
+    assert (response.status_code, response.json()["detail"]) == (403, "cross-site request refused")
+    assert llm.calls == []
+
+
+def test_the_page_itself_and_scripts_without_origin_may_write(client: TestClient, llm: FakeLLM) -> None:
+    script_ingest(llm)
+    assert client.post("/ingest", json={"text": "x"}, headers={"origin": "http://testserver"}).status_code == 200
+    # curl or a script sends no Origin: past the guard (415 is the upload's own answer)
+    assert client.post("/upload?filename=a.png", content=b"x").status_code == 415
+
+
+def test_a_local_only_app_refuses_other_host_names(classic_wiki: Wiki) -> None:
+    app = create_app(classic_wiki, local_only=True)
+
+    rebound = TestClient(app, base_url="http://evil.test:8000")  # a hostile domain re-pointed at 127.0.0.1
+    assert rebound.get("/tree").status_code == 403
+    assert rebound.get("/").status_code == 403
+    for name in ("localhost", "127.0.0.1", "[::1]"):
+        assert TestClient(app, base_url=f"http://{name}:8000").get("/tree").status_code == 200, name
+
+
+def test_serve_is_local_only_when_bound_to_localhost(classic_wiki: Wiki, monkeypatch: pytest.MonkeyPatch) -> None:
+    import uvicorn
+
+    from okf_wiki import server
+
+    apps: list[Any] = []
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self: apps.append(self.config.app))
+    for host in ("127.0.0.1", "0.0.0.0"):
+        server.serve(classic_wiki, host=host)
+
+    local, public = (TestClient(app, base_url="http://wiki.lan:8000") for app in apps)
+    assert (local.get("/tree").status_code, public.get("/tree").status_code) == (403, 200)
+
+
+def test_the_page_gets_the_models_of_the_provider_being_chosen(local: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from okf_wiki import server
+
+    asked: list[Any] = []
+    monkeypatch.setattr(server, "live_models", lambda llm: asked.append(llm) or ["gemini-3.8-flash"])
+
+    body = local.post("/settings/models", json={"provider": "gemini", "api_key": "g-key-0123456789"}).json()
+
+    assert body == {"models": ["gemini-3.8-flash"]}
+    assert (asked[0].provider, asked[0].api_key) == ("gemini", "g-key-0123456789")
+
+
+def test_only_this_machine_may_ask_for_models_with_the_saved_key(classic_wiki: Wiki) -> None:
+    remote = TestClient(create_app(classic_wiki, settings=Settings({})), client=("192.168.1.20", 50000))
+    assert remote.post("/settings/models", json={"provider": "custom", "base_url": "http://evil.test/v1"}).status_code == 403

@@ -1,0 +1,220 @@
+// Copyright 2026 Federico Cesarini, Marco Sassarini. Licensed under the Apache License, Version 2.0.
+// The page: sidebar tree, notes, questions, filing by drop/pick/paste, and routing.
+
+import { $, api, esc, fmt, md, post } from "./util.js";
+import { leaveGraph, showGraph } from "./graph.js";
+import { loadSettings, showSettings } from "./settings.js";
+
+const open = new Set(JSON.parse(localStorage.getItem("okf-open") || "[]"));
+let tree = null, current = "";
+
+
+// -- sidebar -----------------------------------------------------------------
+async function loadTree() {
+  tree = await api("/tree");
+  $("#tree").replaceChildren(renderFolder(tree, true));
+  highlight();
+}
+function renderFolder(f, isRoot) {
+  const box = document.createElement("div");
+  const kids = document.createElement("div");
+  kids.className = "kids";
+  for (const sub of f.subfolders) kids.append(renderFolder(sub, false));
+  for (const n of f.notes) {
+    const b = document.createElement("button");
+    b.className = "note-link"; b.textContent = n.title; b.title = n.summary; b.dataset.path = n.path;
+    b.onclick = () => (location.hash = "#/note/" + n.path);
+    kids.append(b);
+  }
+  if (isRoot) {
+    if (!f.subfolders.length && !f.notes.length) kids.innerHTML = '<div class="empty">Empty — drop a file to start.</div>';
+    kids.style.display = "block"; kids.style.border = "0"; kids.style.marginLeft = "0";
+    return kids;
+  }
+  box.className = "folder" + (open.has(f.path) ? " open" : "");
+  const row = document.createElement("button");
+  row.className = "row";
+  row.innerHTML = `<span class="tri">▶</span><span></span><span class="count">${countNotes(f)}</span>`;
+  row.children[1].textContent = f.path.split("/").pop();
+  row.onclick = () => {
+    box.classList.toggle("open");
+    box.classList.contains("open") ? open.add(f.path) : open.delete(f.path);
+    localStorage.setItem("okf-open", JSON.stringify([...open]));
+  };
+  box.append(row);
+  if (f.description) { const d = document.createElement("div"); d.className = "desc"; d.textContent = f.description; box.append(d); }
+  box.append(kids);
+  return box;
+}
+const countNotes = (f) => f.notes.length + f.subfolders.reduce((s, x) => s + countNotes(x), 0);
+const countFolders = (f) => f.subfolders.length + f.subfolders.reduce((s, x) => s + countFolders(x), 0);
+function highlight() {
+  document.querySelectorAll(".note-link").forEach((b) => b.classList.toggle("active", b.dataset.path === current));
+}
+function reveal(path) { // open every folder above a note
+  const parts = path.split("/").slice(0, -1);
+  parts.forEach((_, i) => open.add("/" + parts.slice(0, i + 1).join("/")));
+  localStorage.setItem("okf-open", JSON.stringify([...open]));
+}
+
+async function loadUsage() {
+  const u = await api("/usage");
+  const total = Math.max(u.llm.total_tokens, u.classifier.total_tokens, 1);
+  for (const [k, l] of [["llm", u.llm], ["clf", u.classifier]]) {
+    $("#bar-" + k).style.width = (100 * l.total_tokens / total) + "%";
+    $("#num-" + k).innerHTML = `<em>${fmt(l.total_tokens)}</em> · ${l.calls} calls · ${fmt(l.input_tokens)} in / ${fmt(l.output_tokens)} out`;
+  }
+}
+
+// -- views -------------------------------------------------------------------
+function show(html) { $("#view").className = ""; $("#view").innerHTML = `<article>${html}</article>`; $("#view").scrollTop = 0; }
+
+function home() {
+  current = ""; highlight();
+  show(`<div class="home">
+    <h2>The librarian is in.</h2>
+    <p>Drop documents anywhere on this page: each is read, filed in the right folder — or a new one — merged with what the wiki already knows, and linked to related notes.</p>
+    <div class="stats"><div><b>${countNotes(tree)}</b>notes</div><div><b>${countFolders(tree)}</b>folders</div></div>
+    <label class="dropzone" for="files"><strong>Drop .txt, .md or .pdf files</strong><span>or click to choose · text PDFs only (no OCR)</span></label>
+  </div>`);
+}
+
+async function showNote(path) {
+  current = path; reveal(path); await loadTree();
+  show(`<span class="spin"></span>`);
+  try {
+    const n = await api("/note?path=" + encodeURIComponent(path));
+    const fm = n.frontmatter, gen = fm.generated || {};
+    const sources = (fm.sources || []).map((s) =>
+      `<div>[${esc(s.id)}] <a href="#/note/${esc(String(s.resource || "").replace(/^\//, ""))}">${esc(s.title || s.resource)}</a></div>`).join("");
+    const kind = fm.type === "Source" ? "raw source · " : "";
+    show(`<div class="crumbs">${kind}/${esc(n.path)}</div>
+      <h2 class="title">${esc(n.title)}</h2>
+      ${n.summary ? `<p class="lead">${esc(n.summary)}</p>` : ""}
+      <div class="meta">${n.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}
+        ${gen.at ? `<span>updated ${esc(String(gen.at).slice(0, 10))}</span>` : ""}
+        ${gen.by ? `<span>by ${esc(gen.by)}</span>` : ""}
+        ${fm.resource ? `<span>from <a href="${esc(fm.resource)}" target="_blank" rel="noopener">${esc(fm.resource)}</a></span>` : ""}</div>
+      <div class="md" id="body">${md(n.body)}</div>
+      ${sources ? `<div class="sources"><div class="label" style="padding:0">Sources</div>${sources}</div>` : ""}`);
+    wireLinks($("#body"), n.path);
+  } catch (e) { show(`<p class="lead">${esc(e.message)}</p>`); }
+}
+
+function wireLinks(el, notePath) { // relative .md links open inside the UI
+  const dir = notePath.split("/").slice(0, -1);
+  el.querySelectorAll("a[href]").forEach((a) => {
+    const href = a.getAttribute("href");
+    if (/^[a-z]+:/i.test(href)) { a.target = "_blank"; a.rel = "noopener"; return; }
+    if (!href.endsWith(".md")) return;
+    const parts = href.startsWith("/") ? [] : [...dir];
+    for (const p of href.replace(/^\//, "").split("/")) p === ".." ? parts.pop() : p !== "." && parts.push(p);
+    a.href = "#/note/" + parts.join("/");
+  });
+}
+
+async function ask(question) {
+  current = ""; highlight();
+  history.pushState(null, "", "#/ask"); // leaving the note, so clicking it again reopens it
+  show(`<div class="crumbs">question</div><div class="question">${esc(question)}</div><span class="spin"></span> <span class="crumbs">the researcher is reading…</span>`);
+  try {
+    const a = await post("/ask", { question });
+    const label = (p) => { const s = p.split("/").pop().replace(/\.md$/, ""); return s.length > 32 ? s.slice(0, 31) + "…" : s; };
+    const text = a.text.replace(/\[([^\[\]\s]+\.md)\]/g, (_, p) => `[${label(p)}](#/note/${p} "${p}")`);
+    const u = a.usage;
+    show(`<div class="crumbs">question</div><div class="question">${esc(question)}</div>
+      <div class="md" id="answer">${md(text)}</div>
+      <div class="read">${a.notes.length ? "read: " + a.notes.map((p) => `<a href="#/note/${esc(p)}">${esc(p)}</a>`).join(" · ") : "no notes read"}<br>
+      <span style="color:var(--llm)">llm ${u.llm.calls} calls · ${fmt(u.llm.total_tokens)} tokens</span> ·
+      <span style="color:var(--clf)">classifier ${u.classifier.calls} calls · ${fmt(u.classifier.total_tokens)} tokens</span></div>`);
+    $("#answer").querySelectorAll('a[href^="#/note/"]').forEach((a) => a.classList.add("cite"));
+  } catch (e) { show(`<div class="question">${esc(question)}</div><p class="lead">${esc(e.message)}</p>`); }
+  loadUsage();
+}
+
+function route() {
+  const h = decodeURIComponent(location.hash);
+  if (h !== "#/graph") leaveGraph();
+  if (h.startsWith("#/note/")) showNote(h.slice(7));
+  else if (h === "#/graph") { current = ""; highlight(); showGraph(() => loadTree().then(loadUsage)); }
+  else if (h === "#/settings") { current = ""; highlight(); showSettings(saved); }
+  else if (h !== "#/ask") home();
+}
+
+// -- filing: drop, pick, paste ------------------------------------------------
+const jobs = [];
+let running = false;
+function enqueue(label, send) {
+  const el = document.createElement("div");
+  el.className = "job"; el.innerHTML = `<div class="name"></div><div class="what"><span class="spin"></span> waiting…</div>`;
+  el.querySelector(".name").textContent = label;
+  $("#queue").append(el);
+  jobs.push({ el, send });
+  if (!running) drain();
+}
+async function drain() {
+  running = true;
+  while (jobs.length) {
+    const { el, send } = jobs.shift();
+    el.querySelector(".what").innerHTML = `<span class="spin"></span> the librarian is filing it…`;
+    try {
+      const r = await send();
+      const where = r.action === "merged" ? "merged into" : "filed as";
+      const made = r.created_folders.length ? ` · new folder ${esc(r.created_folders.join(", "))}` : "";
+      el.classList.add("ok");
+      el.querySelector(".what").innerHTML = `${where} <a href="#/note/${esc(r.note)}">${esc(r.title)}</a>${made}`;
+      await loadTree(); loadUsage();
+      if (!location.hash) home();
+    } catch (e) {
+      el.classList.add("err"); el.querySelector(".what").textContent = e.message;
+    }
+    setTimeout(() => el.remove(), 12000);
+  }
+  running = false;
+}
+const upload = (file) => enqueue(file.name, () =>
+  api("/upload?filename=" + encodeURIComponent(file.name), { method: "POST", body: file }));
+
+let depth = 0;
+addEventListener("dragenter", (e) => { if (e.dataTransfer.types.includes("Files")) { depth++; $("#overlay").classList.add("on"); } });
+addEventListener("dragleave", () => { if (--depth <= 0) { depth = 0; $("#overlay").classList.remove("on"); } });
+addEventListener("dragover", (e) => e.preventDefault());
+addEventListener("drop", (e) => {
+  e.preventDefault(); depth = 0; $("#overlay").classList.remove("on");
+  [...e.dataTransfer.files].forEach(upload);
+});
+$("#pick").onclick = () => $("#files").click();
+$("#files").onchange = (e) => { [...e.target.files].forEach(upload); e.target.value = ""; };
+$("#add").onclick = () => $("#dlg").showModal();
+$("#brain").onclick = () => (location.hash = "#/graph");
+$("#dlg").onclose = () => {
+  if ($("#dlg").returnValue !== "ok") return;
+  const text = $("#txt").value, title = $("#t").value || null;
+  enqueue(title || text.slice(0, 40) + "…", () =>
+    post("/ingest", { text, title }));
+  $("#txt").value = ""; $("#t").value = "";
+};
+$("#ask").onsubmit = (e) => { e.preventDefault(); const q = $("#q").value.trim(); if (q) ask(q); };
+
+$("#gear").onclick = () => (location.hash = "#/settings");
+
+// -- start -------------------------------------------------------------------
+async function loadModels() {
+  const h = await api("/health");
+  $("#models").innerHTML = `<span class="mode">${esc(h.mode)}</span><br>llm · ${esc(h.llm)}` +
+    (h.classifier ? `<br>classifier · ${esc(h.classifier)}` : "");
+}
+
+async function saved(settings) { // the server rebuilt the wiki: show its models and (maybe new) folder
+  await loadModels(); await loadTree(); loadUsage();
+  if (settings.ready) setTimeout(() => { if (location.hash === "#/settings") location.hash = ""; }, 800);
+}
+
+(async () => {
+  const [settings] = await Promise.all([loadSettings(), loadModels()]);
+  $("#gear").hidden = !settings;
+  await loadTree(); loadUsage();
+  if (settings && !settings.ready && settings.editable) history.replaceState(null, "", "#/settings"); // first run: ask for a key
+  route();
+  addEventListener("hashchange", route);
+})();

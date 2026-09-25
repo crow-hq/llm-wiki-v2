@@ -1,5 +1,5 @@
 # Allowlist: the image only needs the package and its notices. Everything else
-# (.venv, .git, .kilo, .env, wiki/, tests/, docker/bifrost db files) stays out.
+# (.venv, .git, .kilo, .env, wiki/, tests/) stays out.
 *
 !pyproject.toml
 !README.md

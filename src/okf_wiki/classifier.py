@@ -1,4 +1,4 @@
-# Copyright 2026 Federico Cesarini
+# Copyright 2026 Federico Cesarini, Marco Sassarini
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@
 A request carries one *state* and several named *questions*; all are answered in
 parallel with probabilities, and no text is generated. Two primitives are used:
 *choice* (one option among up to 255, with a confidence) and *noul* (probability
-that a yes/no statement holds). OpenRouter, TypeSafe, Bifrost's `typesafe`
-provider and local Laya servers all accept the same request.
+that a yes/no statement holds). OpenRouter, TypeSafe and local Laya servers all
+accept the same request.
 """
 
 from __future__ import annotations

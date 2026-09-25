@@ -1,4 +1,4 @@
-# Copyright 2026 Federico Cesarini
+# Copyright 2026 Federico Cesarini, Marco Sassarini
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,31 +12,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""`okf-wiki` command line: init, ingest, ask, check, serve, bench.
+"""`okf-wiki` command line: setup, init, ingest, ask, check, serve.
 
-Configuration comes from `OKF_*` environment variables (and a `.env` file in the
-current folder, the one Docker uses); `--bundle` and `--mode` override them.
+`okf-wiki` alone serves the wiki and opens it in the browser, where the settings
+page asks for what is missing; `okf-wiki setup` asks the same in the terminal.
+Configuration: the settings file (see `settings.py`), under `OKF_*` environment
+variables (and a `.env` file in the current folder), under `--bundle` and `--mode`.
 A one-line token summary goes to stderr.
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from okf_wiki import bench
 from okf_wiki.client import ModelError
-from okf_wiki.config import WikiConfig
+from okf_wiki.config import PROVIDERS, WikiConfig
 from okf_wiki.files import extract_text
+from okf_wiki.settings import Settings, mask, probe, ready
 from okf_wiki.wiki import Wiki
 
-# Tests replace these to inject fake models.
-make_wiki: Callable[..., Wiki] = Wiki.from_env
-make_bench_wiki: Callable[[WikiConfig], Wiki] = Wiki
+
+def settings_wiki(*, bundle: Path | None = None, mode: str | None = None) -> Wiki:
+    return Wiki(Settings(bundle=bundle, mode=mode).config())
+
+
+# Tests replace these to inject fake models or answers.
+make_wiki: Callable[..., Wiki] = settings_wiki
+build_wiki: Callable[[WikiConfig], Wiki] = Wiki  # after a settings change: the server and `setup`
+prompt: Callable[[str], str] = input
+secret: Callable[[str], str] = getpass.getpass
 
 
 def load_dotenv(path: Path = Path(".env")) -> None:
@@ -55,8 +65,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="okf-wiki", description="LLM wiki on the Open Knowledge Format")
     parser.add_argument("--bundle", type=Path, help="wiki folder (env OKF_BUNDLE)")
     parser.add_argument("--mode", choices=["classic", "crow"], help="decider (env OKF_MODE)")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", help="with none: serve and open the browser")
 
+    sub.add_parser("setup", help="choose the model provider, key and model, and test them")
     sub.add_parser("init", help="create an empty wiki")
     ingest = sub.add_parser("ingest", help="file a source: a .txt/.md/.pdf path, or - for stdin")
     ingest.add_argument("source")
@@ -70,51 +81,17 @@ def main(argv: list[str] | None = None) -> int:
     serve = sub.add_parser("serve", help="run the HTTP API (needs the [server] extra)")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
-    b = sub.add_parser("bench", help="catalogue the same .md files into a classic and a CROW wiki and compare")
-    b.add_argument("--data", default="bench-data", help="folder searched recursively for .md files (default bench-data)")
-    b.add_argument("--limit", type=int, help="catalogue at most N files (default: all)")
-    b.add_argument("--out", help="output folder (default bench-runs/<timestamp>)")
-    b.add_argument("--modes", default="classic,crow", help="comma-separated modes to compare")
-    b.add_argument("--seed", type=int, help="shuffle seed for the file order (default: a random one, saved in run.json)")
-    b.add_argument("--no-pdf", action="store_true", help="skip report.pdf (written by default when the pdf extra is installed)")
-    b.add_argument("--llm-price", help="LLM USD per million tokens 'IN,OUT' (default: OpenRouter list price)")
-    b.add_argument("--classifier-price", help="classifier USD per million tokens 'IN,OUT' (default: Jev 0.042,0)")
-    again = b.add_mutually_exclusive_group()
-    again.add_argument("--resume", metavar="RUN", help="continue a stopped run folder (its saved settings are reused)")
-    again.add_argument("--report", metavar="RUN", help="rebuild the report of a run folder from its saved data, no model calls")
-
-    r = sub.add_parser("bench-retrieval", help="ask questions of growing cuts of a benchmark's wikis, classic vs CROW")
-    start = r.add_mutually_exclusive_group(required=True)
-    start.add_argument("--from", dest="source", metavar="RUN", help="an ingestion benchmark folder (its wikis are copied, not touched)")
-    start.add_argument("--resume", metavar="RUN", help="continue a stopped retrieval run")
-    start.add_argument("--report", metavar="RUN", help="rebuild the report of a retrieval run, no model calls")
-    start.add_argument("--like", metavar="RUN", help="same snapshot, sizes and questions as an earlier retrieval run, current settings")
-    r.add_argument("--cuts", type=int, default=6, help="how many wiki sizes to test (default 6)")
-    r.add_argument("--questions", type=int, default=20, help="how many questions to write (default 20)")
-    r.add_argument("--workers", type=int, default=4, help="questions asked at the same time (default 4)")
-    r.add_argument("--seed", type=int, help="seed for choosing the documents questions are written from")
-    r.add_argument("--out", help="output folder (default bench-runs/retrieval-<timestamp>)")
-    r.add_argument("--no-pdf", action="store_true", help="skip report.pdf")
+    serve.add_argument("--open", action="store_true", help="open the wiki in the browser")
 
     args = parser.parse_args(argv)
-    if args.command in ("bench", "bench-retrieval"):  # progress lines reach a log file as they are printed
-        sys.stdout.reconfigure(line_buffering=True)  # type: ignore[union-attr]
-    if args.command == "bench-retrieval":
-        from okf_wiki import bench_retrieval
-
+    if args.command is None:
+        args = parser.parse_args([*(sys.argv[1:] if argv is None else argv), "serve", "--open"])
+    if args.command == "setup":
         try:
-            cfg = WikiConfig.from_env(bundle=Path(args.out or "bench-runs"))
-        except Exception as e:
-            print(f"okf-wiki: {e}", file=sys.stderr)
+            return setup(Settings(bundle=args.bundle, mode=args.mode))
+        except (ValueError, EOFError, KeyboardInterrupt) as e:
+            print(f"\nokf-wiki: {str(e) or 'setup cancelled'}", file=sys.stderr)
             return 2
-        return bench_retrieval.main(args, cfg, make_wiki=make_bench_wiki)
-    if args.command == "bench":
-        try:
-            cfg = WikiConfig.from_env(bundle=Path(args.out or "bench-runs"))
-        except Exception as e:
-            print(f"okf-wiki: {e}", file=sys.stderr)
-            return 2
-        return bench.main(args, cfg, make_wiki=make_bench_wiki)
     try:
         wiki = make_wiki(bundle=args.bundle, mode=args.mode)
     except Exception as e:  # e.g. no bundle configured
@@ -123,8 +100,52 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return _run(wiki, args)
     except (ModelError, ValueError, OSError) as e:  # model down, empty input, missing file
-        print(f"okf-wiki: {e}", file=sys.stderr)
+        hint = "" if not isinstance(e, ModelError) or ready(wiki.cfg) else " (no API key yet: run okf-wiki setup)"
+        print(f"okf-wiki: {e}{hint}", file=sys.stderr)
         return 2
+
+
+def setup(settings: Settings) -> int:
+    """Ask for provider, key and model, test them with one request, save them."""
+    view = settings.view()
+    now, managed = view["values"], set(view["managed"])
+    print(f"Settings file: {settings.path}")
+    changes: dict[str, str] = {}
+
+    def ask(field: str, question: str, default: str) -> str:
+        if field in managed:
+            print(f"{question}: {default} (set by the environment or a flag)")
+            return default
+        return prompt(f"{question} [{default}]: ").strip() or default
+
+    provider = ask("provider", f"Provider ({', '.join(PROVIDERS)})", now["provider"])
+    while provider not in PROVIDERS:
+        provider = prompt(f"Provider: choose one of {', '.join(PROVIDERS)}: ").strip()
+    changes["provider"] = provider
+    preset = PROVIDERS[provider]
+    if provider == "custom":
+        changes["base_url"] = ask("base_url", "Base URL (OpenAI-compatible, ending in /v1)", now["base_url"] or "http://localhost:8000/v1")
+    else:
+        changes["base_url"] = ""
+    if (preset.key_env or provider == "custom") and "api_key" not in managed:
+        kept = f"Enter keeps {now['api_key']}" if now["api_key"] else "Enter for none"
+        changes["api_key"] = secret(f"API key ({kept}): ").strip()
+    same = provider == now["provider"]
+    changes["model"] = ask("model", "Model" + (f" (e.g. {', '.join(preset.models)})" if preset.models else ""),
+                           now["model"] if same else next(iter(preset.models), ""))
+
+    _, cfg = settings.apply(changes)
+    print(f"Testing {cfg.llm.model} at {cfg.llm.base_url} … ", end="", flush=True)
+    try:
+        probe(build_wiki(cfg).llm)
+        print("OK")
+    except ModelError as e:
+        print(f"failed: {e}")
+        if prompt("Save anyway? [y/N]: ").strip().lower() != "y":
+            return 1
+    settings.save(changes)
+    print(f"Saved (API key {mask(cfg.llm.api_key) or 'none'}). Start the wiki with: okf-wiki")
+    return 0
 
 
 def _run(wiki: Wiki, args: argparse.Namespace) -> int:
@@ -157,7 +178,8 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
     elif args.command == "serve":
         from okf_wiki.server import serve
 
-        serve(wiki, host=args.host, port=args.port)
+        serve(wiki, host=args.host, port=args.port, settings=Settings(bundle=args.bundle, mode=args.mode),
+              make_wiki=build_wiki, open_browser=args.open)
 
     if args.command in ("ingest", "ask"):
         print(wiki.usage.summary(), file=sys.stderr)

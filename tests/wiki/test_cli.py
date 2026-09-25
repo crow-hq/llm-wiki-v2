@@ -1,4 +1,4 @@
-# Copyright 2026 Federico Cesarini
+# Copyright 2026 Federico Cesarini, Marco Sassarini
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import io
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,6 +25,7 @@ from typing import Any
 import pytest
 
 from okf_wiki import Wiki, WikiConfig, cli
+from okf_wiki.client import ModelError
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 from tests.wiki.test_files import make_pdf
 
@@ -205,16 +205,100 @@ def test_make_wiki_failure_exits_2_with_the_message(
     assert capsys.readouterr() == ("", "okf-wiki: no bundle configured\n")
 
 
-def test_missing_bundle_exits_2_with_the_real_config(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_without_a_bundle_the_wiki_lives_in_the_home_folder(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["init"]) == 0  # make_wiki is the real one here: settings file, environment, flags
+
+    assert (home / "llm-wiki" / "index.md").is_file()
+    assert capsys.readouterr().out == f"wiki ready at {home / 'llm-wiki'}\n"
+
+
+def test_a_broken_settings_file_exits_2_with_its_path(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    config = home / ".config" / "llm-wiki" / "config.json"
+    config.parent.mkdir(parents=True)
+    config.write_text("{not json", encoding="utf-8")
+
+    assert cli.main(["init"]) == 2
+    assert capsys.readouterr().err.startswith(f"okf-wiki: {config} is not valid JSON")
+
+
+def unreachable(llm: FakeLLM, monkeypatch: pytest.MonkeyPatch) -> None:
+    def chat(*_: Any, **__: Any) -> str:
+        raise ModelError("llm 401 from https://openrouter.ai/api/v1/chat/completions")
+
+    monkeypatch.setattr(llm, "chat", chat)
+
+
+def test_a_model_error_without_a_key_points_to_setup(
+    made: list[dict[str, Any]], bundle: Path, llm: FakeLLM, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    for key in [k for k in os.environ if k.startswith("OKF_")]:
-        monkeypatch.delenv(key)
+    ingest_one(bundle, llm)
+    unreachable(llm, monkeypatch)
+    capsys.readouterr()
 
-    assert cli.main(["init"]) == 2  # make_wiki is the real Wiki.from_env here
+    assert run(bundle, "ask", "anything?") == 2
 
-    err = capsys.readouterr().err
-    assert err.startswith("okf-wiki: ") and "bundle" in err
+    assert capsys.readouterr().err.endswith("(no API key yet: run okf-wiki setup)\n")
+
+
+def test_no_command_serves_and_opens_the_browser(
+    made: list[dict[str, Any]], bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from okf_wiki import server
+
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(server, "serve", lambda wiki, **kw: seen.update(kw, bundle=wiki.cfg.bundle))
+
+    assert cli.main(["--bundle", str(bundle)]) == 0
+
+    assert (seen["bundle"], seen["open_browser"], seen["host"], seen["port"]) == (bundle, True, "127.0.0.1", 8000)
+    assert seen["settings"].flags == {"bundle": bundle}
+
+
+def answers(monkeypatch: pytest.MonkeyPatch, *replies: str, key: str = "") -> list[str]:
+    """Script `setup`: the replies to its questions in order, and the key typed at the hidden prompt."""
+    queue, asked = list(replies), []
+
+    def prompt(question: str) -> str:
+        asked.append(question)
+        return queue.pop(0)
+
+    monkeypatch.setattr(cli, "prompt", prompt)
+    monkeypatch.setattr(cli, "secret", lambda question: asked.append(question) or key)
+    return asked
+
+
+def saved_settings(home: Path) -> dict[str, Any]:
+    return json.loads((home / ".config" / "llm-wiki" / "config.json").read_text(encoding="utf-8"))
+
+
+def test_setup_tests_the_model_then_saves(
+    monkeypatch: pytest.MonkeyPatch, home: Path, llm: FakeLLM, capsys: pytest.CaptureFixture[str]
+) -> None:
+    llm.add("settings/probe", "OK")
+    built: list[WikiConfig] = []
+    monkeypatch.setattr(cli, "build_wiki", lambda cfg: built.append(cfg) or Wiki(cfg, llm=llm))
+    asked = answers(monkeypatch, "gemini", "", key="g-key-0123456789")
+
+    assert cli.main(["setup"]) == 0
+
+    assert asked[0] == "Provider (openrouter, openai, gemini, ollama, custom) [openrouter]: "
+    assert asked[2] == "Model (e.g. gemini-3.8-flash, gemini-3.5-flash, gemini-3.5-flash-lite) [gemini-3.8-flash]: "
+    assert (built[0].llm.provider, built[0].llm.api_key) == ("gemini", "g-key-0123456789")
+    assert saved_settings(home) == {"llm": {"provider": "gemini", "api_key": "g-key-0123456789", "model": "gemini-3.8-flash"}}
+    assert "OK\nSaved (API key …6789)" in capsys.readouterr().out
+
+
+def test_setup_asks_before_saving_settings_that_failed_the_test(
+    monkeypatch: pytest.MonkeyPatch, home: Path, llm: FakeLLM, capsys: pytest.CaptureFixture[str]
+) -> None:
+    unreachable(llm, monkeypatch)
+    monkeypatch.setattr(cli, "build_wiki", lambda cfg: Wiki(cfg, llm=llm))
+    answers(monkeypatch, "ollama", "", "n")
+
+    assert cli.main(["setup"]) == 1
+
+    assert not (home / ".config" / "llm-wiki" / "config.json").exists()
+    assert "failed: " in capsys.readouterr().out
 
 
 def test_ingest_of_empty_stdin_exits_non_zero_with_a_message(
