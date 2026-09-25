@@ -384,3 +384,35 @@ def test_load_dotenv_reads_values_without_overriding(tmp_path: Path, monkeypatch
     assert os.environ["OKF_T_SET"] == "shell"
     for key in ("OKF_T_ONE", "OKF_T_TWO", "OKF_T_JSON"):
         monkeypatch.delenv(key)
+
+
+def test_the_packaged_demo_is_a_valid_wiki() -> None:
+    from importlib import resources
+
+    from okf_wiki.check import check
+    from okf_wiki.store import WikiStore
+
+    with resources.as_file(resources.files("okf_wiki") / "demo") as demo:
+        root = WikiStore(demo, actor="test").load()
+        assert check(demo) == []
+    assert len(root.all_notes()) > 20 and len(root.subfolders) >= 5
+
+
+def test_demo_copies_the_example_once_and_opens_it(
+    made: list[dict[str, Any]], home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from okf_wiki import server
+
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(server, "serve", lambda wiki, **kw: seen.update(kw, bundle=wiki.cfg.bundle))
+    demo = home / "llm-wiki-demo"
+
+    assert cli.main(["demo", "--port", "8123"]) == 0
+
+    assert (seen["bundle"], seen["open_browser"], seen["port"]) == (demo, True, 8123)
+    assert (demo / "products" / "aurora-espresso-blend.md").is_file()
+    assert "copied to ~/llm-wiki-demo" in capsys.readouterr().out
+
+    (demo / "mine.md").write_text("kept", encoding="utf-8")
+    assert cli.main(["demo"]) == 0
+    assert (demo / "mine.md").read_text(encoding="utf-8") == "kept"  # a second run reopens the copy

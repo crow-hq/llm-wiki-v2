@@ -42,7 +42,7 @@ okf-wiki = "okf_wiki.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-okf_wiki = ["prompts/*/*.md", "web/*.html", "web/*.css", "web/*.js", "web/vendor/*.js", "web/vendor/fonts/*", "web/img/*"]
+okf_wiki = ["prompts/*/*.md", "web/*.html", "web/*.css", "web/*.js", "web/vendor/*.js", "web/vendor/fonts/*", "web/img/*", "demo/*.md", "demo/*/*.md", "demo/*/*/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

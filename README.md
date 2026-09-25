@@ -37,6 +37,10 @@ okf-wiki
 Your browser opens. Pick a provider, paste its key, press **Test connection**,
 then **Save and start**. That's it.
 
+**Just looking?** `okf-wiki demo` opens an example wiki, the notes of a fictional coffee
+roastery, with no key needed to browse it and its brain. It is copied to `~/llm-wiki-demo`,
+so you can add to it or delete it.
+
 <p align="center">
   <img src="docs/assets/screenshot-settings.png" alt="The first-run page: pick a provider, paste its key, choose a model" width="90%">
 </p>
@@ -147,6 +151,7 @@ okf-wiki --bundle ./wiki --mode classic ask "What did we decide about pricing?"
 okf-wiki --bundle ./wiki check        # lint: OKF conformance, index drift, broken links
 okf-wiki --bundle ./wiki serve        # the HTTP API and page (needs the [server] extra); plain `okf-wiki` also opens the browser
 okf-wiki setup                        # provider, key and model, tested and saved
+okf-wiki demo                         # an example wiki, copied to ~/llm-wiki-demo and opened
 ```
 
 Everything is a class you can subclass. `Librarian` and `Researcher` share an
@@ -271,6 +276,7 @@ Prompts, one Markdown file each: [docs/wiki/prompts.md](docs/wiki/prompts.md).
 src/okf_wiki/            the LLM wiki: config, settings, usage, llm, classifier, document, store, files, librarian, researcher, wiki, cli, server
 src/okf_wiki/web/        the web UI: plain ES modules, no build step; vendor/ holds marked, DOMPurify, d3 and the fonts
 src/okf_wiki/prompts/    shared/, librarian/, researcher/, classifier/ — one prompt per file
+src/okf_wiki/demo/       the example wiki behind `okf-wiki demo` (a fictional roastery)
 tests/wiki/              tests for every feature, with scripted fake models (no network)
 docs/wiki/               providers, CROW, prompts
 ```

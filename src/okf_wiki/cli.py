@@ -27,15 +27,17 @@ import argparse
 import getpass
 import json
 import os
+import shutil
 import sys
 from collections.abc import Callable
+from importlib import resources
 from pathlib import Path
 
 from okf_wiki.client import ModelError
 from okf_wiki.config import PROVIDERS, WikiConfig
 from okf_wiki.files import extract_text
 from okf_wiki.logo import show_logo
-from okf_wiki.settings import Settings, mask, probe, ready, tilde
+from okf_wiki.settings import Settings, default_bundle, mask, probe, ready, tilde
 from okf_wiki.wiki import Wiki
 
 
@@ -83,6 +85,8 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--open", action="store_true", help="open the wiki in the browser")
+    demo = sub.add_parser("demo", help="open an example wiki (a copy in ~/llm-wiki-demo)")
+    demo.add_argument("--port", type=int, default=8000)
 
     args = parser.parse_args(argv)
     if args.command is None:
@@ -93,6 +97,9 @@ def main(argv: list[str] | None = None) -> int:
         except (ValueError, EOFError, KeyboardInterrupt) as e:
             print(f"\nokf-wiki: {str(e) or 'setup cancelled'}", file=sys.stderr)
             return 2
+    if args.command == "demo":
+        args.bundle = copy_demo(args.bundle or default_bundle().with_name("llm-wiki-demo"))
+        args.command, args.host, args.open = "serve", "127.0.0.1", True
     try:
         wiki = make_wiki(bundle=args.bundle, mode=args.mode)
     except Exception as e:  # e.g. no bundle configured
@@ -104,6 +111,17 @@ def main(argv: list[str] | None = None) -> int:
         hint = "" if not isinstance(e, ModelError) or ready(wiki.cfg) else " (no API key yet: run okf-wiki setup)"
         print(f"okf-wiki: {e}{hint}", file=sys.stderr)
         return 2
+
+
+def copy_demo(to: Path) -> Path:
+    """The example wiki, copied to `to` the first time; later runs reopen that copy with your changes."""
+    if to.exists():
+        print(f"Demo wiki: {tilde(to)} (delete the folder to start it over)")
+    else:
+        with resources.as_file(resources.files("okf_wiki") / "demo") as source:
+            shutil.copytree(source, to)
+        print(f"Demo wiki copied to {tilde(to)}: a fictional coffee roastery to browse and ask about")
+    return to
 
 
 def setup(settings: Settings) -> int:

@@ -6,7 +6,7 @@ import { leaveGraph, showGraph } from "./graph.js";
 import { loadSettings, showSettings } from "./settings.js";
 
 const open = new Set(JSON.parse(localStorage.getItem("okf-open") || "[]"));
-let tree = null, current = "";
+let tree = null, current = "", noModel = false; // noModel: no key yet, so the wiki can be read but not asked
 
 
 // -- sidebar -----------------------------------------------------------------
@@ -79,7 +79,8 @@ function home() {
   current = ""; highlight();
   const notes = countNotes(tree), folders = countFolders(tree);
   const title = notes ? `${notes} note${notes === 1 ? "" : "s"},<br><em>all in their place.</em>` : `An empty wiki,<br><em>ready to grow.</em>`;
-  show(`<div class="hero">
+  const nudge = noModel ? `<div class="notice">No model yet: you can browse the notes and the brain. To ask questions and add notes, <a href="#/settings">choose a model</a>.</div>` : "";
+  show(`${nudge}<div class="hero">
       <div class="words">
         <div class="crumbs">YOUR WIKI</div>
         <h2>${title}</h2>
@@ -232,6 +233,7 @@ async function loadModels() {
 
 async function saved(settings) { // the server rebuilt the wiki: show its models and (maybe new) folder
   await loadModels(); await loadTree(); loadUsage();
+  noModel = !settings.ready;
   if (settings.ready) setTimeout(() => { if (location.hash === "#/settings") location.hash = ""; }, 800);
 }
 
@@ -239,7 +241,8 @@ async function saved(settings) { // the server rebuilt the wiki: show its models
   const [settings] = await Promise.all([loadSettings(), loadModels()]);
   $("#gear").hidden = !settings;
   await loadTree(); loadUsage();
-  if (settings && !settings.ready && settings.editable) history.replaceState(null, "", "#/settings"); // first run: ask for a key
+  noModel = Boolean(settings && !settings.ready);
+  if (noModel && settings.editable && !countNotes(tree) && !location.hash) history.replaceState(null, "", "#/settings"); // first run: ask for a key
   route();
   addEventListener("hashchange", route);
 })();
