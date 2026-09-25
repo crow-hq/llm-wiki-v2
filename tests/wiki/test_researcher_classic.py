@@ -24,7 +24,6 @@ from typing import Any
 import pytest
 
 from okf_wiki import Wiki, WikiConfig
-from okf_wiki.config import CrowConfig
 from okf_wiki.researcher import NO_ANSWER
 from okf_wiki.store import Folder, Note
 from tests.wiki.fakes import LLM_TOKENS, FakeLLM
@@ -111,8 +110,8 @@ def test_max_steps_caps_the_folders_opened(bundle: Path, llm: FakeLLM) -> None:
     assert answer.notes == ["finance/pricing-tiers.md"]
 
 
-def test_k_caps_the_notes_read(bundle: Path, llm: FakeLLM) -> None:
-    wiki = make_wiki(bundle, llm, crow=CrowConfig(k=2))
+def test_max_notes_caps_the_notes_read(bundle: Path, llm: FakeLLM) -> None:
+    wiki = make_wiki(bundle, llm, max_notes=2)
     llm.add(
         NAVIGATE,
         {"open": ["finance", "people"], "select": ["overview.md"]},

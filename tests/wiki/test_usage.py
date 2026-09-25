@@ -125,9 +125,9 @@ def test_log_path_gets_one_json_line_per_call(tmp_path: Path) -> None:
     lines = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
     assert [{k: v for k, v in line.items() if k != "ts"} for line in lines] == [
         {"kind": "llm", "model": "gemini", "op": "librarian/summarize", "input_tokens": 100, "output_tokens": 10,
-         "seconds": 1.235, "cost_usd": 0.002},
+         "seconds": 1.235, "cost_usd": 0.002, "cached_tokens": None},
         {"kind": "classifier", "model": "jev", "op": "route", "input_tokens": None, "output_tokens": None,
-         "seconds": 0.0, "cost_usd": None},
+         "seconds": 0.0, "cost_usd": None, "cached_tokens": None},
     ]
     assert all(line["ts"] for line in lines)
 
@@ -156,7 +156,7 @@ def test_to_dict_includes_total_tokens(tracker: UsageTracker) -> None:
     data = tracker.snapshot().to_dict()
 
     assert data["llm"] == {
-        "calls": 1, "input_tokens": 100, "output_tokens": 10, "missing": 0, "seconds": 0.0, "cost_usd": 0.0, "total_tokens": 110
+        "calls": 1, "input_tokens": 100, "output_tokens": 10, "missing": 0, "seconds": 0.0, "cost_usd": 0.0, "cached_tokens": 0, "total_tokens": 110
     }
     assert data["classifier"]["total_tokens"] == 0
     assert data["classifier"]["missing"] == 1
@@ -183,3 +183,12 @@ def test_by_op_splits_each_ledger_per_step(tracker: UsageTracker) -> None:
 
     assert by_op["llm:librarian/summarize"]["total_tokens"] == 15
     assert (by_op["classifier:route"]["calls"], by_op["classifier:route"]["input_tokens"]) == (2, 10)
+
+
+def test_cached_prompt_tokens_are_counted_per_ledger_and_step(tracker: UsageTracker) -> None:
+    tracker.record("llm", "m", 1000, 10, op="researcher/answer", cached=768)
+    tracker.record("llm", "m", 500, 10, op="researcher/answer")
+
+    report = tracker.snapshot()
+
+    assert report.llm.cached_tokens == 768 and report.by_op["llm:researcher/answer"].cached_tokens == 768

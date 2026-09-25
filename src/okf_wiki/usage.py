@@ -45,9 +45,15 @@ class Usage:
     missing: int = 0  # calls whose response carried no usage block
     seconds: float = 0.0  # time spent waiting for the model
     cost_usd: float = 0.0  # cost the provider reported (OpenRouter does); 0 when it reports none
+    cached_tokens: int = 0  # input tokens the provider served from its prompt cache (billed less)
 
     def add(
-        self, input_tokens: int | None, output_tokens: int | None, seconds: float = 0.0, cost: float | None = None
+        self,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        seconds: float = 0.0,
+        cost: float | None = None,
+        cached: int | None = None,
     ) -> None:
         self.calls += 1
         if input_tokens is None and output_tokens is None:
@@ -56,6 +62,7 @@ class Usage:
         self.output_tokens += output_tokens or 0
         self.seconds += seconds
         self.cost_usd += cost or 0.0
+        self.cached_tokens += cached or 0
 
     @property
     def total_tokens(self) -> int:
@@ -83,10 +90,11 @@ class UsageReport:
         seconds: float = 0.0,
         cost: float | None = None,
         op: str = "",
+        cached: int | None = None,
     ) -> None:
-        getattr(self, kind).add(input_tokens, output_tokens, seconds, cost)
-        self.by_model.setdefault(f"{kind}:{model}", Usage()).add(input_tokens, output_tokens, seconds, cost)
-        self.by_op.setdefault(f"{kind}:{op or '?'}", Usage()).add(input_tokens, output_tokens, seconds, cost)
+        getattr(self, kind).add(input_tokens, output_tokens, seconds, cost, cached)
+        self.by_model.setdefault(f"{kind}:{model}", Usage()).add(input_tokens, output_tokens, seconds, cost, cached)
+        self.by_op.setdefault(f"{kind}:{op or '?'}", Usage()).add(input_tokens, output_tokens, seconds, cost, cached)
 
     def copy(self) -> UsageReport:
         return UsageReport(
@@ -130,15 +138,16 @@ class UsageTracker:
         op: str = "",
         seconds: float = 0.0,
         cost: float | None = None,
+        cached: int | None = None,
     ) -> None:
         if input_tokens is None and output_tokens is None:
             log.warning("%s call %r (%s) returned no usage", kind, op, model)
         else:
             log.info("tokens %-10s %-22s %s in / %s out  %.2fs", kind, op, input_tokens, output_tokens, seconds)
         with self._lock:
-            self._total.add(kind, model, input_tokens, output_tokens, seconds, cost, op)
+            self._total.add(kind, model, input_tokens, output_tokens, seconds, cost, op, cached)
             for span in _open_spans.get():
-                span.add(kind, model, input_tokens, output_tokens, seconds, cost, op)
+                span.add(kind, model, input_tokens, output_tokens, seconds, cost, op, cached)
             if self._log_path:
                 line = {
                     "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -149,6 +158,7 @@ class UsageTracker:
                     "output_tokens": output_tokens,
                     "seconds": round(seconds, 3),
                     "cost_usd": cost,
+                    "cached_tokens": cached,
                 }
                 with self._log_path.open("a", encoding="utf-8") as f:
                     f.write(json.dumps(line) + "\n")

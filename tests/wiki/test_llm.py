@@ -259,3 +259,13 @@ def test_no_extra_body_means_no_passthrough_header() -> None:
     client, requests = serve(completion("ok"))
     LLM(LLMConfig(base_url=BASE_URL, model=MODEL), UsageTracker(), client=client).complete("sys", "user")
     assert "x-bf-passthrough-extra-params" not in requests[0].headers
+
+
+def test_cached_tokens_are_read_from_the_usage_block() -> None:
+    usage = {"prompt_tokens": 900, "completion_tokens": 20, "prompt_tokens_details": {"cached_tokens": 256}}
+    client, _ = serve(completion("ok", usage))
+    tracker = UsageTracker()
+
+    LLM(LLMConfig(base_url=BASE_URL, model=MODEL), tracker, client=client).complete("s", "u")
+
+    assert tracker.snapshot().llm.cached_tokens == 256

@@ -83,7 +83,7 @@ class Researcher(Agent):
 
     def select(self, root: Folder, question: str) -> list[Note]:
         """Classic navigation: open folders level by level, keep the notes that help, stop when enough."""
-        k = self.cfg.crow.k
+        k = self.cfg.max_notes
         frontier, visited, selected = [root], [], []
         while frontier and len(visited) < self.cfg.max_steps and len(selected) < k:
             folder = frontier.pop(0)

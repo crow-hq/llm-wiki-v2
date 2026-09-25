@@ -72,6 +72,7 @@ class LLM(HttpModel):
             op=op,
             seconds=time.perf_counter() - start,
             cost=reported_cost(usage),
+            cached=(usage.get("prompt_tokens_details") or {}).get("cached_tokens"),
         )
         try:
             return data["choices"][0]["message"]["content"] or ""

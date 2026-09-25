@@ -67,7 +67,7 @@ class CrowConfig(BaseModel):
     tau_ret: float = 0.5  # retrieval: note probability to read it
     tau_link: float = 0.6  # extension: relatedness probability for a See-also link
     beam: int = 2  # b: paths kept per uncertain routing step, folders explored per level
-    k: int = 5  # notes passed to the answer
+    k: int = 5  # CROW retrieval: notes passed to the answer
 
 
 class WikiConfig(BaseModel):
@@ -77,6 +77,7 @@ class WikiConfig(BaseModel):
     max_depth: int = 4  # deepest folder level the librarian may reach or create
     max_steps: int = 12  # classic researcher: folders it may open per question
     max_links: int = 5  # See-also links added per ingest
+    max_notes: int = 5  # classic researcher: notes read per question (CROW uses crow.k)
     source_chars: int = 100_000  # longest source text sent to the LLM
     actor: str = f"okf_wiki/{__version__}"  # OKF `generated.by`
     usage_log: Path | None = None  # optional JSONL audit of every model call
@@ -90,7 +91,7 @@ class WikiConfig(BaseModel):
         """Build a config from `OKF_*` variables; keyword overrides win."""
         env = os.environ if env is None else env
         top: dict[str, Any] = {}
-        for key in ("bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "usage_log", "prompts_dir"):
+        for key in ("bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "usage_log", "prompts_dir"):
             if value := env.get(f"OKF_{key.upper()}"):
                 top[key] = value
         llm: dict[str, Any] = {
