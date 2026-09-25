@@ -20,7 +20,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llm-wiki-v2"
 version = "0.2.0"
-description = "LLM wiki on the Open Knowledge Format: librarian, researcher and CROW classifier routing"
+description = "LLM wiki in a Markdown format derived from the Open Knowledge Format: librarian, researcher and CROW classifier routing"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
@@ -33,26 +33,18 @@ dependencies = [
 
 [project.optional-dependencies]
 server = ["fastapi>=0.110", "uvicorn>=0.29"]
-# The original BigQuery reference agent (reference_agent.cli enrich).
-bq = [
-    "google-adk>=2.0",
-    "google-cloud-bigquery>=3.20",
-    "markdownify>=0.11",
-]
 # PDF report of a benchmark (okf-wiki bench --pdf).
 pdf = ["matplotlib>=3.8", "reportlab>=4.0"]
 dev = ["pytest>=7.0", "fastapi>=0.110", "uvicorn>=0.29", "matplotlib>=3.8", "reportlab>=4.0"]
 
 [project.scripts]
 okf-wiki = "okf_wiki.cli:main"
-reference-agent = "reference_agent.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
 okf_wiki = ["prompts/*/*.md", "web/*.html"]
-reference_agent = ["prompts/*.md", "viewer/templates/*.html", "viewer/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

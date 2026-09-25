@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""`Wiki` end to end with scripted models: ingest, ask, tree, check, visualize, usage."""
+"""`Wiki` end to end with scripted models: ingest, ask, tree, graph, check, usage."""
 
 from __future__ import annotations
 
-import json
 import os
-import re
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +27,7 @@ from okf_wiki.classifier import Classifier
 from okf_wiki.config import ClassifierConfig
 from okf_wiki.librarian import CrowLibrarian, IngestResult, Librarian
 from okf_wiki.researcher import CrowResearcher
+from okf_wiki.store import graph
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 REVENUE, PRICING = "finance/revenue-recognition.md", "finance/pricing-tiers.md"
@@ -83,13 +82,6 @@ def ingest_crow(wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> list[In
     llm.add("librarian/merge", draft("Revenue recognition", "When revenue is booked, monthly for subscriptions."))
     third = wiki.ingest("Subscriptions are recognised monthly.")
     return [first, second, third]
-
-
-def bundle_graph(html: str) -> dict[str, Any]:
-    """The graph embedded by the viewer, parsed as tests/test_viewer.py does."""
-    m = re.search(r"window\.BUNDLE\s*=\s*(\{.*?\});", html, re.DOTALL)
-    assert m, "BUNDLE JSON not found in generated HTML"
-    return json.loads(m.group(1))
 
 
 def unused_replies(llm: FakeLLM) -> dict[str, list[Any]]:
@@ -162,27 +154,12 @@ def test_check_is_clean_after_crow_ingests(crow_wiki: Wiki, llm: FakeLLM, classi
     assert crow_wiki.check() == []
 
 
-def test_visualize_draws_see_also_links_as_edges(classic_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
+def test_graph_draws_see_also_links_as_one_edge(classic_wiki: Wiki, llm: FakeLLM) -> None:
     ingest_classic(classic_wiki, llm)
 
-    out = classic_wiki.visualize()
+    see_also = [{link["source"], link["target"]} for link in graph(classic_wiki.tree())["links"] if link["kind"] == "see_also"]
 
-    assert out == bundle / "viz.html"
-    edges = {(e["data"]["source"], e["data"]["target"]) for e in bundle_graph(out.read_text(encoding="utf-8"))["edges"]}
-    assert ("finance/pricing-tiers", "finance/revenue-recognition") in edges
-    assert ("finance/revenue-recognition", "finance/pricing-tiers") in edges
-
-
-def test_visualize_writes_to_the_given_path_and_check_stays_clean(
-    classic_wiki: Wiki, llm: FakeLLM, tmp_path: Path
-) -> None:
-    ingest_classic(classic_wiki, llm)
-
-    out = classic_wiki.visualize(tmp_path / "out" / "graph.html")
-
-    assert out == tmp_path / "out" / "graph.html" and out.is_file()
-    classic_wiki.visualize()  # the default output lands inside the bundle
-    assert classic_wiki.check() == []
+    assert see_also == [{PRICING, REVENUE}]  # linked both ways on disk, drawn once
 
 
 # -- usage -----------------------------------------------------------------------------

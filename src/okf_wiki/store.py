@@ -39,7 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from reference_agent.bundle.document import OKFDocument, OKFDocumentError
+from okf_wiki.document import OKFDocument, OKFDocumentError
 
 log = logging.getLogger(__name__)
 

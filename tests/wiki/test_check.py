@@ -20,7 +20,7 @@ import pytest
 
 from okf_wiki.check import check
 from okf_wiki.store import Folder, Note, WikiStore
-from reference_agent.bundle.document import OKFDocumentError
+from okf_wiki.document import OKFDocumentError
 
 SOURCE = {"resource": "/raw/source.md", "title": "Source"}
 

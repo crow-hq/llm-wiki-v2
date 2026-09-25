@@ -24,7 +24,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from okf_wiki.check import Problem, check
@@ -98,14 +97,6 @@ class Wiki:
 
     def check(self) -> list[Problem]:
         return check(self.cfg.bundle)
-
-    def visualize(self, out: Path | None = None) -> Path:
-        """Write the OKF graph viewer (reference_agent.viewer) for this wiki."""
-        from reference_agent.viewer.generator import generate_visualization
-
-        out = Path(out or self.cfg.bundle / "viz.html")
-        generate_visualization(self.cfg.bundle, out, bundle_name=self.cfg.bundle.resolve().name)
-        return out
 
     @property
     def usage(self) -> UsageReport:

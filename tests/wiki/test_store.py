@@ -33,9 +33,8 @@ from okf_wiki.store import (
     slugify,
     split_see_also,
 )
-from reference_agent.bundle.document import OKFDocument, OKFDocumentError
+from okf_wiki.document import OKFDocument, OKFDocumentError
 
-REPO = Path(__file__).resolve().parents[2]
 ACTOR = "okf_wiki/test"
 NOW = datetime(2026, 9, 24, 12, 0, 0, tzinfo=timezone.utc)
 SOURCE = {"resource": "/raw/source.md", "title": "Source"}
@@ -191,14 +190,24 @@ def test_load_tolerates_an_index_with_malformed_frontmatter(store: WikiStore, bu
     assert store.load().subfolder("finance") is not None
 
 
-def test_store_loads_the_ga4_bundle() -> None:
-    root = WikiStore(REPO / "bundles" / "ga4", actor=ACTOR).load()
-    assert [f.name for f in root.subfolders] == ["datasets", "references", "tables"]
-    assert root.subfolder("datasets").description.startswith("Obfuscated Google Analytics 4 dataset")
+def test_store_loads_a_bundle_written_by_another_okf_producer(bundle: Path) -> None:
+    # Shaped like Google's OKF sample bundles: other section headings, other types, folded YAML.
+    _put(bundle / "index.md", "# Subdirectories\n\n* [datasets](datasets/index.md) - GA4 sample dataset.\n"
+         "* [references](references/index.md) - Audience metrics.\n")
+    _put(bundle / "datasets/index.md", "# Dataset\n\n")
+    _put(bundle / "references/index.md", "# Subdirectories\n\n* [metrics](metrics/index.md) - Metric queries.\n")
+    _put(bundle / "references/metrics/index.md", "# Reference\n\n* [Purchasers](purchasers.md) - Users who bought.\n")
+    _put(bundle / "references/metrics/purchasers.md", "---\ntype: Reference\ntitle: Purchasers\ndescription: Users who\n"
+         "  completed a purchase.\ngenerated:\n  by: reference_agent/gemini\n  at: '2026-07-10T21:16:35+00:00'\n---\n\n# Query\n")
+
+    root = WikiStore(bundle, actor=ACTOR).load()
+
+    assert [f.name for f in root.subfolders] == ["datasets", "references"]
+    assert root.subfolder("datasets").description == "GA4 sample dataset."
     metrics = root.find("references/metrics")
-    assert metrics is not None and metrics.notes
-    assert {n.frontmatter["type"] for n in metrics.notes} == {"Reference"}
-    assert all(n.title and n.summary for n in root.all_notes())
+    assert metrics is not None and metrics.description == "Metric queries."
+    [note] = metrics.notes
+    assert (note.frontmatter["type"], note.title, note.summary) == ("Reference", "Purchasers", "Users who completed a purchase.")
 
 
 # -- folders ------------------------------------------------------------------

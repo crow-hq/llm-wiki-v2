@@ -1,29 +1,26 @@
 llm-wiki-v2
 Copyright 2026 Federico Cesarini
 
-This product is a derivative work of the Open Knowledge Format (OKF) project
-by Google LLC: https://github.com/GoogleCloudPlatform/open-knowledge-format
+This project started as a fork of the Open Knowledge Format (OKF) project by
+Google LLC: https://github.com/GoogleCloudPlatform/open-knowledge-format
 Copyright 2026 Google LLC. Licensed under the Apache License, Version 2.0.
 
-Files carried over from OKF keep their original copyright headers and are
-unchanged unless listed below: SPEC.md, LICENSE.md, src/reference_agent/
-(reference agent and viewer), tests/test_*.py, bundles/, samples/,
-connectors/.
+The OKF specification, reference agent, viewer, sample bundles and their
+tests have been removed. The wiki's on-disk format is derived from OKF v0.2
+(see "The wiki on disk" in README.md); src/okf_wiki/document.py reads and
+writes it and is an independent implementation.
 
-OKF files modified in llm-wiki-v2:
-- README.md: moved to docs/okf-reference-agent.md (links adjusted, install
-  line updated) and replaced by a new README.
-- pyproject.toml: distribution renamed to llm-wiki-v2; the reference agent's
-  Google dependencies moved to the "bq" extra; okf_wiki package added.
+Files carried over from OKF, modified, and keeping their original headers:
+- LICENSE.md: the Apache License 2.0 text, unchanged.
+- pyproject.toml: distribution renamed to llm-wiki-v2, the reference agent
+  and its Google dependencies removed, okf_wiki package added.
 - CONTRIBUTING.md and CODE_OF_CONDUCT.md: contacts and process changed from
   the Google project to this repository.
-- src/reference_agent/viewer/generator.py: log.md (reserved by OKF section 3.1)
-  is no longer drawn as a concept node.
 - .gitignore: entries added.
 
-New in llm-wiki-v2 (Copyright 2026 Federico Cesarini, Apache-2.0):
-src/okf_wiki/, tests/wiki/, docs/wiki/, the Docker stack (Dockerfile,
-docker-compose.yml, docker/), .env.example, NOTICE, CITATION.cff.
+Everything else (Copyright 2026 Federico Cesarini, Apache-2.0): src/okf_wiki/,
+tests/wiki/, docs/wiki/, the Docker stack (Dockerfile, docker-compose.yml,
+docker/), .env.example, NOTICE, CITATION.cff.
 
 The Docker stack runs Bifrost (https://github.com/maximhq/bifrost, Apache-2.0)
 from its published image; no Bifrost source code is included.

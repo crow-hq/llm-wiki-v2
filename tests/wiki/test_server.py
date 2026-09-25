@@ -160,15 +160,6 @@ def test_check_lists_problems_as_strings(client: TestClient, llm: FakeLLM, bundl
     assert client.get("/check").json() == [f"index.md: lists missing {NOTE}"]
 
 
-def test_viz_returns_the_html_graph(client: TestClient, bundle: Path) -> None:
-    response = client.get("/viz")
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/html")
-    assert "window.BUNDLE" in response.text
-    assert (bundle / "viz.html").is_file()
-
-
 def test_concurrent_ingests_both_succeed(client: TestClient, llm: FakeLLM, bundle: Path) -> None:
     # The write lock serialises ingests, so the queued replies are consumed one ingest at a time.
     script_ingest(llm, "Alpha")

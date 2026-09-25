@@ -9,11 +9,11 @@ through the [Bifrost](https://github.com/maximhq/bifrost) gateway (OpenRouter,
 Gemini, Vertex AI, …). An optional **CROW** mode lets a typed classifier take the
 filing decisions while the LLM only writes the text.
 
-> Built on Google's **[Open Knowledge Format (OKF)](https://github.com/GoogleCloudPlatform/open-knowledge-format)**
-> (Copyright 2026 Google LLC, Apache-2.0). The wiki is a standard OKF v0.2
-> bundle ([SPEC.md](SPEC.md)), and the OKF reference agent and viewer are still
-> included. See [NOTICE](NOTICE) for what changed and
-> [docs/okf-reference-agent.md](docs/okf-reference-agent.md) for the original README.
+> The wiki's on-disk format is derived from Google's
+> **[Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)**:
+> every wiki written here is a conformant OKF bundle, with the extra conventions
+> listed in [The wiki on disk](#the-wiki-on-disk). This project started as a fork
+> of OKF and no longer includes its code.
 
 ## Quick start (Docker)
 
@@ -53,7 +53,7 @@ the API docs at http://localhost:8000/docs, and the CLI runs in the same image:
 | `POST /upload?filename=…` (raw file body) | file a `.txt`, `.md` or `.pdf` file |
 | `POST /ask` `{question}` | answer with citations; returns the notes read and token usage |
 | `GET /tree` · `GET /note?path=…` | folder tree · one note (frontmatter and Markdown body) |
-| `GET /check` · `GET /viz` | lint problems · OKF graph viewer |
+| `GET /check` · `GET /graph` | lint problems · the wiki as nodes and links (JSON) |
 | `GET /usage` · `GET /health` | token totals per ledger and model · status |
 
 ## Python library
@@ -85,7 +85,6 @@ okf-wiki --bundle ./wiki init
 okf-wiki --bundle ./wiki ingest meeting.md     # or a .txt / .pdf
 okf-wiki --bundle ./wiki --mode crow ask "What did we decide about pricing?"
 okf-wiki --bundle ./wiki check        # lint: OKF conformance, index drift, broken links
-okf-wiki --bundle ./wiki visualize    # writes wiki/viz.html
 okf-wiki --bundle ./wiki serve        # the HTTP API (needs the [server] extra)
 ```
 
@@ -208,6 +207,18 @@ folder's one-line description sits in its parent's `index.md`, where both people
 and the Librarian read it. Related notes are joined by a `# See also` section
 with relative links. `okf-wiki check` verifies all of this.
 
+**How it relates to OKF v0.2.** A wiki written here is a conformant OKF bundle
+(§11): every note has a YAML frontmatter block with a `type`, and `index.md` and
+`log.md` follow §8 and §9. On top of that it adds its own conventions:
+
+- every folder has an `index.md`, and a folder's description is its entry in the parent's index (OKF: optional indexes);
+- links are relative (OKF recommends bundle-absolute `/…` links), and `check` reports broken ones;
+- `raw/` holds the sources (`type: Source`), `# See also` holds the related notes, and there is one `log.md`, at the root.
+
+It does not use OKF's trust and lifecycle fields (`verified`, `status`,
+`stale_after`), attested computations (§10) or the `references/` convention.
+Wikis are not checked against later OKF versions.
+
 ## Configuration
 
 Set these in `.env` for Docker, or in the environment for the library and CLI.
@@ -231,20 +242,18 @@ Prompts, one Markdown file each: [docs/wiki/prompts.md](docs/wiki/prompts.md).
 ## Project layout
 
 ```
-src/okf_wiki/            the LLM wiki: config, usage, llm, classifier, store, files, librarian, researcher, wiki, cli, server
+src/okf_wiki/            the LLM wiki: config, usage, llm, classifier, document, store, files, librarian, researcher, wiki, cli, server
 src/okf_wiki/web/        the single-page web UI (index.html)
 src/okf_wiki/bench*.py   the ingestion and retrieval benchmarks (okf-wiki bench, okf-wiki bench-retrieval)
 src/okf_wiki/prompts/    shared/, librarian/, researcher/, classifier/ — one prompt per file
 tests/wiki/              tests for every feature, with scripted fake models (no network)
 docs/wiki/               providers, CROW, prompts
-src/reference_agent/     Google's OKF reference agent and viewer (BigQuery → OKF)
-SPEC.md, bundles/        the OKF v0.2 specification and sample bundles, from Google
 ```
 
 ## Development
 
 ```bash
-python3.13 -m venv .venv && .venv/bin/pip install -e ".[dev,bq]"
+python3.13 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest
 ```
 
@@ -252,8 +261,7 @@ python3.13 -m venv .venv && .venv/bin/pip install -e ".[dev,bq]"
 
 - **Open Knowledge Format** by Google LLC —
   [GoogleCloudPlatform/open-knowledge-format](https://github.com/GoogleCloudPlatform/open-knowledge-format),
-  Apache-2.0. This repository is a derivative work; the specification, the
-  reference agent, the viewer and the sample bundles are Google's.
+  Apache-2.0. The wiki format is derived from OKF v0.2; see [NOTICE](NOTICE).
 - **CROW** — F. Cesarini, M. Sassarini, *CROW: Classifier-Routed Organization of
   LLM Wikis*, preprint, 2026, [doi:10.5281/zenodo.22900601](https://doi.org/10.5281/zenodo.22900601).
 - **LLM Wiki** — A. Karpathy, [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), 2026.

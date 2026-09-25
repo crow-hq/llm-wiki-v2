@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: >-
   If you use this software, please cite it as below, together with the
-  Open Knowledge Format by Google LLC on which it is built.
-title: "llm-wiki-v2: an LLM wiki on the Open Knowledge Format, with CROW classifier routing"
+  Open Knowledge Format by Google LLC from which its wiki format is derived.
+title: "llm-wiki-v2: an LLM wiki in an Open Knowledge Format-derived format, with CROW classifier routing"
 type: software
 authors:
   - family-names: Cesarini

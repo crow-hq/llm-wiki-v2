@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""`okf-wiki` command line: init, ingest, ask, check, visualize, serve, bench.
+"""`okf-wiki` command line: init, ingest, ask, check, serve, bench.
 
 Configuration comes from `OKF_*` environment variables (and a `.env` file in the
 current folder, the one Docker uses); `--bundle` and `--mode` override them.
@@ -67,8 +67,6 @@ def main(argv: list[str] | None = None) -> int:
     ask.add_argument("question")
     ask.add_argument("--json", action="store_true", help="print the full answer as JSON")
     sub.add_parser("check", help="lint the wiki (exit 1 on problems)")
-    viz = sub.add_parser("visualize", help="write an HTML graph of the wiki")
-    viz.add_argument("--out", type=Path)
     serve = sub.add_parser("serve", help="run the HTTP API (needs the [server] extra)")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
@@ -156,8 +154,6 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
             print(problem)
         print(f"{len(problems)} problem(s)", file=sys.stderr)
         return 1 if problems else 0
-    elif args.command == "visualize":
-        print(wiki.visualize(args.out))
     elif args.command == "serve":
         from okf_wiki.server import serve
 

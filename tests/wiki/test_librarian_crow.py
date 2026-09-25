@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from reference_agent.bundle.document import OKFDocument
+from okf_wiki.document import OKFDocument
 
 from okf_wiki import Wiki, WikiConfig
 from okf_wiki.agent import Decision

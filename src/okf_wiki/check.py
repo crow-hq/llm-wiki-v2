@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from reference_agent.bundle.document import OKFDocument, OKFDocumentError
+from okf_wiki.document import OKFDocument, OKFDocumentError
 
 from okf_wiki.store import INDEX, LOG, RAW, parse_index, subfolder_of
 

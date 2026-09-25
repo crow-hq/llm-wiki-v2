@@ -26,7 +26,6 @@ from typing import Any
 import pytest
 
 from okf_wiki import Wiki, WikiConfig, cli
-from okf_wiki.store import WikiStore
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 from tests.wiki.test_files import make_pdf
 
@@ -191,18 +190,6 @@ def test_check_exits_1_after_corrupting_a_note(
     out, err = capsys.readouterr()
     assert out == f"{NOTE}: Missing required frontmatter keys: type\n"
     assert err == "1 problem(s)\n"
-
-
-def test_visualize_prints_the_output_path(
-    made: list[dict[str, Any]], bundle: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    WikiStore(bundle, actor="test").init()
-    out = tmp_path / "graph.html"
-
-    assert run(bundle, "visualize", "--out", str(out)) == 0
-
-    assert capsys.readouterr().out == f"{out}\n"
-    assert "window.BUNDLE" in out.read_text(encoding="utf-8")
 
 
 def test_make_wiki_failure_exits_2_with_the_message(

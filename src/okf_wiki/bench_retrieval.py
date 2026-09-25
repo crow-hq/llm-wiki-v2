@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from reference_agent.bundle.document import OKFDocument
+from okf_wiki.document import OKFDocument
 
 from okf_wiki import bench
 from okf_wiki.client import ModelError
@@ -76,7 +76,7 @@ def snapshot(ingest: Path, out: Path) -> dict[str, list[dict[str, Any]]]:
     snap = out / "snapshot"
     snap.mkdir(parents=True, exist_ok=True)
     for mode in rows:
-        shutil.copytree(ingest / mode, snap / mode, ignore=shutil.ignore_patterns(".*.tmp", "viz.html"))
+        shutil.copytree(ingest / mode, snap / mode, ignore=shutil.ignore_patterns(".*.tmp"))
     shutil.copy(ingest / "run.json", snap / "run.json")
     (snap / "rows.jsonl").write_text("".join(json.dumps(r) + "\n" for m in rows for r in rows[m]), encoding="utf-8")
     return rows

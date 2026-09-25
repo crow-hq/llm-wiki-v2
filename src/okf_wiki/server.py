@@ -15,7 +15,7 @@
 """HTTP API (extra `server`) and the local web UI at GET /.
 
 POST /ingest, POST /upload (a .txt/.md/.pdf file), POST /ask, GET /tree, GET /note,
-GET /graph, GET /usage, GET /check, GET /viz, GET /health.
+GET /graph, GET /usage, GET /check, GET /health.
 """
 
 from __future__ import annotations
@@ -122,11 +122,6 @@ def create_app(wiki: Wiki) -> FastAPI:
     @app.get("/check")
     def check() -> list[str]:
         return [str(p) for p in wiki.check()]
-
-    @app.get("/viz", response_class=HTMLResponse)
-    def viz() -> str:
-        with write_lock:
-            return wiki.visualize().read_text(encoding="utf-8")
 
     return app
 
