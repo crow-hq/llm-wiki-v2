@@ -29,7 +29,7 @@ def env_for(bundle: Path, **variables: str) -> dict[str, str]:
 def test_defaults(tmp_path: Path) -> None:
     config = WikiConfig(bundle=tmp_path)
 
-    assert config.mode == "classic"
+    assert config.mode == "crow"
     assert config.summarize is True
     assert (config.llm.provider, config.llm.base_url) == ("openrouter", "https://openrouter.ai/api/v1")
     assert config.llm.model == "google/gemini-3.8-flash"
@@ -109,15 +109,15 @@ def test_from_env_reads_crow_thresholds_beam_and_k(tmp_path: Path) -> None:
 def test_from_env_ignores_empty_variables(tmp_path: Path) -> None:
     config = WikiConfig.from_env(env_for(tmp_path, OKF_MODE="", OKF_LLM_MODEL="", OKF_BEAM=""))
 
-    assert config.mode == "classic"
+    assert config.mode == "crow"
     assert config.llm.model == "google/gemini-3.8-flash"
     assert config.crow.beam == 2
 
 
 def test_a_passed_mapping_replaces_the_process_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OKF_MODE", "crow")
+    monkeypatch.setenv("OKF_MODE", "classic")
 
-    assert WikiConfig.from_env(env_for(tmp_path)).mode == "classic"
+    assert WikiConfig.from_env(env_for(tmp_path)).mode == "crow"
 
 
 def test_without_a_mapping_the_process_environment_is_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

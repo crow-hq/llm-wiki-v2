@@ -60,6 +60,14 @@ def default_bundle() -> Path:
     return Path.home() / "llm-wiki"
 
 
+def tilde(path: Path) -> str:
+    """The path as people write it: ~/… under the home folder."""
+    try:
+        return "~/" + path.relative_to(Path.home()).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def mask(secret: str) -> str:
     return "" if not secret else f"…{secret[-4:]}" if len(secret) > 12 else "set"
 
@@ -122,7 +130,7 @@ class Settings:
                 name: {"base_url": p.base_url, "needs_key": bool(p.key_env), "models": list(p.models)}
                 for name, p in PROVIDERS.items()
             },
-            "file": str(self.path),
+            "file": tilde(self.path),
         }
 
     def apply(self, changes: Mapping[str, Any]) -> tuple[dict[str, Any], WikiConfig]:

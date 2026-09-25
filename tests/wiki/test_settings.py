@@ -115,7 +115,7 @@ def test_the_view_masks_keys_and_says_whether_the_wiki_is_ready() -> None:
     assert view["values"]["api_key"] == "…cdef" and KEY not in json.dumps(view)
     assert view["ready"] is True
     assert view["providers"]["ollama"] == {"base_url": "http://localhost:11434/v1", "needs_key": False, "models": ["gemma4", "qwen3.8"]}
-    assert view["file"] == str(settings.path)
+    assert view["file"] == "~/.config/llm-wiki/config.json"
 
 
 def test_crow_is_ready_only_with_a_classifier_key() -> None:

@@ -207,7 +207,7 @@ def test_crow_mode_without_a_classifier_builds_one_from_config(bundle: Path, llm
 
 
 def test_classic_mode_builds_no_classifier(bundle: Path, llm: FakeLLM) -> None:
-    wiki = Wiki(WikiConfig(bundle=bundle), llm=llm)
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="classic"), llm=llm)
 
     assert wiki.classifier is None
     assert type(wiki.librarian()) is Librarian

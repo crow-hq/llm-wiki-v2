@@ -1,37 +1,73 @@
-# llm-wiki-v2
+<p align="center">
+  <img src="docs/assets/crow-banner.jpg" alt="CROW: a pixel-art crow next to the word CROW" width="100%">
+</p>
 
-An LLM wiki you can run on your own machine. A **Librarian** files every source
-you give it into a folder tree of Markdown notes: it picks the best folder, or
-creates one when none fits, merges updates into the existing note instead of
-duplicating it, and links related notes. A **Researcher** navigates the tree to
-answer questions, citing the notes it used. Any OpenAI-compatible provider
-works (OpenRouter, OpenAI, Gemini, Ollama, vLLM, …). An optional **CROW** mode
-lets a typed classifier take the filing decisions while the LLM only writes the
-text.
+<p align="center">
+  <img src="docs/assets/crow-stats.svg" alt="An LLM wiki with no scaling limit. CROW vs classic: 89% right note read vs 62%; $0.0045 vs $0.0097 per ingest; 2.1× faster per ingest (18.4s vs 38.6s); 68% fewer LLM tokens (5,508 vs 17,324)." width="100%">
+</p>
 
-> The wiki's on-disk format is derived from Google's
-> **[Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)**:
-> every wiki written here is a conformant OKF bundle, with the extra conventions
-> listed in [The wiki on disk](#the-wiki-on-disk). This project started as a fork
-> of OKF and no longer includes its code.
+# LLM Wiki v2
 
-## Quick start
+Give it your documents. It files them into a tidy wiki of Markdown notes and
+answers your questions, citing the notes it used. It runs on your computer,
+with any AI provider: OpenRouter, OpenAI, Gemini, Ollama (free and local) or
+any OpenAI-compatible server. It works in **CROW** mode by default: a small
+classifier decides where things go, so the wiki stays fast and cheap as it grows.
+
+## Start in 3 steps
+
+**1. Install uv**, the tool that installs Python apps ([other ways](https://docs.astral.sh/uv/getting-started/installation/)):
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**2. Install the wiki:**
 
 ```bash
 uv tool install "llm-wiki-v2[server] @ git+https://github.com/fed3c3sa/llm-wiki-v2"
-okf-wiki                      # opens the wiki in your browser
 ```
 
-([uv](https://docs.astral.sh/uv/getting-started/installation/) installs the
-right Python by itself; `pipx install` works the same way.)
+**3. Start it:**
 
-On the first run the page asks for a **provider, its key and a model**, with a
-link to get the key and a **Test connection** button: OpenRouter needs one key
-for everything, Ollama none at all. Your wiki goes to `~/llm-wiki`
-(`okf-wiki --bundle <folder>` for another) and the settings to
-`~/.config/llm-wiki/config.json`. The terminal way is `okf-wiki setup`.
+```bash
+okf-wiki
+```
 
-### As a server (Docker)
+Your browser opens. Pick a provider, paste its key, press **Test connection**,
+then **Save and start**. That's it.
+
+<p align="center">
+  <img src="docs/assets/screenshot-settings.png" alt="The first-run page: pick a provider, paste its key, choose a model" width="90%">
+</p>
+
+> [!TIP]
+> **No key?** Pick **Ollama**: free, runs on your computer, no account
+> ([download it](https://ollama.com/download), then `ollama pull gemma4`).
+> CROW's classifier runs on OpenRouter, so without an OpenRouter key the wiki
+> uses classic mode, where the model decides by itself.
+> One [OpenRouter key](https://openrouter.ai/keys) works for every model, and for CROW too.
+
+## What you can do
+
+| | |
+|---|---|
+| **Add documents** | Drop `.txt`, `.md` or `.pdf` files anywhere on the page. Each one lands in the right folder, merged with what the wiki already knows. |
+| **Ask questions** | Type a question. The answer cites the notes it used: click one to read it. |
+| **See the brain** | A live map of your folders, notes and links. |
+| **Keep your files** | Plain Markdown in `~/llm-wiki`: open it in any editor, keep it in git. |
+
+## Something wrong?
+
+- **"no API key yet"**: open ⚙ on the page, or run `okf-wiki setup` in the terminal.
+- **Test connection fails**: the message is the provider's own, usually a wrong key or model name.
+- **A PDF adds nothing**: it is a scan with no text layer; run OCR on it first.
+- **Another folder for the wiki**: `okf-wiki --bundle <folder>`. Settings live in `~/.config/llm-wiki/config.json`.
+
+## For developers
+
+<details>
+<summary><b>Run it as a server with Docker</b></summary>
 
 ```bash
 git clone https://github.com/fed3c3sa/llm-wiki-v2 && cd llm-wiki-v2
@@ -40,6 +76,11 @@ docker compose up -d --build  # the wiki on :8000 (OKF_PORT to change)
 ```
 
 With Docker the settings come from `.env`; the page shows them but cannot change them.
+
+</details>
+
+<details>
+<summary><b>HTTP API</b></summary>
 
 **The web UI** at http://localhost:8000 shows the folder tree, renders each note
 (with its See-also links and sources), answers questions with clickable
@@ -72,7 +113,10 @@ CLI runs in the same image: `docker compose run --rm wiki okf-wiki check`.
 | `GET /usage` · `GET /health` | token totals per ledger and model · status |
 | `GET /settings` · `POST /settings` · `POST /settings/test` | provider, model and key (masked) · save them · try them; changes from this machine only |
 
-## Python library
+</details>
+
+<details>
+<summary><b>Use it as a Python library and from the command line</b></summary>
 
 ```bash
 pip install "llm-wiki-v2[server] @ git+https://github.com/fed3c3sa/llm-wiki-v2"
@@ -99,7 +143,7 @@ The same operations are on the command line:
 ```bash
 okf-wiki --bundle ./wiki init
 okf-wiki --bundle ./wiki ingest meeting.md     # or a .txt / .pdf
-okf-wiki --bundle ./wiki --mode crow ask "What did we decide about pricing?"
+okf-wiki --bundle ./wiki --mode classic ask "What did we decide about pricing?"
 okf-wiki --bundle ./wiki check        # lint: OKF conformance, index drift, broken links
 okf-wiki --bundle ./wiki serve        # the HTTP API and page (needs the [server] extra); plain `okf-wiki` also opens the browser
 okf-wiki setup                        # provider, key and model, tested and saved
@@ -122,7 +166,10 @@ class MyWiki(Wiki):
         return QuietLibrarian(self.store, self.llm, self.prompts, self.cfg)
 ```
 
-## How it works
+</details>
+
+<details>
+<summary><b>How it works: classic and CROW</b></summary>
 
 ```
 ingest:  summarize → route → find match → merge or (new folder →) write → relate → link, index, log
@@ -150,7 +197,15 @@ model and per operation: every `IngestResult` and `Answer` carries its own
 usage, `wiki.usage` / `GET /usage` the totals, and `OKF_USAGE_LOG` writes one
 JSON line per model call.
 
-## The wiki on disk
+</details>
+
+<details>
+<summary><b>The wiki on disk</b></summary>
+
+> The wiki's on-disk format is derived from Google's
+> **[Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)**:
+> every wiki written here is a conformant OKF bundle, with the extra conventions
+> listed below. This project started as a fork of OKF and no longer includes its code.
 
 ```
 wiki/
@@ -180,7 +235,10 @@ It does not use OKF's trust and lifecycle fields (`verified`, `status`,
 `stale_after`), attested computations (§10) or the `references/` convention.
 Wikis are not checked against later OKF versions.
 
-## Configuration
+</details>
+
+<details>
+<summary><b>Configuration</b></summary>
 
 The settings page and `okf-wiki setup` cover provider, key, model, mode and
 wiki folder. Everything else, and every setting in Docker (`.env`) or in the
@@ -190,7 +248,7 @@ list is in [.env.example](.env.example).
 | Variable | Default | Meaning |
 |---|---|---|
 | `OKF_BUNDLE` | `~/llm-wiki` for the CLI (`/data/wiki` in Docker) | wiki folder |
-| `OKF_MODE` | `classic` | `classic` or `crow` |
+| `OKF_MODE` | `crow` | `crow` (a typed classifier decides, needs an OpenRouter key) or `classic` (the LLM decides) |
 | `OKF_LLM_PROVIDER` | `openrouter` | `openrouter`, `openai`, `gemini`, `ollama` or `custom` |
 | `OKF_LLM_MODEL` | the provider's default | e.g. `google/gemini-3.8-flash` on OpenRouter |
 | `OKF_LLM_BASE_URL` | the provider's | any OpenAI-compatible API (required for `custom`) |
@@ -204,17 +262,18 @@ list is in [.env.example](.env.example).
 Providers, the settings file and the classifier route: [docs/wiki/providers.md](docs/wiki/providers.md).
 Prompts, one Markdown file each: [docs/wiki/prompts.md](docs/wiki/prompts.md).
 
-## Project layout
+</details>
+
+<details>
+<summary><b>Project layout and development</b></summary>
 
 ```
 src/okf_wiki/            the LLM wiki: config, settings, usage, llm, classifier, document, store, files, librarian, researcher, wiki, cli, server
-src/okf_wiki/web/        the web UI: plain ES modules, no build step; vendor/ holds marked, DOMPurify and d3
+src/okf_wiki/web/        the web UI: plain ES modules, no build step; vendor/ holds marked, DOMPurify, d3 and the fonts
 src/okf_wiki/prompts/    shared/, librarian/, researcher/, classifier/ — one prompt per file
 tests/wiki/              tests for every feature, with scripted fake models (no network)
 docs/wiki/               providers, CROW, prompts
 ```
-
-## Development
 
 ```bash
 python3.13 -m venv .venv && .venv/bin/pip install -e ".[dev]"
@@ -225,6 +284,9 @@ Tests never call a real model: they use the scripted fakes in `tests/wiki/fakes.
 Keep changes in the style of the surrounding code (typed, class-based, one
 prompt per file under `src/okf_wiki/prompts/`), with a test for every behaviour
 you change.
+
+</details>
+
 
 ## Credits and license
 
@@ -238,7 +300,8 @@ you change.
   Cataloguing Instead of Embedding* (draft, 2026).
 - The web UI ships [marked](https://github.com/markedjs/marked) (MIT),
   [DOMPurify](https://github.com/cure53/DOMPurify) (Apache-2.0 / MPL-2.0) and
-  [d3](https://github.com/d3/d3) (ISC); see [NOTICE](NOTICE).
+  [d3](https://github.com/d3/d3) (ISC), and the fonts Pixelify Sans, JetBrains Mono
+  and IBM Plex Sans (SIL Open Font License 1.1); see [NOTICE](NOTICE).
 
 Licensed under the [Apache License 2.0](LICENSE.md). To cite this software, see
 [CITATION.cff](CITATION.cff).

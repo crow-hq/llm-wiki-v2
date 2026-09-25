@@ -25,6 +25,13 @@ keeping its copyright and license banner:
 - d3 7.9.0 (https://github.com/d3/d3), Copyright 2010-2023 Mike Bostock, ISC
   License.
 
+Fonts shipped unmodified in src/okf_wiki/web/vendor/fonts/ (latin subsets as
+packaged by Fontsource 5.3.0), under the SIL Open Font License 1.1, whose text
+is in src/okf_wiki/web/vendor/fonts/OFL.txt:
+- Pixelify Sans, Copyright 2021 The Pixelify Sans Project Authors.
+- JetBrains Mono, Copyright 2020 The JetBrains Mono Project Authors.
+- IBM Plex Sans, Copyright 2019 IBM Corp.
+
 Everything else (Copyright 2026 Federico Cesarini, Marco Sassarini, Apache-2.0): src/okf_wiki/
 (outside web/vendor/), tests/wiki/, docs/wiki/, Dockerfile, docker-compose.yml,
 .env.example, NOTICE, CITATION.cff.

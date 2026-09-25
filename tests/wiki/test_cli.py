@@ -254,16 +254,16 @@ def test_no_command_serves_and_opens_the_browser(
     assert seen["settings"].flags == {"bundle": bundle}
 
 
-def answers(monkeypatch: pytest.MonkeyPatch, *replies: str, key: str = "") -> list[str]:
-    """Script `setup`: the replies to its questions in order, and the key typed at the hidden prompt."""
-    queue, asked = list(replies), []
+def answers(monkeypatch: pytest.MonkeyPatch, *replies: str, keys: tuple[str, ...] = ()) -> list[str]:
+    """Script `setup`: the replies to its questions in order, and the keys typed at the hidden prompts."""
+    queue, hidden, asked = list(replies), list(keys), []
 
     def prompt(question: str) -> str:
         asked.append(question)
         return queue.pop(0)
 
     monkeypatch.setattr(cli, "prompt", prompt)
-    monkeypatch.setattr(cli, "secret", lambda question: asked.append(question) or key)
+    monkeypatch.setattr(cli, "secret", lambda question: asked.append(question) or (hidden.pop(0) if hidden else ""))
     return asked
 
 
@@ -277,15 +277,45 @@ def test_setup_tests_the_model_then_saves(
     llm.add("settings/probe", "OK")
     built: list[WikiConfig] = []
     monkeypatch.setattr(cli, "build_wiki", lambda cfg: built.append(cfg) or Wiki(cfg, llm=llm))
-    asked = answers(monkeypatch, "gemini", "", key="g-key-0123456789")
+    asked = answers(monkeypatch, "gemini", "", keys=("g-key-0123456789", "or-key-0123456789"))
 
     assert cli.main(["setup"]) == 0
 
     assert asked[0] == "Provider (openrouter, openai, gemini, ollama, custom) [openrouter]: "
     assert asked[2] == "Model (e.g. gemini-3.8-flash, gemini-3.5-flash, gemini-3.5-flash-lite) [gemini-3.8-flash]: "
-    assert (built[0].llm.provider, built[0].llm.api_key) == ("gemini", "g-key-0123456789")
-    assert saved_settings(home) == {"llm": {"provider": "gemini", "api_key": "g-key-0123456789", "model": "gemini-3.8-flash"}}
-    assert "OK\nSaved (API key …6789)" in capsys.readouterr().out
+    assert asked[3].startswith("CROW classifier key")
+    assert (built[0].llm.provider, built[0].llm.api_key, built[0].mode) == ("gemini", "g-key-0123456789", "crow")
+    assert saved_settings(home) == {
+        "llm": {"provider": "gemini", "api_key": "g-key-0123456789", "model": "gemini-3.8-flash"},
+        "classifier": {"api_key": "or-key-0123456789"},
+    }
+    assert "OK\nSaved (crow mode, API key …6789)" in capsys.readouterr().out
+
+
+def test_setup_without_a_classifier_key_chooses_classic_mode(
+    monkeypatch: pytest.MonkeyPatch, home: Path, llm: FakeLLM, capsys: pytest.CaptureFixture[str]
+) -> None:
+    llm.add("settings/probe", "OK")
+    monkeypatch.setattr(cli, "build_wiki", lambda cfg: Wiki(cfg, llm=llm))
+    answers(monkeypatch, "ollama", "")
+
+    assert cli.main(["setup"]) == 0
+
+    assert saved_settings(home) == {"llm": {"provider": "ollama", "model": "gemma4"}, "mode": "classic"}
+    assert "Saved (classic mode, API key none)" in capsys.readouterr().out
+
+
+def test_with_openrouter_setup_keeps_crow_with_one_key(
+    monkeypatch: pytest.MonkeyPatch, home: Path, llm: FakeLLM
+) -> None:
+    llm.add("settings/probe", "OK")
+    monkeypatch.setattr(cli, "build_wiki", lambda cfg: Wiki(cfg, llm=llm))
+    asked = answers(monkeypatch, "", "", keys=("or-key-0123456789",))
+
+    assert cli.main(["setup"]) == 0
+
+    assert not any(q.startswith("CROW classifier key") for q in asked)
+    assert saved_settings(home) == {"llm": {"provider": "openrouter", "api_key": "or-key-0123456789", "model": "google/gemini-3.8-flash"}}
 
 
 def test_setup_asks_before_saving_settings_that_failed_the_test(

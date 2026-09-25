@@ -34,7 +34,8 @@ from pathlib import Path
 from okf_wiki.client import ModelError
 from okf_wiki.config import PROVIDERS, WikiConfig
 from okf_wiki.files import extract_text
-from okf_wiki.settings import Settings, mask, probe, ready
+from okf_wiki.logo import show_logo
+from okf_wiki.settings import Settings, mask, probe, ready, tilde
 from okf_wiki.wiki import Wiki
 
 
@@ -109,7 +110,8 @@ def setup(settings: Settings) -> int:
     """Ask for provider, key and model, test them with one request, save them."""
     view = settings.view()
     now, managed = view["values"], set(view["managed"])
-    print(f"Settings file: {settings.path}")
+    show_logo()
+    print(f"Settings file: {tilde(settings.path)}")
     changes: dict[str, str] = {}
 
     def ask(field: str, question: str, default: str) -> str:
@@ -135,6 +137,15 @@ def setup(settings: Settings) -> int:
                            now["model"] if same else next(iter(preset.models), ""))
 
     _, cfg = settings.apply(changes)
+    if cfg.mode == "crow" and not cfg.classifier.api_key and "classifier_api_key" not in managed:
+        # CROW asks its classifier on OpenRouter: with another provider it needs an OpenRouter key of its own.
+        key = secret("CROW classifier key (OpenRouter; Enter to use classic mode instead): ").strip()
+        if key:
+            changes["classifier_api_key"] = key
+        elif "mode" not in managed:
+            changes["mode"] = "classic"
+            print("Classic mode: the model decides where notes go.")
+        _, cfg = settings.apply(changes)
     print(f"Testing {cfg.llm.model} at {cfg.llm.base_url} … ", end="", flush=True)
     try:
         probe(build_wiki(cfg).llm)
@@ -144,7 +155,7 @@ def setup(settings: Settings) -> int:
         if prompt("Save anyway? [y/N]: ").strip().lower() != "y":
             return 1
     settings.save(changes)
-    print(f"Saved (API key {mask(cfg.llm.api_key) or 'none'}). Start the wiki with: okf-wiki")
+    print(f"Saved ({cfg.mode} mode, API key {mask(cfg.llm.api_key) or 'none'}). Start the wiki with: okf-wiki")
     return 0
 
 

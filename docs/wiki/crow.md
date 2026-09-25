@@ -9,7 +9,9 @@ classifier decision has a threshold, and when the classifier is not confident
 enough, or fails, that step goes back to the LLM. Both modes run the same
 pipeline and write the same kind of wiki, because `CrowLibrarian` and
 `CrowResearcher` override only the decision hooks of `Librarian` and
-`Researcher`. Turn it on with `OKF_MODE=crow` or `--mode crow`.
+`Researcher`. It is the default; `OKF_MODE=classic` or `--mode classic` lets the LLM take the
+decisions instead. The classifier needs an OpenRouter key: with OpenRouter as provider its key
+serves both, otherwise `okf-wiki setup` and the settings page ask for one (or switch to classic).
 
 ## Who decides what
 

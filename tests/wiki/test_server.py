@@ -189,7 +189,7 @@ def test_home_serves_the_single_page_ui(client: TestClient) -> None:
     response = client.get("/")
 
     assert response.status_code == 200 and response.headers["content-type"].startswith("text/html")
-    assert "llm<span>·</span>wiki" in response.text
+    assert "<h1>CROW</h1>" in response.text
     assert "/upload?filename=" in client.get("/web/app.js").text
 
 
@@ -360,7 +360,7 @@ def test_the_page_and_its_modules_load_nothing_from_a_cdn(client: TestClient) ->
     local = re.findall(r'(?:src|href)="(/web/[^"]+)"', page)
     modules = [f"/web/{m}" for src in local if src.endswith(".js") for m in re.findall(r'from "\./([\w-]+\.js)"', client.get(src).text)]
 
-    assert len(local) == 4 and len(modules) >= 3
+    assert len(local) >= 4 and len(modules) >= 3
     for src in local + modules:
         response = client.get(src)
         assert response.status_code == 200, src

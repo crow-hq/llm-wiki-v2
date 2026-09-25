@@ -3,7 +3,7 @@
 
 import { $, api, esc } from "./util.js";
 
-const AREA_COLORS = ["#34548a", "#b3261e", "#4f7a5a", "#a0672a", "#6b4e8a", "#2f7f86", "#8a3d5c", "#5c6b2f", "#9a4a2f", "#3d5f7a"];
+const AREA_COLORS = ["#ff4d2e", "#f5a524", "#7aa2ff", "#7fd49a", "#c792ea", "#4fd1c5", "#ff8fb1", "#d4c95a", "#ff9a5c", "#9fb4ff"];
 let brain = null; // {sim, timer, nodes}
 
 async function loadD3() {
@@ -41,7 +41,7 @@ export async function showGraph(onLive) {
     .force("collide", d3.forceCollide((d) => radius(d) + 3))
     .force("x", d3.forceX(width / 2).strength(0.03)).force("y", d3.forceY(height / 2).strength(0.03));
   brain = { sim, timer: null, nodes: new Map(), focus: null };
-  const color = (d) => !d.area ? "#1f1c17" : AREA_COLORS[areaIndex(d.area) % AREA_COLORS.length]; // root and its notes: ink
+  const color = (d) => !d.area ? "#f3ead8" : AREA_COLORS[areaIndex(d.area) % AREA_COLORS.length]; // root and its notes: cream
   let areas = [];
   const areaIndex = (a) => Math.max(0, areas.indexOf(a));
 
@@ -59,7 +59,8 @@ export async function showGraph(onLive) {
       e.filter((d) => d.kind === "folder").append("text").attr("text-anchor", "middle");
       return e;
     });
-    node.select("circle").attr("r", radius).attr("fill", color).attr("stroke", (d) => d.kind === "folder" ? color(d) : null);
+    node.select("circle").attr("r", radius).attr("fill", color).attr("stroke", (d) => d.kind === "folder" ? color(d) : null)
+      .style("--glow", (d) => d.kind === "folder" ? color(d) : null);
     node.select("text").text((d) => d.label).attr("dy", (d) => -radius(d) - 6);
     node.on("mouseenter", (e, d) => tip(e, d)).on("mousemove", (e, d) => tip(e, d)).on("mouseleave", () => ($("#tip").style.display = "none"))
       .on("click", (e, d) => d.kind === "note" ? (location.hash = "#/note/" + d.id) : focus(d, links))

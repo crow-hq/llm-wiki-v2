@@ -109,7 +109,7 @@ class CrowConfig(BaseModel):
 
 class WikiConfig(BaseModel):
     bundle: Path
-    mode: Literal["classic", "crow"] = "classic"
+    mode: Literal["classic", "crow"] = "crow"
     summarize: bool = True  # CROW step 0; False files the source verbatim
     max_depth: int = 4  # deepest folder level the librarian may reach or create
     max_steps: int = 12  # classic researcher: folders it may open per question

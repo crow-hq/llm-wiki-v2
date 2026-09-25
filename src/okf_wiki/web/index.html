@@ -5,11 +5,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>llm-wiki</title>
-<!-- Fonts are the only thing fetched from the internet; offline, the page falls back to Georgia. -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<title>CROW · LLM Wiki v2</title>
+<link rel="icon" href="/web/img/crow.png">
 <link href="/web/style.css" rel="stylesheet">
 <script src="/web/vendor/marked.min.js"></script>
 <script src="/web/vendor/purify.min.js"></script>
@@ -18,7 +15,7 @@
 <body>
 <aside>
   <div class="brand">
-    <h1 onclick="location.hash=''">llm<span>·</span>wiki</h1>
+    <a href="#"><img src="/web/img/crow.png" alt=""><div><h1>CROW</h1><small>LLM WIKI V2</small></div></a>
     <div class="models" id="models"></div>
   </div>
   <nav><div class="label">Catalogue</div><div id="tree"></div></nav>
@@ -30,11 +27,11 @@
 </aside>
 <main>
   <header>
-    <form id="ask"><input id="q" placeholder="Ask the wiki…" autocomplete="off"><button class="btn">Ask</button></form>
-    <button class="btn ghost" id="brain">◎ Brain</button>
+    <form id="ask"><input id="q" placeholder="Ask the wiki…" aria-label="Ask the wiki" autocomplete="off"><button class="btn">Ask →</button></form>
+    <button class="btn ghost" id="brain"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><circle cx="2.5" cy="3" r="1.5"/><circle cx="13.5" cy="4" r="1.5"/><circle cx="11" cy="13.5" r="1.5"/><path d="M6.5 7 3.6 4M9.8 7.3l2.4-2.3M8.9 9.8l1.4 2.4"/></svg>Brain</button>
     <button class="btn ghost" id="add">+ Text</button>
     <button class="btn ghost" id="pick">↑ Files</button>
-    <button class="btn ghost" id="gear" title="Model and key" hidden>⚙ Settings</button>
+    <button class="btn ghost icon" id="gear" title="Model and key" aria-label="Settings" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg></button>
     <input type="file" id="files" multiple accept=".txt,.md,.markdown,.pdf" hidden>
   </header>
   <div id="view"></div>
@@ -44,8 +41,8 @@
 <dialog id="dlg">
   <form method="dialog" id="addform">
     <h3>Add a source</h3>
-    <input id="t" placeholder="Title (optional)">
-    <textarea id="txt" placeholder="Paste text or Markdown…" required></textarea>
+    <input id="t" placeholder="Title (optional)" aria-label="Title">
+    <textarea id="txt" placeholder="Paste text or Markdown…" aria-label="Text" required></textarea>
     <div class="actions"><button class="btn ghost" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok">File it</button></div>
   </form>
 </dialog>

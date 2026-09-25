@@ -67,16 +67,32 @@ async function loadUsage() {
 }
 
 // -- views -------------------------------------------------------------------
-function show(html) { $("#view").className = ""; $("#view").innerHTML = `<article>${html}</article>`; $("#view").scrollTop = 0; }
+function show(html, wide = false) { $("#view").className = wide ? "wide" : ""; $("#view").innerHTML = `<article>${html}</article>`; $("#view").scrollTop = 0; }
+
+const ICONS = {
+  folder: '<svg viewBox="0 0 24 24" fill="none" stroke="#f5a524" stroke-width="1.6"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  note: '<svg viewBox="0 0 24 24" fill="none" stroke="#ff4d2e" stroke-width="1.6"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="#7aa2ff" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
+};
 
 function home() {
   current = ""; highlight();
-  show(`<div class="home">
-    <h2>The librarian is in.</h2>
-    <p>Drop documents anywhere on this page: each is read, filed in the right folder — or a new one — merged with what the wiki already knows, and linked to related notes.</p>
-    <div class="stats"><div><b>${countNotes(tree)}</b>notes</div><div><b>${countFolders(tree)}</b>folders</div></div>
-    <label class="dropzone" for="files"><strong>Drop .txt, .md or .pdf files</strong><span>or click to choose · text PDFs only (no OCR)</span></label>
-  </div>`);
+  const notes = countNotes(tree), folders = countFolders(tree);
+  const title = notes ? `${notes} note${notes === 1 ? "" : "s"},<br><em>all in their place.</em>` : `An empty wiki,<br><em>ready to grow.</em>`;
+  show(`<div class="hero">
+      <div class="words">
+        <div class="crumbs">YOUR WIKI</div>
+        <h2>${title}</h2>
+        <p>Drop documents anywhere on this page: the librarian reads each one, picks its folder (or makes a new one), merges it with what the wiki already knows and links related notes.</p>
+        <div class="actions"><label class="btn" for="files">↑ Add files</label><a class="btn ghost" href="#/graph">Open the brain</a></div>
+      </div>
+      <div class="art" role="img" aria-label="A pixel-art crow under a red moon, beside a glowing graph of notes"></div>
+    </div>
+    <div class="cards">
+      <div class="card">${ICONS.folder}<div><b>${folders} folder${folders === 1 ? "" : "s"}</b><span>New ones appear when nothing fits. Open them in the sidebar.</span></div></div>
+      <div class="card">${ICONS.note}<div><b>.txt · .md · .pdf</b><span>Drop, pick or paste. PDFs need a text layer (scans need OCR first).</span></div></div>
+      <div class="card">${ICONS.search}<div><b>Ask anything</b><span>Answers cite the notes they come from: click one to read it.</span></div></div>
+    </div>`, true);
 }
 
 async function showNote(path) {
@@ -201,8 +217,8 @@ $("#gear").onclick = () => (location.hash = "#/settings");
 // -- start -------------------------------------------------------------------
 async function loadModels() {
   const h = await api("/health");
-  $("#models").innerHTML = `<span class="mode">${esc(h.mode)}</span><br>llm · ${esc(h.llm)}` +
-    (h.classifier ? `<br>classifier · ${esc(h.classifier)}` : "");
+  $("#models").innerHTML = `<span class="chip" title="LLM">${esc(h.llm)}</span><span class="chip mode">${esc(h.mode)}</span>` +
+    (h.classifier ? `<span class="chip" title="classifier">${esc(h.classifier)}</span>` : "");
 }
 
 async function saved(settings) { // the server rebuilt the wiki: show its models and (maybe new) folder
