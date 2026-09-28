@@ -76,20 +76,24 @@ statement holds).
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `OKF_CLASSIFIER_BASE_URL` | `https://openrouter.ai/api/v1` | System One endpoint |
+| `OKF_CLASSIFIER_PROVIDER` | `openrouter` | `openrouter`, `typesafe` or `custom`, whatever the LLM's provider is |
+| `OKF_CLASSIFIER_BASE_URL` | the provider's | System One endpoint (required for `custom`) |
 | `OKF_CLASSIFIER_MODEL` | `typesafe/jev-1.13` | Pinned, because thresholds are calibrated per model version |
-| `OKF_CLASSIFIER_API_KEY` | `OPENROUTER_API_KEY` | Used when set. Otherwise the OpenRouter key is used. |
+| `OKF_CLASSIFIER_API_KEY` | the provider's variable | Used when set. Otherwise `OPENROUTER_API_KEY` on `openrouter`, `TYPESAFE_API_KEY` on `typesafe`. |
 | `OKF_CLASSIFIER_TIMEOUT` | `60` | seconds per request |
 | `OKF_CLASSIFIER_STATE_CHARS` | `6000` | Size of the compact state each decision reads |
 | `OKF_CLASSIFIER_REQUEST_CHARS` | `90000` | Size limit for state plus questions per request. Noul questions are split into batches to fit. |
 
-With OpenRouter as the LLM provider, one key serves both models.
+With OpenRouter as the provider of both, one key serves both models. The
+settings page sets the classifier's provider, address, model and key under
+**Advanced**; a saved classifier key is dropped when its provider or address
+changes, as the LLM's is.
 
-| Endpoint | `OKF_CLASSIFIER_BASE_URL` | Key |
+| `OKF_CLASSIFIER_PROVIDER` | Endpoint | Key |
 |---|---|---|
-| OpenRouter (default) | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` or `OKF_CLASSIFIER_API_KEY` |
-| TypeSafe directly | `https://api.typesafe.ai/v1` | `OKF_CLASSIFIER_API_KEY` (a TypeSafe key) |
-| Local Laya server | the URL under which it serves `/systemone` | `OKF_CLASSIFIER_API_KEY`, if it needs one |
+| `openrouter` (default) | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` or `OKF_CLASSIFIER_API_KEY` |
+| `typesafe` | `https://api.typesafe.ai/v1` | `TYPESAFE_API_KEY` or `OKF_CLASSIFIER_API_KEY` |
+| `custom` (a local Laya server) | `OKF_CLASSIFIER_BASE_URL`, the URL under which it serves `/systemone` | `OKF_CLASSIFIER_API_KEY`, if it needs one |
 
 Keep the same model version on every route (thresholds belong to it); if an
 endpoint rejects the `typesafe/` prefix, set the bare id in `OKF_CLASSIFIER_MODEL`.

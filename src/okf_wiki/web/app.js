@@ -2,7 +2,7 @@
 // The page: sidebar tree, notes, questions, filing by drop/pick/paste, and routing.
 
 import { $, api, esc, fmt, md, post } from "./util.js";
-import { leaveGraph, showGraph } from "./graph.js";
+import { leaveGraph, refreshGraph, showGraph } from "./graph.js";
 import { loadSettings, showSettings } from "./settings.js";
 
 const open = new Set(JSON.parse(localStorage.getItem("okf-open") || "[]"));
@@ -180,7 +180,7 @@ async function drain() {
       const made = r.created_folders.length ? ` · new folder ${esc(r.created_folders.join(", "))}` : "";
       el.classList.add("ok");
       el.querySelector(".what").innerHTML = `${where} <a href="#/note/${esc(r.note)}">${esc(r.title)}</a>${made}`;
-      await loadTree(); loadUsage();
+      await loadTree(); loadUsage(); refreshGraph();
       if (!location.hash) home();
     } catch (e) {
       el.classList.add("err"); el.querySelector(".what").textContent = e.message;

@@ -15,13 +15,13 @@ from __future__ import annotations
 import json
 import os
 import threading
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
-from okf_wiki.config import PROVIDERS, WikiConfig, merge
+from okf_wiki.config import CLASSIFIER_PROVIDERS, PROVIDERS, Provider, WikiConfig, merge
 from okf_wiki.errors import ConfigError, InputError
 
 # The settings people edit: name in the page and in `setup` -> place in WikiConfig.
@@ -32,6 +32,9 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "base_url": ("llm", "base_url"),
     "mode": ("mode",),
     "reasoning": ("llm", "reasoning"),
+    "classifier_provider": ("classifier", "provider"),
+    "classifier_base_url": ("classifier", "base_url"),
+    "classifier_model": ("classifier", "model"),
     "classifier_api_key": ("classifier", "api_key"),
     "bundle": ("bundle",),
 }
@@ -87,16 +90,19 @@ class Settings:
         base = merge({"bundle": str(default_bundle())}, self.saved() if saved is None else saved)
         return WikiConfig.from_env(self.env, base=base, **self.flags)
 
-    def managed(self, provider: str) -> list[str]:
+    def managed(self, provider: str, classifier_provider: str = "openrouter") -> list[str]:
         """Fields fixed by the environment or a flag: shown, not editable."""
         by = {
             "provider": ["OKF_LLM_PROVIDER"],
-            "api_key": ["OKF_LLM_API_KEY", PROVIDERS[provider].key_env if provider in PROVIDERS else ""],
+            "api_key": ["OKF_LLM_API_KEY", key_env(PROVIDERS, provider)],
             "model": ["OKF_LLM_MODEL"],
             "base_url": ["OKF_LLM_BASE_URL"],
             "mode": ["OKF_MODE"],
             "reasoning": ["OKF_LLM_REASONING"],
-            "classifier_api_key": ["OKF_CLASSIFIER_API_KEY", "OPENROUTER_API_KEY"],
+            "classifier_provider": ["OKF_CLASSIFIER_PROVIDER"],
+            "classifier_base_url": ["OKF_CLASSIFIER_BASE_URL"],
+            "classifier_model": ["OKF_CLASSIFIER_MODEL"],
+            "classifier_api_key": ["OKF_CLASSIFIER_API_KEY", key_env(CLASSIFIER_PROVIDERS, classifier_provider)],
             "bundle": ["OKF_BUNDLE"],
         }
         return [f for f, names in by.items() if f in self.flags or any(n and self.env.get(n) for n in names)]
@@ -104,7 +110,8 @@ class Settings:
     def view(self) -> dict[str, Any]:
         """What the settings page shows: values with keys masked, and what it may change."""
         cfg = self.config()
-        saved_llm = self.saved().get("llm") or {}
+        saved = self.saved()
+        saved_llm, saved_clf = saved.get("llm") or {}, saved.get("classifier") or {}
         return {
             "values": {
                 "provider": cfg.llm.provider,
@@ -113,15 +120,16 @@ class Settings:
                 "base_url": saved_llm.get("base_url") or self.env.get("OKF_LLM_BASE_URL", ""),
                 "mode": cfg.mode,
                 "reasoning": cfg.llm.reasoning,
+                "classifier_provider": cfg.classifier.provider,
+                "classifier_base_url": saved_clf.get("base_url") or self.env.get("OKF_CLASSIFIER_BASE_URL", ""),
+                "classifier_model": cfg.classifier.model,
                 "classifier_api_key": mask(cfg.classifier.api_key),
                 "bundle": str(cfg.bundle),
             },
             "ready": ready(cfg),
-            "managed": self.managed(cfg.llm.provider),
-            "providers": {
-                name: {"base_url": p.base_url, "needs_key": bool(p.key_env), "models": list(p.models)}
-                for name, p in PROVIDERS.items()
-            },
+            "managed": self.managed(cfg.llm.provider, cfg.classifier.provider),
+            "providers": presets(PROVIDERS),
+            "classifier_providers": presets(CLASSIFIER_PROVIDERS),
             "file": tilde(self.path),
         }
 
@@ -129,18 +137,17 @@ class Settings:
         """The file with `changes` in, and the config it gives; nothing is written.
 
         Unknown and managed fields are ignored, an empty secret keeps the saved one (unless
-        the provider or its address changes: a key never goes to another endpoint), any other
-        empty field goes back to its default.
+        the model's provider or its address changes: a key never goes to another endpoint), any
+        other empty field goes back to its default.
         """
         saved = self.saved()
-        llm = saved.get("llm") or {}
-        before = llm.get("provider") or "openrouter"
-        provider = str(changes.get("provider") or before)
-        managed = self.managed(provider)
-        url_before = str(llm.get("base_url") or "").strip().rstrip("/")
-        url_after = url_before if "base_url" not in changes or "base_url" in managed else str(changes["base_url"] or "").strip().rstrip("/")
-        if (provider != before and "provider" not in managed) or url_after != url_before:
-            llm.pop("api_key", None)
+        llm, clf = saved.get("llm") or {}, saved.get("classifier") or {}
+        provider = str(changes.get("provider") or llm.get("provider") or "openrouter")
+        clf_provider = str(changes.get("classifier_provider") or clf.get("provider") or "openrouter")
+        managed = self.managed(provider, clf_provider)
+        for section, prefix in ((llm, ""), (clf, "classifier_")):
+            if moves(section, changes, prefix, managed):
+                section.pop("api_key", None)
         for name, value in changes.items():
             if name not in FIELDS or name in managed:
                 continue
@@ -175,6 +182,27 @@ class Settings:
         return cfg
 
 
+def key_env(providers: Mapping[str, Provider], name: str) -> str:
+    return providers[name].key_env if name in providers else ""
+
+
+def presets(providers: Mapping[str, Provider]) -> dict[str, dict[str, Any]]:
+    """What the page needs to know of each provider."""
+    return {name: {"base_url": p.base_url, "needs_key": bool(p.key_env), "models": list(p.models)} for name, p in providers.items()}
+
+
+def moves(saved: Mapping[str, Any], changes: Mapping[str, Any], prefix: str, managed: Collection[str]) -> bool:
+    """True when `changes` send a model (its `saved` section) to another provider or address."""
+
+    def after(field: str, before: str) -> str:
+        name = prefix + field
+        return before if name not in changes or name in managed else str(changes[name] or "").strip()
+
+    provider = str(saved.get("provider") or "openrouter")
+    url = str(saved.get("base_url") or "").strip().rstrip("/")
+    return (after("provider", provider) or "openrouter") != provider or after("base_url", url).rstrip("/") != url
+
+
 def ready(cfg: WikiConfig) -> bool:
     """Every model the mode needs has its key."""
-    return cfg.llm.ready and (cfg.mode != "crow" or bool(cfg.classifier.api_key))
+    return cfg.llm.ready and (cfg.mode != "crow" or cfg.classifier.ready)

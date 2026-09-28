@@ -148,9 +148,9 @@ def setup(settings: Settings) -> int:
                            now["model"] if same else next(iter(preset.models), ""))
 
     _, cfg = settings.apply(changes)
-    if cfg.mode == "crow" and not cfg.classifier.api_key and "classifier_api_key" not in managed:
-        # CROW asks its classifier on OpenRouter: with another provider it needs an OpenRouter key of its own.
-        key = secret("CROW classifier key (OpenRouter; Enter to use classic mode instead): ").strip()
+    if cfg.mode == "crow" and not cfg.classifier.ready and "classifier_api_key" not in managed:
+        # CROW asks its classifier at its own provider (OpenRouter unless set otherwise): only OpenRouter's LLM key serves it too.
+        key = secret(f"CROW classifier key ({cfg.classifier.provider}; Enter to use classic mode instead): ").strip()
         if key:
             changes["classifier_api_key"] = key
         elif "mode" not in managed:

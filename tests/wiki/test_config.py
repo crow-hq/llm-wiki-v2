@@ -102,6 +102,27 @@ def test_config_when_the_llm_is_openrouter_at_another_address_then_the_classifie
     assert config.classifier.api_key == ""
 
 
+@pytest.mark.parametrize(
+    ("variables", "key"),
+    [({"OPENROUTER_API_KEY": "or-key"}, ""), ({"TYPESAFE_API_KEY": "ts-key", "OPENROUTER_API_KEY": "or-key"}, "ts-key")],
+    ids=["openrouter-key-stays-home", "own-variable"],
+)
+def test_from_env_when_the_classifier_is_on_typesafe_then_only_its_own_key_goes_there(
+    tmp_path: Path, variables: dict[str, str], key: str
+) -> None:
+    # ACT
+    config = WikiConfig.from_env(env_for(tmp_path, OKF_CLASSIFIER_PROVIDER="typesafe", **variables))
+
+    # ASSERT
+    assert (config.classifier.base_url, config.classifier.api_key) == ("https://api.typesafe.ai/v1", key)
+    assert config.llm.api_key == variables["OPENROUTER_API_KEY"]
+
+
+def test_config_when_the_classifier_provider_is_unknown_then_it_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="unknown classifier provider 'laya'"):
+        WikiConfig(bundle=tmp_path, classifier={"provider": "laya"})
+
+
 def test_the_provider_fills_base_url_model_and_key(tmp_path: Path) -> None:
     env = env_for(tmp_path, OKF_LLM_PROVIDER="gemini", GEMINI_API_KEY="g-key", OPENROUTER_API_KEY="or-key")
 

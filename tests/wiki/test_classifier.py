@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from okf_wiki.config import ClassifierConfig
-from okf_wiki.models.classifier import MAX_OPTIONS, ChoiceAnswer, Classifier
+from okf_wiki.models.classifier import MAX_OPTIONS, ChoiceAnswer, Classifier, probe
 from okf_wiki.models.client import HttpModel, ModelError
 from okf_wiki.models.usage import UsageTracker
 
@@ -299,3 +299,14 @@ def test_ask_when_attempts_is_three_then_retries_a_5xx_until_the_third_try_succe
 
     # ASSERT
     assert (result, len(requests)) == ({"a": 0.5}, 3)
+
+
+def test_probe_asks_one_noul_and_returns_its_probability(tracker: UsageTracker) -> None:
+    # ARRANGE
+    clf, requests = make_classifier(tracker, answered({"q": {"type": "noul", "noul": 0.9}}))
+
+    # ACT
+    answer = probe(clf)
+
+    # ASSERT
+    assert answer == 0.9 and len(requests) == 1 and tracker.snapshot().by_model["classifier:" + MODEL].calls == 1

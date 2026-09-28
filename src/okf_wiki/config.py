@@ -45,6 +45,15 @@ PROVIDERS: dict[str, Provider] = {
     "custom": Provider("", "", ()),  # vLLM, LM Studio, llama.cpp, a gateway: set base_url (and api_key if it wants one)
 }
 
+JEV = "typesafe/jev-1.13"  # pinned: thresholds are calibrated per model version
+
+# Where the CROW classifier runs, apart from the LLM: every route speaks the System One API.
+CLASSIFIER_PROVIDERS: dict[str, Provider] = {
+    "openrouter": Provider("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", (JEV,)),
+    "typesafe": Provider("https://api.typesafe.ai/v1", "TYPESAFE_API_KEY", (JEV,)),
+    "custom": Provider("", "", (JEV,)),  # a local Laya server: set base_url (and api_key if it wants one)
+}
+
 
 class LLMConfig(BaseModel):
     """The writing model, behind any OpenAI-compatible `/chat/completions` (see PROVIDERS)."""
@@ -79,15 +88,32 @@ class LLMConfig(BaseModel):
 
 
 class ClassifierConfig(BaseModel):
-    """The CROW typed classifier, reached through the System One API (POST {base_url}/systemone)."""
+    """The CROW typed classifier, reached through the System One API (POST {base_url}/systemone); see CLASSIFIER_PROVIDERS."""
 
-    base_url: str = "https://openrouter.ai/api/v1"
-    model: str = "typesafe/jev-1.13"  # pinned: thresholds are calibrated per model version
+    provider: str = "openrouter"
+    base_url: str = ""  # empty: the provider's
+    model: str = ""  # empty: the provider's, pinned (thresholds are calibrated per model version)
     api_key: str = ""
     timeout: float = Field(8.0, gt=0)  # it answers in under a second; a slow call is dropped and the LLM decides (paper: 60)
     attempts: int = Field(1, gt=0)  # every caller falls back to the LLM, so a retry only makes the ingest wait (paper: 3)
     state_chars: int = Field(6_000, gt=0)  # compact state: title, summary and opening passage
     request_chars: int = Field(90_000, gt=0)  # state + questions per request (~32k tokens on OpenRouter)
+
+    @model_validator(mode="after")
+    def _fill_from_provider(self) -> ClassifierConfig:
+        preset = CLASSIFIER_PROVIDERS.get(self.provider)
+        if preset is None:
+            raise ValueError(f"unknown classifier provider {self.provider!r}: use one of {', '.join(CLASSIFIER_PROVIDERS)}")
+        self.base_url = self.base_url or preset.base_url
+        self.model = self.model or preset.models[0]
+        if not self.base_url:
+            raise ValueError(f"classifier provider {self.provider!r} needs a base_url")
+        return self
+
+    @property
+    def ready(self) -> bool:
+        """False while the provider still wants a key."""
+        return bool(self.api_key or not CLASSIFIER_PROVIDERS[self.provider].key_env)
 
 
 class CrowConfig(BaseModel):
@@ -168,12 +194,11 @@ class WikiConfig(BaseModel):
         }
         crow = {f: env[f"OKF_{f.upper()}"] for f in CrowConfig.model_fields if env.get(f"OKF_{f.upper()}")}
         data = merge(dict(base or {}), {**top, "llm": llm, "classifier": clf, "crow": crow})
-        # The provider's own variable (OPENROUTER_API_KEY, …) is the key unless OKF_LLM_API_KEY is set.
-        preset = PROVIDERS.get(data["llm"].get("provider", "openrouter"))
-        if "api_key" not in llm and preset and preset.key_env and env.get(preset.key_env):
-            data["llm"]["api_key"] = env[preset.key_env]
-        if "api_key" not in clf and env.get("OPENROUTER_API_KEY"):
-            data["classifier"]["api_key"] = env["OPENROUTER_API_KEY"]
+        # Each model's provider variable (OPENROUTER_API_KEY, …) is its key unless OKF_LLM_API_KEY / OKF_CLASSIFIER_API_KEY is set.
+        for name, explicit, presets in (("llm", llm, PROVIDERS), ("classifier", clf, CLASSIFIER_PROVIDERS)):
+            preset = presets.get(data[name].get("provider", "openrouter"))
+            if "api_key" not in explicit and preset and preset.key_env and env.get(preset.key_env):
+                data[name]["api_key"] = env[preset.key_env]
         for key, value in overrides.items():
             if value is not None:
                 data[key] = value

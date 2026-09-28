@@ -18,7 +18,7 @@ from okf_wiki import Wiki, WikiConfig
 from okf_wiki.errors import ModelError
 from okf_wiki.server import create_app
 from okf_wiki.settings import Settings
-from tests.wiki.fakes import FakeLLM
+from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 KEY = "sk-or-v1-0123456789abcdef"
 LOCAL = {"base_url": "http://localhost:8000", "client": ("127.0.0.1", 50000)}
@@ -45,6 +45,8 @@ def test_settings_show_masked_values_and_readiness(local: TestClient) -> None:
     assert (body["ready"], body["editable"], body["managed"]) == (False, True, [])
     assert body["values"]["provider"] == "openrouter" and body["values"]["api_key"] == ""
     assert set(body["providers"]) == {"openrouter", "openai", "gemini", "ollama", "custom"}
+    assert set(body["classifier_providers"]) == {"openrouter", "typesafe", "custom"}
+    assert body["values"]["classifier_provider"] == "openrouter" and body["values"]["classifier_model"] == "typesafe/jev-1.13"
 
 
 def test_saving_settings_rebuilds_the_wiki(local: TestClient, rebuilt: list[WikiConfig], home: Path) -> None:
@@ -70,10 +72,38 @@ def test_invalid_settings_are_a_422_and_change_nothing(local: TestClient, rebuil
 def test_the_settings_test_asks_the_model_without_saving(local: TestClient, llm: FakeLLM, home: Path) -> None:
     llm.add("settings/probe", "OK")
 
-    body = local.post("/settings/test", json={"provider": "ollama", "model": "qwen2.5"}).json()
+    body = local.post("/settings/test", json={"provider": "ollama", "model": "qwen2.5", "mode": "classic"}).json()
 
     assert body == {"ok": True, "model": "qwen2.5", "reply": "OK"}
     assert not (home / ".config" / "llm-wiki").exists()
+
+
+def test_settings_test_when_crow_then_the_classifier_is_asked_too(local: TestClient, llm: FakeLLM) -> None:
+    # ARRANGE
+    llm.add("settings/probe", "OK")
+
+    # ACT
+    body = local.post("/settings/test", json={"provider": "ollama", "mode": "crow", "classifier_provider": "typesafe"}).json()
+
+    # ASSERT
+    assert body["ok"] is True
+    assert body["classifier"]["ok"] is False and body["classifier"]["model"] == "typesafe/jev-1.13"
+    assert body["classifier"]["error"].startswith("no API key for the classifier")
+
+
+def test_settings_test_when_the_classifier_answers_then_it_is_ok(
+    classic_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier
+) -> None:
+    # ARRANGE
+    llm.add("settings/probe", "OK")
+    app = create_app(classic_wiki, settings=Settings({}), make_wiki=lambda cfg: Wiki(cfg, llm=llm, classifier=classifier))
+
+    # ACT
+    body = TestClient(app, **LOCAL).post("/settings/test", json={"provider": "ollama", "mode": "crow"}).json()
+
+    # ASSERT
+    assert body["classifier"] == {"ok": True, "model": "typesafe/jev-1.13"}
+    assert classifier.ops == ["settings/probe"]
 
 
 def test_a_failed_settings_test_reports_the_provider_error(local: TestClient, llm: FakeLLM, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -48,8 +48,9 @@ so you can add to it or delete it.
 > [!TIP]
 > **No key?** Pick **Ollama**: free, runs on your computer, no account
 > ([download it](https://ollama.com/download), then `ollama pull gemma4`).
-> CROW's classifier runs on OpenRouter, so without an OpenRouter key the wiki
-> uses classic mode, where the model decides by itself.
+> CROW's classifier has its own provider (Settings → Advanced): OpenRouter,
+> TypeSafe or a local server. Without one the wiki uses classic mode, where the
+> model decides by itself.
 > One [OpenRouter key](https://openrouter.ai/keys) works for every model, and for CROW too.
 
 ## What you can do
@@ -253,16 +254,18 @@ list is in [.env.example](.env.example).
 | Variable | Default | Meaning |
 |---|---|---|
 | `OKF_BUNDLE` | `~/llm-wiki` for the CLI (`/data/wiki` in Docker) | wiki folder |
-| `OKF_MODE` | `crow` | `crow` (a typed classifier decides, needs an OpenRouter key) or `classic` (the LLM decides) |
+| `OKF_MODE` | `crow` | `crow` (a typed classifier decides, needs its key or a local server) or `classic` (the LLM decides) |
 | `OKF_LLM_PROVIDER` | `openrouter` | `openrouter`, `openai`, `gemini`, `ollama` or `custom` |
 | `OKF_LLM_MODEL` | the provider's default | e.g. `google/gemini-3.8-flash` on OpenRouter |
 | `OKF_LLM_BASE_URL` | the provider's | any OpenAI-compatible API (required for `custom`) |
 | `OPENROUTER_API_KEY` · `OPENAI_API_KEY` · `GEMINI_API_KEY` | — | the provider's key (`OKF_LLM_API_KEY` wins); OpenRouter's also serves the classifier |
+| `OKF_CLASSIFIER_PROVIDER` | `openrouter` | where the CROW classifier runs, apart from the LLM: `openrouter`, `typesafe` or `custom` (a local Laya server) |
+| `TYPESAFE_API_KEY` | — | the classifier's key on `typesafe` (`OKF_CLASSIFIER_API_KEY` wins) |
 | `OKF_CLASSIFIER_MODEL` | `typesafe/jev-1.13` | CROW classifier, pinned |
 | `OKF_LLM_REASONING` | `false` | `true` lets the model think before it answers: several times slower and costlier; off is sent to OpenRouter (the least effort for models that must think), other providers keep their model's default |
 | `OKF_CLASSIFIER_TIMEOUT` | `8` | seconds per classifier call; a slow or failed call goes to the LLM (the paper ran 60) |
 | `OKF_CLASSIFIER_ATTEMPTS` | `1` | tries per classifier call before the LLM decides (the paper ran 3) |
-| `OKF_CLASSIFIER_BASE_URL` | `https://openrouter.ai/api/v1` | System One endpoint |
+| `OKF_CLASSIFIER_BASE_URL` | the classifier provider's | System One endpoint (required for `custom`) |
 | `OKF_CONFIG` | `~/.config/llm-wiki/config.json` | the settings file |
 | `OKF_PROMPTS_DIR` | — | folder whose prompt files replace the packaged ones |
 | `OKF_UPLOAD_MB` | `25` | largest file or text the server accepts (413 above it) |

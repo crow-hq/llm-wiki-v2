@@ -4,7 +4,7 @@
 import { $, api, esc } from "./util.js";
 
 const AREA_COLORS = ["#ff4d2e", "#f5a524", "#7aa2ff", "#7fd49a", "#c792ea", "#4fd1c5", "#ff8fb1", "#d4c95a", "#ff9a5c", "#9fb4ff"];
-let brain = null; // {sim, timer, nodes}
+let brain = null; // {sim, timer, nodes, refresh}
 
 async function loadD3() {
   if (window.d3) return;
@@ -18,6 +18,11 @@ async function loadD3() {
 export function leaveGraph() {
   if (!brain) return;
   brain.sim.stop(); clearInterval(brain.timer); brain = null;
+}
+
+// A file or a note was just filed from this page: show it in the open brain, live or not.
+export function refreshGraph() {
+  brain?.refresh().catch(() => {});
 }
 
 // `onLive` runs after each live refresh (the sidebar reloads its tree and token counts).
@@ -40,7 +45,7 @@ export async function showGraph(onLive) {
     .force("charge", d3.forceManyBody().strength((d) => d.kind === "folder" ? -700 : -60))
     .force("collide", d3.forceCollide((d) => radius(d) + 3))
     .force("x", d3.forceX(width / 2).strength(0.03)).force("y", d3.forceY(height / 2).strength(0.03));
-  brain = { sim, timer: null, nodes: new Map(), focus: null };
+  brain = { sim, timer: null, nodes: new Map(), focus: null, refresh };
   const color = (d) => !d.area ? "#f3ead8" : AREA_COLORS[areaIndex(d.area) % AREA_COLORS.length]; // root and its notes: cream
   let areas = [];
   const areaIndex = (a) => Math.max(0, areas.indexOf(a));

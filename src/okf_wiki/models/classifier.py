@@ -37,7 +37,7 @@ class Classifier(HttpModel):
     kind = "classifier"
 
     def __init__(self, cfg: ClassifierConfig, usage: UsageTracker, *, client: httpx.Client | None = None) -> None:
-        super().__init__(cfg.base_url, cfg.model, usage, api_key=cfg.api_key, needs_key=True, timeout=cfg.timeout, client=client)
+        super().__init__(cfg.base_url, cfg.model, usage, api_key=cfg.api_key, needs_key=not cfg.ready, timeout=cfg.timeout, client=client)
         self.request_chars = cfg.request_chars
         self.attempts = cfg.attempts
 
@@ -94,3 +94,8 @@ class Classifier(HttpModel):
             batches[-1][key] = question
             used += len(question)
         return [b for b in batches if b]
+
+
+def probe(classifier: Classifier) -> float:
+    """One tiny request, to tell a working classifier from a wrong key or address (ModelError)."""
+    return classifier.nouls("The sky is blue today.", {"q": "The text is about the weather."}, op="settings/probe")["q"]

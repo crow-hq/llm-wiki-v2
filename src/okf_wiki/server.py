@@ -36,6 +36,7 @@ from okf_wiki.bundle.files import SUFFIXES
 from okf_wiki.bundle.tree import graph
 from okf_wiki.config import WikiConfig
 from okf_wiki.errors import InputError, ModelError
+from okf_wiki.models.classifier import probe as probe_classifier
 from okf_wiki.models.llm import live_models, probe
 from okf_wiki.settings import Settings
 from okf_wiki.wiki import Wiki
@@ -65,6 +66,9 @@ class SettingsChanges(BaseModel):
     base_url: str | None = None
     mode: str | None = None
     reasoning: str | None = None  # "true" turns it on, "" back to the default (off)
+    classifier_provider: str | None = None
+    classifier_base_url: str | None = None
+    classifier_model: str | None = None
     classifier_api_key: str | None = None
     bundle: str | None = None
 
@@ -238,16 +242,23 @@ def create_app(
 
     @app.post("/settings/test")
     def test_settings(request: Request, changes: SettingsChanges) -> dict[str, Any]:
-        """Ask the model for one word with `changes` applied, without saving them."""
+        """Ask the model for one word, and in CROW mode the classifier for one answer, with `changes` applied, without saving them."""
         try:
             _, cfg = editable(request).apply(changes.model_dump(exclude_unset=True))
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
-        try:
-            with make_wiki(cfg) as trial:
-                return {"ok": True, "model": cfg.llm.model, "reply": probe(trial.llm)}
-        except ModelError as e:
-            return {"ok": False, "model": cfg.llm.model, "error": str(e)}
+        with make_wiki(cfg) as trial:
+            try:
+                result: dict[str, Any] = {"ok": True, "model": cfg.llm.model, "reply": probe(trial.llm)}
+            except ModelError as e:
+                result = {"ok": False, "model": cfg.llm.model, "error": str(e)}
+            if trial.classifier is not None:
+                try:
+                    probe_classifier(trial.classifier)
+                    result["classifier"] = {"ok": True, "model": cfg.classifier.model}
+                except ModelError as e:
+                    result["classifier"] = {"ok": False, "model": cfg.classifier.model, "error": str(e)}
+        return result
 
     @app.post("/settings/models")
     def list_models(request: Request, changes: SettingsChanges) -> dict[str, Any]:

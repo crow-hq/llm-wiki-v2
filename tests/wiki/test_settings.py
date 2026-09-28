@@ -198,6 +198,79 @@ def test_crow_is_ready_only_with_a_classifier_key() -> None:
     assert settings.view()["ready"] is True
 
 
+def test_save_when_the_classifier_has_its_own_provider_then_the_llm_keeps_its_own() -> None:
+    # ARRANGE
+    settings = Settings({})
+
+    # ACT
+    cfg = settings.save({"provider": "gemini", "api_key": "g-key-0123456789", "classifier_provider": "typesafe", "classifier_api_key": KEY})
+
+    # ASSERT
+    assert (cfg.llm.provider, cfg.llm.api_key) == ("gemini", "g-key-0123456789")
+    assert (cfg.classifier.provider, cfg.classifier.base_url, cfg.classifier.api_key) == ("typesafe", "https://api.typesafe.ai/v1", KEY)
+    assert settings.view()["ready"] is True
+
+
+@pytest.mark.parametrize(
+    ("change", "key"),
+    [
+        ({"classifier_provider": "typesafe"}, ""),
+        ({"classifier_provider": "custom", "classifier_base_url": "http://laya.lan/v1"}, ""),
+        ({"classifier_provider": "openrouter", "classifier_model": "typesafe/jev-1.13"}, KEY),
+        ({"provider": "gemini"}, KEY),
+    ],
+    ids=["other-provider", "other-address", "same-provider", "only-the-llm-moves"],
+)
+def test_save_when_the_classifier_moves_then_its_saved_key_is_dropped(change: dict[str, str], key: str) -> None:
+    # ARRANGE
+    settings = Settings({})
+    settings.save({"provider": "ollama", "classifier_api_key": KEY})
+
+    # ACT
+    cfg = settings.save({**change, "classifier_api_key": ""})
+
+    # ASSERT
+    assert cfg.classifier.api_key == key and written(settings).get("classifier", {}).get("api_key", "") == key
+
+
+def test_save_when_the_classifier_model_is_empty_then_the_pinned_default_is_not_written() -> None:
+    # ARRANGE
+    settings = Settings({})
+    settings.save({"classifier_model": "jev-1.13"})
+
+    # ACT
+    cfg = settings.save({"classifier_model": ""})
+
+    # ASSERT
+    assert "classifier" not in written(settings) or "model" not in written(settings)["classifier"]
+    assert cfg.classifier.model == "typesafe/jev-1.13"
+
+
+def test_crow_with_a_local_classifier_is_ready_without_a_key_but_needs_its_address() -> None:
+    # ARRANGE
+    settings = Settings({})
+
+    # ACT
+    with pytest.raises(ValueError, match="classifier provider 'custom' needs a base_url"):
+        settings.save({"provider": "ollama", "classifier_provider": "custom"})
+    settings.save({"provider": "ollama", "classifier_provider": "custom", "classifier_base_url": "http://localhost:9000/v1"})
+
+    # ASSERT
+    assert settings.view()["ready"] is True
+
+
+def test_managed_when_the_classifier_is_on_typesafe_then_its_own_variable_locks_its_key() -> None:
+    # ARRANGE
+    settings = Settings({"OKF_CLASSIFIER_PROVIDER": "typesafe", "OPENROUTER_API_KEY": "or-key"})
+
+    # ACT
+    managed = settings.managed("gemini", "typesafe")
+
+    # ASSERT
+    assert managed == ["classifier_provider"]
+    assert Settings({"TYPESAFE_API_KEY": "ts-key"}).managed("gemini", "typesafe") == ["classifier_api_key"]
+
+
 def test_a_broken_file_names_itself() -> None:
     settings = Settings({})
     settings.path.parent.mkdir(parents=True)
