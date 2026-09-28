@@ -50,5 +50,13 @@
     <div class="actions"><span class="dlg-hint">Ctrl+Enter to file it</span><button class="btn ghost" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok">File it →</button></div>
   </form>
 </dialog>
+<dialog id="confirm">
+  <form method="dialog" id="confirmform">
+    <h3 id="confirm-title"></h3>
+    <p class="dlg-lead" id="confirm-text"></p>
+    <div id="confirm-typed"><label for="confirm-word">Type <b id="confirm-want"></b> to confirm</label><input id="confirm-word" autocomplete="off" spellcheck="false"></div>
+    <div class="actions"><button class="btn ghost" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok" id="confirm-ok">Delete</button></div>
+  </form>
+</dialog>
 </body>
 </html>

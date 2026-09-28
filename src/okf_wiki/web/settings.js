@@ -72,8 +72,7 @@ export async function showSettings(onSaved) {
             <input id="classifier_base_url" placeholder="http://localhost:9000/v1" value="${esc(v.classifier_base_url)}" ${locked("classifier_base_url") ? "disabled" : ""}>
             <div class="hint">Where it answers POST …/systemone.</div>${lockNote("classifier_base_url")}</div>
           <div class="field"><label for="classifier_model">Classifier model</label>
-            <input id="classifier_model" value="${esc(v.classifier_model)}" ${locked("classifier_model") ? "disabled" : ""}>
-            <div class="hint">CROW's thresholds are calibrated on this version: change it only for the same model under another name (e.g. <code>jev-1.13</code>).</div>${lockNote("classifier_model")}</div>
+            <input id="classifier_model" value="${esc(v.classifier_model)}" ${locked("classifier_model") ? "disabled" : ""}>${lockNote("classifier_model")}</div>
           <div class="field" id="f-classifier_api_key"><label for="classifier_api_key">Classifier key</label>
             <input id="classifier_api_key" type="password" ${locked("classifier_api_key") ? "disabled" : ""}>
             <div class="hint" id="clf-key-hint">Stays on this computer, in a file only you can read.</div>${lockNote("classifier_api_key")}</div>

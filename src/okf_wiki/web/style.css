@@ -40,11 +40,16 @@ aside { display: flex; flex-direction: column; border-right: 1px solid var(--rul
 .chip.none { border-style: dashed; color: var(--faint); }
 nav { flex: 1; overflow: auto; padding: 14px 12px 20px; }
 .label { font: 500 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); padding: 6px 8px; }
-.folder > .row, .note-link { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 6px 8px; border: 0; background: none; text-align: left; color: var(--ink); border-radius: 6px; font: 13px var(--mono); }
-.folder > .row:hover, .note-link:hover { background: var(--raised); }
-.folder > .row .tri { font-size: 9px; color: var(--faint); width: 10px; transition: transform .15s; }
-.folder.open > .row .tri { transform: rotate(90deg); }
-.folder > .row .count { margin-left: auto; font-size: 11px; color: var(--faint); }
+.folder > .line > .row, .note-link { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 6px 8px; border: 0; background: none; text-align: left; color: var(--ink); border-radius: 6px; font: 13px var(--mono); }
+.folder > .line > .row:hover, .note-link:hover { background: var(--raised); }
+.folder > .line > .row .tri { font-size: 9px; color: var(--faint); width: 10px; transition: transform .15s; }
+.folder.open > .line > .row .tri { transform: rotate(90deg); }
+.folder > .line > .row .count { margin-left: auto; font-size: 11px; color: var(--faint); }
+.line { position: relative; } /* a sidebar row and its delete button, shown on hover */
+.del { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); width: 26px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: var(--raised); color: var(--faint); visibility: hidden; cursor: pointer; }
+.del svg { width: 14px; height: 14px; }
+.del:hover { color: var(--ember); }
+.line:hover > .del, .del:focus-visible { visibility: visible; }
 .folder .desc { font: 12px/1.4 var(--text); color: var(--faint); padding: 0 8px 4px 26px; }
 .folder > .kids { display: none; margin-left: 13px; border-left: 1px dashed var(--edge); }
 .folder.open > .kids { display: block; }
@@ -74,6 +79,11 @@ header input:focus { border-color: var(--ember); }
 .btn.ghost { background: none; border: 1px solid var(--edge); color: #c7cfe2; font-weight: 400; padding: 0 14px; }
 .btn.ghost:hover { border-color: var(--ember); color: var(--cream); }
 .btn:disabled { opacity: .45; cursor: default; }
+.btn.danger { background: none; border: 1px solid var(--edge); color: var(--muted); font-weight: 400; padding: 0 14px; }
+.btn.danger:hover { border-color: var(--ember); background: var(--ember-bg); color: var(--ember-soft); }
+.btn.small { height: 34px; font-size: 12px; }
+.danger-zone { display: flex; justify-content: flex-end; margin-top: 20px; }
+.note-actions { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--rule); }
 .btn svg { width: 17px; height: 17px; }
 .btn.icon { width: 44px; padding: 0; }
 #view { flex: 1; overflow: auto; padding: 40px 44px 120px; }

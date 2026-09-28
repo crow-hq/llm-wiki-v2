@@ -8,6 +8,7 @@
     wiki.ingest(text, title="…", resource="https://…")
     wiki.ingest_file(Path("minutes.pdf").read_bytes(), "minutes.pdf")
     wiki.ask("…").text
+    wiki.delete_note("finance/pricing.md"); wiki.delete_folder("/finance"); wiki.clear()
     wiki.usage.to_dict()                      # {"llm": …, "classifier": …, "by_model": …}
 """
 
@@ -21,7 +22,7 @@ from okf_wiki.agents.prompts import Prompts
 from okf_wiki.agents.researcher import Answer, CrowResearcher, Researcher
 from okf_wiki.bundle.check import Problem, check
 from okf_wiki.bundle.files import extract_text, title_of
-from okf_wiki.bundle.store import WikiStore
+from okf_wiki.bundle.store import Deleted, WikiStore
 from okf_wiki.bundle.tree import Folder
 from okf_wiki.config import WikiConfig
 from okf_wiki.errors import InputError
@@ -99,6 +100,21 @@ class Wiki:
 
     def tree(self) -> Folder:
         return self.store.load()
+
+    def delete_note(self, path: str) -> Deleted:
+        """Delete a note ("finance/pricing.md"); links to it go from the other notes, and raw copies only it cites."""
+        with self.store.lock():
+            return self.store.delete_note(path)
+
+    def delete_folder(self, path: str) -> Deleted:
+        """Delete a folder ("/finance") with everything in it, as `delete_note` does for each note."""
+        with self.store.lock():
+            return self.store.delete_folder(path)
+
+    def clear(self) -> Deleted:
+        """Empty the wiki: every note, folder and raw copy. Cannot be undone."""
+        with self.store.lock():
+            return self.store.clear()
 
     def check(self) -> list[Problem]:
         return check(self.cfg.bundle)

@@ -24,7 +24,7 @@ function renderFolder(f, isRoot) {
     const b = document.createElement("button");
     b.className = "note-link"; b.textContent = n.title; b.title = n.summary; b.dataset.path = n.path;
     b.onclick = () => (location.hash = "#/note/" + n.path);
-    kids.append(b);
+    kids.append(withDelete(b, `Delete the note ${n.title}`, () => deleteNote(n)));
   }
   if (isRoot) {
     if (!f.subfolders.length && !f.notes.length) kids.innerHTML = '<div class="empty">Empty — drop a file to start.</div>';
@@ -41,10 +41,17 @@ function renderFolder(f, isRoot) {
     box.classList.contains("open") ? open.add(f.path) : open.delete(f.path);
     localStorage.setItem("okf-open", JSON.stringify([...open]));
   };
-  box.append(row);
+  box.append(withDelete(row, `Delete the folder ${f.path}`, () => deleteFolder(f)));
   if (f.description) { const d = document.createElement("div"); d.className = "desc"; d.textContent = f.description; box.append(d); }
   box.append(kids);
   return box;
+}
+function withDelete(el, label, onDelete) { // a sidebar row with its delete button, shown on hover
+  const line = document.createElement("div"), del = document.createElement("button");
+  line.className = "line"; del.className = "del"; del.title = label; del.setAttribute("aria-label", label);
+  del.innerHTML = ICONS.trash; del.onclick = onDelete;
+  line.append(el, del);
+  return line;
 }
 const countNotes = (f) => f.notes.length + f.subfolders.reduce((s, x) => s + countNotes(x), 0);
 const countFolders = (f) => f.subfolders.length + f.subfolders.reduce((s, x) => s + countFolders(x), 0);
@@ -73,6 +80,7 @@ const ICONS = {
   folder: '<svg viewBox="0 0 24 24" fill="none" stroke="#f5a524" stroke-width="1.6"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   note: '<svg viewBox="0 0 24 24" fill="none" stroke="#ff4d2e" stroke-width="1.6"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="#7aa2ff" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
 };
 
 function home() {
@@ -93,7 +101,8 @@ function home() {
       <div class="card">${ICONS.folder}<div><b>${folders} folder${folders === 1 ? "" : "s"}</b><span>New ones appear when nothing fits. Open them in the sidebar.</span></div></div>
       <div class="card">${ICONS.note}<div><b>Notes and files</b><span>Write a note with + Note, or drop .txt, .md and .pdf files. PDFs need a text layer.</span></div></div>
       <div class="card">${ICONS.search}<div><b>Ask anything</b><span>Answers cite the notes they come from: click one to read it.</span></div></div>
-    </div>`, true);
+    </div>
+    ${notes || folders ? '<div class="danger-zone"><button class="btn danger small" type="button" data-empty>Empty the wiki…</button></div>' : ""}`, true);
 }
 
 async function showNote(path) {
@@ -113,7 +122,8 @@ async function showNote(path) {
         ${gen.by ? `<span>by ${esc(gen.by)}</span>` : ""}
         ${fm.resource ? `<span>from <a href="${esc(fm.resource)}" target="_blank" rel="noopener">${esc(fm.resource)}</a></span>` : ""}</div>
       <div class="md" id="body">${md(n.body)}</div>
-      ${sources ? `<div class="sources"><div class="label" style="padding:0">Sources</div>${sources}</div>` : ""}`);
+      ${sources ? `<div class="sources"><div class="label" style="padding:0">Sources</div>${sources}</div>` : ""}
+      ${kind ? "" : '<div class="note-actions"><button class="btn danger small" type="button" data-delete-note>Delete note</button></div>'}`);
     wireLinks($("#body"), n.path);
   } catch (e) { show(`<p class="lead">${esc(e.message)}</p>`); }
 }
@@ -209,7 +219,60 @@ function newNote() {
   $("#txt").focus();
 }
 $("#add").onclick = newNote;
-$("#view").addEventListener("click", (e) => { if (e.target.closest("[data-new-note]")) newNote(); });
+$("#view").addEventListener("click", (e) => {
+  if (e.target.closest("[data-new-note]")) newNote();
+  else if (e.target.closest("[data-empty]")) emptyWiki();
+  else if (e.target.closest("[data-delete-note]")) deleteNote({ path: current, title: $("h2.title")?.textContent || current });
+});
+
+// -- deleting: a note, a folder, the whole wiki -------------------------------
+function confirmDelete({ title, text, action = "Delete", word = "" }) { // resolves true once the user confirms
+  const dlg = $("#confirm"), ok = $("#confirm-ok"), typed = $("#confirm-word");
+  $("#confirm-title").textContent = title; $("#confirm-text").textContent = text; ok.textContent = action;
+  $("#confirm-typed").hidden = !word; $("#confirm-want").textContent = word; typed.value = "";
+  ok.disabled = Boolean(word);
+  typed.oninput = () => (ok.disabled = typed.value.trim().toLowerCase() !== word);
+  typed.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); if (!ok.disabled) $("#confirmform").requestSubmit(ok); } };
+  dlg.showModal();
+  (word ? typed : $("#confirmform [value=cancel]")).focus(); // Enter alone never deletes
+  return new Promise((resolve) => { // on submit, not on close: a browser may hold the close event while the tab is hidden
+    $("#confirmform").onsubmit = (e) => resolve(e.submitter?.value === "ok");
+    dlg.onclose = () => { if (!dlg.open) resolve(false); }; // Escape; a late event of an earlier dialog finds this one open
+  });
+}
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+async function deleteNote(n) {
+  if (!await confirmDelete({ title: "Delete this note?", text: `"${n.title}" goes, with the links other notes have to it and the sources no other note cites. This cannot be undone.` })) return;
+  await deleting(api("/note?path=" + encodeURIComponent(n.path), { method: "DELETE" }), current === n.path);
+}
+async function deleteFolder(f) {
+  const notes = countNotes(f), subs = countFolders(f);
+  const inside = subs ? `${plural(notes, "note")} in it and in ${plural(subs, "subfolder")}` : plural(notes, "note") + " in it";
+  if (!await confirmDelete({ title: `Delete ${f.path}?`, text: `The folder goes with ${inside}, the links other notes have to them and the sources no other note cites. This cannot be undone.` })) return;
+  await deleting(api("/folder?path=" + encodeURIComponent(f.path), { method: "DELETE" }), current.startsWith(f.path.slice(1) + "/"));
+}
+async function emptyWiki() {
+  const text = `Every note (${countNotes(tree)}), every folder (${countFolders(tree)}) and every source goes, and the log starts again. This cannot be undone.`;
+  if (!await confirmDelete({ title: "Empty the whole wiki?", text, action: "Empty the wiki", word: "empty" })) return;
+  await deleting(api("/wiki", { method: "DELETE" }), true);
+}
+async function deleting(request, leave) { // leave: the note on screen was deleted
+  try {
+    const r = await request;
+    const what = [r.notes.length && plural(r.notes.length, "note"), r.folders.length && plural(r.folders.length, "folder")].filter(Boolean).join(" and ");
+    tell(`Deleted ${what || "nothing"}` + (r.unlinked.length ? ` · links removed from ${plural(r.unlinked.length, "note")}` : ""), "ok");
+  } catch (e) { tell(e.message, "err"); }
+  await loadTree(); loadUsage(); refreshGraph();
+  if (leave && location.hash.startsWith("#/note/")) location.hash = "";
+  else if (!location.hash || location.hash === "#/") home();
+}
+function tell(text, kind) { // a short-lived line in the queue corner
+  const el = document.createElement("div");
+  el.className = "job " + kind; el.innerHTML = '<div class="what"></div>';
+  el.querySelector(".what").textContent = text;
+  $("#queue").append(el);
+  setTimeout(() => el.remove(), 6000);
+}
 $("#txt").onkeydown = (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("#addform").requestSubmit($("#addform [value=ok]")); };
 $("#brain").onclick = () => (location.hash = "#/graph");
 $("#dlg").onclose = () => {

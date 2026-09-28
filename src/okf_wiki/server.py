@@ -4,7 +4,8 @@
 """HTTP API (extra `server`) and the local web UI at GET /.
 
 POST /ingest, POST /upload (a .txt/.md/.pdf file), POST /ask, GET /tree, GET /note,
-GET /graph, GET /usage, GET /check, GET /health; GET /settings, POST /settings,
+GET /graph, GET /usage, GET /check, GET /health; DELETE /note, DELETE /folder and
+DELETE /wiki (empty it); GET /settings, POST /settings,
 POST /settings/test and POST /settings/models when the app is given the settings file.
 
 Two guards for a wiki on your machine, where any web page you visit can send requests:
@@ -202,6 +203,27 @@ def create_app(
         except FileNotFoundError as e:
             raise HTTPException(404, f"no note at {path}") from e
         return {"path": n.rel, "title": n.title, "summary": n.summary, "tags": n.tags, "frontmatter": n.frontmatter, "body": n.body}
+
+    @app.delete("/note")
+    def delete_note(path: str) -> dict[str, Any]:
+        with write_lock:
+            try:
+                return current().delete_note(path).to_dict()
+            except FileNotFoundError as e:
+                raise HTTPException(404, f"no note at {path}") from e
+
+    @app.delete("/folder")
+    def delete_folder(path: str) -> dict[str, Any]:
+        with write_lock:
+            try:
+                return current().delete_folder(path).to_dict()
+            except FileNotFoundError as e:
+                raise HTTPException(404, f"no folder at {path}") from e
+
+    @app.delete("/wiki")
+    def clear() -> dict[str, Any]:
+        with write_lock:
+            return current().clear().to_dict()
 
     @app.get("/usage")
     def usage() -> dict[str, Any]:

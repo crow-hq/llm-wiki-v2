@@ -60,6 +60,7 @@ so you can add to it or delete it.
 | **Add documents** | Drop `.txt`, `.md` or `.pdf` files anywhere on the page. Each one lands in the right folder, merged with what the wiki already knows. |
 | **Ask questions** | Type a question. The answer cites the notes it used: click one to read it. |
 | **See the brain** | A live map of your folders, notes and links. |
+| **Delete** | Hover a note or folder in the sidebar and press the bin, or **Delete note** at the foot of a note. Links to it go from the other notes. **Empty the wiki** on the home page starts over. |
 | **Keep your files** | Plain Markdown in `~/llm-wiki`: open it in any editor, keep it in git. |
 
 ## Something wrong?
@@ -115,6 +116,7 @@ CLI runs in the same image: `docker compose run --rm wiki okf-wiki check`.
 | `POST /ask` `{question}` | answer with citations; returns the notes read and token usage |
 | `GET /tree` · `GET /note?path=…` | folder tree · one note (frontmatter and Markdown body) |
 | `GET /check` · `GET /graph` | lint problems · the wiki as nodes and links (JSON) |
+| `DELETE /note?path=…` · `DELETE /folder?path=/…` · `DELETE /wiki` | delete a note · a folder with all it holds · everything; links to them go, and raw copies no remaining note cites |
 | `GET /usage` · `GET /health` | token totals per ledger and model · status |
 | `GET /settings` · `POST /settings` · `POST /settings/test` | provider, model and key (masked) · save them · try them; changes from this machine only |
 

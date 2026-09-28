@@ -20,8 +20,10 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import shutil
 import threading
 from collections.abc import Iterator
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,7 @@ from okf_wiki.bundle.tree import (
     SOURCE_TYPE,
     Folder,
     Note,
+    drop_links,
     join_see_also,
     note_dir,
     parse_index,
@@ -57,6 +60,19 @@ def _entry(title: str, link: str, text: str) -> str:
     title = " ".join(title.split()).replace("[", "(").replace("]", ")")
     text = " ".join(text.split())
     return f"* [{title}]({link})" + (f" - {text}" if text else "")
+
+
+@dataclass
+class Deleted:
+    """What a delete removed, and the notes it touched."""
+
+    notes: list[str] = field(default_factory=list)  # bundle paths of the notes deleted
+    folders: list[str] = field(default_factory=list)  # labels of the folders deleted, subfolders included
+    sources: list[str] = field(default_factory=list)  # raw copies that no remaining note cites ("/raw/…")
+    unlinked: list[str] = field(default_factory=list)  # remaining notes that lost a link to what went
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 class WikiStore:
@@ -261,6 +277,80 @@ class WikiStore:
                 lines.insert(at, "")
         _write(path, "\n".join(lines).rstrip() + "\n")
 
+    # -- deleting -------------------------------------------------------------
+
+    def delete_note(self, rel: str) -> Deleted:
+        """Delete one note; FileNotFoundError when no note of the tree is at `rel`."""
+        root = self.load()
+        note = next((n for n in root.all_notes() if n.rel == rel.strip().lstrip("/")), None)
+        if note is None:
+            raise FileNotFoundError(rel)
+        deleted = self._delete(root, [note], [])
+        self.append_log("Deleted note", f"{note.title} ({note.rel})")
+        return deleted
+
+    def delete_folder(self, rel: str) -> Deleted:
+        """Delete a folder with its notes and subfolders; the root is the wiki itself (see `clear`)."""
+        root = self.load()
+        folder = root.find(rel)
+        if folder is None:
+            raise FileNotFoundError(rel)
+        if folder.is_root:
+            raise InputError("the root folder is the wiki itself: empty the wiki instead")
+        deleted = self._delete(root, folder.all_notes(), [folder])
+        self.append_log("Deleted folder", f"{folder.label}, with {len(deleted.notes)} notes")
+        return deleted
+
+    def clear(self) -> Deleted:
+        """Empty the wiki: every note, folder and raw copy go, and the log starts again. Other files stay."""
+        root = self.load()
+        deleted = self._delete(root, root.all_notes(), list(root.subfolders))
+        for raw in sorted((self.root / RAW).glob("*.md")):
+            raw.unlink()
+            deleted.sources.append(f"/{RAW}/{raw.name}")
+        deleted.sources = list(dict.fromkeys(deleted.sources))
+        _write(self.root / LOG, "# Wiki log\n")
+        self.append_log("Emptied the wiki", f"{len(deleted.notes)} notes and {len(deleted.folders)} folders deleted")
+        return deleted
+
+    def _delete(self, root: Folder, notes: list[Note], folders: list[Folder]) -> Deleted:
+        """Remove `notes` and `folders` (with all they hold), and every link to them from the notes that stay."""
+        gone_notes = {n.rel for n in notes}
+        gone_dirs = [f.rel for f in folders]
+
+        def gone(target: str) -> bool:
+            return target in gone_notes or any(target == d or target.startswith(f"{d}/") for d in gone_dirs)
+
+        kept = [n for n in root.all_notes() if n.rel not in gone_notes]
+        deleted = Deleted(notes=[n.rel for n in notes], folders=[f.label for top in folders for f in top.walk()])
+        for note in kept:
+            body = drop_links(note.body, note.rel, gone)
+            if body != note.body:
+                note.body = body
+                self._save(note)
+                deleted.unlinked.append(note.rel)
+        touched: list[Folder] = []
+        for folder in folders:
+            shutil.rmtree(folder.path)
+            if folder.parent is not None:
+                folder.parent.subfolders.remove(folder)
+                touched.append(folder.parent)
+        for note in notes:
+            note.path.unlink(missing_ok=True)  # a note inside a deleted folder is gone already
+            if note.folder is not None:
+                note.folder.notes.remove(note)
+                touched.append(note.folder)
+        for folder in dict.fromkeys(touched):
+            if folder.path.is_dir():
+                self.write_index(folder)
+        cited = {r for n in kept for r in _raw_sources(n)}
+        for resource in dict.fromkeys(r for n in notes for r in _raw_sources(n)):
+            path = (self.root / resource.lstrip("/")).resolve()
+            if resource not in cited and path.parent == (self.root / RAW).resolve() and path.is_file():
+                path.unlink()
+                deleted.sources.append(resource)
+        return deleted
+
     def unique_slug(self, folder: Folder, slug: str) -> str:
         candidate, n = slug, 2
         while (folder.path / f"{candidate}.md").exists():
@@ -269,6 +359,16 @@ class WikiStore:
 
     def _save(self, note: Note) -> None:
         _write(note.path, OKFDocument(note.frontmatter, note.body).serialize())
+
+
+def _raw_sources(note: Note) -> list[str]:
+    """The raw copies a note cites ("/raw/…md")."""
+    sources = note.frontmatter.get("sources")
+    return [
+        str(s["resource"])
+        for s in (sources if isinstance(sources, list) else [])
+        if isinstance(s, dict) and str(s.get("resource", "")).startswith(f"/{RAW}/")
+    ]
 
 
 def _write(path: Path, text: str) -> None:

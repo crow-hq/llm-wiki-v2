@@ -12,7 +12,7 @@ import os
 import posixpath
 import re
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -25,6 +25,7 @@ SEE_ALSO = "# See also"
 OKF_VERSION = "0.2"
 
 _ENTRY = re.compile(r"^[*-]\s+\[(?P<title>[^\]]*)\]\((?P<link>[^)\s]+)\)\s*(?:-\s*(?P<text>.*))?$")
+_LINK = re.compile(r"\[(?P<text>[^\]]*)\]\((?P<link>[^)\s]+)\)")
 
 
 def slugify(text: str, *, max_len: int = 60, fallback: str = "note") -> str:
@@ -163,6 +164,27 @@ def join_see_also(main: str, entries: list[str]) -> str:
     if not entries:
         return main + "\n"
     return f"{main}\n\n{SEE_ALSO}\n\n" + "\n".join(entries) + "\n"
+
+
+def link_target(from_rel: str, link: str) -> str | None:
+    """The bundle path a link in the document at `from_rel` points to ("/x.md" from the root); None off the bundle."""
+    link = link.split("#")[0]
+    if not link or ":" in link:  # a web or mail link, or only an anchor
+        return None
+    return posixpath.normpath(link.lstrip("/") if link.startswith("/") else posixpath.join(note_dir(from_rel), link))
+
+
+def drop_links(body: str, from_rel: str, gone: Callable[[str], bool]) -> str:
+    """`body` without its links to deleted paths: their See-also entries go, inline links keep only their text."""
+
+    def dead(link: str) -> bool:
+        target = link_target(from_rel, link)
+        return target is not None and gone(target)
+
+    main, entries = split_see_also(body)
+    kept = [e for e in entries if not ((m := _ENTRY.match(e.strip())) and dead(m["link"]))]
+    text = _LINK.sub(lambda m: m["text"] if dead(m["link"]) else m[0], main)
+    return body if kept == entries and text == main else join_see_also(text, kept)
 
 
 def graph(root: Folder) -> dict[str, list[dict[str, Any]]]:
