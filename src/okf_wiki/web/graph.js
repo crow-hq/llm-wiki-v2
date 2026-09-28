@@ -25,11 +25,14 @@ export function refreshGraph() {
   brain?.refresh().catch(() => {});
 }
 
-// `onLive` runs after each live refresh (the sidebar reloads its tree and token counts).
-export async function showGraph(onLive) {
+// `onLive` runs after each live refresh (the sidebar reloads its tree and token counts);
+// `deleteFolder(path)` and `emptyWiki()` ask, delete, and refresh the page, the brain included.
+export async function showGraph(onLive, { deleteFolder, emptyWiki }) {
   const view = $("#view");
   view.className = "brain";
   view.innerHTML = `<div class="brain-bar"><h2>Brain</h2><span class="crumbs" id="gstats"></span>
+    <button class="btn danger small" type="button" id="gdel" hidden></button>
+    <button class="btn danger small" type="button" id="gempty" hidden>Empty the wiki</button>
     <label><input type="checkbox" id="live"> live</label></div><div id="tip"></div><div class="legend" id="legend"></div>`;
   try { await loadD3(); } catch { view.innerHTML = '<article><p class="lead">Could not load d3 for the graph.</p></article>'; return; }
   const svg = d3.select(view).insert("svg", ":first-child");
@@ -68,7 +71,7 @@ export async function showGraph(onLive) {
       .style("--glow", (d) => d.kind === "folder" ? color(d) : null);
     node.select("text").text((d) => d.label).attr("dy", (d) => -radius(d) - 6);
     node.on("mouseenter", (e, d) => tip(e, d)).on("mousemove", (e, d) => tip(e, d)).on("mouseleave", () => ($("#tip").style.display = "none"))
-      .on("click", (e, d) => d.kind === "note" ? (location.hash = "#/note/" + d.id) : focus(d, links))
+      .on("click", (e, d) => d.kind === "note" ? (location.hash = "#/note/" + d.id) : focus(d))
       .call(d3.drag().on("start", (e, d) => { if (!e.active) sim.alphaTarget(0.2).restart(); d.fx = d.x; d.fy = d.y; })
         .on("drag", (e, d) => { d.fx = e.x; d.fy = e.y; })
         .on("end", (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = d.fy = null; }));
@@ -88,6 +91,9 @@ export async function showGraph(onLive) {
     const notes = g.nodes.filter((n) => n.kind === "note").length;
     $("#gstats").textContent = `${notes} notes · ${g.nodes.length - notes - 1} folders · ${g.links.filter((l) => l.kind === "see_also").length} links`;
     $("#legend").innerHTML = areas.map((a, i) => `<span style="--c:${AREA_COLORS[i % AREA_COLORS.length]}">${esc(a)}</span>`).join("");
+    $("#gempty").hidden = g.nodes.length < 2; // only the root: nothing to empty
+    if (brain.focus && !brain.nodes.has(brain.focus)) brain.focus = null; // its folder was deleted
+    lit();
   }
 
   function fit() { // zoom so the whole brain fills the view
@@ -105,13 +111,22 @@ export async function showGraph(onLive) {
     t.style.display = "block"; t.style.left = (e.clientX - box.left + 14) + "px"; t.style.top = (e.clientY - box.top + 14) + "px";
   }
 
-  function focus(d, links) { // click a folder: keep its branch lit; click again to clear
+  function focus(d) { // click a folder: keep its branch lit; click again to clear
     brain.focus = brain.focus === d.id ? null : d.id;
-    const inside = (id) => !brain.focus || brain.focus === "/" || id === brain.focus || id.startsWith(brain.focus.slice(1) + "/") || id.startsWith(brain.focus + "/");
-    nodeLayer.selectAll("g.node").classed("dim", (n) => !inside(n.id));
-    linkLayer.selectAll("line").classed("dim", (l) => !inside(l.source.id) || !inside(l.target.id));
+    lit();
   }
 
+  function lit() { // dim what is outside the focused folder, and offer to delete that folder
+    const f = brain.focus, id = (x) => typeof x === "object" ? x.id : x; // a link end is a node once the simulation has it
+    const inside = (n) => !f || f === "/" || n === f || n.startsWith(f.slice(1) + "/") || n.startsWith(f + "/");
+    nodeLayer.selectAll("g.node").classed("dim", (n) => !inside(n.id));
+    linkLayer.selectAll("line").classed("dim", (l) => !inside(id(l.source)) || !inside(id(l.target)));
+    $("#gdel").hidden = !f || f === "/";
+    $("#gdel").textContent = `Delete ${f}`;
+  }
+
+  $("#gdel").onclick = () => deleteFolder(brain.focus);
+  $("#gempty").onclick = () => emptyWiki();
   await refresh();
   $("#live").onchange = (e) => {
     clearInterval(brain.timer);

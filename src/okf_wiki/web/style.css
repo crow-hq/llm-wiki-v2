@@ -26,6 +26,7 @@ a { color: var(--ember-soft); text-decoration-thickness: 1px; text-underline-off
 a:hover { color: #ffa07a; }
 button { font: inherit; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+[hidden] { display: none !important; } /* over .btn's inline-flex */
 
 /* -- sidebar -------------------------------------------------------------- */
 aside { display: flex; flex-direction: column; border-right: 1px solid var(--rule); min-height: 0; background: var(--panel); }
@@ -79,10 +80,9 @@ header input:focus { border-color: var(--ember); }
 .btn.ghost { background: none; border: 1px solid var(--edge); color: #c7cfe2; font-weight: 400; padding: 0 14px; }
 .btn.ghost:hover { border-color: var(--ember); color: var(--cream); }
 .btn:disabled { opacity: .45; cursor: default; }
-.btn.danger { background: none; border: 1px solid var(--edge); color: var(--muted); font-weight: 400; padding: 0 14px; }
+.btn.danger { background: none; border: 1px solid #6b2b1f; color: var(--ember-soft); font-weight: 400; padding: 0 14px; }
 .btn.danger:hover { border-color: var(--ember); background: var(--ember-bg); color: var(--ember-soft); }
 .btn.small { height: 34px; font-size: 12px; }
-.danger-zone { display: flex; justify-content: flex-end; margin-top: 20px; }
 .note-actions { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--rule); }
 .btn svg { width: 17px; height: 17px; }
 .btn.icon { width: 44px; padding: 0; }

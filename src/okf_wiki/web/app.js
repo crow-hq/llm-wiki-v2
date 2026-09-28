@@ -53,6 +53,7 @@ function withDelete(el, label, onDelete) { // a sidebar row with its delete butt
   line.append(el, del);
   return line;
 }
+const findFolder = (f, path) => f.path === path ? f : f.subfolders.map((s) => findFolder(s, path)).find(Boolean);
 const countNotes = (f) => f.notes.length + f.subfolders.reduce((s, x) => s + countNotes(x), 0);
 const countFolders = (f) => f.subfolders.length + f.subfolders.reduce((s, x) => s + countFolders(x), 0);
 function highlight() {
@@ -93,7 +94,7 @@ function home() {
         <div class="crumbs">YOUR WIKI</div>
         <h2>${title}</h2>
         <p>Drop documents anywhere on this page: the librarian reads each one, picks its folder (or makes a new one), merges it with what the wiki already knows and links related notes.</p>
-        <div class="actions"><button class="btn" type="button" data-new-note>+ Write a note</button><label class="btn ghost" for="files">↑ Add files</label><a class="btn ghost" href="#/graph">Open the brain</a></div>
+        <div class="actions"><button class="btn" type="button" data-new-note>+ Write a note</button><label class="btn ghost" for="files">↑ Add files</label><a class="btn ghost" href="#/graph">Open the brain</a>${notes || folders ? '<button class="btn danger" type="button" data-empty>Empty the wiki</button>' : ""}</div>
       </div>
       <div class="art" role="img" aria-label="A pixel-art crow under a red moon, beside a glowing graph of notes"></div>
     </div>
@@ -101,8 +102,7 @@ function home() {
       <div class="card">${ICONS.folder}<div><b>${folders} folder${folders === 1 ? "" : "s"}</b><span>New ones appear when nothing fits. Open them in the sidebar.</span></div></div>
       <div class="card">${ICONS.note}<div><b>Notes and files</b><span>Write a note with + Note, or drop .txt, .md and .pdf files. PDFs need a text layer.</span></div></div>
       <div class="card">${ICONS.search}<div><b>Ask anything</b><span>Answers cite the notes they come from: click one to read it.</span></div></div>
-    </div>
-    ${notes || folders ? '<div class="danger-zone"><button class="btn danger small" type="button" data-empty>Empty the wiki…</button></div>' : ""}`, true);
+    </div>`, true);
 }
 
 async function showNote(path) {
@@ -163,7 +163,13 @@ function route() {
   const h = decodeURIComponent(location.hash);
   if (h !== "#/graph") leaveGraph();
   if (h.startsWith("#/note/")) showNote(h.slice(7));
-  else if (h === "#/graph") { current = ""; highlight(); showGraph(() => loadTree().then(loadUsage)); }
+  else if (h === "#/graph") {
+    current = ""; highlight();
+    showGraph(() => loadTree().then(loadUsage), {
+      deleteFolder: async (path) => { await loadTree(); const f = findFolder(tree, path); if (f) deleteFolder(f); },
+      emptyWiki: async () => { await loadTree(); emptyWiki(); }, // counts as they are now
+    });
+  }
   else if (h === "#/settings") { current = ""; highlight(); showSettings(saved); }
   else if (h !== "#/ask") home();
 }
