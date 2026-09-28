@@ -16,10 +16,20 @@ const NAME = { openrouter: "OpenRouter", openai: "OpenAI", gemini: "Gemini", oll
 const CLF_HELP = {
   openrouter: "Jev on OpenRouter. With OpenRouter as the provider above, its key serves the classifier too; otherwise paste an OpenRouter key.",
   typesafe: 'Jev straight from TypeSafe: paste a TypeSafe key.',
-  laya: "Laya on this computer: start it with LAYA_PORT=8001 laya-serve (the wiki takes 8000). No key unless you set LAYA_API_KEY. Model typed-decisions is the checkpoint tuned for these questions (its thresholds preset was measured on it); auto lets Laya pick its English or multilingual one.",
-  custom: "Any other server of the System One API: its address, and a key if it wants one. It starts from Jev's thresholds.",
+  custom: "Any server of the System One API, such as Laya on this computer (LAYA_PORT=8001 laya-serve: the wiki takes 8000): its address, and a key if it wants one. Its thresholds start from the Laya preset, and its model from typed-decisions, the Laya checkpoint that preset was measured on.",
 };
-const CLF_NAME = { openrouter: "OpenRouter (Jev)", typesafe: "TypeSafe (Jev)", laya: "Laya (local)", custom: "Custom (System One API)" };
+const CLF_NAME = { openrouter: "OpenRouter (Jev)", typesafe: "TypeSafe (Jev)", custom: "Custom" };
+// How each model is called: [field, label, what it does, input limits]. Kept per provider, like its key and model.
+const LLM_PARAMS = [
+  ["temperature", "Temperature", "How freely the model writes: 0 gives the same words every time. The wiki uses 0.1: filing wants consistency.", 'min="0" max="2"'],
+  ["timeout", "Timeout (seconds)", "How long to wait for one reply before it fails. Raise it for a slow local model.", 'min="1"'],
+];
+const CLF_PARAMS = [
+  ["classifier_timeout", "Timeout (seconds)", "How long to wait for one decision; a slower one is dropped and the LLM decides.", 'min="0.5"'],
+  ["classifier_attempts", "Attempts", "Tries per decision before the LLM takes it.", 'min="1"'],
+  ["classifier_state_chars", "Note text read", "Characters of the incoming note each decision reads: its title, summary and opening.", 'min="500"'],
+  ["classifier_request_chars", "Request size", "Most characters per request; a longer list of candidates is split into several requests.", 'min="1000"'],
+];
 // The CROW decision thresholds: [name, label, "%" for a probability shown as a percentage, what it does].
 const CROW = [
   ["tau_route", "Routing: sure", "%", "A routing choice at least this sure follows only its best folder; below, the best two paths are followed."],
@@ -53,6 +63,9 @@ export async function showSettings(onSaved, said = "") {
   const s = await api("/settings");
   const v = s.values, managed = new Set(s.managed), locked = (f) => !s.editable || managed.has(f);
   const lockNote = (f) => managed.has(f) ? '<div class="hint">Set by the environment or a command-line flag.</div>' : "";
+  const params = (list) => `<div class="thresholds">${list.map(([id, label, hint, limits]) => `<label class="th"><span>${esc(label)}</span>
+    <span class="num"><input id="${id}" type="number" step="any" ${limits} value="${esc(v[id])}" ${locked(id) ? "disabled" : ""}></span>
+    <small>${esc(managed.has(id) ? "Set by the environment or a command-line flag." : hint)}</small></label>`).join("")}</div>`;
   const clfOptions = Object.keys(s.classifier_providers).map((p) =>
     `<option value="${esc(p)}"${p === v.classifier_provider ? " selected" : ""}>${esc(CLF_NAME[p] || p)}</option>`).join("");
   const tiles = Object.keys(s.providers).map((p) => `<label class="tile${p === "ollama" ? " free" : ""}">
@@ -80,7 +93,8 @@ export async function showSettings(onSaved, said = "") {
       <div class="field"><label class="check"><input type="checkbox" id="reasoning"${v.reasoning ? " checked" : ""} ${locked("reasoning") ? "disabled" : ""}>
         Let the model think before it answers</label>
         <div class="hint">Off by default: thinking makes every note several times slower and costlier, and rarely files it better. Kept to a minimum on OpenRouter; other providers follow their model's default.</div>${lockNote("reasoning")}</div>
-      <details class="advanced" id="advanced"><summary>Advanced: CROW mode and its classifier, wiki folder</summary>
+      <div class="field"><label>Model parameters</label>${params(LLM_PARAMS)}</div>
+      <details class="advanced" id="advanced"><summary>Advanced: CROW mode, the classifier and its parameters, wiki folder</summary>
         <div class="field"><label for="mode">Who decides where notes go</label>
           <select id="mode" ${locked("mode") ? "disabled" : ""}>
             <option value="crow"${v.mode === "crow" ? " selected" : ""}>crow — a typed classifier decides (recommended: faster, fewer tokens)</option>
@@ -91,13 +105,14 @@ export async function showSettings(onSaved, said = "") {
             <select id="classifier_provider" ${locked("classifier_provider") ? "disabled" : ""}>${clfOptions}</select>
             <div class="hint" id="clf-help"></div>${lockNote("classifier_provider")}</div>
           <div class="field" id="f-classifier_base_url"><label for="classifier_base_url">Classifier server address</label>
-            <input id="classifier_base_url" placeholder="http://localhost:9000/v1" value="${esc(v.classifier_base_url)}" ${locked("classifier_base_url") ? "disabled" : ""}>
+            <input id="classifier_base_url" placeholder="http://127.0.0.1:8001/v1" value="${esc(v.classifier_base_url)}" ${locked("classifier_base_url") ? "disabled" : ""}>
             <div class="hint">Where it answers POST …/systemone.</div>${lockNote("classifier_base_url")}</div>
           <div class="field"><label for="classifier_model">Classifier model</label>
             <input id="classifier_model" value="${esc(v.classifier_model)}" ${locked("classifier_model") ? "disabled" : ""}>${lockNote("classifier_model")}</div>
           <div class="field" id="f-classifier_api_key"><label for="classifier_api_key">Classifier key</label>
             <input id="classifier_api_key" type="password" ${locked("classifier_api_key") ? "disabled" : ""}>
             <div class="hint" id="clf-key-hint">Stays on this computer, in a file only you can read.</div>${lockNote("classifier_api_key")}</div>
+          <div class="field"><label>Classifier parameters</label>${params(CLF_PARAMS)}</div>
           <div class="field" id="f-crow"><label>Decision thresholds</label>
             <div class="thresholds">${CROW.map(([n, label, unit, hint]) => `<label class="th"><span>${esc(label)}</span>
               <span class="num"><input id="crow_${n}" type="number" step="any" min="${unit ? 0 : 1}"${unit ? ' max="100"' : ""} value="${shown(n, v["crow_" + n])}" ${locked("crow_" + n) ? "disabled" : ""}>${unit ? "<i>%</i>" : ""}</span>
@@ -122,15 +137,20 @@ export async function showSettings(onSaved, said = "") {
   const drafts = { llm: {}, classifier: {} };
   const memo = (kind, p) => s.memory[kind][p] || { model: "", base_url: "", api_key: "" };
   const crowIds = CROW.map(([n]) => "crow_" + n);
-  const inputs = { llm: ["model", "base_url", "api_key"], classifier: ["classifier_model", "classifier_base_url", "classifier_api_key", ...crowIds] };
-  const local = (cp) => cp === "custom" || cp === "laya"; // a server of your own: its address shown, a key only if it wants one
+  const paramIds = { llm: LLM_PARAMS.map(([id]) => id), classifier: CLF_PARAMS.map(([id]) => id) };
+  const inputs = {
+    llm: ["model", "base_url", "api_key", ...paramIds.llm],
+    classifier: ["classifier_model", "classifier_base_url", "classifier_api_key", ...paramIds.classifier, ...crowIds],
+  };
+  const local = (cp) => cp === "custom"; // a server of your own: its address shown, a key only if it wants one
+  const paramName = (kind, id) => kind === "llm" ? id : id.slice("classifier_".length); // the name in s.params and s.memory
   const defaults = { llm: (p) => s.providers[p].models[0] || "", classifier: (p) => s.classifier_providers[p].models[0] || "" };
   let at = { llm: v.provider, classifier: v.classifier_provider };
   const keep = (kind) => (drafts[kind][at[kind]] = Object.fromEntries(inputs[kind].map((f) => [f, $("#" + f).value])));
   const load = (kind, p) => { // what the provider had: typed here, else saved, else its default
     const typed = drafts[kind][p], m = memo(kind, p), [model, url, key] = inputs[kind];
-    const address = m.base_url || (kind === "classifier" && p === "laya" ? s.classifier_providers.laya.base_url : "");
-    const had = typed || { [model]: m.model || defaults[kind](p), [url]: address, [key]: "",
+    const had = typed || { [model]: m.model || defaults[kind](p), [url]: m.base_url, [key]: "",
+      ...Object.fromEntries(paramIds[kind].map((id) => [id, String(m[paramName(kind, id)] ?? s.params[kind][paramName(kind, id)])])),
       ...(kind === "classifier" ? Object.fromEntries(CROW.map(([n]) => ["crow_" + n, shown(n, m.crow?.[n])])) : {}) };
     for (const f of inputs[kind]) if (!locked(f)) $("#" + f).value = had[f];
     at[kind] = p;
@@ -157,11 +177,11 @@ export async function showSettings(onSaved, said = "") {
     $("#classifier_api_key").placeholder = saved ? `saved: ${saved} · leave empty to keep`
       : shared ? "empty: the OpenRouter key above serves it too" : local(cp) ? "its key, if it wants one" : `your ${CLF_NAME[cp] || cp} key`;
     $("#crow-hint").innerHTML = `Filled from the ${PRESET_NAME[preset.crow_preset] || preset.crow_preset} preset when you choose the classifier `
-      + `(Laya's for Laya, Jev's for the others); change them when you need to. <a href="#" id="crow-reset">Reset to the preset</a>`;
+      + `(Laya's for Custom, Jev's for OpenRouter and TypeSafe); change them when you need to. <a href="#" id="crow-reset">Reset to the preset</a>`;
     if (crow && preset.needs_key && !saved && !shared) $("#advanced").open = true; // CROW cannot start without it
   };
   const fields = ["provider", "base_url", "api_key", "model", "mode", "reasoning",
-    "classifier_provider", "classifier_base_url", "classifier_model", "classifier_api_key", "bundle", ...crowIds];
+    "classifier_provider", "classifier_base_url", "classifier_model", "classifier_api_key", "bundle", ...paramIds.llm, ...paramIds.classifier, ...crowIds];
   const number = (f) => { // a threshold as the server takes it: a fraction for a percentage, "" for the preset's
     const n = f.slice(5), raw = $("#" + f).value.trim();
     return raw === "" ? "" : PERCENT.has(n) ? String(Number(raw) / 100) : String(Math.round(Number(raw)));
@@ -169,7 +189,7 @@ export async function showSettings(onSaved, said = "") {
   const value = (f) => f === "provider" ? provider.value
     : f === "reasoning" ? ($("#reasoning").checked ? "true" : "") // "" is the default: off
     : f === "base_url" && provider.value !== "custom" ? "" // presets bring their own; the server remembers the custom one
-    : f === "classifier_base_url" && (!local(clf()) || $("#" + f).value.trim() === s.classifier_providers[clf()].base_url) ? ""
+    : f === "classifier_base_url" && !local(clf()) ? ""
     : f.startsWith("crow_") ? number(f)
     : f === "classifier_model" && $("#classifier_model").value.trim() === s.classifier_providers[clf()].models[0] ? "" // the pinned default stays the code's
     : $("#" + f).value.trim();

@@ -83,6 +83,13 @@ class SettingsChanges(BaseModel):
     crow_beam: str | None = None
     crow_retrieval_beam: str | None = None
     crow_k: str | None = None
+    # How each model is called (a number as text, "" for the default)
+    temperature: str | None = None
+    timeout: str | None = None
+    classifier_timeout: str | None = None
+    classifier_attempts: str | None = None
+    classifier_state_chars: str | None = None
+    classifier_request_chars: str | None = None
 
 
 def hostname(request: Request) -> str:

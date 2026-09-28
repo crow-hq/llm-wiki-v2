@@ -31,7 +31,9 @@ from llmw2.config import (
     CLASSIFIER_PROVIDERS,
     CROW_PRESETS,
     PROVIDERS,
+    ClassifierConfig,
     CrowConfig,
+    LLMConfig,
     Provider,
     WikiConfig,
     crow_preset,
@@ -55,10 +57,22 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "bundle": ("bundle",),
     # CROW thresholds live with the classifier, so each classifier provider keeps its own (see "remembered").
     **{f"crow_{name}": ("classifier", "crow", name) for name in CrowConfig.model_fields},
+    # How each model is called; kept per provider too, like its key and model.
+    "temperature": ("llm", "temperature"),
+    "timeout": ("llm", "timeout"),
+    "classifier_timeout": ("classifier", "timeout"),
+    "classifier_attempts": ("classifier", "attempts"),
+    "classifier_state_chars": ("classifier", "state_chars"),
+    "classifier_request_chars": ("classifier", "request_chars"),
+}
+# The parameters of each model the page edits (a number each), with the default a new provider starts from.
+PARAMS = {
+    "llm": {name: LLMConfig.model_fields[name].default for name in ("temperature", "timeout")},
+    "classifier": {name: ClassifierConfig.model_fields[name].default for name in ("timeout", "attempts", "state_chars", "request_chars")},
 }
 SECRETS = frozenset({"api_key", "classifier_api_key"})  # never sent back; an empty one keeps what is saved
 REMEMBERED = "remembered"  # {"llm": {provider: {"api_key", "model", "base_url"}}, "classifier": {…}}
-PER_PROVIDER = ("api_key", "model", "base_url", "crow")  # what a model keeps for each provider
+PER_PROVIDER = ("api_key", "model", "base_url", "crow", *PARAMS["llm"], *PARAMS["classifier"])  # what a model keeps per provider
 
 
 def settings_path(env: Mapping[str, str]) -> Path:
@@ -135,6 +149,8 @@ class Settings:
             "classifier_api_key": ["OKF_CLASSIFIER_API_KEY", key_env(CLASSIFIER_PROVIDERS, classifier_provider)],
             "bundle": ["OKF_BUNDLE"],
             **{f"crow_{name}": [f"OKF_{name.upper()}"] for name in CrowConfig.model_fields},
+            **{name: [f"OKF_LLM_{name.upper()}"] for name in PARAMS["llm"]},
+            **{f"classifier_{name}": [f"OKF_CLASSIFIER_{name.upper()}"] for name in PARAMS["classifier"]},
         }
         return [f for f, names in by.items() if f in self.flags or any(n and self.env.get(n) for n in names)]
 
@@ -157,6 +173,8 @@ class Settings:
                 "classifier_api_key": mask(cfg.classifier.api_key),
                 "bundle": str(cfg.bundle),
                 **{f"crow_{name}": value for name, value in cfg.crow.model_dump().items()},
+                **{name: getattr(cfg.llm, name) for name in PARAMS["llm"]},
+                **{f"classifier_{name}": getattr(cfg.classifier, name) for name in PARAMS["classifier"]},
             },
             "ready": ready(cfg),
             "missing": missing_keys(cfg),
@@ -167,6 +185,7 @@ class Settings:
                 name: {**view, "crow_preset": crow_preset(name)} for name, view in presets(CLASSIFIER_PROVIDERS).items()
             },
             "crow_presets": {name: thresholds(name) for name in CROW_PRESETS},
+            "params": PARAMS,
             "file": tilde(self.path),
         }
 
@@ -182,11 +201,13 @@ class Settings:
                 key = (self.env.get(preset.key_env) if preset.key_env else "") or node.get("api_key")
                 key = key or (shared if name == "openrouter" and not node.get("base_url") else "")
                 out[section][name] = {"model": node.get("model", ""), "base_url": node.get("base_url", ""), "api_key": mask(str(key or ""))}
+                out[section][name].update({k: node.get(k, default) for k, default in PARAMS[section].items()})
                 if section == "classifier":  # its preset, with what was changed for it
                     out[section][name]["crow"] = {**thresholds(crow_preset(name)), **(node.get("crow") or {})}
             active = cfg.llm if section == "llm" else cfg.classifier
             base_url = (saved.get(section) or {}).get("base_url", "")
             out[section][active.provider] = {"model": active.model, "base_url": base_url, "api_key": mask(active.api_key)}
+            out[section][active.provider].update({k: getattr(active, k) for k in PARAMS[section]})
         out["classifier"][cfg.classifier.provider]["crow"] = cfg.crow.model_dump()
         return out
 
@@ -213,8 +234,8 @@ class Settings:
             for key in parents:
                 node = node.setdefault(key, {})
             value = str(value or "").strip()
-            if name.startswith("crow_") and value and is_preset(clf_provider, leaf, value):
-                value = ""  # the preset's own value is not written: a new preset version still reaches this wiki
+            if value and is_default(name, value, clf_provider):
+                value = ""  # a default or preset value is not written: a new one still reaches this wiki
             if value:
                 node[leaf] = value
             elif name not in SECRETS:
@@ -279,11 +300,14 @@ def thresholds(preset: str) -> dict[str, Any]:
     return {**CrowConfig().model_dump(), **CROW_PRESETS[preset]}
 
 
-def is_preset(classifier_provider: str, name: str, value: str) -> bool:
-    """True when `value` is what the classifier's preset has for the threshold `name` anyway."""
+def is_default(field: str, value: str, classifier_provider: str) -> bool:
+    """True when `value` is what the field has anyway: a threshold's preset value, a parameter's default."""
+    section, leaf = FIELDS[field][0], FIELDS[field][-1]
+    presets = thresholds(crow_preset(classifier_provider)) if field.startswith("crow_") else PARAMS.get(section, {})
+    default = presets.get(leaf)
     try:
-        return math.isclose(float(value), float(thresholds(crow_preset(classifier_provider))[name]))
-    except (KeyError, ValueError):
+        return default is not None and math.isclose(float(value), float(default))
+    except ValueError:
         return False
 
 

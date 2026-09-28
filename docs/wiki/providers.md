@@ -94,7 +94,8 @@ statement holds).
 | `OKF_CLASSIFIER_BASE_URL` | the provider's | System One endpoint (required for `custom`) |
 | `OKF_CLASSIFIER_MODEL` | `typesafe/jev-1.13` | Pinned, because thresholds are calibrated per model version |
 | `OKF_CLASSIFIER_API_KEY` | the provider's variable | Used when set. Otherwise `OPENROUTER_API_KEY` on `openrouter`, `TYPESAFE_API_KEY` on `typesafe`. |
-| `OKF_CLASSIFIER_TIMEOUT` | `60` | seconds per request |
+| `OKF_CLASSIFIER_TIMEOUT` | `8` | seconds per request; a slower decision is dropped and the LLM takes it |
+| `OKF_CLASSIFIER_ATTEMPTS` | `1` | tries per decision before the LLM takes it |
 | `OKF_CLASSIFIER_STATE_CHARS` | `6000` | Size of the compact state each decision reads |
 | `OKF_CLASSIFIER_REQUEST_CHARS` | `90000` | Size limit for state plus questions per request. Noul questions are split into batches to fit. |
 
@@ -106,12 +107,15 @@ settings page sets the classifier's provider, address, model and key under
 |---|---|---|
 | `openrouter` (default) | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` or `OKF_CLASSIFIER_API_KEY` |
 | `typesafe` | `https://api.typesafe.ai/v1` | `TYPESAFE_API_KEY` or `OKF_CLASSIFIER_API_KEY` |
-| `laya` | `http://127.0.0.1:8001/v1` (start it with `LAYA_PORT=8001 laya-serve`: the wiki takes 8000); `OKF_CLASSIFIER_BASE_URL` for another | `OKF_CLASSIFIER_API_KEY`, only if `LAYA_API_KEY` is set |
-| `custom` (any other System One server) | `OKF_CLASSIFIER_BASE_URL`, the URL under which it serves `/systemone` | `OKF_CLASSIFIER_API_KEY`, if it needs one |
+| `custom` (any System One server, such as Laya on this computer: `LAYA_PORT=8001 laya-serve`, the wiki takes 8000) | `OKF_CLASSIFIER_BASE_URL`, the URL under which it serves `/systemone` (Laya: `http://127.0.0.1:8001/v1`) | `OKF_CLASSIFIER_API_KEY`, if it needs one (Laya: only with `LAYA_API_KEY`) |
 
-On `laya` the model defaults to `typed-decisions`, the checkpoint tuned for these
-questions and the one its thresholds preset was measured on ([crow.md](crow.md#thresholds));
+A `custom` classifier starts from the Laya thresholds preset ([crow.md](crow.md#thresholds)),
+and its model from `typed-decisions`, the Laya checkpoint that preset was measured on;
 `auto` lets Laya pick its English or multilingual checkpoint per note.
+
+The settings page edits each model's parameters too: the LLM's temperature and timeout,
+the classifier's timeout, attempts, note text read and request size (the variables above),
+kept per provider like its key and model.
 
 Keep the same model version on every route (thresholds belong to it); if an
 endpoint rejects the `typesafe/` prefix, set the bare id in `OKF_CLASSIFIER_MODEL`.

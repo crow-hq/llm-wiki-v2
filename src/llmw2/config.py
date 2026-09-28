@@ -51,17 +51,15 @@ JEV = "typesafe/jev-1.13"  # pinned: thresholds are calibrated per model version
 CLASSIFIER_PROVIDERS: dict[str, Provider] = {
     "openrouter": Provider("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", (JEV,)),
     "typesafe": Provider("https://api.typesafe.ai/v1", "TYPESAFE_API_KEY", (JEV,)),
-    # Laya on this computer (`LAYA_PORT=8001 laya-serve`: the wiki takes 8000). "typed-decisions" is the checkpoint tuned
-    # for these questions, the one CROW_PRESETS["laya"] was measured on; "auto" lets Laya pick its English or multilingual
-    # one per note. A key only with LAYA_API_KEY.
-    "laya": Provider("http://127.0.0.1:8001/v1", "", ("typed-decisions", "auto", "english", "multilingual")),
-    "custom": Provider("", "", (JEV,)),  # any other System One server: set base_url (and api_key if it wants one)
+    # Any System One server, such as Laya on this computer (`LAYA_PORT=8001 laya-serve`: the wiki takes 8000): set
+    # base_url, and api_key if it wants one. It starts from the Laya thresholds preset and from "typed-decisions", the
+    # Laya checkpoint that preset was measured on ("auto" lets Laya pick its English or multilingual one per note).
+    "custom": Provider("", "", ("typed-decisions", "auto", "english", "multilingual")),
 }
 
 # How the settings page and the errors name each provider.
 NAMES = {
-    "openrouter": "OpenRouter", "openai": "OpenAI", "gemini": "Gemini", "ollama": "Ollama", "typesafe": "TypeSafe", "laya": "Laya",
-    "custom": "your server",
+    "openrouter": "OpenRouter", "openai": "OpenAI", "gemini": "Gemini", "ollama": "Ollama", "typesafe": "TypeSafe", "custom": "your server",
 }
 
 
@@ -146,7 +144,8 @@ class CrowConfig(BaseModel):
     k: int = Field(8, gt=0)  # CROW retrieval: notes passed to the answer (paper default 5)
 
 
-# CROW thresholds per classifier. Jev's are CrowConfig's defaults (the paper's); every classifier but Laya starts from them.
+# CROW thresholds per classifier: Jev's (OpenRouter, TypeSafe) are CrowConfig's defaults, the paper's; a custom
+# classifier starts from Laya's.
 # Laya's typed-decisions checkpoint answers with flatter probabilities; measured on 25 sample notes (2026-09-28):
 # a routing choice it gets wrong scores at most 0.61 and it never picks "New subfolder", so below 0.65 the LLM routes;
 # its merge confidence is 0.04-0.12 for a real follow-up and at most 0.044 for a related but distinct note; linked
@@ -159,8 +158,8 @@ CROW_PRESETS: dict[str, dict[str, float | int]] = {
 
 
 def crow_preset(classifier_provider: str) -> str:
-    """The name of the thresholds preset for a classifier provider."""
-    return "laya" if classifier_provider == "laya" else "jev"
+    """The name of the thresholds preset for a classifier provider: Laya's for a custom one, Jev's for the others."""
+    return "laya" if classifier_provider == "custom" else "jev"
 
 
 # WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).

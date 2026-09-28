@@ -55,8 +55,8 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 | `k` | `OKF_K` | 8 | 5 | CROW retrieval: notes passed to the answer |
 | `max_notes` | `OKF_MAX_NOTES` | 8 | Classic retrieval and CROW's navigation fallback: notes read per question |
 
-Each classifier starts from a preset: Jev's (on OpenRouter, TypeSafe, or any custom
-System One server) or Laya's, when the classifier provider is `laya`. The settings page
+Each classifier starts from a preset: Jev's on OpenRouter and TypeSafe, Laya's on a
+`custom` server. The settings page
 shows them under **Advanced → Decision thresholds**, fills in the preset when you choose the
 classifier, and keeps what you change for that classifier; a variable above wins over both.
 Laya's `typed-decisions` checkpoint, its default model, answers with flatter probabilities

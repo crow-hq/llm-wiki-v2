@@ -262,7 +262,7 @@ list is in [.env.example](.env.example).
 | `OKF_LLM_MODEL` | the provider's default | e.g. `google/gemini-3.8-flash` on OpenRouter |
 | `OKF_LLM_BASE_URL` | the provider's | any OpenAI-compatible API (required for `custom`) |
 | `OPENROUTER_API_KEY` · `OPENAI_API_KEY` · `GEMINI_API_KEY` | — | the provider's key (`OKF_LLM_API_KEY` wins); OpenRouter's also serves the classifier |
-| `OKF_CLASSIFIER_PROVIDER` | `openrouter` | where the CROW classifier runs, apart from the LLM: `openrouter`, `typesafe` (both Jev), `laya` (local) or `custom` |
+| `OKF_CLASSIFIER_PROVIDER` | `openrouter` | where the CROW classifier runs, apart from the LLM: `openrouter`, `typesafe` (both Jev) or `custom` (any System One server, such as Laya on this computer; starts from the Laya thresholds preset) |
 | `TYPESAFE_API_KEY` | — | the classifier's key on `typesafe` (`OKF_CLASSIFIER_API_KEY` wins) |
 | `OKF_CLASSIFIER_MODEL` | `typesafe/jev-1.13` | CROW classifier, pinned |
 | `OKF_LLM_REASONING` | `false` | `true` lets the model think before it answers: several times slower and costlier; off is sent to OpenRouter (the least effort for models that must think), other providers keep their model's default |

@@ -21,6 +21,7 @@ from llmw2.models.llm import live_models
 from llmw2.settings import Settings, mask, settings_path
 
 KEY = "sk-or-v1-0123456789abcdef"
+LAYA = {"classifier_provider": "custom", "classifier_base_url": "http://127.0.0.1:8001/v1"}  # the custom classifier is Laya
 
 
 def written(settings: Settings) -> dict[str, Any]:
@@ -86,8 +87,9 @@ def test_save_when_the_llm_switches_provider_and_back_then_its_key_and_model_com
     # ASSERT
     assert (cfg.llm.provider, cfg.llm.model, cfg.llm.api_key) == ("openrouter", "deepseek/deepseek-v4.1-flash", KEY)
     memory = settings.view()["memory"]["llm"]
-    assert memory["custom"] == {"model": "bonsai", "base_url": "http://127.0.0.1:8080/v1", "api_key": ""}
-    assert memory["openrouter"] == {"model": "deepseek/deepseek-v4.1-flash", "base_url": "", "api_key": "…cdef"}
+    params = {"temperature": 0.1, "timeout": 120.0}  # the defaults: none was changed
+    assert memory["custom"] == {"model": "bonsai", "base_url": "http://127.0.0.1:8080/v1", "api_key": "", **params}
+    assert memory["openrouter"] == {"model": "deepseek/deepseek-v4.1-flash", "base_url": "", "api_key": "…cdef", **params}
     assert KEY not in json.dumps(settings.view())
 
 
@@ -368,33 +370,33 @@ def test_live_models_is_empty_when_the_provider_does_not_say(status: int, body: 
     assert live_models(LLMConfig(provider="ollama"), models_client(status, body, [])) == []
 
 
-def test_save_when_the_classifier_switches_to_laya_then_its_preset_applies_and_nothing_is_written_for_it() -> None:
+def test_save_when_the_classifier_is_custom_then_laya_s_preset_applies_and_nothing_is_written_for_it() -> None:
     # ARRANGE
     settings = Settings({})
 
-    # ACT: the page sends the thresholds it shows, here Laya's preset
-    cfg = settings.save({"provider": "ollama", "classifier_provider": "laya", "crow_tau_path": "0.65", "crow_k": "5"})
+    # ACT: the page sends the thresholds it shows, here Laya's preset (the custom classifier is Laya)
+    cfg = settings.save({"provider": "ollama", **LAYA, "crow_tau_path": "0.65", "crow_k": "5"})
 
     # ASSERT
     assert (cfg.crow.tau_path, cfg.crow.tau_cons, cfg.crow.k) == (0.65, 0.05, 5)
-    assert written(settings)["classifier"] == {"provider": "laya"}
+    assert written(settings)["classifier"] == {"provider": "custom", "base_url": "http://127.0.0.1:8001/v1"}
     assert settings.view()["ready"] is True  # Laya on this computer takes no key
 
 
 def test_save_when_a_threshold_is_changed_then_it_is_kept_for_that_classifier_only() -> None:
     # ARRANGE
     settings = Settings({})
-    settings.save({"provider": "ollama", "classifier_provider": "laya", "crow_tau_path": "0.7"})
+    settings.save({"provider": "ollama", **LAYA, "crow_tau_path": "0.7"})
 
     # ACT: to OpenRouter's Jev, whose preset comes back, and to Laya again, whose change comes back
     jev = settings.save({"classifier_provider": "openrouter", "classifier_api_key": KEY, "crow_tau_path": "0.5"})
-    laya = settings.save({"classifier_provider": "laya", "crow_tau_path": "0.7"})
+    laya = settings.save({**LAYA, "crow_tau_path": "0.7"})
 
     # ASSERT
     assert (jev.crow.tau_path, laya.crow.tau_path, laya.crow.tau_cons) == (0.5, 0.7, 0.05)
-    assert written(settings)["classifier"] == {"provider": "laya", "crow": {"tau_path": "0.7"}}
+    assert written(settings)["classifier"] == {"provider": "custom", "base_url": "http://127.0.0.1:8001/v1", "crow": {"tau_path": "0.7"}}
     memory = settings.view()["memory"]["classifier"]
-    assert memory["laya"]["crow"]["tau_path"] == 0.7 and memory["openrouter"]["crow"]["tau_path"] == 0.5
+    assert memory["custom"]["crow"]["tau_path"] == 0.7 and memory["openrouter"]["crow"]["tau_path"] == 0.5
 
 
 def test_managed_when_okf_tau_path_is_set_then_the_threshold_is_locked() -> None:
@@ -408,3 +410,25 @@ def test_save_when_a_threshold_is_not_a_number_then_it_is_refused_naming_it() ->
         settings.save({"provider": "ollama", "mode": "classic", "crow_tau_path": "high"})
 
     assert not settings.path.exists()
+
+
+def test_save_when_a_model_parameter_is_changed_then_it_is_kept_for_that_provider_and_defaults_are_not_written() -> None:
+    # ARRANGE: a slow local model wants a longer timeout, the classifier a second attempt
+    settings = Settings({})
+    settings.save({"provider": "ollama", **LAYA, "timeout": "600", "temperature": "0.1", "classifier_attempts": "2"})
+
+    # ACT: to OpenRouter and back
+    away = settings.save({"provider": "openrouter", "api_key": KEY, "timeout": "120"})
+    back = settings.save({"provider": "ollama", "timeout": "600"})
+
+    # ASSERT
+    assert (away.llm.timeout, back.llm.timeout, back.classifier.attempts) == (120.0, 600.0, 2)
+    assert written(settings)["llm"] == {"provider": "ollama", "timeout": "600"}  # 0.1 is the default temperature
+    assert written(settings)["classifier"] == {"provider": "custom", "base_url": "http://127.0.0.1:8001/v1", "attempts": "2"}
+    assert settings.view()["memory"]["llm"]["openrouter"]["timeout"] == 120.0
+
+
+def test_managed_when_okf_llm_timeout_is_set_then_the_parameter_is_locked() -> None:
+    settings = Settings({"OKF_LLM_TIMEOUT": "300", "OKF_CLASSIFIER_ATTEMPTS": "3"})
+
+    assert {"timeout", "classifier_attempts"} <= set(settings.managed("openrouter"))
