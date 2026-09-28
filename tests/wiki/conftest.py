@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from okf_wiki import Wiki, WikiConfig
-from okf_wiki.models.usage import UsageTracker
+from llmw2 import Wiki, WikiConfig
+from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 if TYPE_CHECKING:
@@ -80,6 +80,6 @@ def client(classic_wiki: Wiki) -> TestClient:
     """The HTTP API over the classic wiki; fastapi is imported here as it is an optional extra."""
     from fastapi.testclient import TestClient
 
-    from okf_wiki.server import create_app
+    from llmw2.server import create_app
 
     return TestClient(create_app(classic_wiki))

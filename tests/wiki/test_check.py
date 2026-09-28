@@ -7,16 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from okf_wiki.bundle.check import check
-from okf_wiki.bundle.store import WikiStore
-from okf_wiki.bundle.tree import Folder, Note
+from llmw2.bundle.check import check
+from llmw2.bundle.store import WikiStore
+from llmw2.bundle.tree import Folder, Note
 
 SOURCE = {"resource": "/raw/source.md", "title": "Source"}
 
 
 @pytest.fixture
 def store(bundle: Path) -> WikiStore:
-    wiki = WikiStore(bundle, actor="okf_wiki/test")
+    wiki = WikiStore(bundle, actor="llmw2/test")
     wiki.init()
     return wiki
 

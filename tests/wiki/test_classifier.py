@@ -12,10 +12,10 @@ from typing import Any
 import httpx
 import pytest
 
-from okf_wiki.config import ClassifierConfig
-from okf_wiki.models.classifier import MAX_OPTIONS, ChoiceAnswer, Classifier, probe
-from okf_wiki.models.client import HttpModel, ModelError
-from okf_wiki.models.usage import UsageTracker
+from llmw2.config import ClassifierConfig
+from llmw2.models.classifier import MAX_OPTIONS, ChoiceAnswer, Classifier, probe
+from llmw2.models.client import HttpModel, ModelError
+from llmw2.models.usage import UsageTracker
 
 BASE_URL = "https://router.test/api/v1"
 MODEL = "typesafe/jev-test"

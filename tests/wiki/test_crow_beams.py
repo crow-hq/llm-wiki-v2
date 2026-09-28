@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from okf_wiki import Wiki, WikiConfig
-from okf_wiki.config import CrowConfig
+from llmw2 import Wiki, WikiConfig
+from llmw2.config import CrowConfig
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 FOLDERS = ("alpha", "beta", "gamma")

@@ -1,7 +1,7 @@
 # Prompts
 
 Every instruction the wiki sends to a model lives in its own Markdown file under
-`src/okf_wiki/agents/prompts/`, loaded by `Prompts` (`src/okf_wiki/agents/prompts.py`). LLM
+`src/llmw2/agents/prompts/`, loaded by `Prompts` (`src/llmw2/agents/prompts.py`). LLM
 prompts ask for one JSON object (or, for the answer, plain Markdown). Code
 validates the JSON and does all file work. Classifier prompts hold only
 questions and option descriptions for the System One API. To change the wiki's
@@ -10,7 +10,7 @@ behaviour, you can override files one by one without touching Python.
 ## Layout
 
 ```
-src/okf_wiki/agents/prompts/
+src/llmw2/agents/prompts/
   shared/      fragments embedded in other prompts: note_rules, folder_rules, untrusted
   librarian/   system prompt + one prompt per ingest step (LLM)
   researcher/  system prompt, navigate, answer (LLM)
@@ -78,7 +78,7 @@ my-prompts/
 - Resolution is file by file. Any name missing from the folder falls back to
   the packaged file, so copy only what you change.
 - Copy the files to change from the packaged folder, whose path this prints:
-  `python -c "import okf_wiki, pathlib; print(pathlib.Path(okf_wiki.__file__).parent / 'prompts')"`.
+  `python -c "import llmw2, pathlib; print(pathlib.Path(llmw2.__file__).parent / 'prompts')"`.
 - After editing a classifier file, recalibrate the thresholds
   ([crow.md](crow.md)): the probabilities depend on the wording.
 - In Docker, mount the folder into the `wiki` service and add `OKF_PROMPTS_DIR`

@@ -28,9 +28,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: uv build
-      # The wheel must carry the web page, the prompts and the demo, or `okf-wiki` starts without them.
+      # The wheel must carry the web page, the prompts and the demo, or `llmwiki2` starts without them.
       - run: |
           unzip -l dist/*.whl > files.txt
-          for f in okf_wiki/web/index.html okf_wiki/agents/prompts/librarian/system.md okf_wiki/demo/index.md; do
+          for f in llmw2/web/index.html llmw2/agents/prompts/librarian/system.md llmw2/demo/index.md; do
             grep -q "$f" files.txt || { echo "missing from the wheel: $f"; exit 1; }
           done

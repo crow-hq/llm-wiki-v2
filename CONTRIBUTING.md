@@ -30,7 +30,7 @@ they use the scripted fakes in `tests/wiki/fakes.py`, and any network access in
 a test fails it.
 
 Keep changes in the style of the surrounding code (typed, class-based, one
-prompt per file under `src/okf_wiki/agents/prompts/`), with a test for every
+prompt per file under `src/llmw2/agents/prompts/`), with a test for every
 behaviour you change. New files start with:
 
 ```python

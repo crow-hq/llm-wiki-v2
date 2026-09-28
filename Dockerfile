@@ -1,7 +1,7 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# The llm-wiki-v2 HTTP API and web page (okf-wiki serve). Run it with docker-compose.yml.
+# The llm-wiki-v2 HTTP API and web page (llmwiki2 serve). Run it with docker-compose.yml.
 FROM python:3.13-slim
 
 LABEL org.opencontainers.image.title="llm-wiki-v2" \
@@ -34,4 +34,4 @@ EOF
 
 EXPOSE 8000
 ENTRYPOINT ["okf-entrypoint"]
-CMD ["okf-wiki", "serve", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["llmwiki2", "serve", "--host", "0.0.0.0", "--port", "8000"]

@@ -21,8 +21,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "llm-wiki-v2"
-dynamic = ["version"]  # one source: okf_wiki.__version__, also written into every note it generates
+name = "llmw2"
+dynamic = ["version"]  # one source: llmw2.__version__, also written into every note it generates
 description = "LLM wiki in a Markdown format derived from the Open Knowledge Format: librarian, researcher and CROW classifier routing"
 readme = "README.md"
 license = { text = "AGPL-3.0-or-later" }
@@ -40,19 +40,19 @@ server = ["fastapi>=0.110", "uvicorn>=0.29"]
 dev = ["pytest>=7.0", "pytest-cov>=5.0", "fastapi>=0.110", "uvicorn>=0.29", "ruff>=0.6", "mypy>=1.11", "types-PyYAML"]
 
 [project.scripts]
-okf-wiki = "okf_wiki.cli:main"
+llmwiki2 = "llmw2.cli:main"
 
 [tool.setuptools]
 license-files = ["LICENSE", "NOTICE", "LICENSES/*"]  # the Apache text must travel with the files taken from OKF
 
 [tool.setuptools.dynamic]
-version = { attr = "okf_wiki.__version__" }
+version = { attr = "llmw2.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-okf_wiki = ["agents/prompts/*/*.md", "web/*.html", "web/*.css", "web/*.js", "web/vendor/*.js", "web/vendor/fonts/*", "web/img/*", "demo/**/*.md", "py.typed"]
+llmw2 = ["agents/prompts/*/*.md", "web/*.html", "web/*.css", "web/*.js", "web/vendor/*.js", "web/vendor/fonts/*", "web/img/*", "demo/**/*.md", "py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -68,10 +68,10 @@ select = ["E", "F", "W", "B", "UP", "SIM", "RUF", "I"]
 [tool.mypy]
 strict = true
 plugins = ["pydantic.mypy"]  # reads Field(default, …) as a default, as pydantic does
-files = ["src/okf_wiki"]
+files = ["src/llmw2"]
 
 [tool.coverage.run]
-source = ["okf_wiki"]
+source = ["llmw2"]
 branch = true
 
 [tool.coverage.report]

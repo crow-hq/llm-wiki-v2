@@ -11,11 +11,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from okf_wiki import Wiki, WikiConfig
-from okf_wiki.agents.librarian import IngestResult
-from okf_wiki.bundle.document import OKFDocument
-from okf_wiki.bundle.tree import Note
-from okf_wiki.models.usage import UsageTracker
+from llmw2 import Wiki, WikiConfig
+from llmw2.agents.librarian import IngestResult
+from llmw2.bundle.document import OKFDocument
+from llmw2.bundle.tree import Note
+from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import FakeLLM
 
 SUMMARIZE, ROUTE, NAME_FOLDER = "librarian/summarize", "librarian/route", "librarian/name_folder"

@@ -10,10 +10,10 @@ from typing import Any
 import httpx
 import pytest
 
-from okf_wiki.config import LLMConfig
-from okf_wiki.errors import ModelError
-from okf_wiki.models.llm import LLM
-from okf_wiki.models.usage import UsageTracker
+from llmw2.config import LLMConfig
+from llmw2.errors import ModelError
+from llmw2.models.llm import LLM
+from llmw2.models.usage import UsageTracker
 from tests.wiki.test_llm import BASE_URL, MODEL, completion, sent, serve
 
 MANDATORY = httpx.Response(

@@ -11,9 +11,9 @@ from typing import Any
 
 import pytest
 
-from okf_wiki import Wiki, WikiConfig
-from okf_wiki.agents.researcher import NO_ANSWER
-from okf_wiki.bundle.tree import Folder, Note
+from llmw2 import Wiki, WikiConfig
+from llmw2.agents.researcher import NO_ANSWER
+from llmw2.bundle.tree import Folder, Note
 from tests.wiki.fakes import FakeLLM
 
 NAVIGATE, ANSWER = "researcher/navigate", "researcher/answer"

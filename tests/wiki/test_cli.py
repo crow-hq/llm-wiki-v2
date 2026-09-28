@@ -1,7 +1,7 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""The `okf-wiki` command line, with `make_wiki` pointed at a Wiki built on the fakes."""
+"""The `llmwiki2` command line, with `make_wiki` pointed at a Wiki built on the fakes."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from okf_wiki import Wiki, WikiConfig, cli
-from okf_wiki.errors import ModelError
+from llmw2 import Wiki, WikiConfig, cli
+from llmw2.errors import ModelError
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 from tests.wiki.test_files import make_pdf
 
@@ -184,7 +184,7 @@ def test_make_wiki_failure_exits_2_with_the_message(
 
     assert cli.main(["init"]) == 2
 
-    assert capsys.readouterr() == ("", "okf-wiki: no bundle configured\n")
+    assert capsys.readouterr() == ("", "llmwiki2: no bundle configured\n")
 
 
 def test_without_a_bundle_the_wiki_lives_in_the_home_folder(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -200,7 +200,7 @@ def test_a_broken_settings_file_exits_2_with_its_path(home: Path, capsys: pytest
     config.write_text("{not json", encoding="utf-8")
 
     assert cli.main(["init"]) == 2
-    assert capsys.readouterr().err.startswith(f"okf-wiki: {config} is not valid JSON")
+    assert capsys.readouterr().err.startswith(f"llmwiki2: {config} is not valid JSON")
 
 
 def unreachable(llm: FakeLLM, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -219,13 +219,13 @@ def test_a_model_error_without_a_key_points_to_setup(
 
     assert run(bundle, "ask", "anything?") == 2
 
-    assert capsys.readouterr().err.endswith("(no API key yet: run okf-wiki setup)\n")
+    assert capsys.readouterr().err.endswith("(no API key yet: run llmwiki2 setup)\n")
 
 
 def test_no_command_serves_and_opens_the_browser(
     made: list[dict[str, Any]], bundle: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from okf_wiki import server
+    from llmw2 import server
 
     seen: dict[str, Any] = {}
     monkeypatch.setattr(server, "serve", lambda wiki, **kw: seen.update(kw, bundle=wiki.cfg.bundle))
@@ -371,10 +371,10 @@ def test_load_dotenv_reads_values_without_overriding(tmp_path: Path, monkeypatch
 def test_the_packaged_demo_is_a_valid_wiki() -> None:
     from importlib import resources
 
-    from okf_wiki.bundle.check import check
-    from okf_wiki.bundle.store import WikiStore
+    from llmw2.bundle.check import check
+    from llmw2.bundle.store import WikiStore
 
-    with resources.as_file(resources.files("okf_wiki") / "demo") as demo:
+    with resources.as_file(resources.files("llmw2") / "demo") as demo:
         root = WikiStore(demo, actor="test").load()
         assert check(demo) == []
     assert len(root.all_notes()) > 20 and len(root.subfolders) >= 5
@@ -383,7 +383,7 @@ def test_the_packaged_demo_is_a_valid_wiki() -> None:
 def test_demo_copies_the_example_once_and_opens_it(
     made: list[dict[str, Any]], home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from okf_wiki import server
+    from llmw2 import server
 
     seen: dict[str, Any] = {}
     monkeypatch.setattr(server, "serve", lambda wiki, **kw: seen.update(kw, bundle=wiki.cfg.bundle))
@@ -415,7 +415,7 @@ def test_setup_when_the_user_cancels_then_exits_2_and_saves_nothing(
 
     # ASSERT
     assert code == 2
-    assert capsys.readouterr().err.endswith("okf-wiki: setup cancelled\n")
+    assert capsys.readouterr().err.endswith("llmwiki2: setup cancelled\n")
     assert not (home / ".config" / "llm-wiki" / "config.json").exists()
 
 

@@ -12,18 +12,18 @@ from typing import Any
 
 import pytest
 
-from okf_wiki.bundle import store as store_module
-from okf_wiki.bundle.document import OKFDocument
-from okf_wiki.bundle.store import WikiStore
-from okf_wiki.bundle.tree import Folder, Note, graph, join_see_also, parse_index, slugify, split_see_also
+from llmw2.bundle import store as store_module
+from llmw2.bundle.document import OKFDocument
+from llmw2.bundle.store import WikiStore
+from llmw2.bundle.tree import Folder, Note, graph, join_see_also, parse_index, slugify, split_see_also
 
-ACTOR = "okf_wiki/test"
+ACTOR = "llmw2/test"
 NOW = datetime(2026, 9, 24, 12, 0, 0, tzinfo=UTC)
 SOURCE = {"resource": "/raw/source.md", "title": "Source"}
 
 
 class _Clock(datetime):
-    """Stands in for `datetime` inside okf_wiki.bundle.store; `_Clock.at` is "now"."""
+    """Stands in for `datetime` inside llmw2.bundle.store; `_Clock.at` is "now"."""
 
     at = NOW
 
@@ -148,7 +148,7 @@ def test_load_skips_reserved_files_raw_dotfiles_and_non_markdown(store: WikiStor
 def test_load_skips_unparseable_notes(store: WikiStore, bundle: Path, caplog: pytest.LogCaptureFixture) -> None:
     _put(bundle / "broken.md", "---\ntype: Note\n\nno closing delimiter\n")
     _put(bundle / "good.md", "---\ntype: Note\n---\n\nBody.\n")
-    with caplog.at_level(logging.WARNING, logger="okf_wiki.bundle.store"):
+    with caplog.at_level(logging.WARNING, logger="llmw2.bundle.store"):
         root = store.load()
     assert [n.rel for n in root.notes] == ["good.md"]
     assert "broken.md" in caplog.text

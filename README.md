@@ -25,19 +25,19 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 **2. Install the wiki:**
 
 ```bash
-uv tool install "llm-wiki-v2[server] @ git+https://github.com/fed3c3sa/llm-wiki-v2"
+uv tool install "llmw2[server] @ git+https://github.com/fed3c3sa/llm-wiki-v2"
 ```
 
 **3. Start it:**
 
 ```bash
-okf-wiki
+llmwiki2
 ```
 
 Your browser opens. Pick a provider, paste its key, press **Test connection**,
 then **Save and start**. That's it.
 
-**Just looking?** `okf-wiki demo` opens an example wiki, the notes of a fictional coffee
+**Just looking?** `llmwiki2 demo` opens an example wiki, the notes of a fictional coffee
 roastery, with no key needed to browse it and its brain. It is copied to `~/llm-wiki-demo`,
 so you can add to it or delete it.
 
@@ -65,10 +65,10 @@ so you can add to it or delete it.
 
 ## Something wrong?
 
-- **"no API key yet"**: open ⚙ on the page, or run `okf-wiki setup` in the terminal.
+- **"no API key yet"**: open ⚙ on the page, or run `llmwiki2 setup` in the terminal.
 - **Test connection fails**: the message is the provider's own, usually a wrong key or model name.
 - **A PDF adds nothing**: it is a scan with no text layer; run OCR on it first.
-- **Another folder for the wiki**: `okf-wiki --bundle <folder>`. Settings live in `~/.config/llm-wiki/config.json`.
+- **Another folder for the wiki**: `llmwiki2 --bundle <folder>`. Settings live in `~/.config/llm-wiki/config.json`.
 
 ## For developers
 
@@ -106,7 +106,7 @@ curl -X POST localhost:8000/ask -H 'content-type: application/json' \
 
 The wiki is plain Markdown files you can read, edit and keep in git (`./wiki`
 with Docker). The API docs are at http://localhost:8000/docs; with Docker the
-CLI runs in the same image: `docker compose run --rm wiki okf-wiki check`.
+CLI runs in the same image: `docker compose run --rm wiki llmwiki2 check`.
 
 | Endpoint | What it does |
 |---|---|
@@ -126,11 +126,11 @@ CLI runs in the same image: `docker compose run --rm wiki okf-wiki check`.
 <summary><b>Use it as a Python library and from the command line</b></summary>
 
 ```bash
-pip install "llm-wiki-v2[server] @ git+https://github.com/fed3c3sa/llm-wiki-v2"
+pip install "llmw2[server] @ git+https://github.com/fed3c3sa/llm-wiki-v2"
 ```
 
 ```python
-from okf_wiki import Wiki
+from llmw2 import Wiki
 
 wiki = Wiki.from_env(bundle="./wiki")        # OKF_* variables and the provider's key, e.g. OPENROUTER_API_KEY
 wiki.init()
@@ -148,13 +148,13 @@ print(wiki.usage.to_dict())                  # {"llm": …, "classifier": …, "
 The same operations are on the command line:
 
 ```bash
-okf-wiki --bundle ./wiki init
-okf-wiki --bundle ./wiki ingest meeting.md     # or a .txt / .pdf
-okf-wiki --bundle ./wiki --mode classic ask "What did we decide about pricing?"
-okf-wiki --bundle ./wiki check        # lint: OKF conformance, index drift, broken links
-okf-wiki --bundle ./wiki serve        # the HTTP API and page (needs the [server] extra); plain `okf-wiki` also opens the browser
-okf-wiki setup                        # provider, key and model, tested and saved
-okf-wiki demo                         # an example wiki, copied to ~/llm-wiki-demo and opened
+llmwiki2 --bundle ./wiki init
+llmwiki2 --bundle ./wiki ingest meeting.md     # or a .txt / .pdf
+llmwiki2 --bundle ./wiki --mode classic ask "What did we decide about pricing?"
+llmwiki2 --bundle ./wiki check        # lint: OKF conformance, index drift, broken links
+llmwiki2 --bundle ./wiki serve        # the HTTP API and page (needs the [server] extra); plain `llmwiki2` also opens the browser
+llmwiki2 setup                        # provider, key and model, tested and saved
+llmwiki2 demo                         # an example wiki, copied to ~/llm-wiki-demo and opened
 ```
 
 Everything is a class you can subclass. `Librarian` and `Researcher` share an
@@ -162,8 +162,8 @@ Everything is a class you can subclass. `Librarian` and `Researcher` share an
 behaviour, override one method and hand your class to `Wiki`:
 
 ```python
-from okf_wiki import Wiki
-from okf_wiki.agents.librarian import Librarian
+from llmw2 import Wiki
+from llmw2.agents.librarian import Librarian
 
 class QuietLibrarian(Librarian):
     def pick_related(self, note, others):
@@ -229,7 +229,7 @@ Every note is an OKF concept (`type: Note`) whose `description` is its one-line
 summary and whose `sources` point to the raw copies it was written from. Each
 folder's one-line description sits in its parent's `index.md`, where both people
 and the Librarian read it. Related notes are joined by a `# See also` section
-with relative links. `okf-wiki check` verifies all of this.
+with relative links. `llmwiki2 check` verifies all of this.
 
 **How it relates to OKF v0.2.** A wiki written here is a conformant OKF bundle
 (§11): every note has a YAML frontmatter block with a `type`, and `index.md` and
@@ -248,7 +248,7 @@ Wikis are not checked against later OKF versions.
 <details>
 <summary><b>Configuration</b></summary>
 
-The settings page and `okf-wiki setup` cover provider, key, model, mode and
+The settings page and `llmwiki2 setup` cover provider, key, model, mode and
 wiki folder. Everything else, and every setting in Docker (`.env`) or in the
 library, comes from the environment; it wins over the settings file. The full
 list is in [.env.example](.env.example).
@@ -282,13 +282,13 @@ Prompts, one Markdown file each: [docs/wiki/prompts.md](docs/wiki/prompts.md).
 <summary><b>Project layout and development</b></summary>
 
 ```
-src/okf_wiki/            wiki (the Wiki facade), config, settings, errors, cli, server
-src/okf_wiki/models/     the model endpoints: HTTP client, LLM, CROW classifier, token usage
-src/okf_wiki/bundle/     the wiki on disk: OKF documents, the tree in memory, the store that writes it, file text, check
-src/okf_wiki/agents/     the Librarian (classic and CROW) and the Researcher, and the prompts they render
-src/okf_wiki/agents/prompts/  shared/, librarian/, researcher/, classifier/ — one prompt per file
-src/okf_wiki/web/        the web UI: plain ES modules, no build step; vendor/ holds marked, DOMPurify, d3 and the fonts
-src/okf_wiki/demo/       the example wiki behind `okf-wiki demo` (a fictional roastery)
+src/llmw2/            wiki (the Wiki facade), config, settings, errors, cli, server
+src/llmw2/models/     the model endpoints: HTTP client, LLM, CROW classifier, token usage
+src/llmw2/bundle/     the wiki on disk: OKF documents, the tree in memory, the store that writes it, file text, check
+src/llmw2/agents/     the Librarian (classic and CROW) and the Researcher, and the prompts they render
+src/llmw2/agents/prompts/  shared/, librarian/, researcher/, classifier/ — one prompt per file
+src/llmw2/web/        the web UI: plain ES modules, no build step; vendor/ holds marked, DOMPurify, d3 and the fonts
+src/llmw2/demo/       the example wiki behind `llmwiki2 demo` (a fictional roastery)
 tests/wiki/              tests for every feature, with scripted fake models (no network)
 docs/wiki/               providers, CROW, prompts
 ```
@@ -304,7 +304,7 @@ CI runs the same four checks on Python 3.11 to 3.13, and builds the wheel.
 
 Tests never call a real model: they use the scripted fakes in `tests/wiki/fakes.py`.
 Keep changes in the style of the surrounding code (typed, class-based, one
-prompt per file under `src/okf_wiki/agents/prompts/`), with a test for every behaviour
+prompt per file under `src/llmw2/agents/prompts/`), with a test for every behaviour
 you change.
 
 </details>

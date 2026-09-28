@@ -12,11 +12,11 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from okf_wiki.config import LLMConfig
-from okf_wiki.errors import ModelError
-from okf_wiki.models.client import HttpModel, reported_cost
-from okf_wiki.models.llm import LLM, extract_json
-from okf_wiki.models.usage import UsageTracker
+from llmw2.config import LLMConfig
+from llmw2.errors import ModelError
+from llmw2.models.client import HttpModel, reported_cost
+from llmw2.models.llm import LLM, extract_json
+from llmw2.models.usage import UsageTracker
 
 BASE_URL = "http://llm.test/v1"
 MODEL = "openrouter/test/writer"

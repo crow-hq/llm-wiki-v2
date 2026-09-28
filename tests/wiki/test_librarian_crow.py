@@ -11,12 +11,12 @@ from typing import Any
 
 import pytest
 
-from okf_wiki import Wiki, WikiConfig
-from okf_wiki.agents.base import Decision
-from okf_wiki.agents.librarian import IngestResult
-from okf_wiki.bundle.document import OKFDocument
-from okf_wiki.bundle.tree import Note
-from okf_wiki.errors import ModelError
+from llmw2 import Wiki, WikiConfig
+from llmw2.agents.base import Decision
+from llmw2.agents.librarian import IngestResult
+from llmw2.bundle.document import OKFDocument
+from llmw2.bundle.tree import Note
+from llmw2.errors import ModelError
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 HERE, NEW, NONE = "Here", "New subfolder", "None of these"

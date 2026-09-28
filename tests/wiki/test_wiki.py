@@ -10,12 +10,12 @@ from typing import Any
 
 import pytest
 
-from okf_wiki import Wiki, WikiConfig
-from okf_wiki.agents.librarian import IngestResult, Librarian
-from okf_wiki.agents.librarian_crow import CrowLibrarian
-from okf_wiki.agents.researcher import CrowResearcher
-from okf_wiki.config import ClassifierConfig
-from okf_wiki.models.classifier import Classifier
+from llmw2 import Wiki, WikiConfig
+from llmw2.agents.librarian import IngestResult, Librarian
+from llmw2.agents.librarian_crow import CrowLibrarian
+from llmw2.agents.researcher import CrowResearcher
+from llmw2.config import ClassifierConfig
+from llmw2.models.classifier import Classifier
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 REVENUE, PRICING = "finance/revenue-recognition.md", "finance/pricing-tiers.md"

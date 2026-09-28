@@ -15,9 +15,10 @@ from typing import Any
 import httpx
 import pytest
 
-from okf_wiki.config import LLMConfig
-from okf_wiki.models.llm import live_models
-from okf_wiki.settings import Settings, mask, settings_path
+from llmw2.config import LLMConfig
+from llmw2.errors import InputError
+from llmw2.models.llm import live_models
+from llmw2.settings import Settings, mask, settings_path
 
 KEY = "sk-or-v1-0123456789abcdef"
 
@@ -65,11 +66,44 @@ def test_a_key_never_follows_the_wiki_to_another_provider() -> None:
 
     cfg = settings.save({"provider": "custom", "base_url": "http://gpu.lan:8000/v1", "model": "qwen", "api_key": ""})
 
-    assert cfg.llm.api_key == ""
-    assert written(settings) == {"llm": {"provider": "custom", "base_url": "http://gpu.lan:8000/v1", "model": "qwen"}}
+    assert cfg.llm.api_key == ""  # the OpenRouter key never goes to the GPU server…
+    assert cfg.classifier.api_key == KEY  # …and still serves the classifier, on OpenRouter
+    assert written(settings) == {
+        "llm": {"provider": "custom", "base_url": "http://gpu.lan:8000/v1", "model": "qwen"},
+        "remembered": {"llm": {"openrouter": {"api_key": KEY}}},
+    }
 
 
-GPU = {"provider": "custom", "base_url": "http://gpu.lan:8000/v1", "model": "qwen", "api_key": KEY}
+def test_save_when_the_llm_switches_provider_and_back_then_its_key_and_model_come_back() -> None:
+    # ARRANGE
+    settings = Settings({})
+    settings.save({"api_key": KEY, "model": "deepseek/deepseek-v4.1-flash"})
+    settings.save({"provider": "custom", "base_url": "http://127.0.0.1:8080/v1", "model": "bonsai", "api_key": ""})
+
+    # ACT
+    cfg = settings.save({"provider": "openrouter", "base_url": ""})
+
+    # ASSERT
+    assert (cfg.llm.provider, cfg.llm.model, cfg.llm.api_key) == ("openrouter", "deepseek/deepseek-v4.1-flash", KEY)
+    memory = settings.view()["memory"]["llm"]
+    assert memory["custom"] == {"model": "bonsai", "base_url": "http://127.0.0.1:8080/v1", "api_key": ""}
+    assert memory["openrouter"] == {"model": "deepseek/deepseek-v4.1-flash", "base_url": "", "api_key": "…cdef"}
+    assert KEY not in json.dumps(settings.view())
+
+
+def test_config_when_the_classifier_is_on_openrouter_at_another_address_then_the_openrouter_key_stays_home() -> None:
+    # ARRANGE
+    Settings({}).save({"api_key": KEY})
+    Settings({}).save({"provider": "ollama", "mode": "classic"})
+
+    # ACT
+    cfg = Settings({"OKF_CLASSIFIER_BASE_URL": "http://laya.lan/v1"}).config()
+
+    # ASSERT
+    assert (cfg.classifier.provider, cfg.classifier.api_key) == ("openrouter", "")
+
+
+GPU = {"provider": "custom", "base_url": "http://gpu.lan:8000/v1", "model": "qwen", "api_key": KEY, "mode": "classic"}
 
 
 @pytest.mark.parametrize(
@@ -123,7 +157,7 @@ def test_the_environment_and_flags_win_and_their_fields_are_not_saved(tmp_path: 
 def test_save_when_reasoning_changes_then_the_view_shows_it_as_a_bool(change: str, saved: str | None, shown: bool) -> None:
     # ARRANGE
     settings = Settings({})
-    settings.save({"reasoning": "true"})
+    settings.save({"reasoning": "true", "api_key": KEY})
 
     # ACT
     cfg = settings.save({"reasoning": change})
@@ -138,7 +172,7 @@ def test_save_when_okf_llm_reasoning_is_set_then_reasoning_is_managed_and_not_sa
     settings = Settings({"OKF_LLM_REASONING": "true"})
 
     # ACT
-    cfg = settings.save({"reasoning": "", "model": "openai/gpt-4.1"})
+    cfg = settings.save({"reasoning": "", "model": "openai/gpt-4.1", "api_key": KEY})
 
     # ASSERT
     assert "reasoning" in settings.managed("openrouter")
@@ -159,9 +193,9 @@ def test_invalid_settings_raise_and_write_nothing() -> None:
 def test_unknown_fields_are_ignored() -> None:
     settings = Settings({})
 
-    settings.save({"model": "openai/gpt-4.1", "usage_log": "/etc/passwd", "llm": {"base_url": "http://evil.test"}})
+    settings.save({"model": "openai/gpt-4.1", "api_key": KEY, "usage_log": "/etc/passwd", "llm": {"base_url": "http://evil.test"}})
 
-    assert written(settings) == {"llm": {"model": "openai/gpt-4.1"}}
+    assert written(settings) == {"llm": {"model": "openai/gpt-4.1", "api_key": KEY}}
 
 
 def test_the_view_masks_keys_and_says_whether_the_wiki_is_ready() -> None:
@@ -189,13 +223,34 @@ def test_view_when_a_classifier_key_is_saved_then_it_is_masked() -> None:
     assert view["values"]["classifier_api_key"] == "…cdef" and KEY not in json.dumps(view)
 
 
-def test_crow_is_ready_only_with_a_classifier_key() -> None:
+@pytest.mark.parametrize(
+    ("changes", "said"),
+    [
+        ({"provider": "ollama", "mode": "crow"}, "CROW mode needs a key for its classifier on OpenRouter: paste it in Settings → Advanced"),
+        ({"provider": "ollama", "classifier_provider": "typesafe"}, "CROW mode needs a key for its classifier on TypeSafe"),
+        ({"provider": "openai", "mode": "classic"}, "OpenAI needs an API key: paste it in Settings → API key"),
+        ({"mode": "crow"}, "OpenRouter needs an API key \\(it serves the CROW classifier too\\)"),
+    ],
+    ids=["crow-local-llm", "crow-typesafe", "classic-openai", "crow-openrouter"],
+)
+def test_save_when_a_needed_key_is_missing_then_it_is_refused_saying_which_and_where(changes: dict[str, str], said: str) -> None:
+    # ARRANGE
     settings = Settings({})
-    settings.save({"provider": "ollama", "mode": "crow"})
-    assert settings.view()["ready"] is False
 
-    settings.save({"classifier_api_key": KEY})
-    assert settings.view()["ready"] is True
+    # ACT
+    with pytest.raises(InputError, match=said):
+        settings.save(changes)
+
+    # ASSERT
+    assert not settings.path.exists()
+
+
+def test_save_when_crow_has_its_classifier_key_then_the_wiki_is_ready() -> None:
+    settings = Settings({})
+
+    settings.save({"provider": "ollama", "mode": "crow", "classifier_api_key": KEY})
+
+    assert settings.view()["ready"] is True and settings.view()["missing"] == []
 
 
 def test_save_when_the_classifier_has_its_own_provider_then_the_llm_keeps_its_own() -> None:
@@ -217,14 +272,14 @@ def test_save_when_the_classifier_has_its_own_provider_then_the_llm_keeps_its_ow
         ({"classifier_provider": "typesafe"}, ""),
         ({"classifier_provider": "custom", "classifier_base_url": "http://laya.lan/v1"}, ""),
         ({"classifier_provider": "openrouter", "classifier_model": "typesafe/jev-1.13"}, KEY),
-        ({"provider": "gemini"}, KEY),
+        ({"provider": "custom", "base_url": "http://gpu.lan/v1", "model": "qwen"}, KEY),
     ],
     ids=["other-provider", "other-address", "same-provider", "only-the-llm-moves"],
 )
-def test_save_when_the_classifier_moves_then_its_saved_key_is_dropped(change: dict[str, str], key: str) -> None:
+def test_save_when_the_classifier_moves_then_its_key_stays_with_its_provider(change: dict[str, str], key: str) -> None:
     # ARRANGE
     settings = Settings({})
-    settings.save({"provider": "ollama", "classifier_api_key": KEY})
+    settings.save({"provider": "ollama", "mode": "classic", "classifier_api_key": KEY})
 
     # ACT
     cfg = settings.save({**change, "classifier_api_key": ""})
@@ -236,7 +291,7 @@ def test_save_when_the_classifier_moves_then_its_saved_key_is_dropped(change: di
 def test_save_when_the_classifier_model_is_empty_then_the_pinned_default_is_not_written() -> None:
     # ARRANGE
     settings = Settings({})
-    settings.save({"classifier_model": "jev-1.13"})
+    settings.save({"classifier_model": "jev-1.13", "api_key": KEY})
 
     # ACT
     cfg = settings.save({"classifier_model": ""})

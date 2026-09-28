@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from okf_wiki.bundle.document import OKFDocument, OKFDocumentError
+from llmw2.bundle.document import OKFDocument, OKFDocumentError
 
 NOTE = (
     "---\n"

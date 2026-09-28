@@ -7,16 +7,16 @@ Copyright 2026 Google LLC. SPDX-License-Identifier: AGPL-3.0-or-later
 
 The OKF specification, reference agent, viewer, sample bundles and their
 tests have been removed. The wiki's on-disk format is derived from OKF v0.2
-(see "The wiki on disk" in README.md); src/okf_wiki/bundle/document.py reads and
+(see "The wiki on disk" in README.md); src/llmw2/bundle/document.py reads and
 writes it and is an independent implementation.
 
 Files carried over from OKF, modified, and keeping their original headers:
 - LICENSES/Apache-2.0.md (was LICENSE.md): the Apache License 2.0 text, unchanged.
-- pyproject.toml: distribution renamed to llm-wiki-v2, the reference agent
-  and its Google dependencies removed, okf_wiki package added.
+- pyproject.toml: distribution renamed to llmw2, the reference agent
+  and its Google dependencies removed, llmw2 package added.
 - .gitignore: entries added.
 
-Third-party code shipped unmodified in src/okf_wiki/web/vendor/, each file
+Third-party code shipped unmodified in src/llmw2/web/vendor/, each file
 keeping its copyright and license banner:
 - marked 12.0.0 (https://github.com/markedjs/marked), Copyright (c) 2011-2024
   Christopher Jeffrey, MIT License.
@@ -25,14 +25,14 @@ keeping its copyright and license banner:
 - d3 7.9.0 (https://github.com/d3/d3), Copyright 2010-2023 Mike Bostock, ISC
   License.
 
-Fonts shipped unmodified in src/okf_wiki/web/vendor/fonts/ (latin subsets as
+Fonts shipped unmodified in src/llmw2/web/vendor/fonts/ (latin subsets as
 packaged by Fontsource 5.3.0), under the SIL Open Font License 1.1, whose text
-is in src/okf_wiki/web/vendor/fonts/OFL.txt:
+is in src/llmw2/web/vendor/fonts/OFL.txt:
 - Pixelify Sans, Copyright 2021 The Pixelify Sans Project Authors.
 - JetBrains Mono, Copyright 2020 The JetBrains Mono Project Authors.
 - IBM Plex Sans, Copyright 2019 IBM Corp.
 
-Everything else (Copyright 2026 Federico Cesarini, Marco Sassarini): src/okf_wiki/
+Everything else (Copyright 2026 Federico Cesarini, Marco Sassarini): src/llmw2/
 (outside web/vendor/), tests/wiki/, docs/wiki/, Dockerfile, docker-compose.yml,
 .env.example, NOTICE, CITATION.cff, and the modifications to the files carried
 over from OKF, is licensed under the GNU Affero General Public License v3.0 or

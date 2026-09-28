@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from okf_wiki.bundle.files import extract_text, title_of
-from okf_wiki.errors import InputError
+from llmw2.bundle.files import extract_text, title_of
+from llmw2.errors import InputError
 
 
 def make_pdf(*lines: str) -> bytes:

@@ -7,7 +7,7 @@ import json
 import threading
 from pathlib import Path
 
-from okf_wiki.models.usage import UsageReport, UsageTracker
+from llmw2.models.usage import UsageReport, UsageTracker
 
 
 def test_record_splits_llm_and_classifier_ledgers(tracker: UsageTracker) -> None:

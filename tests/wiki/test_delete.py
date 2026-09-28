@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from okf_wiki import Wiki
-from okf_wiki.bundle.tree import INDEX, LOG, RAW, drop_links, parse_index
-from okf_wiki.errors import InputError
+from llmw2 import Wiki
+from llmw2.bundle.tree import INDEX, LOG, RAW, drop_links, parse_index
+from llmw2.errors import InputError
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient

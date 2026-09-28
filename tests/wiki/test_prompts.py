@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-import okf_wiki
-from okf_wiki.agents.prompts import Prompts
+import llmw2
+from llmw2.agents.prompts import Prompts
 
-PROMPTS_DIR = Path(okf_wiki.__file__).parent / "agents" / "prompts"
+PROMPTS_DIR = Path(llmw2.__file__).parent / "agents" / "prompts"
 
 
 def test_names_lists_every_packaged_prompt_file() -> None:

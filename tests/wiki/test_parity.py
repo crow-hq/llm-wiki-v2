@@ -18,11 +18,11 @@ from typing import Any, Literal
 
 import pytest
 
-from okf_wiki import Wiki, WikiConfig
-from okf_wiki.agents.librarian import IngestResult
-from okf_wiki.bundle.store import WikiStore
-from okf_wiki.bundle.tree import Folder
-from okf_wiki.models.usage import UsageTracker
+from llmw2 import Wiki, WikiConfig
+from llmw2.agents.librarian import IngestResult
+from llmw2.bundle.store import WikiStore
+from llmw2.bundle.tree import Folder
+from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 Mode = Literal["classic", "crow"]

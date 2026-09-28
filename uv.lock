@@ -435,7 +435,7 @@ wheels = [
 ]
 
 [[package]]
-name = "llm-wiki-v2"
+name = "llmw2"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

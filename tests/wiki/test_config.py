@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from okf_wiki.config import WikiConfig
+from llmw2.config import WikiConfig
 
 
 def env_for(bundle: Path, **variables: str) -> dict[str, str]:

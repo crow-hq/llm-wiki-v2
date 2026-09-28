@@ -13,10 +13,10 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from okf_wiki.config import ClassifierConfig, LLMConfig
-from okf_wiki.models.classifier import Classifier
-from okf_wiki.models.llm import LLM
-from okf_wiki.models.usage import UsageTracker
+from llmw2.config import ClassifierConfig, LLMConfig
+from llmw2.models.classifier import Classifier
+from llmw2.models.llm import LLM
+from llmw2.models.usage import UsageTracker
 
 LLM_TOKENS = (100, 10)
 CLASSIFIER_TOKENS = (50, 0)
@@ -65,7 +65,7 @@ class FakeClassifier(Classifier):
         choices: dict[str, list[tuple[str, dict[str, float], float]]] | None = None,
         nouls: dict[str, Noul] | None = None,
     ) -> None:
-        super().__init__(ClassifierConfig(model="fake/jev", api_key=""), usage)
+        super().__init__(ClassifierConfig(model="fake/jev", api_key="fake-key"), usage)
         self.choices = {op: list(c) for op, c in (choices or {}).items()}
         self.noul_scores: dict[str, Noul] = dict(nouls or {})
         self.calls: list[tuple[str, str, dict[str, dict[str, Any]]]] = []

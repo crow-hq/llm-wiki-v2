@@ -11,11 +11,11 @@ from typing import Any
 
 import pytest
 
-from okf_wiki import Wiki, WikiConfig
-from okf_wiki.bundle.tree import Folder, Note
-from okf_wiki.config import CrowConfig
-from okf_wiki.errors import ModelError
-from okf_wiki.models.classifier import Classifier
+from llmw2 import Wiki, WikiConfig
+from llmw2.bundle.tree import Folder, Note
+from llmw2.config import CrowConfig
+from llmw2.errors import ModelError
+from llmw2.models.classifier import Classifier
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 NAVIGATE, ANSWER = "researcher/navigate", "researcher/answer"

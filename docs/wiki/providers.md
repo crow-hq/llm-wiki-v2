@@ -13,12 +13,12 @@ Later sources win:
 1. defaults;
 2. the settings file `~/.config/llm-wiki/config.json` (`$XDG_CONFIG_HOME`, or
    any file named by `OKF_CONFIG`), written by the web page's **Settings** and
-   by `okf-wiki setup`, readable by its owner only;
+   by `llmwiki2 setup`, readable by its owner only;
 3. `OKF_*` variables and the provider's key variable (and a `.env` file in the
    current folder, for the CLI);
 4. `--bundle` and `--mode` on the command line.
 
-The CLI and `okf-wiki serve` read all four. `Wiki.from_env()` reads only the
+The CLI and `llmwiki2 serve` read all four. `Wiki.from_env()` reads only the
 environment: a program using the library is configured by that program. A
 field set by the environment or a flag shows as locked on the settings page.
 
@@ -33,8 +33,22 @@ on: requests must come from a loopback address, name a loopback host (against
 DNS rebinding) and, from a browser, be same-origin (against other sites posting
 to it). Behind Docker every request comes from outside the container, so the
 page shows the settings from `.env` without changing them. Keys are never sent
-back to the page, only their last four characters, and a saved key is dropped
-when the provider changes, so it is never sent to another server.
+back to the page, only their last four characters.
+
+Each model keeps, per provider, its key, model and address: switching the LLM
+to a local server and back to OpenRouter brings back the OpenRouter key and
+model (they wait under `"remembered"` in the settings file). A key only ever goes
+to the provider it was saved for, and is dropped when its server address
+changes. An OpenRouter key saved for either model serves both, at OpenRouter's
+own address.
+
+Settings that leave a needed key out are refused, saying which key and where it
+goes: the LLM's when its provider takes one (OpenRouter, OpenAI, Gemini), and in
+CROW mode the classifier's unless it runs on a local server. The same message
+stops an ingest or a question when a key is still missing (an older settings
+file), or when the classifier's provider refuses its key: the wiki never falls
+back to classic mode without saying so. Slow or failing classifier calls still
+fall back to the LLM, one decision at a time.
 
 ## The LLM
 
@@ -58,7 +72,7 @@ when the provider changes, so it is never sent to another server.
 
 `custom` covers every other OpenAI-compatible server: vLLM, LM Studio,
 llama.cpp's server, a gateway such as LiteLLM or Bifrost if you run one.
-Presets live in `PROVIDERS` in `src/okf_wiki/config.py`; adding one is one line.
+Presets live in `PROVIDERS` in `src/llmw2/config.py`; adding one is one line.
 Their models are only defaults and suggestions: the settings page also lists
 the models the provider offers right now (`GET {base_url}/models`).
 
@@ -86,8 +100,7 @@ statement holds).
 
 With OpenRouter as the provider of both, one key serves both models. The
 settings page sets the classifier's provider, address, model and key under
-**Advanced**; a saved classifier key is dropped when its provider or address
-changes, as the LLM's is.
+**Advanced**, and remembers them per provider as it does the LLM's.
 
 | `OKF_CLASSIFIER_PROVIDER` | Endpoint | Key |
 |---|---|---|

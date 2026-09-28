@@ -14,9 +14,9 @@ pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient
 
-from okf_wiki import Wiki, WikiConfig
-from okf_wiki.errors import InputError, ModelError
-from okf_wiki.server import create_app
+from llmw2 import Wiki, WikiConfig
+from llmw2.errors import InputError, ModelError
+from llmw2.server import create_app
 from tests.wiki.fakes import FakeLLM
 from tests.wiki.test_server import script_ingest
 
@@ -57,7 +57,7 @@ def test_a_local_only_app_refuses_other_host_names(classic_wiki: Wiki) -> None:
 def test_serve_is_local_only_when_bound_to_localhost(classic_wiki: Wiki, monkeypatch: pytest.MonkeyPatch) -> None:
     import uvicorn
 
-    from okf_wiki import server
+    from llmw2 import server
 
     apps: list[Any] = []
     monkeypatch.setattr(uvicorn.Server, "run", lambda self: apps.append(self.config.app))

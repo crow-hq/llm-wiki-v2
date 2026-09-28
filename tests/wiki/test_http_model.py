@@ -8,13 +8,13 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from okf_wiki.config import ClassifierConfig, LLMConfig
-from okf_wiki.errors import ModelError
-from okf_wiki.models import client as client_module
-from okf_wiki.models.classifier import Classifier
-from okf_wiki.models.client import HttpModel
-from okf_wiki.models.llm import LLM
-from okf_wiki.models.usage import UsageTracker
+from llmw2.config import ClassifierConfig, LLMConfig
+from llmw2.errors import ConfigError, ModelError
+from llmw2.models import client as client_module
+from llmw2.models.classifier import Classifier
+from llmw2.models.client import HttpModel
+from llmw2.models.llm import LLM
+from llmw2.models.usage import UsageTracker
 from tests.wiki.test_llm import BASE_URL, MODEL, completion, make_llm, serve
 
 
@@ -54,17 +54,28 @@ def test_complete_when_the_provider_takes_no_key_and_none_is_set_then_posts_with
     assert (reply, request.headers.get("authorization")) == ("ok", None)
 
 
-def test_ask_when_the_classifier_has_no_key_then_raises_before_any_request(tracker: UsageTracker) -> None:
+def test_ask_when_the_classifier_has_no_key_then_a_config_error_says_where_to_put_it(tracker: UsageTracker) -> None:
     # ARRANGE
     client, requests = serve(httpx.Response(200, json={"answers": {}}))
     clf = Classifier(ClassifierConfig(base_url=BASE_URL, model=MODEL), tracker, client=client)
 
     # ACT
-    with pytest.raises(ModelError, match="no API key for the classifier"):
+    with pytest.raises(ConfigError, match="no API key for the CROW classifier on OpenRouter: paste it in Settings → Advanced"):
         clf.ask("A note about cats.", {"q": {"type": "noul", "instructions": "The note is about cats."}})
 
     # ASSERT
     assert (requests, tracker.snapshot().classifier.calls) == ([], 0)
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_ask_when_the_provider_refuses_the_classifier_key_then_a_config_error_not_a_fallback(tracker: UsageTracker, status: int) -> None:
+    # ARRANGE
+    client, _ = serve(httpx.Response(status, json={"error": "invalid key"}))
+    clf = Classifier(ClassifierConfig(base_url=BASE_URL, model=MODEL, api_key="wrong"), tracker, client=client)
+
+    # ACT / ASSERT
+    with pytest.raises(ConfigError, match=f"refused its key \\({status}\\)"):
+        clf.ask("A note about cats.", {"q": {"type": "noul", "instructions": "The note is about cats."}})
 
 
 # -- HttpModel: the status on a failed request ------------------------------------------------

@@ -17,10 +17,10 @@ pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient
 
-from okf_wiki import Wiki
-from okf_wiki.bundle.tree import parse_index
-from okf_wiki.errors import ModelError
-from okf_wiki.server import create_app
+from llmw2 import Wiki, WikiConfig
+from llmw2.bundle.tree import parse_index
+from llmw2.errors import ModelError
+from llmw2.server import create_app
 from tests.wiki.fakes import FakeLLM
 from tests.wiki.test_files import make_pdf
 
@@ -248,3 +248,18 @@ def test_the_page_and_its_modules_load_nothing_from_a_cdn(client: TestClient) ->
         response = client.get(src)
         assert response.status_code == 200, src
         assert "cdn." not in response.text, src
+
+
+def test_ask_and_ingest_when_crow_has_no_classifier_key_then_503_saying_where_to_put_it(bundle: Path, llm: FakeLLM) -> None:
+    # ARRANGE
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow"), llm=llm)  # its classifier is built from the config: no key
+    client = TestClient(create_app(wiki))
+
+    # ACT
+    asked = client.post("/ask", json={"question": "What is revenue recognition?"})
+    filed = client.post("/ingest", json={"text": "Revenue is recognised on delivery."})
+
+    # ASSERT
+    assert asked.status_code == filed.status_code == 503
+    assert "Settings → Advanced → Classifier key" in asked.json()["detail"]
+    assert llm.calls == [] and not (bundle / "raw").exists()  # stopped before any model call or file

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import io
 
-from okf_wiki.logo import PIXELS, WIDTH, logo, show_logo
+from llmw2.logo import PIXELS, WIDTH, logo, show_logo
 
 
 def test_the_logo_packs_two_pixel_rows_per_line() -> None:

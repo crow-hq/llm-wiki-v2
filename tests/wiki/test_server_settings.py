@@ -14,10 +14,10 @@ pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient
 
-from okf_wiki import Wiki, WikiConfig
-from okf_wiki.errors import ModelError
-from okf_wiki.server import create_app
-from okf_wiki.settings import Settings
+from llmw2 import Wiki, WikiConfig
+from llmw2.errors import ModelError
+from llmw2.server import create_app
+from llmw2.settings import Settings
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 KEY = "sk-or-v1-0123456789abcdef"
@@ -88,7 +88,7 @@ def test_settings_test_when_crow_then_the_classifier_is_asked_too(local: TestCli
     # ASSERT
     assert body["ok"] is True
     assert body["classifier"]["ok"] is False and body["classifier"]["model"] == "typesafe/jev-1.13"
-    assert body["classifier"]["error"].startswith("no API key for the classifier")
+    assert body["classifier"]["error"].startswith("no API key for the CROW classifier on TypeSafe")
 
 
 def test_settings_test_when_the_classifier_answers_then_it_is_ok(
@@ -148,7 +148,7 @@ def test_without_settings_the_endpoints_are_absent(client: TestClient) -> None:
 
 
 def test_the_page_gets_the_models_of_the_provider_being_chosen(local: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    from okf_wiki import server
+    from llmw2 import server
 
     asked: list[Any] = []
     monkeypatch.setattr(server, "live_models", lambda llm: asked.append(llm) or ["gemini-3.8-flash"])

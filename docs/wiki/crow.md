@@ -11,12 +11,12 @@ pipeline and write the same kind of wiki, because `CrowLibrarian` and
 `CrowResearcher` override only the decision hooks of `Librarian` and
 `Researcher`. It is the default; `OKF_MODE=classic` or `--mode classic` lets the LLM take the
 decisions instead. The classifier needs an OpenRouter key: with OpenRouter as provider its key
-serves both, otherwise `okf-wiki setup` and the settings page ask for one (or switch to classic).
+serves both, otherwise `llmwiki2 setup` and the settings page ask for one (or switch to classic).
 
 ## Who decides what
 
 The **ingest** steps (`Librarian.ingest`) are listed below. Prompt names are
-under `src/okf_wiki/agents/prompts/`.
+under `src/llmw2/agents/prompts/`.
 
 | Step | Classic decider | CROW decider | Primitive | Threshold | Fallback |
 |---|---|---|---|---|---|
@@ -69,7 +69,7 @@ answer is, not whether it is right. With Docker, put these variables in `.env`.
 
 Every `IngestResult` and `Answer` carries a list of `Decision(step, decider,
 choice, confidence, fallback)`. You can read it from
-`okf-wiki ingest --json`, `okf-wiki ask --json`, or the replies of
+`llmwiki2 ingest --json`, `llmwiki2 ask --json`, or the replies of
 `POST /ingest` and `POST /ask`.
 
 | `step` | `choice` | `confidence` holds | Calibrates |
