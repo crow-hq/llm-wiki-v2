@@ -195,6 +195,12 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .tile:has(input:checked) span { color: var(--ember-soft); }
 .tile:has(input:focus-visible) { outline: 2px solid var(--ember); outline-offset: 2px; }
 .tile:has(input:disabled) { opacity: .5; cursor: default; }
+.thresholds { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px 18px; }
+.th { display: grid; gap: 4px; align-content: start; font: 12px var(--mono); color: #c7cfe2; }
+.th .num { display: flex; align-items: center; gap: 6px; }
+.field .th input { width: 96px; height: 36px; }
+.th .num i { font-style: normal; color: var(--muted); }
+.th small { font: 11px/1.45 var(--mono); color: var(--muted); }
 .suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .suggest button { font: 11px var(--mono); padding: 4px 8px; border: 0; border-radius: 4px; background: var(--raised); color: var(--soft); }
 .suggest button:first-child { background: var(--ember-bg); color: var(--ember-soft); }

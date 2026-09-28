@@ -45,7 +45,9 @@ def test_settings_show_masked_values_and_readiness(local: TestClient) -> None:
     assert (body["ready"], body["editable"], body["managed"]) == (False, True, [])
     assert body["values"]["provider"] == "openrouter" and body["values"]["api_key"] == ""
     assert set(body["providers"]) == {"openrouter", "openai", "gemini", "ollama", "custom"}
-    assert set(body["classifier_providers"]) == {"openrouter", "typesafe", "custom"}
+    assert set(body["classifier_providers"]) == {"openrouter", "typesafe", "laya", "custom"}
+    assert body["classifier_providers"]["laya"]["crow_preset"] == "laya" and body["crow_presets"]["laya"]["tau_path"] == 0.65
+    assert body["values"]["crow_tau_path"] == 0.5  # the default classifier is Jev on OpenRouter
     assert body["values"]["classifier_provider"] == "openrouter" and body["values"]["classifier_model"] == "typesafe/jev-1.13"
 
 

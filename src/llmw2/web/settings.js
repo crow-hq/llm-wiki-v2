@@ -16,9 +16,26 @@ const NAME = { openrouter: "OpenRouter", openai: "OpenAI", gemini: "Gemini", oll
 const CLF_HELP = {
   openrouter: "Jev on OpenRouter. With OpenRouter as the provider above, its key serves the classifier too; otherwise paste an OpenRouter key.",
   typesafe: 'Jev straight from TypeSafe: paste a TypeSafe key.',
-  custom: "A local Laya server, or any other server of the System One API: its address, and a key if it wants one.",
+  laya: "Laya on this computer: start it with LAYA_PORT=8001 laya-serve (the wiki takes 8000). No key unless you set LAYA_API_KEY. Model typed-decisions is the checkpoint tuned for these questions (its thresholds preset was measured on it); auto lets Laya pick its English or multilingual one.",
+  custom: "Any other server of the System One API: its address, and a key if it wants one. It starts from Jev's thresholds.",
 };
-const CLF_NAME = { openrouter: "OpenRouter", typesafe: "TypeSafe", custom: "Custom (local Laya server)" };
+const CLF_NAME = { openrouter: "OpenRouter (Jev)", typesafe: "TypeSafe (Jev)", laya: "Laya (local)", custom: "Custom (System One API)" };
+// The CROW decision thresholds: [name, label, "%" for a probability shown as a percentage, what it does].
+const CROW = [
+  ["tau_route", "Routing: sure", "%", "A routing choice at least this sure follows only its best folder; below, the best two paths are followed."],
+  ["tau_path", "Routing: ask the LLM below", "%", "When the best folder path scores less than this, the LLM decides where the note goes. Higher: the LLM decides more often."],
+  ["tau_ing", "Same subject", "%", "Existing notes above this are candidates to merge the new note into."],
+  ["tau_cons", "Merge", "%", "The classifier must be at least this sure to merge into an existing note; otherwise a new note is written."],
+  ["tau_link", "See also", "%", "Notes above this get a See-also link to each other."],
+  ["tau_fold", "Search: folders", "%", "To answer a question, folders above this are opened."],
+  ["tau_ret", "Search: notes", "%", "To answer a question, notes above this are read."],
+  ["beam", "Routing beam", "", "Folder paths followed at once when a routing choice is unsure."],
+  ["retrieval_beam", "Search beam", "", "Folders opened per level to answer a question."],
+  ["k", "Notes read (top k)", "", "At most this many notes are read to write an answer."],
+];
+const PERCENT = new Set(CROW.filter(([, , unit]) => unit).map(([n]) => n));
+const shown = (n, x) => x === undefined || x === null || x === "" ? "" : PERCENT.has(n) ? String(Math.round(Number(x) * 1000) / 10) : String(x);
+const PRESET_NAME = { jev: "Jev", laya: "Laya" };
 
 // The settings as the server sees them, or null when this app has none (404).
 export async function loadSettings() {
@@ -81,6 +98,11 @@ export async function showSettings(onSaved, said = "") {
           <div class="field" id="f-classifier_api_key"><label for="classifier_api_key">Classifier key</label>
             <input id="classifier_api_key" type="password" ${locked("classifier_api_key") ? "disabled" : ""}>
             <div class="hint" id="clf-key-hint">Stays on this computer, in a file only you can read.</div>${lockNote("classifier_api_key")}</div>
+          <div class="field" id="f-crow"><label>Decision thresholds</label>
+            <div class="thresholds">${CROW.map(([n, label, unit, hint]) => `<label class="th"><span>${esc(label)}</span>
+              <span class="num"><input id="crow_${n}" type="number" step="any" min="${unit ? 0 : 1}"${unit ? ' max="100"' : ""} value="${shown(n, v["crow_" + n])}" ${locked("crow_" + n) ? "disabled" : ""}>${unit ? "<i>%</i>" : ""}</span>
+              <small>${esc(hint)}</small></label>`).join("")}</div>
+            <div class="hint" id="crow-hint"></div></div>
         </div>
         <div class="field"><label for="bundle">Wiki folder</label>
           <input id="bundle" value="${esc(v.bundle)}" ${locked("bundle") ? "disabled" : ""}>${lockNote("bundle")}</div>
@@ -99,13 +121,17 @@ export async function showSettings(onSaved, said = "") {
   // and `drafts` what was typed for each one here, so switching back and forth loses nothing.
   const drafts = { llm: {}, classifier: {} };
   const memo = (kind, p) => s.memory[kind][p] || { model: "", base_url: "", api_key: "" };
-  const inputs = { llm: ["model", "base_url", "api_key"], classifier: ["classifier_model", "classifier_base_url", "classifier_api_key"] };
+  const crowIds = CROW.map(([n]) => "crow_" + n);
+  const inputs = { llm: ["model", "base_url", "api_key"], classifier: ["classifier_model", "classifier_base_url", "classifier_api_key", ...crowIds] };
+  const local = (cp) => cp === "custom" || cp === "laya"; // a server of your own: its address shown, a key only if it wants one
   const defaults = { llm: (p) => s.providers[p].models[0] || "", classifier: (p) => s.classifier_providers[p].models[0] || "" };
   let at = { llm: v.provider, classifier: v.classifier_provider };
   const keep = (kind) => (drafts[kind][at[kind]] = Object.fromEntries(inputs[kind].map((f) => [f, $("#" + f).value])));
   const load = (kind, p) => { // what the provider had: typed here, else saved, else its default
     const typed = drafts[kind][p], m = memo(kind, p), [model, url, key] = inputs[kind];
-    const had = typed || { [model]: m.model || defaults[kind](p), [url]: m.base_url, [key]: "" };
+    const address = m.base_url || (kind === "classifier" && p === "laya" ? s.classifier_providers.laya.base_url : "");
+    const had = typed || { [model]: m.model || defaults[kind](p), [url]: address, [key]: "",
+      ...(kind === "classifier" ? Object.fromEntries(CROW.map(([n]) => ["crow_" + n, shown(n, m.crow?.[n])])) : {}) };
     for (const f of inputs[kind]) if (!locked(f)) $("#" + f).value = had[f];
     at[kind] = p;
   };
@@ -126,18 +152,25 @@ export async function showSettings(onSaved, said = "") {
     const shared = cp === "openrouter" && provider.value === "openrouter"; // one OpenRouter key serves both
     $("#crow-fields").style.display = crow ? "" : "none";
     $("#clf-help").textContent = CLF_HELP[cp] || "";
-    $("#f-classifier_base_url").style.display = cp === "custom" ? "" : "none";
-    $("#f-classifier_api_key").style.display = preset.needs_key || cp === "custom" ? "" : "none";
+    $("#f-classifier_base_url").style.display = local(cp) ? "" : "none";
+    $("#f-classifier_api_key").style.display = preset.needs_key || local(cp) ? "" : "none";
     $("#classifier_api_key").placeholder = saved ? `saved: ${saved} · leave empty to keep`
-      : shared ? "empty: the OpenRouter key above serves it too" : cp === "custom" ? "its key, if it wants one" : `your ${CLF_NAME[cp] || cp} key`;
+      : shared ? "empty: the OpenRouter key above serves it too" : local(cp) ? "its key, if it wants one" : `your ${CLF_NAME[cp] || cp} key`;
+    $("#crow-hint").innerHTML = `Filled from the ${PRESET_NAME[preset.crow_preset] || preset.crow_preset} preset when you choose the classifier `
+      + `(Laya's for Laya, Jev's for the others); change them when you need to. <a href="#" id="crow-reset">Reset to the preset</a>`;
     if (crow && preset.needs_key && !saved && !shared) $("#advanced").open = true; // CROW cannot start without it
   };
   const fields = ["provider", "base_url", "api_key", "model", "mode", "reasoning",
-    "classifier_provider", "classifier_base_url", "classifier_model", "classifier_api_key", "bundle"];
+    "classifier_provider", "classifier_base_url", "classifier_model", "classifier_api_key", "bundle", ...crowIds];
+  const number = (f) => { // a threshold as the server takes it: a fraction for a percentage, "" for the preset's
+    const n = f.slice(5), raw = $("#" + f).value.trim();
+    return raw === "" ? "" : PERCENT.has(n) ? String(Number(raw) / 100) : String(Math.round(Number(raw)));
+  };
   const value = (f) => f === "provider" ? provider.value
     : f === "reasoning" ? ($("#reasoning").checked ? "true" : "") // "" is the default: off
     : f === "base_url" && provider.value !== "custom" ? "" // presets bring their own; the server remembers the custom one
-    : f === "classifier_base_url" && clf() !== "custom" ? ""
+    : f === "classifier_base_url" && (!local(clf()) || $("#" + f).value.trim() === s.classifier_providers[clf()].base_url) ? ""
+    : f.startsWith("crow_") ? number(f)
     : f === "classifier_model" && $("#classifier_model").value.trim() === s.classifier_providers[clf()].models[0] ? "" // the pinned default stays the code's
     : $("#" + f).value.trim();
   const changes = () => Object.fromEntries(fields.filter((f) => !locked(f)).map((f) => [f, value(f)]));
@@ -180,6 +213,13 @@ export async function showSettings(onSaved, said = "") {
   $("#mode").onchange = () => { syncClassifier(); unsaved(); };
   $("#settings").oninput = (e) => { if (e.target.type !== "radio") unsaved(); };
   $("#status").onclick = (e) => { if (e.target.id === "discard") { e.preventDefault(); pending = null; showSettings(onSaved); } };
+  $("#crow-hint").onclick = (e) => { // back to the classifier's preset values
+    if (e.target.id !== "crow-reset") return;
+    e.preventDefault();
+    const preset = s.crow_presets[s.classifier_providers[clf()].crow_preset];
+    for (const [n] of CROW) if (!locked("crow_" + n)) $("#crow_" + n).value = shown(n, preset[n]);
+    unsaved();
+  };
   $("#api_key").onchange = $("#base_url").onchange = refreshModels;
   sync();
   refreshModels();

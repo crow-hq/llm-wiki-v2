@@ -247,7 +247,7 @@ class Librarian(Agent):
                 self.decide("route", "llm", sub.label)
                 folder = sub
                 continue
-            new = step.action == "new"
+            new = step.action == "new" or folder.is_root  # the root holds no notes (and here a folder can be made)
             self.decide("route", "llm", f"{folder.label} ({NEW if new else HERE})")
             return Route(folder, new, folder.ancestors())
 

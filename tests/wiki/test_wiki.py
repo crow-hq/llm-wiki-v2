@@ -52,18 +52,18 @@ def ingest_classic(wiki: Wiki, llm: FakeLLM) -> list[IngestResult]:
 def ingest_crow(wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> list[IngestResult]:
     """The same three ingests, with the classifier taking every decision."""
     llm.add("librarian/summarize", draft("Revenue recognition", "When revenue is booked."))
-    classifier.add_choice("route", "New subfolder", {"New subfolder": 0.9, "Here": 0.1}, 0.9)
+    # an empty wiki: the root holds no notes, so a new folder is the one way and the classifier is not asked
     llm.add("librarian/name_folder", {"name": "Finance", "description": "Money matters"})
     first = wiki.ingest("Revenue is booked on delivery.")
 
     llm.add("librarian/summarize", draft("Pricing tiers", "The three price tiers."))
-    classifier.add_choice("route", "finance", {"finance": 0.9, "Here": 0.1}, 0.9)
+    classifier.add_choice("route", "finance", {"finance": 0.9, "New subfolder": 0.1}, 0.9)
     classifier.add_choice("route", "Here", {"Here": 0.8, "None of these": 0.2}, 0.8)
     classifier.noul_scores.update(match={"Revenue recognition": 0.1}, relate={"Revenue recognition": 0.9})
     second = wiki.ingest("Basic, Pro and Enterprise.")
 
     llm.add("librarian/summarize", draft("Revenue update", "Subscriptions are booked monthly."))
-    classifier.add_choice("route", "finance", {"finance": 0.9, "Here": 0.1}, 0.9)
+    classifier.add_choice("route", "finance", {"finance": 0.9, "New subfolder": 0.1}, 0.9)
     classifier.add_choice("route", "Here", {"Here": 0.8, "None of these": 0.2}, 0.8)
     classifier.noul_scores.update(match={"Revenue recognition": 0.9}, relate={})
     classifier.add_choice("consolidate", "Modify", {"Modify": 0.9, "New note": 0.1}, 0.9)
@@ -108,10 +108,10 @@ def test_each_result_counts_only_its_own_calls(crow_wiki: Wiki, llm: FakeLLM, cl
     llm.add("researcher/answer", "Three tiers.")
     answer = crow_wiki.ask("What are the price tiers?")
 
-    # (llm calls, classifier calls): summarize+name_folder | route; summarize | route x2, match, relate;
+    # (llm calls, classifier calls): summarize+name_folder | none (an empty wiki: one way); summarize | route x2, match, relate;
     # summarize+merge | route x2, match, consolidate, relate; answer | retrieve_folder, retrieve_note.
     per_op = [(r.usage.llm.calls, r.usage.classifier.calls) for r in [*results, answer]]
-    assert per_op == [(2, 1), (1, 4), (2, 5), (1, 2)]
+    assert per_op == [(2, 0), (1, 4), (2, 5), (1, 2)]
     assert answer.usage.llm.input_tokens == 100 and answer.usage.classifier.input_tokens == 100
 
 
@@ -122,9 +122,9 @@ def test_wiki_usage_accumulates_across_operations(crow_wiki: Wiki, llm: FakeLLM,
     total = crow_wiki.usage
 
     assert (before.llm.calls, before.classifier.calls) == (0, 0)  # a snapshot, not a live view
-    assert (total.llm.calls, total.classifier.calls) == (len(llm.calls), len(classifier.calls)) == (5, 10)
+    assert (total.llm.calls, total.classifier.calls) == (len(llm.calls), len(classifier.calls)) == (5, 9)
     assert total.by_model["llm:fake/llm"].total_tokens == 5 * 110
-    assert total.by_model["classifier:fake/jev"].input_tokens == 10 * 50
+    assert total.by_model["classifier:fake/jev"].input_tokens == 9 * 50
 
 
 # -- construction ------------------------------------------------------------------
@@ -193,7 +193,7 @@ def test_ask_of_an_empty_question_raises(classic_wiki: Wiki, llm: FakeLLM) -> No
 def test_ingest_initialises_a_missing_bundle(bundle: Path, llm: FakeLLM) -> None:
     wiki = Wiki(WikiConfig(bundle=bundle, mode="classic"), llm=llm)  # no init()
     llm.add("librarian/summarize", draft("Revenue recognition", "When revenue is booked."))
-    llm.add("librarian/route", {"action": "here"})
+    llm.add("librarian/route", {"action": "new"}).add("librarian/name_folder", {"name": "Finance", "description": "Money matters"})
 
     result = wiki.ingest("Revenue is booked on delivery.")
 

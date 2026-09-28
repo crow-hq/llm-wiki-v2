@@ -24,7 +24,8 @@ from llmw2.server import create_app
 from tests.wiki.fakes import FakeLLM
 from tests.wiki.test_files import make_pdf
 
-NOTE = "revenue-recognition.md"
+FOLDER = {"name": "finance", "description": "Money in and out."}
+NOTE = "finance/revenue-recognition.md"  # the root holds no notes: the first one opens a folder
 
 
 def draft(title: str) -> dict[str, Any]:
@@ -32,8 +33,8 @@ def draft(title: str) -> dict[str, Any]:
 
 
 def script_ingest(llm: FakeLLM, title: str = "Revenue recognition") -> None:
-    """A classic ingest into the root of an empty wiki: summarize, route here."""
-    llm.add("librarian/summarize", draft(title)).add("librarian/route", {"action": "here"})
+    """A classic ingest into an empty wiki: summarize, route to a new folder (the root holds no notes), name it "finance"."""
+    llm.add("librarian/summarize", draft(title)).add("librarian/route", {"action": "new"}).add("librarian/name_folder", FOLDER)
 
 
 def test_health_reports_the_models_in_use(crow_wiki: Wiki) -> None:
@@ -49,10 +50,10 @@ def test_ingest_returns_the_result_as_json(client: TestClient, llm: FakeLLM) -> 
 
     assert response.status_code == 200
     body = response.json()
-    assert (body["action"], body["note"], body["title"], body["folder"]) == ("created", NOTE, "Revenue recognition", "/")
-    assert (body["created_folders"], body["related"]) == ([], [])
+    assert (body["action"], body["note"], body["title"], body["folder"]) == ("created", NOTE, "Revenue recognition", "/finance")
+    assert (body["created_folders"], body["related"]) == (["/finance"], [])
     assert [d["step"] for d in body["decisions"]] == ["route"]
-    assert body["usage"]["llm"]["calls"] == 2
+    assert body["usage"]["llm"]["calls"] == 3
 
 
 def test_ingest_of_empty_text_is_a_422(client: TestClient, llm: FakeLLM) -> None:
@@ -66,7 +67,7 @@ def test_ingest_of_empty_text_is_a_422(client: TestClient, llm: FakeLLM) -> None
 def test_ask_returns_the_answer_as_json(client: TestClient, classic_wiki: Wiki, llm: FakeLLM) -> None:
     script_ingest(llm)
     classic_wiki.ingest("Booked on delivery.")
-    llm.add("researcher/navigate", {"select": [NOTE], "done": True})
+    llm.add("researcher/navigate", {"open": ["finance"]}, {"select": [NOTE], "done": True})
     llm.add("researcher/answer", f"On delivery [{NOTE}].")
 
     response = client.post("/ask", json={"question": "When is revenue booked?"})
@@ -114,8 +115,13 @@ def test_tree_lists_folders_and_notes(client: TestClient, llm: FakeLLM) -> None:
     assert tree == {
         "path": "/",
         "description": "",
-        "notes": [{"path": NOTE, "title": "Revenue recognition", "summary": "About revenue recognition."}],
-        "subfolders": [],
+        "notes": [],
+        "subfolders": [{
+            "path": "/finance",
+            "description": "Money in and out.",
+            "notes": [{"path": NOTE, "title": "Revenue recognition", "summary": "About revenue recognition."}],
+            "subfolders": [],
+        }],
     }
 
 
@@ -126,8 +132,8 @@ def test_usage_grows_with_each_operation(client: TestClient, llm: FakeLLM) -> No
 
     after = client.get("/usage").json()
 
-    assert (before["llm"]["calls"], after["llm"]["calls"]) == (0, 2)
-    assert after["by_model"]["llm:fake/llm"]["input_tokens"] == 200
+    assert (before["llm"]["calls"], after["llm"]["calls"]) == (0, 3)
+    assert after["by_model"]["llm:fake/llm"]["input_tokens"] == 300
 
 
 def test_check_lists_problems_as_strings(client: TestClient, llm: FakeLLM, bundle: Path) -> None:
@@ -135,13 +141,13 @@ def test_check_lists_problems_as_strings(client: TestClient, llm: FakeLLM, bundl
     client.post("/ingest", json={"text": "Booked on delivery."})
     (bundle / NOTE).unlink()
 
-    assert client.get("/check").json() == [f"index.md: lists missing {NOTE}"]
+    assert client.get("/check").json() == ["finance/index.md: lists missing revenue-recognition.md"]
 
 
 def test_concurrent_ingests_both_succeed(client: TestClient, llm: FakeLLM, bundle: Path) -> None:
     # The write lock serialises ingests, so the queued replies are consumed one ingest at a time.
     script_ingest(llm, "Alpha")
-    llm.add("librarian/summarize", draft("Beta")).add("librarian/route", {"action": "here"})
+    llm.add("librarian/summarize", draft("Beta")).add("librarian/route", {"action": "descend", "subfolder": "finance"}, {"action": "here"})
     llm.add("librarian/find_match", {"match": None}).add("librarian/relate", {"related": []})
     start = threading.Barrier(2)
 
@@ -153,8 +159,8 @@ def test_concurrent_ingests_both_succeed(client: TestClient, llm: FakeLLM, bundl
         responses = list(pool.map(post, ["first source", "second source"]))
 
     assert [r.status_code for r in responses] == [200, 200]
-    assert sorted(r.json()["usage"]["llm"]["calls"] for r in responses) == [2, 4]  # each counts only its own calls
-    listed = {link for _, link, _ in parse_index((bundle / "index.md").read_text(encoding="utf-8"))}
+    assert sorted(r.json()["usage"]["llm"]["calls"] for r in responses) == [3, 5]  # each counts only its own calls
+    listed = {link for _, link, _ in parse_index((bundle / "finance" / "index.md").read_text(encoding="utf-8"))}
     assert listed == {"alpha.md", "beta.md"}
 
 
@@ -234,8 +240,11 @@ def test_graph_returns_nodes_and_links(client: TestClient, llm: FakeLLM) -> None
 
     g = client.get("/graph").json()
 
-    assert {n["id"] for n in g["nodes"]} == {"/", NOTE}
-    assert g["links"] == [{"source": "/", "target": NOTE, "kind": "contains"}]
+    assert {n["id"] for n in g["nodes"]} == {"/", "/finance", NOTE}
+    assert g["links"] == [
+        {"source": "/", "target": "/finance", "kind": "contains"},
+        {"source": "/finance", "target": NOTE, "kind": "contains"},
+    ]
 
 
 def test_the_page_and_its_modules_load_nothing_from_a_cdn(client: TestClient) -> None:

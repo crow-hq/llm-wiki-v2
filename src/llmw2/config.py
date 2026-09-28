@@ -51,12 +51,17 @@ JEV = "typesafe/jev-1.13"  # pinned: thresholds are calibrated per model version
 CLASSIFIER_PROVIDERS: dict[str, Provider] = {
     "openrouter": Provider("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", (JEV,)),
     "typesafe": Provider("https://api.typesafe.ai/v1", "TYPESAFE_API_KEY", (JEV,)),
-    "custom": Provider("", "", (JEV,)),  # a local Laya server: set base_url (and api_key if it wants one)
+    # Laya on this computer (`LAYA_PORT=8001 laya-serve`: the wiki takes 8000). "typed-decisions" is the checkpoint tuned
+    # for these questions, the one CROW_PRESETS["laya"] was measured on; "auto" lets Laya pick its English or multilingual
+    # one per note. A key only with LAYA_API_KEY.
+    "laya": Provider("http://127.0.0.1:8001/v1", "", ("typed-decisions", "auto", "english", "multilingual")),
+    "custom": Provider("", "", (JEV,)),  # any other System One server: set base_url (and api_key if it wants one)
 }
 
 # How the settings page and the errors name each provider.
 NAMES = {
-    "openrouter": "OpenRouter", "openai": "OpenAI", "gemini": "Gemini", "ollama": "Ollama", "typesafe": "TypeSafe", "custom": "your server",
+    "openrouter": "OpenRouter", "openai": "OpenAI", "gemini": "Gemini", "ollama": "Ollama", "typesafe": "TypeSafe", "laya": "Laya",
+    "custom": "your server",
 }
 
 
@@ -141,6 +146,23 @@ class CrowConfig(BaseModel):
     k: int = Field(8, gt=0)  # CROW retrieval: notes passed to the answer (paper default 5)
 
 
+# CROW thresholds per classifier. Jev's are CrowConfig's defaults (the paper's); every classifier but Laya starts from them.
+# Laya's typed-decisions checkpoint answers with flatter probabilities; measured on 25 sample notes (2026-09-28):
+# a routing choice it gets wrong scores at most 0.61 and it never picks "New subfolder", so below 0.65 the LLM routes;
+# its merge confidence is 0.04-0.12 for a real follow-up and at most 0.044 for a related but distinct note; linked
+# notes score 0.5 or more, unrelated ones at most 0.49; the folder and the note that answer a question score at least
+# 0.17 and 0.21, the others mostly under 0.18 and 0.20.
+CROW_PRESETS: dict[str, dict[str, float | int]] = {
+    "jev": {},
+    "laya": {"tau_path": 0.65, "tau_ing": 0.45, "tau_cons": 0.05, "tau_fold": 0.15, "tau_ret": 0.2, "tau_link": 0.5, "k": 5},
+}
+
+
+def crow_preset(classifier_provider: str) -> str:
+    """The name of the thresholds preset for a classifier provider."""
+    return "laya" if classifier_provider == "laya" else "jev"
+
+
 # WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).
 _TOP_LEVEL_ENV = (
     "bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "upload_mb", "usage_log", "prompts_dir",
@@ -163,6 +185,14 @@ class WikiConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
     crow: CrowConfig = Field(default_factory=CrowConfig)
+
+    @model_validator(mode="after")
+    def _crow_preset(self) -> WikiConfig:
+        """The thresholds not set explicitly (environment, settings, caller) come from the classifier's preset."""
+        for name, value in CROW_PRESETS[crow_preset(self.classifier.provider)].items():
+            if name not in self.crow.model_fields_set:
+                setattr(self.crow, name, value)
+        return self
 
     @model_validator(mode="after")
     def _share_the_openrouter_key(self) -> WikiConfig:

@@ -18,6 +18,7 @@ model serves both, at OpenRouter's own address.
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 from collections.abc import Collection, Mapping
@@ -26,7 +27,17 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from llmw2.config import CLASSIFIER_PROVIDERS, PROVIDERS, Provider, WikiConfig, merge, missing_keys
+from llmw2.config import (
+    CLASSIFIER_PROVIDERS,
+    CROW_PRESETS,
+    PROVIDERS,
+    CrowConfig,
+    Provider,
+    WikiConfig,
+    crow_preset,
+    merge,
+    missing_keys,
+)
 from llmw2.errors import ConfigError, InputError
 
 # The settings people edit: name in the page and in `setup` -> place in WikiConfig.
@@ -42,10 +53,12 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "classifier_model": ("classifier", "model"),
     "classifier_api_key": ("classifier", "api_key"),
     "bundle": ("bundle",),
+    # CROW thresholds live with the classifier, so each classifier provider keeps its own (see "remembered").
+    **{f"crow_{name}": ("classifier", "crow", name) for name in CrowConfig.model_fields},
 }
 SECRETS = frozenset({"api_key", "classifier_api_key"})  # never sent back; an empty one keeps what is saved
 REMEMBERED = "remembered"  # {"llm": {provider: {"api_key", "model", "base_url"}}, "classifier": {…}}
-PER_PROVIDER = ("api_key", "model", "base_url")  # what a model keeps for each provider
+PER_PROVIDER = ("api_key", "model", "base_url", "crow")  # what a model keeps for each provider
 
 
 def settings_path(env: Mapping[str, str]) -> Path:
@@ -96,6 +109,9 @@ class Settings:
         """The effective config: defaults, the file (or `saved`), the environment, the flags."""
         data = self.saved() if saved is None else saved
         base = merge({"bundle": str(default_bundle())}, {k: v for k, v in data.items() if k != REMEMBERED})
+        clf = base.get("classifier")
+        if isinstance(clf, dict) and "crow" in clf:  # the thresholds saved with the classifier are WikiConfig's `crow`
+            base = {**base, "classifier": {k: v for k, v in clf.items() if k != "crow"}, "crow": clf["crow"]}
         cfg = WikiConfig.from_env(self.env, base=base, **self.flags)
         if key := openrouter_key(data):  # at OpenRouter's own address only: a gateway named "openrouter" never gets it
             home = PROVIDERS["openrouter"].base_url
@@ -118,6 +134,7 @@ class Settings:
             "classifier_model": ["OKF_CLASSIFIER_MODEL"],
             "classifier_api_key": ["OKF_CLASSIFIER_API_KEY", key_env(CLASSIFIER_PROVIDERS, classifier_provider)],
             "bundle": ["OKF_BUNDLE"],
+            **{f"crow_{name}": [f"OKF_{name.upper()}"] for name in CrowConfig.model_fields},
         }
         return [f for f, names in by.items() if f in self.flags or any(n and self.env.get(n) for n in names)]
 
@@ -139,20 +156,24 @@ class Settings:
                 "classifier_model": cfg.classifier.model,
                 "classifier_api_key": mask(cfg.classifier.api_key),
                 "bundle": str(cfg.bundle),
+                **{f"crow_{name}": value for name, value in cfg.crow.model_dump().items()},
             },
             "ready": ready(cfg),
             "missing": missing_keys(cfg),
             "memory": self.memory(saved, cfg),
             "managed": self.managed(cfg.llm.provider, cfg.classifier.provider),
             "providers": presets(PROVIDERS),
-            "classifier_providers": presets(CLASSIFIER_PROVIDERS),
+            "classifier_providers": {
+                name: {**view, "crow_preset": crow_preset(name)} for name, view in presets(CLASSIFIER_PROVIDERS).items()
+            },
+            "crow_presets": {name: thresholds(name) for name in CROW_PRESETS},
             "file": tilde(self.path),
         }
 
-    def memory(self, saved: Mapping[str, Any], cfg: WikiConfig) -> dict[str, dict[str, dict[str, str]]]:
+    def memory(self, saved: Mapping[str, Any], cfg: WikiConfig) -> dict[str, dict[str, dict[str, Any]]]:
         """Per model and provider, what choosing that provider brings back: model, address and key (masked)."""
         shared, remembered = openrouter_key(saved), saved.get(REMEMBERED) or {}
-        out: dict[str, dict[str, dict[str, str]]] = {}
+        out: dict[str, dict[str, dict[str, Any]]] = {}
         for section, providers in (("llm", PROVIDERS), ("classifier", CLASSIFIER_PROVIDERS)):
             kept = remembered.get(section) or {}
             out[section] = {}
@@ -161,9 +182,12 @@ class Settings:
                 key = (self.env.get(preset.key_env) if preset.key_env else "") or node.get("api_key")
                 key = key or (shared if name == "openrouter" and not node.get("base_url") else "")
                 out[section][name] = {"model": node.get("model", ""), "base_url": node.get("base_url", ""), "api_key": mask(str(key or ""))}
+                if section == "classifier":  # its preset, with what was changed for it
+                    out[section][name]["crow"] = {**thresholds(crow_preset(name)), **(node.get("crow") or {})}
             active = cfg.llm if section == "llm" else cfg.classifier
             base_url = (saved.get(section) or {}).get("base_url", "")
             out[section][active.provider] = {"model": active.model, "base_url": base_url, "api_key": mask(active.api_key)}
+        out["classifier"][cfg.classifier.provider]["crow"] = cfg.crow.model_dump()
         return out
 
     def apply(self, changes: Mapping[str, Any]) -> tuple[dict[str, Any], WikiConfig]:
@@ -189,6 +213,8 @@ class Settings:
             for key in parents:
                 node = node.setdefault(key, {})
             value = str(value or "").strip()
+            if name.startswith("crow_") and value and is_preset(clf_provider, leaf, value):
+                value = ""  # the preset's own value is not written: a new preset version still reaches this wiki
             if value:
                 node[leaf] = value
             elif name not in SECRETS:
@@ -246,6 +272,19 @@ def switch(saved: dict[str, Any], section: str, prefix: str, changes: Mapping[st
     url = str(node.get("base_url") or "").strip().rstrip("/")
     if name in changes and name not in managed and str(changes[name] or "").strip().rstrip("/") != url:
         node.pop("api_key", None)
+
+
+def thresholds(preset: str) -> dict[str, Any]:
+    """Every CROW threshold of a preset: CrowConfig's defaults with the preset's own values over them."""
+    return {**CrowConfig().model_dump(), **CROW_PRESETS[preset]}
+
+
+def is_preset(classifier_provider: str, name: str, value: str) -> bool:
+    """True when `value` is what the classifier's preset has for the threshold `name` anyway."""
+    try:
+        return math.isclose(float(value), float(thresholds(crow_preset(classifier_provider))[name]))
+    except (KeyError, ValueError):
+        return False
 
 
 def openrouter_key(saved: Mapping[str, Any]) -> str:

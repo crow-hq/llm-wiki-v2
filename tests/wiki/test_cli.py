@@ -18,7 +18,8 @@ from llmw2.errors import ModelError
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 from tests.wiki.test_files import make_pdf
 
-NOTE = "revenue-recognition.md"
+NOTE = "finance/revenue-recognition.md"  # the root holds no notes: the first one opens a folder
+FOLDER = {"name": "finance", "description": "Money in and out."}
 
 
 @pytest.fixture
@@ -39,9 +40,9 @@ def run(bundle: Path, *args: str) -> int:
 
 
 def script_ingest(llm: FakeLLM) -> None:
-    """A classic ingest into the root of an empty wiki: summarize, route here."""
+    """A classic ingest into an empty wiki: summarize, route to a new folder (the root holds no notes), name it "finance"."""
     llm.add("librarian/summarize", {"title": "Revenue recognition", "summary": "When revenue is booked.", "body": "On delivery."})
-    llm.add("librarian/route", {"action": "here"})
+    llm.add("librarian/route", {"action": "new"}).add("librarian/name_folder", FOLDER)
 
 
 def test_init_creates_the_bundle(made: list[dict[str, Any]], bundle: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -57,12 +58,13 @@ def test_mode_flag_makes_a_crow_wiki(
 ) -> None:
     monkeypatch.setattr(sys, "stdin", io.StringIO("Revenue is booked on delivery."))
     llm.add("librarian/summarize", {"title": "Revenue recognition", "summary": "When revenue is booked.", "body": "On delivery."})
-    classifier.add_choice("route", "Here", {"Here": 0.9, "New subfolder": 0.1}, 0.9)
+    llm.add("librarian/name_folder", FOLDER)
 
     assert cli.main(["--bundle", str(bundle), "--mode", "crow", "ingest", "-"]) == 0
 
     assert made == [{"bundle": bundle, "mode": "crow"}]
-    assert classifier.ops == ["route"]
+    # CROW routed it: in an empty wiki a new folder is its one way, where the classic librarian would ask the LLM
+    assert llm.ops == ["librarian/summarize", "librarian/name_folder"]
 
 
 def test_ingest_when_a_file_is_given_then_prints_the_note_and_records_the_path_as_resource(
@@ -78,7 +80,7 @@ def test_ingest_when_a_file_is_given_then_prints_the_note_and_records_the_path_a
 
     # ASSERT
     assert code == 0
-    assert capsys.readouterr().out == f"created: {NOTE}\n"
+    assert capsys.readouterr().out == f"created: {NOTE} (new folders: /finance)\n"
     assert "Revenue is booked on delivery." in llm.calls[0][1][-1]["content"]
     [raw] = (bundle / "raw").glob("*.md")
     assert f"resource: {source}" in raw.read_text(encoding="utf-8")
@@ -97,8 +99,8 @@ def test_ingest_stdin_with_json_prints_the_result_with_usage(
     assert run(bundle, "ingest", "-", "--title", "Revenue memo", "--json") == 0
 
     result = json.loads(capsys.readouterr().out)
-    assert (result["action"], result["note"], result["folder"]) == ("created", NOTE, "/")
-    assert result["usage"]["llm"]["calls"] == 2
+    assert (result["action"], result["note"], result["folder"]) == ("created", NOTE, "/finance")
+    assert result["usage"]["llm"]["calls"] == 3
     assert "Revenue is booked on delivery." in llm.calls[0][1][-1]["content"]
 
 
@@ -115,12 +117,12 @@ def test_usage_summary_goes_to_stderr(
     run(bundle, "ingest", "-")
 
     out, err = capsys.readouterr()
-    assert err == "llm 2 calls 200 in / 20 out | classifier 0 calls 0 in / 0 out\n"
+    assert err == "llm 3 calls 300 in / 30 out | classifier 0 calls 0 in / 0 out\n"
     assert "calls" not in out
 
 
 def ingest_one(bundle: Path, llm: FakeLLM) -> None:
-    """Put one note at the root of the wiki, outside the CLI."""
+    """Put one note in the wiki (in /finance), outside the CLI."""
     script_ingest(llm)
     Wiki(WikiConfig(bundle=bundle, mode="classic"), llm=llm).ingest("Revenue is booked on delivery.")
 
@@ -129,7 +131,7 @@ def test_ask_prints_the_answer(
     made: list[dict[str, Any]], bundle: Path, llm: FakeLLM, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ingest_one(bundle, llm)
-    llm.add("researcher/navigate", {"select": [NOTE], "done": True})
+    llm.add("researcher/navigate", {"open": ["finance"]}, {"select": [NOTE], "done": True})
     llm.add("researcher/answer", f"On delivery [{NOTE}].")
 
     assert run(bundle, "ask", "When is revenue booked?") == 0
@@ -141,14 +143,14 @@ def test_ask_with_json_prints_the_answer_with_citations(
     made: list[dict[str, Any]], bundle: Path, llm: FakeLLM, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ingest_one(bundle, llm)
-    llm.add("researcher/navigate", {"select": [NOTE], "done": True})
+    llm.add("researcher/navigate", {"open": ["finance"]}, {"select": [NOTE], "done": True})
     llm.add("researcher/answer", f"On delivery [{NOTE}].")
 
     assert run(bundle, "ask", "When is revenue booked?", "--json") == 0
 
     answer = json.loads(capsys.readouterr().out)
     assert (answer["citations"], answer["notes"]) == ([NOTE], [NOTE])
-    assert answer["usage"]["llm"]["calls"] == 2
+    assert answer["usage"]["llm"]["calls"] == 3
 
 
 def test_check_exits_0_on_a_clean_wiki(
@@ -336,7 +338,7 @@ def test_ingest_of_a_pdf_reads_its_text_layer(
 
     assert run(bundle, "ingest", str(source)) == 0
 
-    assert capsys.readouterr().out == f"created: {NOTE}\n"
+    assert capsys.readouterr().out == f"created: {NOTE} (new folders: /finance)\n"
     prompt = llm.calls[0][1][-1]["content"]
     assert "Revenue is booked on delivery." in prompt and "Source title: board minutes" in prompt
 

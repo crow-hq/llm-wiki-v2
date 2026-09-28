@@ -72,6 +72,17 @@ class SettingsChanges(BaseModel):
     classifier_model: str | None = None
     classifier_api_key: str | None = None
     bundle: str | None = None
+    # CROW thresholds (settings.FIELDS "crow_*"): a number as text, "" for the classifier's preset value
+    crow_tau_route: str | None = None
+    crow_tau_path: str | None = None
+    crow_tau_ing: str | None = None
+    crow_tau_cons: str | None = None
+    crow_tau_fold: str | None = None
+    crow_tau_ret: str | None = None
+    crow_tau_link: str | None = None
+    crow_beam: str | None = None
+    crow_retrieval_beam: str | None = None
+    crow_k: str | None = None
 
 
 def hostname(request: Request) -> str:

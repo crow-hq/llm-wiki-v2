@@ -13,7 +13,7 @@ Its subfolders (name: description):
 
 Choose one action:
 - "descend": the note belongs inside one of the subfolders listed above; put its exact name in "subfolder".
-- "here": the note belongs directly in {{folder}}, and no subfolder is a better fit.
+- "here": the note belongs directly in {{folder}}, and no subfolder is a better fit. Never at the root (/), which holds no notes.
 - "new": the note belongs under {{folder}}, but no listed subfolder covers its subject, and a new subfolder would be a durable category.
 
 Prefer "descend" whenever a subfolder's description covers the note's subject.

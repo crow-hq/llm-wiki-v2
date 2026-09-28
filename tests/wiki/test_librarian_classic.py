@@ -19,6 +19,7 @@ from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import FakeLLM
 
 SUMMARIZE, ROUTE, NAME_FOLDER = "librarian/summarize", "librarian/route", "librarian/name_folder"
+PRICING = {"name": "pricing", "description": "Prices and discounts of every supplier."}  # the root holds no notes
 FIND_MATCH, CONSOLIDATE, MERGE, RELATE = (
     "librarian/find_match",
     "librarian/consolidate",
@@ -72,14 +73,16 @@ def steps(result: IngestResult) -> list[tuple[str, str, str]]:
 # -- first ingest and routing ------------------------------------------------------------
 
 
-def test_first_ingest_here_files_note_at_root(classic_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
-    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "here"})
+def test_first_ingest_when_the_llm_says_here_at_the_root_then_the_note_opens_a_folder(
+    classic_wiki: Wiki, llm: FakeLLM, bundle: Path
+) -> None:
+    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "here"}).add(NAME_FOLDER, PRICING)
 
     result = classic_wiki.ingest("Acme raised prices.", title="Acme memo", resource="https://acme.test/memo")
 
-    assert (result.action, result.note, result.folder) == ("created", "acme-pricing.md", "/")
-    assert result.created_folders == []
-    fm = read(bundle / "acme-pricing.md").frontmatter
+    assert (result.action, result.note, result.folder) == ("created", "pricing/acme-pricing.md", "/pricing")
+    assert result.created_folders == ["/pricing"]  # the root holds no notes
+    fm = read(bundle / "pricing" / "acme-pricing.md").frontmatter
     assert (fm["type"], fm["title"], fm["description"], fm["tags"]) == (
         "Note",
         "Acme pricing",
@@ -94,36 +97,37 @@ def test_first_ingest_here_files_note_at_root(classic_wiki: Wiki, llm: FakeLLM, 
 
 
 def test_first_ingest_writes_raw_copy_index_and_log(classic_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
-    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "here"})
+    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "new"}).add(NAME_FOLDER, PRICING)
 
     classic_wiki.ingest("Acme raised prices.", title="Acme memo", resource="https://acme.test/memo")
 
-    raw_path = read(bundle / "acme-pricing.md").frontmatter["sources"][0]["resource"]
+    raw_path = read(bundle / "pricing" / "acme-pricing.md").frontmatter["sources"][0]["resource"]
     raw = read(bundle / raw_path.lstrip("/"))
     assert raw.frontmatter["type"] == "Source"
     assert (raw.frontmatter["title"], raw.frontmatter["resource"]) == ("Acme memo", "https://acme.test/memo")
     assert raw.body.strip() == "Acme raised prices."
     index = read(bundle / "index.md")
     assert index.frontmatter == {"okf_version": "0.2"}
-    assert "* [Acme pricing](acme-pricing.md) - What Acme pricing says." in index.body.splitlines()
+    pricing = (bundle / "pricing" / "index.md").read_text(encoding="utf-8")
+    assert "* [Acme pricing](acme-pricing.md) - What Acme pricing says." in pricing.splitlines()
     log = (bundle / "log.md").read_text(encoding="utf-8")
     assert re.search(r"^## \d{4}-\d{2}-\d{2}$", log, re.MULTILINE)
-    assert f"* **Created**: [Acme pricing](acme-pricing.md) - from {raw_path} (classic)" in log.splitlines()
+    assert f"* **Created**: [Acme pricing](pricing/acme-pricing.md) - from {raw_path} (classic)" in log.splitlines()
 
 
 def test_empty_pool_skips_find_match_and_relate(classic_wiki: Wiki, llm: FakeLLM) -> None:
-    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "here"})
+    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "new"}).add(NAME_FOLDER, PRICING)
 
     result = classic_wiki.ingest("Acme raised prices.")
 
-    assert llm.ops == [SUMMARIZE, ROUTE]
+    assert llm.ops == [SUMMARIZE, ROUTE, NAME_FOLDER]
     assert result.related == []
-    assert steps(result) == [("route", "llm", "/ (Here)")]
+    assert steps(result) == [("route", "llm", "/ (New subfolder)")]
 
 
 def test_route_new_at_root_creates_named_folder(classic_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
     llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "new"})
-    llm.add(NAME_FOLDER, {"name": "pricing", "description": "Prices and discounts of every supplier."})
+    llm.add(NAME_FOLDER, PRICING)
 
     result = classic_wiki.ingest("Acme raised prices.")
 
@@ -153,13 +157,25 @@ def test_route_descends_into_existing_folder_then_stays(classic_wiki: Wiki, llm:
 
 def test_descend_to_unknown_subfolder_is_treated_as_here(classic_wiki: Wiki, llm: FakeLLM) -> None:
     add_folder(classic_wiki, "/", "finance", "Money matters.")
-    llm.add(SUMMARIZE, draft("Q3 revenue")).add(ROUTE, {"action": "descend", "subfolder": "marketing"})
+    add_folder(classic_wiki, "/finance", "tax", "Taxes.")
+    llm.add(SUMMARIZE, draft("Q3 revenue"))
+    llm.add(ROUTE, {"action": "descend", "subfolder": "finance"}, {"action": "descend", "subfolder": "marketing"})
 
     result = classic_wiki.ingest("Revenue grew.")
 
-    assert llm.ops == [SUMMARIZE, ROUTE]
-    assert (result.folder, result.note, result.created_folders) == ("/", "q3-revenue.md", [])
-    assert steps(result) == [("route", "llm", "/ (Here)")]
+    assert llm.ops == [SUMMARIZE, ROUTE, ROUTE]
+    assert (result.folder, result.note, result.created_folders) == ("/finance", "finance/q3-revenue.md", [])
+    assert steps(result) == [("route", "llm", "/finance"), ("route", "llm", "/finance (Here)")]
+
+
+def test_descend_to_unknown_subfolder_at_the_root_opens_a_folder(classic_wiki: Wiki, llm: FakeLLM) -> None:
+    add_folder(classic_wiki, "/", "finance", "Money matters.")
+    llm.add(SUMMARIZE, draft("Q3 revenue")).add(ROUTE, {"action": "descend", "subfolder": "marketing"})
+    llm.add(NAME_FOLDER, {"name": "marketing", "description": "Campaigns and brand."})
+
+    result = classic_wiki.ingest("Revenue grew.")
+
+    assert (result.folder, result.note, result.created_folders) == ("/marketing", "marketing/q3-revenue.md", ["/marketing"])
 
 
 def test_route_when_the_llm_enters_a_folder_at_max_depth_then_a_rule_stops_it_there(bundle: Path, llm: FakeLLM) -> None:
@@ -208,16 +224,17 @@ def test_name_folder_reuses_existing_sibling(classic_wiki: Wiki, llm: FakeLLM, b
 
 
 def test_no_match_creates_a_new_note(classic_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
-    add_note(classic_wiki, "/", "Acme contracts")
-    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "here"})
+    add_folder(classic_wiki, "/", "acme", "The supplier Acme.")
+    add_note(classic_wiki, "/acme", "Acme contracts")
+    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "descend", "subfolder": "acme"}, {"action": "here"})
     llm.add(FIND_MATCH, {"match": None}).add(RELATE, {"related": []})
 
     result = classic_wiki.ingest("Acme raised prices.")
 
-    assert llm.ops == [SUMMARIZE, ROUTE, FIND_MATCH, RELATE]
-    assert (result.action, result.note) == ("created", "acme-pricing.md")
+    assert llm.ops == [SUMMARIZE, ROUTE, ROUTE, FIND_MATCH, RELATE]
+    assert (result.action, result.note) == ("created", "acme/acme-pricing.md")
     assert ("match", "llm", "none") in steps(result)
-    assert len(read(bundle / "acme-contracts.md").frontmatter["sources"]) == 1
+    assert len(read(bundle / "acme" / "acme-contracts.md").frontmatter["sources"]) == 1
 
 
 def test_match_and_modify_merges_the_note_in_place(classic_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
@@ -251,16 +268,17 @@ def test_match_and_modify_merges_the_note_in_place(classic_wiki: Wiki, llm: Fake
 
 
 def test_match_and_consolidate_new_writes_a_note_next_to_it(classic_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
-    add_note(classic_wiki, "/", "Acme pricing")
-    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "here"})
-    llm.add(FIND_MATCH, {"match": "acme-pricing.md"}).add(CONSOLIDATE, {"decision": "new"})
+    add_folder(classic_wiki, "/", "acme", "The supplier Acme.")
+    add_note(classic_wiki, "/acme", "Acme pricing")
+    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "descend", "subfolder": "acme"}, {"action": "here"})
+    llm.add(FIND_MATCH, {"match": "acme/acme-pricing.md"}).add(CONSOLIDATE, {"decision": "new"})
     llm.add(RELATE, {"related": []})
 
     result = classic_wiki.ingest("Acme raised prices.")
 
-    assert llm.ops == [SUMMARIZE, ROUTE, FIND_MATCH, CONSOLIDATE, RELATE]
-    assert (result.action, result.note) == ("created", "acme-pricing-2.md")
-    assert read(bundle / "acme-pricing.md").body.startswith("# Overview\n\nSeeded.")
+    assert llm.ops == [SUMMARIZE, ROUTE, ROUTE, FIND_MATCH, CONSOLIDATE, RELATE]
+    assert (result.action, result.note) == ("created", "acme/acme-pricing-2.md")
+    assert read(bundle / "acme" / "acme-pricing.md").body.startswith("# Overview\n\nSeeded.")
     assert ("consolidate", "llm", "new") in steps(result)
 
 
@@ -284,21 +302,23 @@ def test_consolidation_candidates_include_notes_of_ancestor_folders(classic_wiki
 
 def test_relate_links_both_ways_capped_at_max_links(bundle: Path, llm: FakeLLM) -> None:
     wiki = make_wiki(bundle, llm, max_links=2)
+    add_folder(wiki, "/", "fruit", "Fruit and its prices.")
     for title in ("Apple", "Banana", "Cherry"):
-        add_note(wiki, "/", title)
-    llm.add(SUMMARIZE, draft("Fruit prices")).add(ROUTE, {"action": "here"}).add(FIND_MATCH, {"match": None})
-    llm.add(RELATE, {"related": ["cherry.md", "apple.md", "banana.md"]})
+        add_note(wiki, "/fruit", title)
+    llm.add(SUMMARIZE, draft("Fruit prices")).add(ROUTE, {"action": "descend", "subfolder": "fruit"}, {"action": "here"})
+    llm.add(FIND_MATCH, {"match": None}).add(RELATE, {"related": ["fruit/cherry.md", "fruit/apple.md", "fruit/banana.md"]})
 
     result = wiki.ingest("Fruit got dearer.")
 
     assert "At most 2 links" in prompt_of(llm, RELATE)
-    assert result.related == ["cherry.md", "apple.md"]
-    see_also = read(bundle / "fruit-prices.md").body.split("# See also\n\n")[1].splitlines()
+    assert result.related == ["fruit/cherry.md", "fruit/apple.md"]
+    fruit = bundle / "fruit"
+    see_also = read(fruit / "fruit-prices.md").body.split("# See also\n\n")[1].splitlines()
     assert see_also == ["* [Cherry](cherry.md) - About Cherry.", "* [Apple](apple.md) - About Apple."]
     back_link = "* [Fruit prices](fruit-prices.md) - What Fruit prices says."
-    assert back_link in read(bundle / "cherry.md").body.splitlines()
-    assert back_link in read(bundle / "apple.md").body.splitlines()
-    assert "# See also" not in read(bundle / "banana.md").body
+    assert back_link in read(fruit / "cherry.md").body.splitlines()
+    assert back_link in read(fruit / "apple.md").body.splitlines()
+    assert "# See also" not in read(fruit / "banana.md").body
 
 
 # -- options, usage and results ---------------------------------------------------------------
@@ -308,15 +328,15 @@ def test_ingest_when_summarize_is_off_then_files_the_source_verbatim(bundle: Pat
     # ARRANGE
     wiki = make_wiki(bundle, llm, summarize=False)
     text = "# Quarterly Report\n\nRevenue grew 10%. Costs fell.\n"
-    llm.add(ROUTE, {"action": "here"})
+    llm.add(ROUTE, {"action": "new"}).add(NAME_FOLDER, {"name": "reports", "description": "Quarterly reports."})
 
     # ACT
     result = wiki.ingest(text)
 
     # ASSERT
-    assert llm.ops == [ROUTE]
-    assert (result.title, result.note) == ("Quarterly Report", "quarterly-report.md")
-    note = read(bundle / "quarterly-report.md")
+    assert llm.ops == [ROUTE, NAME_FOLDER]
+    assert (result.title, result.note) == ("Quarterly Report", "reports/quarterly-report.md")
+    note = read(bundle / "reports" / "quarterly-report.md")
     assert note.frontmatter["title"] == "Quarterly Report"
     assert not note.frontmatter["description"].startswith("#")
     assert note.body.strip() == text.strip()
@@ -324,23 +344,24 @@ def test_ingest_when_summarize_is_off_then_files_the_source_verbatim(bundle: Pat
 
 def test_usage_of_a_result_counts_only_its_own_ingest(classic_wiki: Wiki, llm: FakeLLM, tracker: UsageTracker) -> None:
     llm.add(SUMMARIZE, draft("Acme pricing"), draft("Acme contracts"))
-    llm.add(ROUTE, {"action": "here"}, {"action": "here"})
+    llm.add(ROUTE, {"action": "new"}).add(NAME_FOLDER, PRICING)
+    llm.add(ROUTE, {"action": "descend", "subfolder": "pricing"}, {"action": "here"})
     llm.add(FIND_MATCH, {"match": None}).add(RELATE, {"related": []})
 
     first = classic_wiki.ingest("Acme raised prices.")
     second = classic_wiki.ingest("Acme signed a contract.")
 
-    assert (first.usage.llm.calls, second.usage.llm.calls, tracker.snapshot().llm.calls) == (2, 4, 6)
+    assert (first.usage.llm.calls, second.usage.llm.calls, tracker.snapshot().llm.calls) == (3, 5, 8)
 
 
 def test_result_to_dict_is_json_serialisable(classic_wiki: Wiki, llm: FakeLLM) -> None:
-    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "here"})
+    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "new"}).add(NAME_FOLDER, PRICING)
 
     data = json.loads(json.dumps(classic_wiki.ingest("Acme raised prices.").to_dict()))
 
-    assert data["action"] == "created" and data["note"] == "acme-pricing.md"
+    assert data["action"] == "created" and data["note"] == "pricing/acme-pricing.md"
     assert data["decisions"] == [
-        {"step": "route", "decider": "llm", "choice": "/ (Here)", "confidence": None, "fallback": False, "scores": {}}
+        {"step": "route", "decider": "llm", "choice": "/ (New subfolder)", "confidence": None, "fallback": False, "scores": {}}
     ]
-    assert data["usage"]["llm"]["calls"] == 2 and data["usage"]["classifier"]["calls"] == 0
+    assert data["usage"]["llm"]["calls"] == 3 and data["usage"]["classifier"]["calls"] == 0
 

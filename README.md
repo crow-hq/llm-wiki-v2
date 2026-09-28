@@ -237,7 +237,8 @@ with relative links. `llmwiki2 check` verifies all of this.
 
 - every folder has an `index.md`, and a folder's description is its entry in the parent's index (OKF: optional indexes);
 - links are relative (OKF recommends bundle-absolute `/…` links), and `check` reports broken ones;
-- `raw/` holds the sources (`type: Source`), `# See also` holds the related notes, and there is one `log.md`, at the root.
+- `raw/` holds the sources (`type: Source`), `# See also` holds the related notes, and there is one `log.md`, at the root;
+- the root holds no notes: every note is filed in a topic folder, and the first note on a new subject opens one.
 
 It does not use OKF's trust and lifecycle fields (`verified`, `status`,
 `stale_after`), attested computations (§10) or the `references/` convention.
@@ -261,7 +262,7 @@ list is in [.env.example](.env.example).
 | `OKF_LLM_MODEL` | the provider's default | e.g. `google/gemini-3.8-flash` on OpenRouter |
 | `OKF_LLM_BASE_URL` | the provider's | any OpenAI-compatible API (required for `custom`) |
 | `OPENROUTER_API_KEY` · `OPENAI_API_KEY` · `GEMINI_API_KEY` | — | the provider's key (`OKF_LLM_API_KEY` wins); OpenRouter's also serves the classifier |
-| `OKF_CLASSIFIER_PROVIDER` | `openrouter` | where the CROW classifier runs, apart from the LLM: `openrouter`, `typesafe` or `custom` (a local Laya server) |
+| `OKF_CLASSIFIER_PROVIDER` | `openrouter` | where the CROW classifier runs, apart from the LLM: `openrouter`, `typesafe` (both Jev), `laya` (local) or `custom` |
 | `TYPESAFE_API_KEY` | — | the classifier's key on `typesafe` (`OKF_CLASSIFIER_API_KEY` wins) |
 | `OKF_CLASSIFIER_MODEL` | `typesafe/jev-1.13` | CROW classifier, pinned |
 | `OKF_LLM_REASONING` | `false` | `true` lets the model think before it answers: several times slower and costlier; off is sent to OpenRouter (the least effort for models that must think), other providers keep their model's default |

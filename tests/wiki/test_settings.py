@@ -366,3 +366,45 @@ def test_live_models_lists_the_provider_text_models() -> None:
 @pytest.mark.parametrize(("status", "body"), [(401, {"error": "no key"}), (200, {"models": []}), (200, [1, 2])])
 def test_live_models_is_empty_when_the_provider_does_not_say(status: int, body: Any) -> None:
     assert live_models(LLMConfig(provider="ollama"), models_client(status, body, [])) == []
+
+
+def test_save_when_the_classifier_switches_to_laya_then_its_preset_applies_and_nothing_is_written_for_it() -> None:
+    # ARRANGE
+    settings = Settings({})
+
+    # ACT: the page sends the thresholds it shows, here Laya's preset
+    cfg = settings.save({"provider": "ollama", "classifier_provider": "laya", "crow_tau_path": "0.65", "crow_k": "5"})
+
+    # ASSERT
+    assert (cfg.crow.tau_path, cfg.crow.tau_cons, cfg.crow.k) == (0.65, 0.05, 5)
+    assert written(settings)["classifier"] == {"provider": "laya"}
+    assert settings.view()["ready"] is True  # Laya on this computer takes no key
+
+
+def test_save_when_a_threshold_is_changed_then_it_is_kept_for_that_classifier_only() -> None:
+    # ARRANGE
+    settings = Settings({})
+    settings.save({"provider": "ollama", "classifier_provider": "laya", "crow_tau_path": "0.7"})
+
+    # ACT: to OpenRouter's Jev, whose preset comes back, and to Laya again, whose change comes back
+    jev = settings.save({"classifier_provider": "openrouter", "classifier_api_key": KEY, "crow_tau_path": "0.5"})
+    laya = settings.save({"classifier_provider": "laya", "crow_tau_path": "0.7"})
+
+    # ASSERT
+    assert (jev.crow.tau_path, laya.crow.tau_path, laya.crow.tau_cons) == (0.5, 0.7, 0.05)
+    assert written(settings)["classifier"] == {"provider": "laya", "crow": {"tau_path": "0.7"}}
+    memory = settings.view()["memory"]["classifier"]
+    assert memory["laya"]["crow"]["tau_path"] == 0.7 and memory["openrouter"]["crow"]["tau_path"] == 0.5
+
+
+def test_managed_when_okf_tau_path_is_set_then_the_threshold_is_locked() -> None:
+    assert "crow_tau_path" in Settings({"OKF_TAU_PATH": "0.9"}).managed("openrouter")
+
+
+def test_save_when_a_threshold_is_not_a_number_then_it_is_refused_naming_it() -> None:
+    settings = Settings({})
+
+    with pytest.raises(InputError, match=r"crow\.tau_path"):
+        settings.save({"provider": "ollama", "mode": "classic", "crow_tau_path": "high"})
+
+    assert not settings.path.exists()

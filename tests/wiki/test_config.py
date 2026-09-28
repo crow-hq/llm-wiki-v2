@@ -119,8 +119,31 @@ def test_from_env_when_the_classifier_is_on_typesafe_then_only_its_own_key_goes_
 
 
 def test_config_when_the_classifier_provider_is_unknown_then_it_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="unknown classifier provider 'laya'"):
-        WikiConfig(bundle=tmp_path, classifier={"provider": "laya"})
+    with pytest.raises(ValueError, match="unknown classifier provider 'jev'"):
+        WikiConfig(bundle=tmp_path, classifier={"provider": "jev"})
+
+
+@pytest.mark.parametrize(
+    ("provider", "tau_path", "tau_cons", "k"),
+    [("laya", 0.65, 0.05, 5), ("openrouter", 0.5, 0.6, 8), ("typesafe", 0.5, 0.6, 8)],
+)
+def test_config_when_the_classifier_is_chosen_then_its_thresholds_preset_applies(
+    tmp_path: Path, provider: str, tau_path: float, tau_cons: float, k: int
+) -> None:
+    # ACT
+    crow = WikiConfig(bundle=tmp_path, classifier={"provider": provider}).crow
+
+    # ASSERT
+    assert (crow.tau_path, crow.tau_cons, crow.k, crow.tau_route) == (tau_path, tau_cons, k, 0.6)
+
+
+def test_config_when_a_threshold_is_set_then_it_wins_over_the_laya_preset(tmp_path: Path) -> None:
+    # ACT
+    config = WikiConfig.from_env(env_for(tmp_path, OKF_CLASSIFIER_PROVIDER="laya", OKF_TAU_PATH="0.8"))
+
+    # ASSERT
+    assert (config.classifier.base_url, config.classifier.model) == ("http://127.0.0.1:8001/v1", "typed-decisions")
+    assert (config.crow.tau_path, config.crow.tau_cons) == (0.8, 0.05)
 
 
 def test_the_provider_fills_base_url_model_and_key(tmp_path: Path) -> None:

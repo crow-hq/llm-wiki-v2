@@ -21,7 +21,7 @@ under `src/llmw2/agents/prompts/`.
 | Step | Classic decider | CROW decider | Primitive | Threshold | Fallback |
 |---|---|---|---|---|---|
 | 0 summarize | LLM `librarian/summarize` | same LLM step. `OKF_SUMMARIZE=false` files the source verbatim. | - | - | - |
-| 1 route | LLM `librarian/route`, one level at a time | `classifier/route` at each level. Options are the subfolders, `Here`, `New subfolder` (below `OKF_MAX_DEPTH`) and `None of these` (not at the root). A path's score is the geometric mean of its edge probabilities. | Choice | `tau_route`, `beam`, `tau_path` | LLM `librarian/route_fallback` over the folders visited, when no path finishes or the best score is below `tau_path`. On error, LLM `librarian/route`. |
+| 1 route | LLM `librarian/route`, one level at a time | `classifier/route` at each level. Options are the subfolders, `Here` (not at the root, which holds no notes: in an empty wiki `New subfolder` is the one way and nothing is asked), `New subfolder` (below `OKF_MAX_DEPTH`) and `None of these` (not at the root). A path's score is the geometric mean of its edge probabilities. | Choice | `tau_route`, `beam`, `tau_path` | LLM `librarian/route_fallback` over the folders visited, when no path finishes or the best score is below `tau_path`. On error, LLM `librarian/route`. An LLM that picks the root opens a new folder there instead. |
 | 2 relevance | LLM `librarian/find_match` | `classifier/note_relevance`: one Noul per note in the candidate folders, batched. The best note wins if its probability is above `tau_ing`. | Noul | `tau_ing` | Below `tau_ing`: no match. On error, LLM `librarian/find_match`. |
 | 3 consolidation | LLM `librarian/consolidate` | `classifier/consolidate`: a Choice between `Modify` and `New note`. The note is merged only if the choice is `Modify` with confidence at least `tau_cons`. | Choice | `tau_cons` | When unsure, a new note is written. On error, LLM `librarian/consolidate`. |
 | write | LLM `librarian/merge` or `librarian/name_folder` | same LLM step | - | - | - |
@@ -41,19 +41,30 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 
 ## Thresholds
 
-| Setting | Env var | Default | Rule in the code |
-|---|---|---|---|
-| `tau_route` | `OKF_TAU_ROUTE` | 0.6 | If Choice confidence is below this, keep the top `beam` options instead of 1 |
-| `tau_path` | `OKF_TAU_PATH` | 0.5 | If the best path score is below this, the LLM routes |
-| `tau_ing` | `OKF_TAU_ING` | 0.5 | Best note probability must be above this to count as a match |
-| `tau_cons` | `OKF_TAU_CONS` | 0.6 | `Modify` confidence must be at least this to merge |
-| `tau_fold` | `OKF_TAU_FOLD` | 0.08 | Folder probability must be above this to explore the folder |
-| `tau_ret` | `OKF_TAU_RET` | 0.1 | Note probability must be above this to read the note |
-| `tau_link` | `OKF_TAU_LINK` | 0.6 | Relatedness must be above this to add a See-also link |
-| `beam` | `OKF_BEAM` | 2 | Ingestion: paths kept per uncertain routing step |
-| `retrieval_beam` | `OKF_RETRIEVAL_BEAM` | 6 | Retrieval: folders explored per level |
-| `k` | `OKF_K` | 8 | CROW retrieval: notes passed to the answer |
+| Setting | Env var | Jev | Laya | Rule in the code |
+|---|---|---|---|---|
+| `tau_route` | `OKF_TAU_ROUTE` | 0.6 | 0.6 | If Choice confidence is below this, keep the top `beam` options instead of 1 |
+| `tau_path` | `OKF_TAU_PATH` | 0.5 | 0.65 | If the best path score is below this, the LLM routes |
+| `tau_ing` | `OKF_TAU_ING` | 0.5 | 0.45 | Best note probability must be above this to count as a match |
+| `tau_cons` | `OKF_TAU_CONS` | 0.6 | 0.05 | `Modify` confidence must be at least this to merge |
+| `tau_fold` | `OKF_TAU_FOLD` | 0.08 | 0.15 | Folder probability must be above this to explore the folder |
+| `tau_ret` | `OKF_TAU_RET` | 0.1 | 0.2 | Note probability must be above this to read the note |
+| `tau_link` | `OKF_TAU_LINK` | 0.6 | 0.5 | Relatedness must be above this to add a See-also link |
+| `beam` | `OKF_BEAM` | 2 | 2 | Ingestion: paths kept per uncertain routing step |
+| `retrieval_beam` | `OKF_RETRIEVAL_BEAM` | 6 | 6 | Retrieval: folders explored per level |
+| `k` | `OKF_K` | 8 | 5 | CROW retrieval: notes passed to the answer |
 | `max_notes` | `OKF_MAX_NOTES` | 8 | Classic retrieval and CROW's navigation fallback: notes read per question |
+
+Each classifier starts from a preset: Jev's (on OpenRouter, TypeSafe, or any custom
+System One server) or Laya's, when the classifier provider is `laya`. The settings page
+shows them under **Advanced → Decision thresholds**, fills in the preset when you choose the
+classifier, and keeps what you change for that classifier; a variable above wins over both.
+Laya's `typed-decisions` checkpoint, its default model, answers with flatter probabilities
+than Jev. Measured on 25 sample notes, it never picks `New subfolder` and scores the
+routes it gets wrong at 0.61 at most, so with Jev's 0.5 an undecided note goes where
+the classifier leans; at 0.65 the LLM routes it instead. It answers `Modify` to almost every
+consolidation, with a confidence of 0.04–0.12 for a real follow-up and at most 0.044 for a
+related but distinct note, hence 0.05.
 
 The ingestion thresholds are the paper's package defaults, never calibrated. The retrieval
 values are the ones the paper calibrated on its corpus (§8.4): with 0.5, most right notes

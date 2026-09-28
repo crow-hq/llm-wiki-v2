@@ -106,7 +106,12 @@ settings page sets the classifier's provider, address, model and key under
 |---|---|---|
 | `openrouter` (default) | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` or `OKF_CLASSIFIER_API_KEY` |
 | `typesafe` | `https://api.typesafe.ai/v1` | `TYPESAFE_API_KEY` or `OKF_CLASSIFIER_API_KEY` |
-| `custom` (a local Laya server) | `OKF_CLASSIFIER_BASE_URL`, the URL under which it serves `/systemone` | `OKF_CLASSIFIER_API_KEY`, if it needs one |
+| `laya` | `http://127.0.0.1:8001/v1` (start it with `LAYA_PORT=8001 laya-serve`: the wiki takes 8000); `OKF_CLASSIFIER_BASE_URL` for another | `OKF_CLASSIFIER_API_KEY`, only if `LAYA_API_KEY` is set |
+| `custom` (any other System One server) | `OKF_CLASSIFIER_BASE_URL`, the URL under which it serves `/systemone` | `OKF_CLASSIFIER_API_KEY`, if it needs one |
+
+On `laya` the model defaults to `typed-decisions`, the checkpoint tuned for these
+questions and the one its thresholds preset was measured on ([crow.md](crow.md#thresholds));
+`auto` lets Laya pick its English or multilingual checkpoint per note.
 
 Keep the same model version on every route (thresholds belong to it); if an
 endpoint rejects the `typesafe/` prefix, set the bare id in `OKF_CLASSIFIER_MODEL`.

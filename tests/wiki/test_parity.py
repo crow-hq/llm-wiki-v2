@@ -111,7 +111,7 @@ REVENUE_DRAFT = draft(
 # The same routing decision, taken by each decider.
 CLASSIC_TO_FINANCE = [{"action": "descend", "subfolder": "finance"}, {"action": "here"}]
 CROW_TO_FINANCE: list[ChoiceReply] = [
-    ("finance", {"finance": 0.9, "people": 0.05, "Here": 0.03, "New subfolder": 0.02}, 0.9),
+    ("finance", {"finance": 0.9, "people": 0.05, "New subfolder": 0.05}, 0.9),  # the root holds no notes: no "Here"
     ("Here", {"Here": 0.9, "New subfolder": 0.05, "None of these": 0.05}, 0.9),
 ]
 SAME_SUBJECT = {'titled "Revenue recognition"': 0.9}  # Noul needle for the seeded note
@@ -137,7 +137,7 @@ SCENARIOS = [
             "librarian/name_folder": [{"name": "finance", "description": "Money matters: revenue, pricing and tax."}],
         },
         classic={"librarian/route": [{"action": "new"}]},
-        choices={"route": [("New subfolder", {"New subfolder": 0.9, "Here": 0.1}, 0.9)]},
+        choices={},  # an empty wiki: a new folder is CROW's one way, so the classifier is not asked
         nouls={},
         expected=("created", REVENUE, "/finance", ["/finance"], []),
     ),

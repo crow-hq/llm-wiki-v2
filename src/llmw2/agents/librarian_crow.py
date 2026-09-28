@@ -87,13 +87,14 @@ class CrowLibrarian(Librarian):
         folder = path.folders[-1]
         text = self.prompts.render_sections("classifier/route", folder=folder.label)
         options = {f.name: f.description or f.name for f in self.children(folder)}
-        options[HERE] = text[HERE]
+        if not (folder.is_root and self.can_create(folder)):  # the root holds no notes, unless no folder can be made
+            options[HERE] = text[HERE]
         if self.can_create(folder):
             options[NEW] = text[NEW]
         if not folder.is_root:
             options[NONE] = text[NONE]
-        if len(options) == 1:  # only "Here" is possible: nothing to decide
-            return [_Path(path.folders, path.probs, HERE)]
+        if len(options) == 1:  # one way only (a new folder in an empty wiki, or Here at max_depth 0): nothing to decide
+            return [_Path(path.folders, path.probs, next(iter(options)))]
         answer = self.classifier.choice(state, text["instructions"], options, op="route")
         ranked = sorted(options, key=lambda o: answer.probabilities.get(o, 0.0), reverse=True)
         kept = ranked[:1] if answer.confidence >= self.crow.tau_route else ranked[: self.crow.beam]
@@ -120,7 +121,7 @@ class CrowLibrarian(Librarian):
         )
         wanted = out.folder.strip().rstrip("/") or "/"
         folder = next((f for f in visited if f.label == wanted or f.rel == wanted.strip("/")), visited[0])
-        new = out.action == "create" and self.can_create(folder)
+        new = (out.action == "create" or folder.is_root) and self.can_create(folder)  # the root holds no notes
         self.decide("route", "llm", f"{folder.label} ({NEW if new else HERE})", score, fallback=True)
         return Route(folder, new, folder.ancestors())
 
