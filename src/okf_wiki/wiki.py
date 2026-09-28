@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """`Wiki`: the one object most users need.
 
@@ -24,18 +13,21 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
-from okf_wiki.check import Problem, check
-from okf_wiki.classifier import Classifier
+from okf_wiki.agents.librarian import IngestResult, Librarian, Source
+from okf_wiki.agents.librarian_crow import CrowLibrarian
+from okf_wiki.agents.prompts import Prompts
+from okf_wiki.agents.researcher import Answer, CrowResearcher, Researcher
+from okf_wiki.bundle.check import Problem, check
+from okf_wiki.bundle.files import extract_text, title_of
+from okf_wiki.bundle.store import WikiStore
+from okf_wiki.bundle.tree import Folder
 from okf_wiki.config import WikiConfig
-from okf_wiki.files import extract_text, title_of
-from okf_wiki.librarian import CrowLibrarian, IngestResult, Librarian, Source
-from okf_wiki.llm import LLM
-from okf_wiki.prompts import Prompts
-from okf_wiki.researcher import Answer, CrowResearcher, Researcher
-from okf_wiki.store import Folder, WikiStore
-from okf_wiki.usage import UsageReport, UsageTracker
+from okf_wiki.errors import InputError
+from okf_wiki.models.classifier import Classifier
+from okf_wiki.models.llm import LLM
+from okf_wiki.models.usage import UsageReport, UsageTracker
 
 
 class Wiki:
@@ -58,6 +50,18 @@ class Wiki:
         if cfg.mode == "crow" and classifier is None:
             self.classifier = Classifier(cfg.classifier, self.tracker)
 
+    def close(self) -> None:
+        """Release the models' connections (a model passed in is closed only if it made its own client)."""
+        self.llm.close()
+        if self.classifier is not None:
+            self.classifier.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     @classmethod
     def from_env(cls, **overrides: Any) -> Wiki:
         return cls(WikiConfig.from_env(**overrides))
@@ -79,9 +83,10 @@ class Wiki:
 
     def ingest(self, text: str, *, title: str | None = None, resource: str | None = None) -> IngestResult:
         if not text.strip():
-            raise ValueError("nothing to ingest: the source is empty")
+            raise InputError("nothing to ingest: the source is empty")
         self.store.init()
-        return self.librarian().ingest(Source(text, title, resource))
+        with self.store.lock():  # the librarian reads the tree, then writes on what it read
+            return self.librarian().ingest(Source(text, title, resource))
 
     def ingest_file(self, data: bytes, filename: str, *, resource: str | None = None) -> IngestResult:
         """Ingest a .txt, .md or .pdf file; its name becomes the source title."""
@@ -89,7 +94,7 @@ class Wiki:
 
     def ask(self, question: str) -> Answer:
         if not question.strip():
-            raise ValueError("empty question")
+            raise InputError("empty question")
         return self.researcher().ask(question)
 
     def tree(self) -> Folder:

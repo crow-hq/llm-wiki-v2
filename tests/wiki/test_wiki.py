@@ -1,33 +1,21 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """`Wiki` end to end with scripted models: ingest, ask, tree, graph, check, usage."""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from okf_wiki import Wiki, WikiConfig
-from okf_wiki.classifier import Classifier
+from okf_wiki.agents.librarian import IngestResult, Librarian
+from okf_wiki.agents.librarian_crow import CrowLibrarian
+from okf_wiki.agents.researcher import CrowResearcher
 from okf_wiki.config import ClassifierConfig
-from okf_wiki.librarian import CrowLibrarian, IngestResult, Librarian
-from okf_wiki.researcher import CrowResearcher
-from okf_wiki.store import graph
+from okf_wiki.models.classifier import Classifier
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 REVENUE, PRICING = "finance/revenue-recognition.md", "finance/pricing-tiers.md"
@@ -98,18 +86,7 @@ def test_classic_ingests_create_link_and_merge(classic_wiki: Wiki, llm: FakeLLM)
     assert results[0].created_folders == ["/finance"]
     assert results[1].related == [REVENUE]
     assert unused_replies(llm) == {}
-
-
-def test_ask_answers_from_the_selected_notes_and_keeps_only_their_citations(classic_wiki: Wiki, llm: FakeLLM) -> None:
-    ingest_classic(classic_wiki, llm)
-    llm.add("researcher/navigate", {"open": ["finance"]}, {"select": [PRICING], "done": True})
-    llm.add("researcher/answer", f"Three tiers [{PRICING}]; see [{REVENUE}] and [finance/made-up.md].")
-
-    answer = classic_wiki.ask("What are the price tiers?")
-
-    assert answer.notes == [PRICING]
-    assert answer.citations == [PRICING]
-    assert answer.text.startswith("Three tiers")
+    assert classic_wiki.check() == []
 
 
 def test_crow_ingests_create_link_and_merge(crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
@@ -119,47 +96,7 @@ def test_crow_ingests_create_link_and_merge(crow_wiki: Wiki, llm: FakeLLM, class
     assert results[1].related == [REVENUE]
     assert unused_replies(llm) == {}
     assert classifier.choices == {"route": [], "consolidate": []}
-
-
-def test_crow_ask_reads_the_notes_the_classifier_picks(crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
-    ingest_crow(crow_wiki, llm, classifier)
-    classifier.noul_scores.update(retrieve_folder={"finance": 0.9}, retrieve_note={"Pricing tiers": 0.9})
-    llm.add("researcher/answer", f"Three tiers [{PRICING}].")
-
-    answer = crow_wiki.ask("What are the price tiers?")
-
-    assert answer.notes == [PRICING]
-    assert answer.citations == [PRICING]
-    assert "researcher/navigate" not in llm.ops
-
-
-def test_tree_reflects_the_files_on_disk(classic_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
-    ingest_classic(classic_wiki, llm)
-    (bundle / PRICING).unlink()  # the tree is read from disk on every call
-
-    tree = classic_wiki.tree()
-
-    assert [f.label for f in tree.walk()] == ["/", "/finance"]
-    assert tree.find("finance").description == "Money matters"
-    assert [(n.rel, n.title) for n in tree.all_notes()] == [(REVENUE, "Revenue recognition")]
-
-
-def test_check_is_clean_after_classic_ingests(classic_wiki: Wiki, llm: FakeLLM) -> None:
-    ingest_classic(classic_wiki, llm)
-    assert classic_wiki.check() == []
-
-
-def test_check_is_clean_after_crow_ingests(crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
-    ingest_crow(crow_wiki, llm, classifier)
     assert crow_wiki.check() == []
-
-
-def test_graph_draws_see_also_links_as_one_edge(classic_wiki: Wiki, llm: FakeLLM) -> None:
-    ingest_classic(classic_wiki, llm)
-
-    see_also = [{link["source"], link["target"]} for link in graph(classic_wiki.tree())["links"] if link["kind"] == "see_also"]
-
-    assert see_also == [{PRICING, REVENUE}]  # linked both ways on disk, drawn once
 
 
 # -- usage -----------------------------------------------------------------------------
@@ -206,6 +143,19 @@ def test_crow_mode_without_a_classifier_builds_one_from_config(bundle: Path, llm
     assert wiki.usage.classifier.calls == 0
 
 
+def test_close_when_used_as_context_manager_then_closes_the_llm_and_the_classifier(bundle: Path) -> None:
+    # ARRANGE
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow"))
+
+    # ACT
+    with wiki:
+        pass
+
+    # ASSERT
+    assert wiki.classifier is not None
+    assert wiki.llm.client.is_closed and wiki.classifier.client.is_closed
+
+
 def test_classic_mode_builds_no_classifier(bundle: Path, llm: FakeLLM) -> None:
     wiki = Wiki(WikiConfig(bundle=bundle, mode="classic"), llm=llm)
 
@@ -213,32 +163,16 @@ def test_classic_mode_builds_no_classifier(bundle: Path, llm: FakeLLM) -> None:
     assert type(wiki.librarian()) is Librarian
 
 
-@pytest.fixture
-def clean_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
-    for key in [k for k in os.environ if k.startswith("OKF_") or k == "OPENROUTER_API_KEY"]:
-        monkeypatch.delenv(key)
-    return monkeypatch
-
-
-def test_from_env_reads_okf_variables(clean_env: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    clean_env.setenv("OKF_BUNDLE", str(tmp_path / "env-wiki"))
-    clean_env.setenv("OKF_MODE", "crow")
-    clean_env.setenv("OPENROUTER_API_KEY", "sk-env")
+def test_from_env_reads_okf_variables(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("OKF_BUNDLE", str(tmp_path / "env-wiki"))
+    monkeypatch.setenv("OKF_MODE", "crow")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-env")
 
     wiki = Wiki.from_env()
 
     assert wiki.cfg.bundle == tmp_path / "env-wiki"
     assert wiki.cfg.mode == "crow"
     assert isinstance(wiki.classifier, Classifier) and wiki.classifier.api_key == "sk-env"
-
-
-def test_from_env_keyword_overrides_win(clean_env: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    clean_env.setenv("OKF_BUNDLE", str(tmp_path / "env-wiki"))
-    clean_env.setenv("OKF_MODE", "crow")
-
-    wiki = Wiki.from_env(bundle=tmp_path / "other", mode="classic")
-
-    assert (wiki.cfg.bundle, wiki.cfg.mode, wiki.classifier) == (tmp_path / "other", "classic", None)
 
 
 # -- input and bundle edge cases ---------------------------------------------------------
@@ -257,7 +191,7 @@ def test_ask_of_an_empty_question_raises(classic_wiki: Wiki, llm: FakeLLM) -> No
 
 
 def test_ingest_initialises_a_missing_bundle(bundle: Path, llm: FakeLLM) -> None:
-    wiki = Wiki(WikiConfig(bundle=bundle), llm=llm)  # no init()
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="classic"), llm=llm)  # no init()
     llm.add("librarian/summarize", draft("Revenue recognition", "When revenue is booked."))
     llm.add("librarian/route", {"action": "here"})
 

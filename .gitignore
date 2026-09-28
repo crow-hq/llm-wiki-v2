@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 *.egg-info/
 build/
 dist/
@@ -17,3 +18,4 @@ dist/
 # Local API keys kept next to the repo: never commit them.
 open_ruoter_key.txt
 *_key.txt
+.coverage

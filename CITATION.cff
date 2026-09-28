@@ -11,7 +11,7 @@ authors:
     given-names: Marco
 version: 0.2.0
 date-released: 2026-09-24
-license: Apache-2.0
+license: AGPL-3.0-or-later
 repository-code: "https://github.com/fed3c3sa/llm-wiki-v2"
 keywords:
   - LLM wiki

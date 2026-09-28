@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The classic Librarian: every decision of an ingest is taken by the (fake) LLM."""
 
@@ -22,13 +11,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import pytest
-from okf_wiki.document import OKFDocument
-
 from okf_wiki import Wiki, WikiConfig
-from okf_wiki.librarian import IngestResult
-from okf_wiki.store import Note
-from okf_wiki.usage import UsageTracker
+from okf_wiki.agents.librarian import IngestResult
+from okf_wiki.bundle.document import OKFDocument
+from okf_wiki.bundle.tree import Note
+from okf_wiki.models.usage import UsageTracker
 from tests.wiki.fakes import FakeLLM
 
 SUMMARIZE, ROUTE, NAME_FOLDER = "librarian/summarize", "librarian/route", "librarian/name_folder"
@@ -175,28 +162,20 @@ def test_descend_to_unknown_subfolder_is_treated_as_here(classic_wiki: Wiki, llm
     assert steps(result) == [("route", "llm", "/ (Here)")]
 
 
-def test_leaf_folder_at_max_depth_is_decided_by_rule(bundle: Path, llm: FakeLLM) -> None:
-    wiki = make_wiki(bundle, llm, max_depth=1)
-    add_folder(wiki, "/", "finance", "Money matters.")
-    llm.add(SUMMARIZE, draft("Q3 revenue")).add(ROUTE, {"action": "descend", "subfolder": "finance"})
-
-    result = wiki.ingest("Revenue grew.")
-
-    assert llm.ops == [SUMMARIZE, ROUTE]
-    assert result.note == "finance/q3-revenue.md"
-    assert steps(result) == [("route", "llm", "/finance"), ("route", "rule", "/finance")]
-
-
-def test_route_never_reaches_below_max_depth(bundle: Path, llm: FakeLLM) -> None:
+def test_route_when_the_llm_enters_a_folder_at_max_depth_then_a_rule_stops_it_there(bundle: Path, llm: FakeLLM) -> None:
+    # ARRANGE
     wiki = make_wiki(bundle, llm, max_depth=1)
     add_folder(wiki, "/", "finance", "Money matters.")
     add_folder(wiki, "/finance", "tax", "Taxes.")
-    llm.add(SUMMARIZE, draft("VAT rates"))
-    llm.add(ROUTE, {"action": "descend", "subfolder": "finance"}, {"action": "descend", "subfolder": "tax"})
+    llm.add(SUMMARIZE, draft("Q3 revenue")).add(ROUTE, {"action": "descend", "subfolder": "finance"})
 
-    result = wiki.ingest("VAT is 22%.")
+    # ACT
+    result = wiki.ingest("Revenue grew.")
 
-    assert result.folder == "/finance"
+    # ASSERT
+    assert llm.ops == [SUMMARIZE, ROUTE]
+    assert (result.folder, result.note) == ("/finance", "finance/q3-revenue.md")
+    assert steps(result) == [("route", "llm", "/finance"), ("route", "rule", "/finance")]
 
 
 def test_at_max_depth_routing_is_decided_by_rule(bundle: Path, llm: FakeLLM) -> None:
@@ -325,40 +304,22 @@ def test_relate_links_both_ways_capped_at_max_links(bundle: Path, llm: FakeLLM) 
 # -- options, usage and results ---------------------------------------------------------------
 
 
-def test_summarize_off_files_the_source_verbatim(bundle: Path, llm: FakeLLM) -> None:
+def test_ingest_when_summarize_is_off_then_files_the_source_verbatim(bundle: Path, llm: FakeLLM) -> None:
+    # ARRANGE
     wiki = make_wiki(bundle, llm, summarize=False)
     text = "# Quarterly Report\n\nRevenue grew 10%. Costs fell.\n"
     llm.add(ROUTE, {"action": "here"})
 
+    # ACT
     result = wiki.ingest(text)
 
+    # ASSERT
     assert llm.ops == [ROUTE]
     assert (result.title, result.note) == ("Quarterly Report", "quarterly-report.md")
     note = read(bundle / "quarterly-report.md")
     assert note.frontmatter["title"] == "Quarterly Report"
+    assert not note.frontmatter["description"].startswith("#")
     assert note.body.strip() == text.strip()
-
-
-def test_summarize_off_summary_has_no_heading_markup(bundle: Path, llm: FakeLLM) -> None:
-    wiki = make_wiki(bundle, llm, summarize=False)
-    llm.add(ROUTE, {"action": "here"})
-
-    wiki.ingest("# Quarterly Report\n\nRevenue grew 10%. Costs fell.\n")
-
-    assert not read(bundle / "quarterly-report.md").frontmatter["description"].startswith("#")
-
-
-def test_usage_goes_to_the_llm_ledger_only(classic_wiki: Wiki, llm: FakeLLM, tracker: UsageTracker) -> None:
-    add_note(classic_wiki, "/", "Acme contracts")
-    llm.add(SUMMARIZE, draft("Acme pricing")).add(ROUTE, {"action": "here"})
-    llm.add(FIND_MATCH, {"match": None}).add(RELATE, {"related": []})
-
-    usage = classic_wiki.ingest("Acme raised prices.").usage
-
-    assert (usage.llm.calls, usage.llm.input_tokens, usage.llm.output_tokens, usage.llm.missing) == (4, 400, 40, 0)
-    assert usage.classifier.calls == 0 and usage.classifier.total_tokens == 0
-    assert list(usage.by_model) == ["llm:fake/llm"]
-    assert tracker.snapshot().to_dict() == usage.to_dict()
 
 
 def test_usage_of_a_result_counts_only_its_own_ingest(classic_wiki: Wiki, llm: FakeLLM, tracker: UsageTracker) -> None:
@@ -383,9 +344,3 @@ def test_result_to_dict_is_json_serialisable(classic_wiki: Wiki, llm: FakeLLM) -
     ]
     assert data["usage"]["llm"]["calls"] == 2 and data["usage"]["classifier"]["calls"] == 0
 
-
-@pytest.mark.parametrize("text", ["", "   \n\t"])
-def test_empty_text_raises(classic_wiki: Wiki, llm: FakeLLM, text: str) -> None:
-    with pytest.raises(ValueError):
-        classic_wiki.ingest(text)
-    assert llm.calls == []

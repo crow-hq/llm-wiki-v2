@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The typed classifier against a mocked System One endpoint (POST {base_url}/systemone)."""
 
@@ -23,10 +12,10 @@ from typing import Any
 import httpx
 import pytest
 
-from okf_wiki.classifier import MAX_OPTIONS, ChoiceAnswer, Classifier
-from okf_wiki.client import HttpModel, ModelError
 from okf_wiki.config import ClassifierConfig
-from okf_wiki.usage import UsageTracker
+from okf_wiki.models.classifier import MAX_OPTIONS, ChoiceAnswer, Classifier
+from okf_wiki.models.client import HttpModel, ModelError
+from okf_wiki.models.usage import UsageTracker
 
 BASE_URL = "https://router.test/api/v1"
 MODEL = "typesafe/jev-test"
@@ -62,10 +51,10 @@ def serve(*replies: Reply) -> tuple[httpx.Client, list[httpx.Request]]:
 
 
 def make_classifier(
-    tracker: UsageTracker, *replies: Reply, request_chars: int = 90_000
+    tracker: UsageTracker, *replies: Reply, request_chars: int = 90_000, attempts: int = 1
 ) -> tuple[Classifier, list[httpx.Request]]:
     client, requests = serve(*replies)
-    cfg = ClassifierConfig(base_url=BASE_URL, model=MODEL, api_key="or-key", request_chars=request_chars)
+    cfg = ClassifierConfig(base_url=BASE_URL, model=MODEL, api_key="or-key", request_chars=request_chars, attempts=attempts)
     return Classifier(cfg, tracker, client=client), requests
 
 
@@ -121,23 +110,19 @@ def test_ask_posts_model_state_and_questions_to_systemone(tracker: UsageTracker)
     assert sent(request) == {"model": MODEL, "state": "A note about cats.", "questions": questions}
 
 
-def test_choice_sends_one_choice_question(tracker: UsageTracker) -> None:
+def test_choice_when_answered_then_sends_one_choice_question_and_parses_the_answer(tracker: UsageTracker) -> None:
+    # ARRANGE
     clf, requests = make_classifier(tracker, always(ROUTE_ANSWER))
 
-    clf.choice("A note about photosynthesis.", "Where does it belong?", ROUTE_OPTIONS, op="route")
+    # ACT
+    answer = clf.choice("A note about photosynthesis.", "Where does it belong?", ROUTE_OPTIONS, op="route")
 
+    # ASSERT
     [request] = requests
     assert sent(request)["state"] == "A note about photosynthesis."
     assert list(sent(request)["questions"].values()) == [
         {"type": "choice", "instructions": "Where does it belong?", "criteria": ROUTE_OPTIONS}
     ]
-
-
-def test_choice_parses_choice_probabilities_and_confidence(tracker: UsageTracker) -> None:
-    clf, _ = make_classifier(tracker, always(ROUTE_ANSWER))
-
-    answer = clf.choice("state", "Where does it belong?", ROUTE_OPTIONS)
-
     assert answer == ChoiceAnswer("science", {"science": 0.7, "Here": 0.2, "New subfolder": 0.1}, 0.65)
 
 
@@ -214,17 +199,6 @@ def test_batched_nouls_record_usage_once_per_request(tracker: UsageTracker) -> N
     assert tracker.snapshot().llm.calls == 0
 
 
-def test_usage_is_recorded_in_the_classifier_ledger_of_the_model(tracker: UsageTracker) -> None:
-    clf, _ = make_classifier(tracker, noul(0.5))
-
-    clf.nouls("state", {"a": "A statement."})
-
-    report = tracker.snapshot()
-    assert (report.classifier.calls, report.classifier.input_tokens, report.classifier.output_tokens) == (1, 40, 2)
-    assert report.by_model[f"classifier:{MODEL}"].total_tokens == 42
-    assert report.llm.calls == 0
-
-
 def test_answers_without_usage_count_as_missing(tracker: UsageTracker) -> None:
     clf, _ = make_classifier(tracker, answered({"a": {"type": "noul", "noul": 0.5}}, usage=None))
 
@@ -298,9 +272,30 @@ def test_a_malformed_choice_answer_raises(tracker: UsageTracker, answer: Any) ->
         clf.choice("state", "Where does it belong?", ROUTE_OPTIONS)
 
 
-@pytest.mark.parametrize("status", [429, 529])
-def test_overload_is_retried(tracker: UsageTracker, status: int) -> None:
-    clf, requests = make_classifier(tracker, httpx.Response(status, text="overloaded"), noul(0.7))
+@pytest.mark.parametrize(
+    "failure",
+    [httpx.Response(503, text="busy"), httpx.ReadTimeout("timed out")],
+    ids=["5xx", "timeout"],
+)
+def test_ask_when_the_request_fails_then_raises_after_one_attempt(tracker: UsageTracker, failure: Reply) -> None:
+    # ARRANGE
+    clf, requests = make_classifier(tracker, failure, noul(0.5))
 
-    assert clf.nouls("state", {"a": "A statement."}) == {"a": 0.7}
-    assert len(requests) == 2
+    # ACT
+    with pytest.raises(ModelError):
+        clf.nouls("state", {"a": "A statement."})
+
+    # ASSERT
+    assert len(requests) == 1  # no retry: the caller falls back to the LLM
+
+
+def test_ask_when_attempts_is_three_then_retries_a_5xx_until_the_third_try_succeeds(tracker: UsageTracker) -> None:
+    # ARRANGE
+    busy = httpx.Response(503, text="busy")
+    clf, requests = make_classifier(tracker, busy, busy, noul(0.5), attempts=3)
+
+    # ACT
+    result = clf.nouls("state", {"a": "A statement."})
+
+    # ASSERT
+    assert (result, len(requests)) == ({"a": 0.5}, 3)

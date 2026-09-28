@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
 
@@ -18,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from okf_wiki.check import check
-from okf_wiki.store import Folder, Note, WikiStore
-from okf_wiki.document import OKFDocumentError
+from okf_wiki.bundle.check import check
+from okf_wiki.bundle.store import WikiStore
+from okf_wiki.bundle.tree import Folder, Note
 
 SOURCE = {"resource": "/raw/source.md", "title": "Source"}
 
@@ -82,7 +71,7 @@ def test_an_index_listing_a_missing_file_is_reported(store: WikiStore, bundle: P
 
 
 def test_a_note_missing_from_its_index_is_reported(store: WikiStore, bundle: Path) -> None:
-    finance, _ = store.create_folder(store.load(), "finance", "Money.")
+    store.create_folder(store.load(), "finance", "Money.")
     _put(bundle / "finance/orphan.md", "---\ntype: Note\n---\n\nBody.\n")
     assert _problems(bundle) == ["finance/index.md: does not list orphan.md"]
 

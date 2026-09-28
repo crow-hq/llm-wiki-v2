@@ -1,7 +1,7 @@
 # Prompts
 
 Every instruction the wiki sends to a model lives in its own Markdown file under
-`src/okf_wiki/prompts/`, loaded by `Prompts` (`src/okf_wiki/prompts.py`). LLM
+`src/okf_wiki/agents/prompts/`, loaded by `Prompts` (`src/okf_wiki/agents/prompts.py`). LLM
 prompts ask for one JSON object (or, for the answer, plain Markdown). Code
 validates the JSON and does all file work. Classifier prompts hold only
 questions and option descriptions for the System One API. To change the wiki's
@@ -10,7 +10,7 @@ behaviour, you can override files one by one without touching Python.
 ## Layout
 
 ```
-src/okf_wiki/prompts/
+src/okf_wiki/agents/prompts/
   shared/      fragments embedded in other prompts: note_rules, folder_rules, untrusted
   librarian/   system prompt + one prompt per ingest step (LLM)
   researcher/  system prompt, navigate, answer (LLM)
@@ -61,8 +61,8 @@ passage). `notes` lists notes as `- path: Title — summary`, and
 - **Noul files** are a single yes/no question. The classifier answers it against
   the state: the compact note, or the question in retrieval.
 - For LLM prompts, the code appends "Reply with a single JSON object and nothing
-  else." and validates the reply against a pydantic schema in `librarian.py` or
-  `researcher.py`. Keep the field names.
+  else." and validates the reply against a pydantic schema in `agents/librarian.py` or
+  `agents/researcher.py`. Keep the field names.
 
 ## Overriding prompts
 

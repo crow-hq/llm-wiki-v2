@@ -3,15 +3,15 @@ Copyright 2026 Federico Cesarini, Marco Sassarini
 
 This project started as a fork of the Open Knowledge Format (OKF) project by
 Google LLC: https://github.com/GoogleCloudPlatform/open-knowledge-format
-Copyright 2026 Google LLC. Licensed under the Apache License, Version 2.0.
+Copyright 2026 Google LLC. SPDX-License-Identifier: AGPL-3.0-or-later
 
 The OKF specification, reference agent, viewer, sample bundles and their
 tests have been removed. The wiki's on-disk format is derived from OKF v0.2
-(see "The wiki on disk" in README.md); src/okf_wiki/document.py reads and
+(see "The wiki on disk" in README.md); src/okf_wiki/bundle/document.py reads and
 writes it and is an independent implementation.
 
 Files carried over from OKF, modified, and keeping their original headers:
-- LICENSE.md: the Apache License 2.0 text, unchanged.
+- LICENSES/Apache-2.0.md (was LICENSE.md): the Apache License 2.0 text, unchanged.
 - pyproject.toml: distribution renamed to llm-wiki-v2, the reference agent
   and its Google dependencies removed, okf_wiki package added.
 - .gitignore: entries added.
@@ -32,6 +32,13 @@ is in src/okf_wiki/web/vendor/fonts/OFL.txt:
 - JetBrains Mono, Copyright 2020 The JetBrains Mono Project Authors.
 - IBM Plex Sans, Copyright 2019 IBM Corp.
 
-Everything else (Copyright 2026 Federico Cesarini, Marco Sassarini, Apache-2.0): src/okf_wiki/
+Everything else (Copyright 2026 Federico Cesarini, Marco Sassarini): src/okf_wiki/
 (outside web/vendor/), tests/wiki/, docs/wiki/, Dockerfile, docker-compose.yml,
-.env.example, NOTICE, CITATION.cff.
+.env.example, NOTICE, CITATION.cff, and the modifications to the files carried
+over from OKF, is licensed under the GNU Affero General Public License v3.0 or
+later (AGPL-3.0-or-later), whose text is in LICENSE.
+
+License change: versions up to 0.2.0 were released under the Apache License 2.0
+and stay available under it. Later versions are AGPL-3.0-or-later. The authors
+also offer the software under separate commercial terms; contributions are
+accepted under the Contributor License Agreement in CLA.md, which allows this.

@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """`okf-wiki` command line: setup, init, ingest, ask, check, serve.
 
@@ -26,6 +15,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import logging
 import os
 import shutil
 import sys
@@ -33,11 +23,12 @@ from collections.abc import Callable
 from importlib import resources
 from pathlib import Path
 
-from okf_wiki.client import ModelError
+from okf_wiki.bundle.files import extract_text
 from okf_wiki.config import PROVIDERS, WikiConfig
-from okf_wiki.files import extract_text
+from okf_wiki.errors import ModelError
 from okf_wiki.logo import show_logo
-from okf_wiki.settings import Settings, default_bundle, mask, probe, ready, tilde
+from okf_wiki.models.llm import probe
+from okf_wiki.settings import Settings, default_bundle, mask, ready, tilde
 from okf_wiki.wiki import Wiki
 
 
@@ -102,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
         args.command, args.host, args.open = "serve", "127.0.0.1", True
     try:
         wiki = make_wiki(bundle=args.bundle, mode=args.mode)
-    except Exception as e:  # e.g. no bundle configured
+    except Exception as e:  # the CLI's outer boundary: a one-line message, never a traceback, for a beginner
         print(f"okf-wiki: {e}", file=sys.stderr)
         return 2
     try:
@@ -111,6 +102,8 @@ def main(argv: list[str] | None = None) -> int:
         hint = "" if not isinstance(e, ModelError) or ready(wiki.cfg) else " (no API key yet: run okf-wiki setup)"
         print(f"okf-wiki: {e}{hint}", file=sys.stderr)
         return 2
+    finally:
+        wiki.close()
 
 
 def copy_demo(to: Path) -> Path:
@@ -166,7 +159,8 @@ def setup(settings: Settings) -> int:
         _, cfg = settings.apply(changes)
     print(f"Testing {cfg.llm.model} at {cfg.llm.base_url} … ", end="", flush=True)
     try:
-        probe(build_wiki(cfg).llm)
+        with build_wiki(cfg) as trial:
+            probe(trial.llm)
         print("OK")
     except ModelError as e:
         print(f"failed: {e}")
@@ -194,7 +188,8 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
         if args.json:
             print(json.dumps(result.to_dict(), indent=2))
         else:
-            print(f"{result.action}: {result.note}" + (f" (new folders: {', '.join(result.created_folders)})" if result.created_folders else ""))
+            created = f" (new folders: {', '.join(result.created_folders)})" if result.created_folders else ""
+            print(f"{result.action}: {result.note}{created}")
     elif args.command == "ask":
         answer = wiki.ask(args.question)
         print(json.dumps(answer.to_dict(), indent=2) if args.json else answer.text)
@@ -207,6 +202,9 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
     elif args.command == "serve":
         from okf_wiki.server import serve
 
+        # One line per decision and per model call, next to uvicorn's request log.
+        logging.basicConfig(level=logging.WARNING, format="%(levelname)s:     %(message)s")
+        logging.getLogger("okf_wiki").setLevel(logging.INFO)
         serve(wiki, host=args.host, port=args.port, settings=Settings(bundle=args.bundle, mode=args.mode),
               make_wiki=build_wiki, open_browser=args.open)
 

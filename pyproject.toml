@@ -12,6 +12,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# The modifications are licensed under the GNU Affero General Public License v3.0
+# or later (LICENSE); the Apache License 2.0 text is in LICENSES/Apache-2.0.md.
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
@@ -19,10 +22,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-wiki-v2"
-version = "0.2.0"
+dynamic = ["version"]  # one source: okf_wiki.__version__, also written into every note it generates
 description = "LLM wiki in a Markdown format derived from the Open Knowledge Format: librarian, researcher and CROW classifier routing"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = { text = "AGPL-3.0-or-later" }
+classifiers = ["License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)"]
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0",
@@ -33,17 +37,44 @@ dependencies = [
 
 [project.optional-dependencies]
 server = ["fastapi>=0.110", "uvicorn>=0.29"]
-dev = ["pytest>=7.0", "fastapi>=0.110", "uvicorn>=0.29"]
+dev = ["pytest>=7.0", "pytest-cov>=5.0", "fastapi>=0.110", "uvicorn>=0.29", "ruff>=0.6", "mypy>=1.11", "types-PyYAML"]
 
 [project.scripts]
 okf-wiki = "okf_wiki.cli:main"
+
+[tool.setuptools]
+license-files = ["LICENSE", "NOTICE", "LICENSES/*"]  # the Apache text must travel with the files taken from OKF
+
+[tool.setuptools.dynamic]
+version = { attr = "okf_wiki.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-okf_wiki = ["prompts/*/*.md", "web/*.html", "web/*.css", "web/*.js", "web/vendor/*.js", "web/vendor/fonts/*", "web/img/*", "demo/*.md", "demo/*/*.md", "demo/*/*/*.md"]
+okf_wiki = ["agents/prompts/*/*.md", "web/*.html", "web/*.css", "web/*.js", "web/vendor/*.js", "web/vendor/fonts/*", "web/img/*", "demo/**/*.md", "py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 140  # the code's own style: one statement per line, rarely wrapped
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "RUF", "I"]
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]  # reads Field(default, …) as a default, as pydantic does
+files = ["src/okf_wiki"]
+
+[tool.coverage.run]
+source = ["okf_wiki"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 95  # 97% today; the gate stops a slide, not a single untested line
+skip_covered = true
+show_missing = true

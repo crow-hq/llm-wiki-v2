@@ -1,22 +1,12 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The writing model: any provider behind an OpenAI-compatible `/chat/completions`."""
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from typing import Any, TypeVar
@@ -24,9 +14,12 @@ from typing import Any, TypeVar
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from okf_wiki.client import HttpModel, ModelError, reported_cost
-from okf_wiki.config import LLMConfig
-from okf_wiki.usage import UsageTracker
+from okf_wiki.config import PROVIDERS, LLMConfig
+from okf_wiki.errors import ModelError
+from okf_wiki.models.client import HttpModel, reported_cost
+from okf_wiki.models.usage import UsageTracker
+
+log = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -51,16 +44,26 @@ class LLM(HttpModel):
     kind = "llm"
 
     def __init__(self, cfg: LLMConfig, usage: UsageTracker, *, client: httpx.Client | None = None) -> None:
-        super().__init__(cfg.base_url, cfg.model, usage, api_key=cfg.api_key, timeout=cfg.timeout, client=client)
+        super().__init__(
+            cfg.base_url, cfg.model, usage, api_key=cfg.api_key, needs_key=not cfg.ready, timeout=cfg.timeout, client=client
+        )
         self.temperature = cfg.temperature
-        self.extra_body = dict(cfg.extra_body)
+        preset = PROVIDERS[cfg.provider]
+        # No switch when reasoning is wanted, or when the caller's extra_body already says how much.
+        off = preset.reasoning_off if not cfg.reasoning and not (preset.reasoning_off or {}).keys() & cfg.extra_body.keys() else None
+        self.extra_body = {**(off or {}), **cfg.extra_body}  # the caller's extra_body wins, reasoning included
+        self._least = preset.reasoning_least if off else None  # tried once, if the model refuses the off switch
 
     def chat(self, messages: list[dict[str, str]], *, op: str = "") -> str:
         start = time.perf_counter()
-        data = self._post(
-            "/chat/completions",
-            {**self.extra_body, "model": self.model, "messages": messages, "temperature": self.temperature},
-        )
+        try:
+            data = self._post("/chat/completions", self._body(messages))
+        except ModelError as e:
+            if not (self._least and e.status == 400 and "reasoning" in str(e).lower()):
+                raise
+            log.info("%s must think: asking for the least reasoning from now on", self.model)
+            self.extra_body, self._least = {**self.extra_body, **self._least}, None
+            data = self._post("/chat/completions", self._body(messages))
         usage = data.get("usage") or {}
         self.usage.record(
             "llm",
@@ -76,6 +79,9 @@ class LLM(HttpModel):
             return data["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as e:
             raise ModelError(f"llm reply without content: {str(data)[:300]}") from e
+
+    def _body(self, messages: list[dict[str, str]]) -> dict[str, Any]:
+        return {**self.extra_body, "model": self.model, "messages": messages, "temperature": self.temperature}
 
     def complete(self, system: str, user: str, *, op: str = "") -> str:
         return self.chat([{"role": "system", "content": system}, {"role": "user", "content": user}], op=op)
@@ -102,3 +108,28 @@ class LLM(HttpModel):
 
 def _short(e: Any) -> str:
     return str(e).replace("\n", " ")[:300]
+
+
+def probe(llm: LLM) -> str:
+    """One tiny request, to tell a working model from a wrong key or address (ModelError)."""
+    return llm.chat([{"role": "user", "content": "Reply with the single word OK."}], op="settings/probe").strip()[:200]
+
+
+def live_models(llm: LLMConfig, client: httpx.Client | None = None) -> list[str]:
+    """The text models the provider offers right now (GET {base_url}/models); [] when it does not say."""
+    headers = {"Authorization": f"Bearer {llm.api_key}"} if llm.api_key else {}
+    own = client is None
+    http = client or httpx.Client(timeout=10)
+    try:
+        response = http.get(f"{llm.base_url.rstrip('/')}/models", headers=headers)
+        data = response.raise_for_status().json()["data"]
+        return [
+            str(m["id"]).removeprefix("models/")  # Gemini names them models/<id>
+            for m in data
+            if m.get("id") and "text" in ((m.get("architecture") or {}).get("output_modalities") or ["text"])
+        ]
+    except (httpx.HTTPError, KeyError, TypeError, ValueError, AttributeError):
+        return []
+    finally:
+        if own:
+            http.close()

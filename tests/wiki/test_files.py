@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """Text extraction from dropped files, and helpers other tests reuse to build PDFs."""
 
@@ -18,7 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from okf_wiki.files import extract_text, title_of
+from okf_wiki.bundle.files import extract_text, title_of
+from okf_wiki.errors import InputError
 
 
 def make_pdf(*lines: str) -> bytes:
@@ -45,11 +35,40 @@ def make_pdf(*lines: str) -> bytes:
 
 def test_text_and_markdown_are_decoded_as_utf8() -> None:
     assert extract_text("# Caffè\n\nPrezzi.".encode(), "note.md") == "# Caffè\n\nPrezzi."
-    assert extract_text("plain".encode(), "a.TXT") == "plain"
+    assert extract_text(b"plain", "a.TXT") == "plain"
 
 
 def test_a_utf8_bom_is_dropped() -> None:
-    assert extract_text("﻿hello".encode("utf-8"), "a.txt") == "hello"
+    assert extract_text("﻿hello".encode(), "a.txt") == "hello"
+
+
+def test_extract_text_when_a_utf8_bom_precedes_accented_text_then_decodes_it_without_the_bom() -> None:
+    # ACT
+    text = extract_text(b"\xef\xbb\xbf" + "Caffè".encode(), "menu.md")
+
+    # ASSERT
+    assert text == "Caffè"
+
+
+@pytest.mark.parametrize("filename", ["photo.txt", "notes.md", "README"])
+def test_extract_text_when_a_nul_byte_is_in_the_first_8_kb_then_raises(filename: str) -> None:
+    # ARRANGE
+    data = b"x" * 8191 + b"\x00" + b"more text"
+
+    # ACT / ASSERT
+    with pytest.raises(InputError, match=f"^{filename}: a binary file, not text$"):
+        extract_text(data, filename)
+
+
+def test_extract_text_when_a_nul_byte_comes_only_after_8_kb_then_decodes_the_file() -> None:
+    # ARRANGE
+    data = b"x" * 8192 + b"\x00tail"
+
+    # ACT
+    text = extract_text(data, "long.txt")
+
+    # ASSERT
+    assert text == "x" * 8192 + "\x00tail"
 
 
 def test_pdf_text_layer_is_extracted() -> None:

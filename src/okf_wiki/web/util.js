@@ -1,4 +1,4 @@
-// Copyright 2026 Federico Cesarini, Marco Sassarini. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 Federico Cesarini, Marco Sassarini. SPDX-License-Identifier: AGPL-3.0-or-later
 // Small helpers shared by the page's modules.
 
 export const $ = (s) => document.querySelector(s);

@@ -1,4 +1,4 @@
-// Copyright 2026 Federico Cesarini, Marco Sassarini. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 Federico Cesarini, Marco Sassarini. SPDX-License-Identifier: AGPL-3.0-or-later
 // The page: sidebar tree, notes, questions, filing by drop/pick/paste, and routing.
 
 import { $, api, esc, fmt, md, post } from "./util.js";
@@ -184,7 +184,7 @@ async function drain() {
       if (!location.hash) home();
     } catch (e) {
       el.classList.add("err"); el.querySelector(".what").textContent = e.message;
-      if (/\b40[13]\b/.test(e.message)) el.querySelector(".what").insertAdjacentHTML("beforeend", ' · <a href="#/settings">check the API key</a>');
+      if (/\b40[13]\b|no API key/.test(e.message)) el.querySelector(".what").insertAdjacentHTML("beforeend", ' · <a href="#/settings">check the API key</a>');
     }
     setTimeout(() => el.remove(), 12000);
   }
@@ -245,4 +245,11 @@ async function saved(settings) { // the server rebuilt the wiki: show its models
   if (noModel && settings.editable && !countNotes(tree) && !location.hash) history.replaceState(null, "", "#/settings"); // first run: ask for a key
   route();
   addEventListener("hashchange", route);
+  addEventListener("visibilitychange", async () => { // another tab may have saved settings or filed notes meanwhile
+    if (document.hidden) return;
+    const [s] = await Promise.all([loadSettings(), loadModels(), loadTree()]);
+    loadUsage();
+    noModel = Boolean(s && !s.ready);
+    if (!location.hash || location.hash === "#/") route();
+  });
 })();

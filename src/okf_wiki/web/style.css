@@ -1,4 +1,4 @@
-/* Copyright 2026 Federico Cesarini, Marco Sassarini. Licensed under the Apache License, Version 2.0. */
+/* Copyright 2026 Federico Cesarini, Marco Sassarini. SPDX-License-Identifier: AGPL-3.0-or-later */
 /* llm-wiki local UI: the CROW night look. Fonts ship in vendor/fonts, so the page looks the same offline. */
 
 @font-face { font-family: "Pixelify Sans"; font-weight: 500; font-display: swap; src: url("vendor/fonts/pixelify-sans-latin-500-normal.woff2") format("woff2"); }
@@ -56,6 +56,9 @@ nav { flex: 1; overflow: auto; padding: 14px 12px 20px; }
 .ledger .bar { height: 6px; background: #151d38; border-radius: 3px; overflow: hidden; }
 .ledger .bar i { display: block; height: 100%; width: 0; border-radius: 3px; transition: width .6s ease; }
 .ledger .nums { grid-column: 1 / -1; color: var(--muted); }
+/* AGPL §13: whoever uses the wiki over a network gets a way to its source. */
+.source { display: inline-block; margin-top: 12px; font: 11px var(--mono); letter-spacing: .06em; color: var(--faint); }
+.source:hover { color: var(--muted); }
 .ledger.llm .nums em { color: var(--ember-soft); } .ledger.llm .bar i { background: var(--llm); }
 .ledger.clf .nums em { color: var(--amber); } .ledger.clf .bar i { background: var(--clf); }
 .nums em { font-style: normal; }
@@ -121,7 +124,7 @@ a.cite:hover { background: var(--ember); color: #0b0f1e; }
 .job { background: var(--panel); border: 1px solid var(--edge); border-left: 3px solid var(--muted); border-radius: 8px; padding: 10px 14px; font-size: 13px; box-shadow: 0 10px 30px rgba(0, 0, 0, .4); animation: rise .25s ease both; }
 .job.ok { border-left-color: var(--ok); } .job.err { border-left-color: var(--ember); }
 .job .name { font: 500 12px var(--mono); color: var(--cream); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.job .what { color: var(--muted); margin-top: 2px; }
+.job .what { color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
 dialog { border: 1px solid var(--edge); border-radius: 12px; background: var(--panel); color: var(--ink); width: min(640px, 92vw); padding: 26px; }
 dialog::backdrop { background: rgba(3, 5, 13, .7); }
 dialog h3 { font: 700 30px var(--display); color: var(--cream); margin: 0 0 6px; }
@@ -167,6 +170,8 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .field input, .field select { width: 100%; height: 46px; font: 14px var(--mono); padding: 0 14px; border: 1px solid var(--edge); border-radius: 8px; background: var(--field); color: var(--ink); }
 .field input:focus, .field select:focus { outline: none; border-color: var(--ember); }
 .field input:disabled, .field select:disabled { color: var(--faint); background: var(--panel); }
+.field label.check { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.field label.check input { width: 16px; height: 16px; accent-color: var(--ember); }
 .field .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
 .field .hint code { font: 12px var(--mono); color: var(--amber); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }

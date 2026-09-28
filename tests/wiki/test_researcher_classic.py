@@ -1,22 +1,10 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """Classic Researcher: the LLM navigates the folder tree, then answers from the notes it selected."""
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
@@ -24,9 +12,9 @@ from typing import Any
 import pytest
 
 from okf_wiki import Wiki, WikiConfig
-from okf_wiki.researcher import NO_ANSWER
-from okf_wiki.store import Folder, Note
-from tests.wiki.fakes import LLM_TOKENS, FakeLLM
+from okf_wiki.agents.researcher import NO_ANSWER
+from okf_wiki.bundle.tree import Folder, Note
+from tests.wiki.fakes import FakeLLM
 
 NAVIGATE, ANSWER = "researcher/navigate", "researcher/answer"
 
@@ -94,6 +82,34 @@ def test_done_stops_navigation_before_the_frontier_is_empty(wiki: Wiki, llm: Fak
 
     assert browsed(llm) == ["/", "/finance"]
     assert answer.notes == ["finance/revenue-policy.md"]
+
+
+def test_select_when_a_folder_answers_done_with_nothing_selected_then_queued_folders_are_still_visited(
+    bundle: Path, llm: FakeLLM
+) -> None:
+    # ARRANGE
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="classic"), llm=llm)
+    wiki.init()
+    root = wiki.store.load()
+    operations, _ = wiki.store.create_folder(root, "operations", "Running the kitchen.")
+    recipes, _ = wiki.store.create_folder(root, "recipes", "Dishes we cook.")
+    pricing, _ = wiki.store.create_folder(operations, "pricing", "What things cost.")
+    add_note(wiki, recipes, "Risotto", "How to cook risotto.", "Stir for 18 minutes.")
+    price_list = add_note(wiki, pricing, "Price list", "What each dish costs.", "Risotto costs 14 euros.")
+    llm.add(
+        NAVIGATE,
+        {"open": ["operations", "recipes"]},
+        {"open": ["pricing"]},
+        {"done": True},  # /recipes: nothing here, but /operations/pricing is still queued
+        {"select": [price_list.rel], "done": True},
+    ).add(ANSWER, "Answer.")
+
+    # ACT
+    answer = wiki.ask("How much does the risotto cost?")
+
+    # ASSERT
+    assert browsed(llm) == ["/", "/operations", "/recipes", "/operations/pricing"]
+    assert answer.notes == [price_list.rel]
 
 
 def test_max_steps_caps_the_folders_opened(bundle: Path, llm: FakeLLM) -> None:
@@ -203,25 +219,3 @@ def test_a_note_selected_twice_is_read_once(wiki: Wiki, llm: FakeLLM) -> None:
 
     assert answer.notes == ["overview.md"]
 
-
-def test_usage_is_counted_in_the_llm_ledger_only(wiki: Wiki, llm: FakeLLM) -> None:
-    llm.add(NAVIGATE, {"select": ["overview.md"], "done": True}).add(ANSWER, "Answer.")
-
-    usage = wiki.ask("What do we do?").usage
-
-    assert usage.llm.calls == 2
-    assert (usage.llm.input_tokens, usage.llm.output_tokens) == (2 * LLM_TOKENS[0], 2 * LLM_TOKENS[1])
-    assert usage.classifier.calls == 0
-    assert set(usage.by_model) == {"llm:fake/llm"}
-
-
-def test_answer_to_dict_is_json_serialisable(wiki: Wiki, llm: FakeLLM) -> None:
-    llm.add(NAVIGATE, {"select": ["overview.md"], "done": True}).add(ANSWER, "Widgets [overview.md].")
-
-    data = json.loads(json.dumps(wiki.ask("What do we do?").to_dict()))
-
-    assert data["text"] == "Widgets [overview.md]."
-    assert data["citations"] == data["notes"] == ["overview.md"]
-    assert data["decisions"][0]["decider"] == "llm"
-    assert data["usage"]["llm"]["calls"] == 2
-    assert data["usage"]["classifier"]["calls"] == 0

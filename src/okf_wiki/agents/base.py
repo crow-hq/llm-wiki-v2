@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """What the Librarian and the Researcher share: store, LLM, prompts, and a trace of decisions."""
 
@@ -22,14 +11,15 @@ from typing import Literal, TypeVar
 
 from pydantic import BaseModel
 
+from okf_wiki.agents.prompts import Prompts
+from okf_wiki.bundle.store import WikiStore
+from okf_wiki.bundle.tree import Folder, Note
 from okf_wiki.config import WikiConfig
-from okf_wiki.llm import LLM
-from okf_wiki.prompts import Prompts
-from okf_wiki.store import Folder, Note, WikiStore
+from okf_wiki.models.llm import LLM
 
 T = TypeVar("T", bound=BaseModel)
 
-log = logging.getLogger("okf_wiki")
+log = logging.getLogger(__name__)
 
 
 @dataclass

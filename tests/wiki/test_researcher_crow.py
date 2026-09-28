@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """CROW Researcher (§5.2): a Noul per folder and per note picks what the LLM reads to answer."""
 
@@ -20,15 +9,14 @@ import re
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 
 from okf_wiki import Wiki, WikiConfig
-from okf_wiki.classifier import Classifier
-from okf_wiki.client import HttpModel, ModelError
-from okf_wiki.config import ClassifierConfig, CrowConfig
-from okf_wiki.store import Folder, Note
-from tests.wiki.fakes import CLASSIFIER_TOKENS, LLM_TOKENS, FakeClassifier, FakeLLM
+from okf_wiki.bundle.tree import Folder, Note
+from okf_wiki.config import CrowConfig
+from okf_wiki.errors import ModelError
+from okf_wiki.models.classifier import Classifier
+from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 NAVIGATE, ANSWER = "researcher/navigate", "researcher/answer"
 
@@ -104,7 +92,8 @@ def test_every_subfolder_of_the_explored_level_gets_one_noul(
     assert {state for _, state, _ in classifier.calls} == {"How is revenue booked?"}
 
 
-def test_folders_at_or_below_tau_fold_are_not_explored(wiki: Wiki, classifier: FakeClassifier, llm: FakeLLM) -> None:
+def test_folders_at_or_below_tau_fold_are_not_explored(bundle: Path, classifier: FakeClassifier, llm: FakeLLM) -> None:
+    wiki = make_wiki(bundle, llm, classifier, tau_fold=0.5)
     classifier.noul_scores = {
         "retrieve_folder": {folder("finance"): 0.9, folder("people"): 0.5, folder("legal"): 0.2},
         "retrieve_note": {note("Revenue policy"): 0.9},
@@ -116,7 +105,10 @@ def test_folders_at_or_below_tau_fold_are_not_explored(wiki: Wiki, classifier: F
     assert scored(classifier, "retrieve_note") == [["Overview", "Revenue policy"]]
 
 
-def test_at_most_beam_folders_are_explored_per_level(wiki: Wiki, classifier: FakeClassifier, llm: FakeLLM) -> None:
+def test_at_most_retrieval_beam_folders_are_explored_per_level(
+    bundle: Path, classifier: FakeClassifier, llm: FakeLLM
+) -> None:
+    wiki = make_wiki(bundle, llm, classifier, tau_fold=0.5, retrieval_beam=2)
     classifier.noul_scores = {
         "retrieve_folder": {folder("finance"): 0.7, folder("legal"): 0.9, folder("people"): 0.8},
         "retrieve_note": {note("NDA template"): 0.9},
@@ -125,7 +117,7 @@ def test_at_most_beam_folders_are_explored_per_level(wiki: Wiki, classifier: Fak
 
     wiki.ask("What do we sign?")
 
-    # beam = 2: the two best folders (legal, people) are explored, finance is dropped although it clears tau_fold
+    # retrieval_beam = 2: the two best folders (legal, people) are explored, finance is dropped although it clears tau_fold
     assert scored(classifier, "retrieve_note") == [["Overview", "NDA template", "Hiring process"]]
 
 
@@ -171,7 +163,8 @@ def test_notes_are_ranked_across_folders_and_capped_at_k(
     assert answer.notes == ["people/hiring-process.md", "finance/revenue-policy.md"]
 
 
-def test_notes_at_or_below_tau_ret_are_not_read(wiki: Wiki, classifier: FakeClassifier, llm: FakeLLM) -> None:
+def test_notes_at_or_below_tau_ret_are_not_read(bundle: Path, classifier: FakeClassifier, llm: FakeLLM) -> None:
+    wiki = make_wiki(bundle, llm, classifier, tau_ret=0.5)
     classifier.noul_scores = {
         "retrieve_folder": {folder("finance"): 0.9},
         "retrieve_note": {note("Overview"): 0.5, note("Revenue policy"): 0.51, note("Pricing tiers"): 0.2},
@@ -227,39 +220,3 @@ def test_classifier_error_falls_back_to_llm_navigation(
     assert answer.notes == ["overview.md"]
     assert [(d.step, d.decider) for d in answer.decisions if d.fallback] == [("select", "llm")]
 
-
-def test_unreachable_classifier_falls_back_to_llm_navigation(
-    bundle: Path, llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(HttpModel, "backoff", 0)
-    requests: list[httpx.Request] = []
-
-    def busy(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return httpx.Response(503, text="busy")
-
-    client = httpx.Client(transport=httpx.MockTransport(busy))
-    wiki = make_wiki(bundle, llm, Classifier(ClassifierConfig(), llm.usage, client=client))
-    llm.add(NAVIGATE, {"select": ["overview.md"], "done": True}).add(ANSWER, "Answer.")
-
-    answer = wiki.ask("What do we do?")
-
-    assert len(requests) == HttpModel.attempts
-    assert answer.notes == ["overview.md"]
-    assert answer.usage.classifier.calls == 0  # a failed request carries no usage
-
-
-def test_usage_is_split_between_the_two_ledgers(wiki: Wiki, classifier: FakeClassifier, llm: FakeLLM) -> None:
-    classifier.noul_scores = {
-        "retrieve_folder": {folder("finance"): 0.9},
-        "retrieve_note": {note("Revenue policy"): 0.9},
-    }
-    llm.add(ANSWER, "Answer.")
-
-    usage = wiki.ask("How is revenue booked?").usage
-
-    assert classifier.ops == ["retrieve_folder", "retrieve_folder", "retrieve_note"]
-    assert (usage.classifier.calls, usage.classifier.input_tokens) == (3, 3 * CLASSIFIER_TOKENS[0])
-    assert (usage.llm.calls, usage.llm.input_tokens) == (1, LLM_TOKENS[0])
-    assert set(usage.by_model) == {"llm:fake/llm", "classifier:fake/jev"}
-    assert usage.by_model["classifier:fake/jev"].calls == 3

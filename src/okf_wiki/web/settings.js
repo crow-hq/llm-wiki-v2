@@ -1,4 +1,4 @@
-// Copyright 2026 Federico Cesarini, Marco Sassarini. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 Federico Cesarini, Marco Sassarini. SPDX-License-Identifier: AGPL-3.0-or-later
 // Settings: which model writes the wiki, with which key. Saved to the settings file by the server.
 
 import { $, api, esc, post } from "./util.js";
@@ -46,12 +46,15 @@ export async function showSettings(onSaved) {
       <div class="field"><label for="model">Model</label>
         <input id="model" list="models-list" value="${esc(v.model)}" ${locked("model") ? "disabled" : ""}>
         <datalist id="models-list"></datalist><div class="suggest" id="suggest"></div><div class="hint" id="models-hint"></div>${lockNote("model")}</div>
-      <details class="advanced" id="advanced"><summary>Advanced: CROW mode, classifier key, wiki folder</summary>
+      <details class="advanced" id="advanced"><summary>Advanced: CROW mode, reasoning, classifier key, wiki folder</summary>
         <div class="field"><label for="mode">Who decides where notes go</label>
           <select id="mode" ${locked("mode") ? "disabled" : ""}>
             <option value="crow"${v.mode === "crow" ? " selected" : ""}>crow — a typed classifier decides (recommended: faster, fewer tokens)</option>
             <option value="classic"${v.mode === "classic" ? " selected" : ""}>classic — the model decides</option>
           </select>${lockNote("mode")}</div>
+        <div class="field"><label class="check"><input type="checkbox" id="reasoning"${v.reasoning ? " checked" : ""} ${locked("reasoning") ? "disabled" : ""}>
+          Let the model think before it answers</label>
+          <div class="hint">Off by default: thinking makes every note several times slower and costlier, and rarely files it better. Kept to a minimum on OpenRouter; other providers follow their model's default.</div>${lockNote("reasoning")}</div>
         <div class="field" id="f-classifier_api_key"><label for="classifier_api_key">Classifier key (OpenRouter)</label>
           <input id="classifier_api_key" type="password" placeholder="${v.classifier_api_key ? `saved: ${esc(v.classifier_api_key)} · leave empty to keep` : "your OpenRouter key"}" ${locked("classifier_api_key") ? "disabled" : ""}>
           <div class="hint">CROW asks the Jev classifier on OpenRouter: paste an OpenRouter key, or choose classic above. With OpenRouter as provider its key is used.</div>${lockNote("classifier_api_key")}</div>
@@ -81,8 +84,9 @@ export async function showSettings(onSaved) {
     $("#f-classifier_api_key").style.display = needsClassifierKey ? "" : "none";
     if (needsClassifierKey && !v.classifier_api_key) $("#advanced").open = true; // CROW cannot start without it
   };
-  const fields = ["provider", "base_url", "api_key", "model", "mode", "classifier_api_key", "bundle"];
+  const fields = ["provider", "base_url", "api_key", "model", "mode", "reasoning", "classifier_api_key", "bundle"];
   const value = (f) => f === "provider" ? provider.value
+    : f === "reasoning" ? ($("#reasoning").checked ? "true" : "") // "" is the default: off
     : f === "base_url" && provider.value !== "custom" ? "" : $("#" + f).value.trim(); // presets bring their own
   const changes = () => Object.fromEntries(fields.filter((f) => !locked(f)).map((f) => [f, value(f)]));
 

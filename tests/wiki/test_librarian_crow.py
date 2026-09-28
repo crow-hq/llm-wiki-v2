@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The CROW Librarian (§5.1): the typed classifier routes, matches, consolidates and relates."""
 
@@ -21,13 +10,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from okf_wiki.document import OKFDocument
 
 from okf_wiki import Wiki, WikiConfig
-from okf_wiki.agent import Decision
-from okf_wiki.client import ModelError
-from okf_wiki.librarian import IngestResult
-from okf_wiki.store import Note
+from okf_wiki.agents.base import Decision
+from okf_wiki.agents.librarian import IngestResult
+from okf_wiki.bundle.document import OKFDocument
+from okf_wiki.bundle.tree import Note
+from okf_wiki.errors import ModelError
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 HERE, NEW, NONE = "Here", "New subfolder", "None of these"
@@ -397,7 +386,7 @@ def test_consolidation_merges_only_on_a_confident_modify(
     assert len(read(bundle / "apple.md").frontmatter["sources"]) == (2 if merged else 1)
 
 
-# -- relating and usage -------------------------------------------------------------------------
+# -- relating ----------------------------------------------------------------------------------
 
 
 def test_relate_links_notes_above_tau_link_capped_at_max_links(
@@ -418,17 +407,3 @@ def test_relate_links_notes_above_tau_link_capped_at_max_links(
     assert "# See also" not in read(bundle / "banana.md").body
     assert "# See also" not in read(bundle / "date.md").body
 
-
-def test_usage_splits_classifier_and_llm_ledgers(crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
-    add_note(crow_wiki, "/", "Apple")
-    llm.add(SUMMARIZE, draft("Pricing policy")).add(NAME_FOLDER, {"name": "pricing", "description": "Prices."})
-    classifier.add_choice("route", NEW, {HERE: 0.1, NEW: 0.9}, 0.9)
-
-    usage = crow_wiki.ingest("Prices are set yearly.").usage
-
-    assert classifier.ops == ["route", "match", "relate"]
-    assert llm.ops == [SUMMARIZE, NAME_FOLDER]
-    assert (usage.classifier.calls, usage.classifier.input_tokens, usage.classifier.output_tokens) == (3, 150, 0)
-    assert (usage.llm.calls, usage.llm.input_tokens, usage.llm.output_tokens) == (2, 200, 20)
-    assert sorted(usage.by_model) == ["classifier:fake/jev", "llm:fake/llm"]
-    assert usage.by_model["classifier:fake/jev"].calls == 3

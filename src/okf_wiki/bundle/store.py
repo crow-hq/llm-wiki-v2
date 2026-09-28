@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The wiki on disk, as an OKF v0.2 bundle.
 
@@ -28,54 +17,39 @@ tree is fully described by standard OKF index files. Links are relative.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
-import posixpath
-import re
-import unicodedata
+import threading
 from collections.abc import Iterator
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from okf_wiki.document import OKFDocument, OKFDocumentError
+from okf_wiki.bundle.document import OKFDocument, OKFDocumentError
+from okf_wiki.bundle.tree import (
+    INDEX,
+    LOG,
+    NOTE_TYPE,
+    OKF_VERSION,
+    RAW,
+    SOURCE_TYPE,
+    Folder,
+    Note,
+    join_see_also,
+    note_dir,
+    parse_index,
+    rel_link,
+    slugify,
+    split_see_also,
+    subfolder_of,
+)
+from okf_wiki.errors import InputError
 
 log = logging.getLogger(__name__)
 
-INDEX, LOG, RAW = "index.md", "log.md", "raw"
-NOTE_TYPE, SOURCE_TYPE = "Note", "Source"
-SEE_ALSO = "# See also"
-OKF_VERSION = "0.2"
-
-_ENTRY = re.compile(r"^[*-]\s+\[(?P<title>[^\]]*)\]\((?P<link>[^)\s]+)\)\s*(?:-\s*(?P<text>.*))?$")
-
-
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def slugify(text: str, *, max_len: int = 60, fallback: str = "note") -> str:
-    """Lowercase ASCII words joined by '-', cut at a word boundary."""
-    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
-    slug = re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-")
-    if len(slug) > max_len:
-        cut = slug[:max_len]
-        slug = (cut if slug[max_len] == "-" else cut.rsplit("-", 1)[0] or cut).strip("-")
-    if slug in {"index", "log"}:
-        slug = f"{slug}-{fallback}"
-    return slug or fallback
-
-
-def rel_link(from_dir: str, to_rel: str) -> str:
-    """Relative link from a bundle directory ("" = root) to a bundle path."""
-    return Path(os.path.relpath(to_rel, from_dir or ".")).as_posix()
-
-
-def note_dir(rel: str) -> str:
-    """Bundle directory of a bundle path ("" = root)."""
-    parent = Path(rel).parent.as_posix()
-    return "" if parent == "." else parent
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _entry(title: str, link: str, text: str) -> str:
@@ -83,171 +57,6 @@ def _entry(title: str, link: str, text: str) -> str:
     title = " ".join(title.split()).replace("[", "(").replace("]", ")")
     text = " ".join(text.split())
     return f"* [{title}]({link})" + (f" - {text}" if text else "")
-
-
-@dataclass(eq=False)
-class Note:
-    path: Path
-    rel: str  # bundle-relative, e.g. "finance/revenue-recognition.md"
-    frontmatter: dict[str, Any]
-    body: str
-    folder: Folder | None = field(default=None, repr=False)
-
-    @property
-    def slug(self) -> str:
-        return self.path.stem
-
-    @property
-    def title(self) -> str:
-        return str(self.frontmatter.get("title") or self.slug)
-
-    @property
-    def summary(self) -> str:
-        return str(self.frontmatter.get("description") or "")
-
-    @property
-    def tags(self) -> list[str]:
-        tags = self.frontmatter.get("tags") or []
-        return [str(t) for t in tags] if isinstance(tags, list) else [str(tags)]
-
-    def main_body(self) -> str:
-        """The body without the code-managed See-also section."""
-        return split_see_also(self.body)[0]
-
-    def full_text(self) -> str:
-        return f"Title: {self.title}\nSummary: {self.summary}\n\n{self.main_body()}".strip()
-
-    def compact(self, max_chars: int) -> str:
-        return self.full_text()[:max_chars]
-
-
-@dataclass(eq=False)
-class Folder:
-    path: Path
-    rel: str  # "" for the root, else e.g. "finance/pricing"
-    description: str = ""
-    subfolders: list[Folder] = field(default_factory=list)
-    notes: list[Note] = field(default_factory=list)
-    parent: Folder | None = field(default=None, repr=False)
-
-    @property
-    def name(self) -> str:
-        return self.path.name if self.rel else "/"
-
-    @property
-    def label(self) -> str:
-        """Display path: "/" or "/finance/pricing"."""
-        return f"/{self.rel}"
-
-    @property
-    def is_root(self) -> bool:
-        return not self.rel
-
-    @property
-    def depth(self) -> int:
-        return self.rel.count("/") + 1 if self.rel else 0
-
-    def walk(self) -> Iterator[Folder]:
-        yield self
-        for sub in self.subfolders:
-            yield from sub.walk()
-
-    def find(self, rel: str) -> Folder | None:
-        rel = rel.strip("/")
-        return next((f for f in self.walk() if f.rel == rel), None)
-
-    def subfolder(self, name: str) -> Folder | None:
-        return next((f for f in self.subfolders if f.name == name), None)
-
-    def note(self, slug: str) -> Note | None:
-        return next((n for n in self.notes if n.slug == slug), None)
-
-    def ancestors(self) -> list[Folder]:
-        """Root first, self last."""
-        chain, folder = [], self
-        while folder is not None:
-            chain.append(folder)
-            folder = folder.parent
-        return chain[::-1]
-
-    def all_notes(self) -> list[Note]:
-        return [n for f in self.walk() for n in f.notes]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "path": self.label,
-            "description": self.description,
-            "notes": [{"path": n.rel, "title": n.title, "summary": n.summary} for n in self.notes],
-            "subfolders": [f.to_dict() for f in self.subfolders],
-        }
-
-
-def split_see_also(body: str) -> tuple[str, list[str]]:
-    """(body before "# See also", its list lines)."""
-    lines = body.rstrip("\n").split("\n")
-    for i in range(len(lines) - 1, -1, -1):
-        if lines[i].strip() == SEE_ALSO:
-            entries = [line for line in lines[i + 1 :] if _ENTRY.match(line.strip())]
-            return "\n".join(lines[:i]).rstrip(), entries
-    return body.rstrip(), []
-
-
-def join_see_also(main: str, entries: list[str]) -> str:
-    main = main.rstrip()
-    if not entries:
-        return main + "\n"
-    return f"{main}\n\n{SEE_ALSO}\n\n" + "\n".join(entries) + "\n"
-
-
-def graph(root: Folder) -> dict[str, list[dict[str, Any]]]:
-    """The wiki as a graph: folders and notes as nodes; containment and See-also links as edges."""
-    notes = {n.rel for n in root.all_notes()}
-    nodes: list[dict[str, Any]] = []
-    links: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for folder in root.walk():
-        area = folder.rel.split("/")[0]
-        nodes.append({
-            "id": folder.label, "kind": "folder", "label": folder.name if folder.rel else "brain",
-            "description": folder.description, "area": area, "depth": folder.depth, "notes": len(folder.all_notes()),
-        })
-        if folder.parent is not None:
-            links.append({"source": folder.parent.label, "target": folder.label, "kind": "contains"})
-        for note in folder.notes:
-            nodes.append({"id": note.rel, "kind": "note", "label": note.title, "summary": note.summary, "area": area})
-            links.append({"source": folder.label, "target": note.rel, "kind": "contains"})
-            for entry in split_see_also(note.body)[1]:
-                if not (m := _ENTRY.match(entry.strip())):
-                    continue
-                target = posixpath.normpath(posixpath.join(note_dir(note.rel), m["link"]))
-                pair = (min(note.rel, target), max(note.rel, target))
-                if target in notes and target != note.rel and pair not in seen:
-                    seen.add(pair)
-                    links.append({"source": note.rel, "target": target, "kind": "see_also"})
-    return {"nodes": nodes, "links": links}
-
-
-def parse_index(text: str) -> list[tuple[str, str, str]]:
-    """Entries (title, link, text) of an index.md, links normalised ("./a/index.md" → "a/index.md")."""
-    try:
-        body = OKFDocument.parse(text).body
-    except OKFDocumentError:
-        body = text  # a broken frontmatter block must not hide the entries below it
-    entries = []
-    for line in body.splitlines():
-        if m := _ENTRY.match(line.strip()):
-            link = m["link"]
-            if "://" not in link and not link.startswith("/"):
-                link = posixpath.normpath(link) + ("/" if link.endswith("/") else "")
-            entries.append((m["title"], link, (m["text"] or "").strip()))
-    return entries
-
-
-def subfolder_of(link: str) -> str | None:
-    """The subfolder an index entry points to ("sub/index.md" or "sub/"), else None."""
-    if link.endswith(f"/{INDEX}") or link.endswith("/"):
-        return link.split("/")[0]
-    return None
 
 
 class WikiStore:
@@ -266,6 +75,24 @@ class WikiStore:
             self.write_index(Folder(self.root, ""))
         if not (self.root / LOG).exists():
             _write(self.root / LOG, "# Wiki log\n")
+
+    @contextlib.contextmanager
+    def lock(self) -> Iterator[None]:
+        """Hold the bundle for writing: one writer at a time across processes (the CLI and a server).
+
+        An advisory flock on the bundle folder itself, so no lock file lands in the wiki.
+        """
+        try:
+            import fcntl
+        except ImportError:  # solo: Windows has no flock; there only the server's in-process lock holds
+            yield
+            return
+        fd = os.open(self.root, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)  # closing the descriptor releases the lock
 
     def load(self) -> Folder:
         if not self.root.is_dir():
@@ -295,11 +122,11 @@ class WikiStore:
         return folder
 
     def read(self, rel: str) -> Note:
-        """The note or raw source at a bundle path; ValueError for anything that is not one."""
+        """The note or raw source at a bundle path; InputError for anything that is not one."""
         root = self.root.resolve()
         path = (root / rel.strip().lstrip("/")).resolve()
         if not path.is_relative_to(root) or path.suffix != ".md" or path.name in (INDEX, LOG):
-            raise ValueError(f"not a wiki document: {rel}")
+            raise InputError(f"not a wiki document: {rel}")
         if not path.is_file():
             raise FileNotFoundError(rel)
         doc = OKFDocument.parse(path.read_text(encoding="utf-8"))
@@ -368,7 +195,7 @@ class WikiStore:
         fm["title"], fm["description"] = title.strip(), summary.strip()
         fm["tags"] = list(dict.fromkeys([*note.tags, *tags]))
         fm["generated"] = {"by": self.actor, "at": now_iso()}
-        sources = fm.get("sources") if isinstance(fm.get("sources"), list) else []
+        sources: list[Any] = fm["sources"] if isinstance(fm.get("sources"), list) else []
         used = {str(s.get("id")) for s in sources if isinstance(s, dict)}
         new_id = next(f"s{n}" for n in range(1, len(sources) + 2) if f"s{n}" not in used)
         fm["sources"] = [*sources, {"id": new_id, **source}]
@@ -396,7 +223,7 @@ class WikiStore:
 
     def save_raw(self, text: str, *, title: str, resource: str | None) -> str:
         """Keep an immutable copy of an ingested source; returns its bundle-absolute path ("/raw/…")."""
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         slug = self.unique_slug(Folder(self.root / RAW, RAW), f"{stamp}-{slugify(title, max_len=40)}")
         fm: dict[str, Any] = {"type": SOURCE_TYPE, "title": title}
         if resource:
@@ -423,7 +250,7 @@ class WikiStore:
         path = self.root / LOG
         lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else ["# Wiki log"]
         entry = f"* **{verb}**: " + " - ".join(p for p in (f"[{link_title or link}]({link})" if link else "", text) if p)
-        today = f"## {datetime.now(timezone.utc).date().isoformat()}"
+        today = f"## {datetime.now(UTC).date().isoformat()}"
         first = next((i for i, line in enumerate(lines) if line.startswith("## ")), None)
         if first is not None and lines[first] == today:
             lines.insert(first + 2 if lines[first + 1 : first + 2] == [""] else first + 1, entry)
@@ -446,6 +273,10 @@ class WikiStore:
 
 def _write(path: Path, text: str) -> None:
     """Write atomically, so a concurrent reader never sees half a file."""
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    # One temporary name per process and thread: two writers never share, and so never clobber, a temp file.
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)

@@ -1,47 +1,29 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone, tzinfo
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from okf_wiki import store as store_module
-from okf_wiki.store import (
-    graph,
-    Folder,
-    Note,
-    WikiStore,
-    join_see_also,
-    parse_index,
-    rel_link,
-    slugify,
-    split_see_also,
-)
-from okf_wiki.document import OKFDocument, OKFDocumentError
+from okf_wiki.bundle import store as store_module
+from okf_wiki.bundle.document import OKFDocument
+from okf_wiki.bundle.store import WikiStore
+from okf_wiki.bundle.tree import Folder, Note, graph, join_see_also, parse_index, slugify, split_see_also
 
 ACTOR = "okf_wiki/test"
-NOW = datetime(2026, 9, 24, 12, 0, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 24, 12, 0, 0, tzinfo=UTC)
 SOURCE = {"resource": "/raw/source.md", "title": "Source"}
 
 
 class _Clock(datetime):
-    """Stands in for `datetime` inside okf_wiki.store; `_Clock.at` is "now"."""
+    """Stands in for `datetime` inside okf_wiki.bundle.store; `_Clock.at` is "now"."""
 
     at = NOW
 
@@ -79,7 +61,7 @@ def _note(store: WikiStore, folder: Folder, title: str, summary: str = "A summar
     return store.write_note(folder, title=title, summary=summary, **fields)
 
 
-# -- slugify / rel_link -------------------------------------------------------
+# -- slugify ----------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -94,13 +76,13 @@ def test_slugify_strips_accents_and_punctuation(text: str, slug: str) -> None:
     assert slugify(text) == slug
 
 
-def test_slugify_cuts_long_text_at_a_word_boundary() -> None:
-    assert slugify("alpha beta gamma", max_len=12) == "alpha-beta"
-    assert slugify("a" * 70) == "a" * 60
-
-
-def test_slugify_keeps_a_word_that_ends_exactly_at_the_limit() -> None:
-    assert slugify("alpha beta gamma", max_len=10) == "alpha-beta"
+@pytest.mark.parametrize(
+    ("text", "max_len", "slug"),
+    [("alpha beta gamma", 12, "alpha-beta"), ("alpha beta gamma", 10, "alpha-beta"), ("a" * 70, 60, "a" * 60)],
+    ids=["mid-word", "word-ends-at-limit", "one-long-word"],
+)
+def test_slugify_when_text_exceeds_max_len_then_cuts_at_a_word_boundary(text: str, max_len: int, slug: str) -> None:
+    assert slugify(text, max_len=max_len) == slug
 
 
 @pytest.mark.parametrize("text", ["", "!!!", "日本語"])
@@ -112,19 +94,6 @@ def test_slugify_falls_back_when_nothing_is_left(text: str) -> None:
 @pytest.mark.parametrize(("text", "slug"), [("Index", "index-note"), ("log", "log-note"), ("LOG!", "log-note")])
 def test_slugify_never_returns_a_reserved_name(text: str, slug: str) -> None:
     assert slugify(text) == slug
-
-
-@pytest.mark.parametrize(
-    ("from_dir", "to_rel", "link"),
-    [
-        ("", "a/x.md", "a/x.md"),
-        ("a", "a/y.md", "y.md"),
-        ("a", "x.md", "../x.md"),
-        ("a/b", "c/d.md", "../../c/d.md"),
-    ],
-)
-def test_rel_link_between_bundle_folders(from_dir: str, to_rel: str, link: str) -> None:
-    assert rel_link(from_dir, to_rel) == link
 
 
 # -- init / load --------------------------------------------------------------
@@ -179,7 +148,7 @@ def test_load_skips_reserved_files_raw_dotfiles_and_non_markdown(store: WikiStor
 def test_load_skips_unparseable_notes(store: WikiStore, bundle: Path, caplog: pytest.LogCaptureFixture) -> None:
     _put(bundle / "broken.md", "---\ntype: Note\n\nno closing delimiter\n")
     _put(bundle / "good.md", "---\ntype: Note\n---\n\nBody.\n")
-    with caplog.at_level(logging.WARNING, logger="okf_wiki.store"):
+    with caplog.at_level(logging.WARNING, logger="okf_wiki.bundle.store"):
         root = store.load()
     assert [n.rel for n in root.notes] == ["good.md"]
     assert "broken.md" in caplog.text
@@ -330,6 +299,85 @@ def test_update_note_rewrites_the_folder_index(store: WikiStore, bundle: Path) -
     ]
 
 
+def test_update_note_when_the_write_fails_midway_then_the_old_note_is_intact(
+    store: WikiStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ARRANGE
+    note = _existing_note(store)
+    before = note.path.read_text(encoding="utf-8")
+    write_text = Path.write_text
+
+    def torn(path: Path, text: str, *args: Any, **kwargs: Any) -> int:
+        write_text(path, text[:10], *args, **kwargs)
+        raise OSError("disk full")
+
+    # ACT
+    with monkeypatch.context() as patched, pytest.raises(OSError, match="disk full"):
+        patched.setattr(Path, "write_text", torn)
+        _update(store, note)
+
+    # ASSERT
+    assert note.path.read_text(encoding="utf-8") == before
+    assert list(note.path.parent.glob(".*.tmp")) == []  # no half-written temp file left behind
+
+
+def test_update_note_when_two_writers_save_at_once_then_both_succeed_and_one_complete_note_wins(
+    store: WikiStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ARRANGE
+    _existing_note(store)
+    both_written = threading.Barrier(2)
+    write_text = Path.write_text
+
+    def in_step(path: Path, text: str, *args: Any, **kwargs: Any) -> int:
+        written = write_text(path, text, *args, **kwargs)
+        both_written.wait(timeout=5)  # both temp files exist before either is moved into place
+        return written
+
+    monkeypatch.setattr(Path, "write_text", in_step)
+    notes = [store.load().find("finance").note("revenue") for _ in range(2)]
+
+    def save(i: int) -> None:
+        store.update_note(notes[i], title="Revenue", summary="S.", body=f"Body {i}.", tags=[], source={"resource": "/raw/x.md"})
+
+    # ACT
+    with ThreadPoolExecutor(2) as pool:
+        list(pool.map(save, range(2)))
+
+    # ASSERT
+    body = _read(notes[0].path).body
+    assert body.startswith(("Body 0.", "Body 1.")) and "# See also" in body
+    assert list(notes[0].path.parent.glob(".*.tmp")) == []
+
+
+def test_lock_when_a_writer_holds_it_then_a_second_writer_waits_for_its_release(store: WikiStore) -> None:
+    # ARRANGE
+    first_in, release, second_in = threading.Event(), threading.Event(), threading.Event()
+
+    def first() -> None:
+        with store.lock():
+            first_in.set()
+            release.wait(timeout=5)
+
+    def second() -> None:
+        first_in.wait(timeout=5)
+        with store.lock():
+            second_in.set()
+
+    threads = [threading.Thread(target=first), threading.Thread(target=second)]
+    for thread in threads:
+        thread.start()
+
+    # ACT
+    waited = not second_in.wait(timeout=0.2)
+    release.set()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    # ASSERT
+    assert waited and second_in.is_set()
+
+
 def test_update_note_never_repeats_a_source_id(store: WikiStore, bundle: Path) -> None:
     _put(bundle / "revenue.md", "---\ntype: Note\ntitle: Revenue\nsources:\n- id: s2\n  resource: /raw/kept.md\n---\n\nBody.\n")
     ids = [s["id"] for s in _update(store, store.load().note("revenue")).frontmatter["sources"]]
@@ -473,23 +521,6 @@ def test_folder_ancestors_depth_label_and_name() -> None:
     assert (root.is_root, a.is_root) == (True, False)
 
 
-def test_folder_to_dict() -> None:
-    _, a, _, _, _ = _tree()
-    assert a.to_dict() == {
-        "path": "/a",
-        "description": "A.",
-        "notes": [],
-        "subfolders": [
-            {
-                "path": "/a/b",
-                "description": "B.",
-                "notes": [{"path": "a/b/n.md", "title": "N", "summary": "About N."}],
-                "subfolders": [],
-            }
-        ],
-    }
-
-
 def test_read_returns_a_note_by_bundle_path(tmp_path: Path) -> None:
     store = WikiStore(tmp_path, actor="t/1")
     store.init()
@@ -530,6 +561,6 @@ def test_graph_has_folders_notes_containment_and_see_also_links(tmp_path: Path) 
                      a.rel: ("note", "finance"), b.rel: ("note", "finance"), c.rel: ("note", "")}
     folders = {n["id"]: n["notes"] for n in g["nodes"] if n["kind"] == "folder"}
     assert folders == {"/": 3, "/finance": 2, "/finance/pricing": 1}
-    edges = {(l["source"], l["target"], l["kind"]) for l in g["links"]}
+    edges = {(e["source"], e["target"], e["kind"]) for e in g["links"]}
     assert ("/", "/finance", "contains") in edges and ("/finance/pricing", b.rel, "contains") in edges
-    assert [l for l in g["links"] if l["kind"] == "see_also"] == [{"source": a.rel, "target": b.rel, "kind": "see_also"}]
+    assert [e for e in g["links"] if e["kind"] == "see_also"] == [{"source": a.rel, "target": b.rel, "kind": "see_also"}]

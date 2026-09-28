@@ -1,23 +1,14 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The settings file: where it is, how it lies under the environment, what the page may change."""
 
 from __future__ import annotations
 
 import json
+import os
 import stat
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +16,8 @@ import httpx
 import pytest
 
 from okf_wiki.config import LLMConfig
-from okf_wiki.settings import Settings, live_models, mask, settings_path
+from okf_wiki.models.llm import live_models
+from okf_wiki.settings import Settings, mask, settings_path
 
 KEY = "sk-or-v1-0123456789abcdef"
 
@@ -77,6 +69,46 @@ def test_a_key_never_follows_the_wiki_to_another_provider() -> None:
     assert written(settings) == {"llm": {"provider": "custom", "base_url": "http://gpu.lan:8000/v1", "model": "qwen"}}
 
 
+GPU = {"provider": "custom", "base_url": "http://gpu.lan:8000/v1", "model": "qwen", "api_key": KEY}
+
+
+@pytest.mark.parametrize(
+    ("first", "change", "key"),
+    [
+        (GPU, {"base_url": "http://evil.test/v1", "api_key": ""}, ""),
+        (GPU, {"base_url": "http://gpu.lan:8000/v1/", "api_key": ""}, KEY),
+        ({"api_key": KEY}, {"base_url": "", "api_key": ""}, KEY),
+    ],
+    ids=["address-changed", "same-address", "still-the-default-address"],
+)
+def test_save_when_base_url_changes_then_the_saved_key_is_dropped(first: dict[str, str], change: dict[str, str], key: str) -> None:
+    # ARRANGE
+    settings = Settings({})
+    settings.save(first)
+
+    # ACT
+    cfg = settings.save(change)
+
+    # ASSERT
+    assert cfg.llm.api_key == key and written(settings)["llm"].get("api_key", "") == key
+
+
+def test_save_when_a_wide_temp_file_is_left_over_then_the_file_is_still_owner_only() -> None:
+    # ARRANGE
+    settings = Settings({})
+    settings.path.parent.mkdir(parents=True)
+    leftover = settings.path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+    leftover.write_text("{}", encoding="utf-8")
+    leftover.chmod(0o644)
+
+    # ACT
+    settings.save({"api_key": KEY})
+
+    # ASSERT
+    assert not leftover.exists()  # the save went through the leftover file
+    assert stat.S_IMODE(settings.path.stat().st_mode) == 0o600
+
+
 def test_the_environment_and_flags_win_and_their_fields_are_not_saved(tmp_path: Path) -> None:
     settings = Settings({"OKF_LLM_MODEL": "openai/gpt-4.1", "OPENROUTER_API_KEY": "env-key"}, mode="crow", bundle=tmp_path)
 
@@ -85,6 +117,33 @@ def test_the_environment_and_flags_win_and_their_fields_are_not_saved(tmp_path: 
     assert written(settings) == {"llm": {"provider": "openrouter"}}
     assert (cfg.llm.model, cfg.llm.api_key, cfg.mode, cfg.bundle) == ("openai/gpt-4.1", "env-key", "crow", tmp_path)
     assert settings.managed("openrouter") == ["api_key", "model", "mode", "classifier_api_key", "bundle"]
+
+
+@pytest.mark.parametrize(("change", "saved", "shown"), [("true", "true", True), ("", None, False)], ids=["on", "reset"])
+def test_save_when_reasoning_changes_then_the_view_shows_it_as_a_bool(change: str, saved: str | None, shown: bool) -> None:
+    # ARRANGE
+    settings = Settings({})
+    settings.save({"reasoning": "true"})
+
+    # ACT
+    cfg = settings.save({"reasoning": change})
+
+    # ASSERT
+    assert (written(settings).get("llm", {}).get("reasoning"), cfg.llm.reasoning) == (saved, shown)
+    assert settings.view()["values"]["reasoning"] is shown
+
+
+def test_save_when_okf_llm_reasoning_is_set_then_reasoning_is_managed_and_not_saved() -> None:
+    # ARRANGE
+    settings = Settings({"OKF_LLM_REASONING": "true"})
+
+    # ACT
+    cfg = settings.save({"reasoning": "", "model": "openai/gpt-4.1"})
+
+    # ASSERT
+    assert "reasoning" in settings.managed("openrouter")
+    assert "reasoning" not in written(settings)["llm"]
+    assert cfg.llm.reasoning is True and settings.view()["values"]["reasoning"] is True
 
 
 def test_invalid_settings_raise_and_write_nothing() -> None:
@@ -116,6 +175,18 @@ def test_the_view_masks_keys_and_says_whether_the_wiki_is_ready() -> None:
     assert view["ready"] is True
     assert view["providers"]["ollama"] == {"base_url": "http://localhost:11434/v1", "needs_key": False, "models": ["gemma4", "qwen3.8"]}
     assert view["file"] == "~/.config/llm-wiki/config.json"
+
+
+def test_view_when_a_classifier_key_is_saved_then_it_is_masked() -> None:
+    # ARRANGE
+    settings = Settings({})
+    settings.save({"provider": "ollama", "classifier_api_key": KEY})
+
+    # ACT
+    view = settings.view()
+
+    # ASSERT
+    assert view["values"]["classifier_api_key"] == "…cdef" and KEY not in json.dumps(view)
 
 
 def test_crow_is_ready_only_with_a_classifier_key() -> None:

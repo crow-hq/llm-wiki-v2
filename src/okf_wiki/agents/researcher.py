@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The Researcher answers a question from the wiki: select notes, then answer with citations.
 
@@ -28,14 +17,15 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from okf_wiki.agent import Agent, Decision, list_folders, list_notes
-from okf_wiki.classifier import Classifier
-from okf_wiki.client import ModelError
+from okf_wiki.agents.base import Agent, Decision, list_folders, list_notes
+from okf_wiki.agents.prompts import Prompts
+from okf_wiki.bundle.store import WikiStore
+from okf_wiki.bundle.tree import Folder, Note
 from okf_wiki.config import WikiConfig
-from okf_wiki.llm import LLM
-from okf_wiki.prompts import Prompts
-from okf_wiki.store import Folder, Note, WikiStore
-from okf_wiki.usage import UsageReport
+from okf_wiki.errors import ModelError
+from okf_wiki.models.classifier import Classifier
+from okf_wiki.models.llm import LLM
+from okf_wiki.models.usage import UsageReport
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +74,9 @@ class Researcher(Agent):
     def select(self, root: Folder, question: str) -> list[Note]:
         """Classic navigation: open folders level by level, keep the notes that help, stop when enough."""
         k = self.cfg.max_notes
-        frontier, visited, selected = [root], [], []
+        frontier: list[Folder] = [root]
+        visited: list[Folder] = []
+        selected: list[Note] = []
         while frontier and len(visited) < self.cfg.max_steps and len(selected) < k:
             folder = frontier.pop(0)
             visited.append(folder)
@@ -109,7 +101,7 @@ class Researcher(Agent):
             opened = list(dict.fromkeys(s for name in names if (s := folder.subfolder(name))))
             frontier += [s for s in opened if s not in visited and s not in frontier]
             self.decide("navigate", "llm", f"{folder.label}: open {[s.name for s in opened]} select {len(picked)}")
-            if step.done:
+            if step.done and selected:  # an empty-handed "done" only means this folder: queued ones stay unseen by the model
                 break
         return selected[:k]
 
@@ -143,7 +135,7 @@ class CrowResearcher(Researcher):
             }
             probs = self.classifier.nouls(question, questions, op="retrieve_folder")
             ranked = sorted(((probs[f"f{i}"], s) for i, s in enumerate(subs)), key=lambda x: x[0], reverse=True)
-            level = [s for p, s in ranked if p > self.crow.tau_fold][: self.crow.beam]
+            level = [s for p, s in ranked if p > self.crow.tau_fold][: self.crow.retrieval_beam]
             explored += level
             scores = {s.label: p for p, s in ranked}
             self.decide("retrieve_folder", "classifier", ", ".join(s.label for s in level) or "none", scores=scores)
@@ -155,8 +147,8 @@ class CrowResearcher(Researcher):
             for i, n in enumerate(candidates)
         }
         probs = self.classifier.nouls(question, questions, op="retrieve_note")  # step 2: score the notes
-        ranked = sorted(((probs[f"n{i}"], n) for i, n in enumerate(candidates)), key=lambda x: x[0], reverse=True)
-        top = [n for p, n in ranked if p > self.crow.tau_ret][: self.crow.k]  # step 3 reads these k notes
-        scores = {n.rel: p for p, n in ranked}
+        notes = sorted(((probs[f"n{i}"], n) for i, n in enumerate(candidates)), key=lambda x: x[0], reverse=True)
+        top = [n for p, n in notes if p > self.crow.tau_ret][: self.crow.k]  # step 3 reads these k notes
+        scores = {n.rel: p for p, n in notes}
         self.decide("retrieve_note", "classifier", ", ".join(n.rel for n in top) or "none", scores=scores)
         return top

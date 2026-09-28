@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/crow-stats.svg" alt="An LLM wiki with no scaling limit. CROW vs classic: 89% right note read vs 62%; $0.0045 vs $0.0097 per ingest; 2.1× faster per ingest (18.4s vs 38.6s); 68% fewer LLM tokens (5,508 vs 17,324)." width="100%">
+  <img src="docs/assets/crow-stats.svg" alt="An LLM wiki with no scaling limit. CROW vs classic: 89% right note read vs 62%; 2.1× faster per ingest (18.4s vs 38.6s); 68% fewer LLM tokens (5,508 vs 17,324)." width="100%">
 </p>
 
 # LLM Wiki v2
@@ -160,7 +160,7 @@ behaviour, override one method and hand your class to `Wiki`:
 
 ```python
 from okf_wiki import Wiki
-from okf_wiki.librarian import Librarian
+from okf_wiki.agents.librarian import Librarian
 
 class QuietLibrarian(Librarian):
     def pick_related(self, note, others):
@@ -259,9 +259,13 @@ list is in [.env.example](.env.example).
 | `OKF_LLM_BASE_URL` | the provider's | any OpenAI-compatible API (required for `custom`) |
 | `OPENROUTER_API_KEY` · `OPENAI_API_KEY` · `GEMINI_API_KEY` | — | the provider's key (`OKF_LLM_API_KEY` wins); OpenRouter's also serves the classifier |
 | `OKF_CLASSIFIER_MODEL` | `typesafe/jev-1.13` | CROW classifier, pinned |
+| `OKF_LLM_REASONING` | `false` | `true` lets the model think before it answers: several times slower and costlier; off is sent to OpenRouter (the least effort for models that must think), other providers keep their model's default |
+| `OKF_CLASSIFIER_TIMEOUT` | `8` | seconds per classifier call; a slow or failed call goes to the LLM (the paper ran 60) |
+| `OKF_CLASSIFIER_ATTEMPTS` | `1` | tries per classifier call before the LLM decides (the paper ran 3) |
 | `OKF_CLASSIFIER_BASE_URL` | `https://openrouter.ai/api/v1` | System One endpoint |
 | `OKF_CONFIG` | `~/.config/llm-wiki/config.json` | the settings file |
 | `OKF_PROMPTS_DIR` | — | folder whose prompt files replace the packaged ones |
+| `OKF_UPLOAD_MB` | `25` | largest file or text the server accepts (413 above it) |
 | `OKF_LLM_EXTRA_BODY` | — | JSON added to every LLM request, e.g. `'{"provider":{"order":["together"]}}'` to pin fast OpenRouter providers |
 
 Providers, the settings file and the classifier route: [docs/wiki/providers.md](docs/wiki/providers.md).
@@ -273,22 +277,29 @@ Prompts, one Markdown file each: [docs/wiki/prompts.md](docs/wiki/prompts.md).
 <summary><b>Project layout and development</b></summary>
 
 ```
-src/okf_wiki/            the LLM wiki: config, settings, usage, llm, classifier, document, store, files, librarian, researcher, wiki, cli, server
+src/okf_wiki/            wiki (the Wiki facade), config, settings, errors, cli, server
+src/okf_wiki/models/     the model endpoints: HTTP client, LLM, CROW classifier, token usage
+src/okf_wiki/bundle/     the wiki on disk: OKF documents, the tree in memory, the store that writes it, file text, check
+src/okf_wiki/agents/     the Librarian (classic and CROW) and the Researcher, and the prompts they render
+src/okf_wiki/agents/prompts/  shared/, librarian/, researcher/, classifier/ — one prompt per file
 src/okf_wiki/web/        the web UI: plain ES modules, no build step; vendor/ holds marked, DOMPurify, d3 and the fonts
-src/okf_wiki/prompts/    shared/, librarian/, researcher/, classifier/ — one prompt per file
 src/okf_wiki/demo/       the example wiki behind `okf-wiki demo` (a fictional roastery)
 tests/wiki/              tests for every feature, with scripted fake models (no network)
 docs/wiki/               providers, CROW, prompts
 ```
 
 ```bash
-python3.13 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest
+uv sync --extra dev            # the versions pinned in uv.lock
+uv run ruff check src tests    # lint
+uv run mypy                    # strict types
+uv run pytest --cov            # tests, failing under 95% coverage
 ```
+
+CI runs the same four checks on Python 3.11 to 3.13, and builds the wheel.
 
 Tests never call a real model: they use the scripted fakes in `tests/wiki/fakes.py`.
 Keep changes in the style of the surrounding code (typed, class-based, one
-prompt per file under `src/okf_wiki/prompts/`), with a test for every behaviour
+prompt per file under `src/okf_wiki/agents/prompts/`), with a test for every behaviour
 you change.
 
 </details>
@@ -300,7 +311,7 @@ you change.
   [GoogleCloudPlatform/open-knowledge-format](https://github.com/GoogleCloudPlatform/open-knowledge-format),
   Apache-2.0. The wiki format is derived from OKF v0.2; see [NOTICE](NOTICE).
 - **CROW** — F. Cesarini, M. Sassarini, *CROW: Classifier-Routed Organization of
-  LLM Wikis*, preprint, 2026, [doi:10.5281/zenodo.22900601](https://doi.org/10.5281/zenodo.22900601).
+  LLM Wikis*, version 1.0, 2026, [doi:10.5281/zenodo.22900601](https://doi.org/10.5281/zenodo.22900601).
 - **LLM Wiki** — A. Karpathy, [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), 2026.
 - The Librarian / Researcher design follows F. Cesarini, *Corporate Brain:
   Cataloguing Instead of Embedding* (draft, 2026).
@@ -309,5 +320,12 @@ you change.
   [d3](https://github.com/d3/d3) (ISC), and the fonts Pixelify Sans, JetBrains Mono
   and IBM Plex Sans (SIL Open Font License 1.1); see [NOTICE](NOTICE).
 
-Licensed under the [Apache License 2.0](LICENSE.md). To cite this software, see
+Licensed under the [GNU Affero General Public License v3.0 or later](LICENSE):
+free to use, study, change and share, including for your own business; if you
+offer a modified version to others, over a network too, you share its source
+under the same licence. Commercial licences without that obligation are
+available from the authors: open an issue to ask. Versions up to 0.2.0 were
+released under the Apache License 2.0 and stay available under it. Contributions
+are welcome under the [Contributor License Agreement](CLA.md); see
+[CONTRIBUTING.md](CONTRIBUTING.md). To cite this software, see
 [CITATION.cff](CITATION.cff).

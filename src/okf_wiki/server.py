@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """HTTP API (extra `server`) and the local web UI at GET /.
 
@@ -37,16 +26,18 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from okf_wiki import __version__
-from okf_wiki.client import ModelError
+from okf_wiki.bundle.files import SUFFIXES
+from okf_wiki.bundle.tree import graph
 from okf_wiki.config import WikiConfig
-from okf_wiki.files import SUFFIXES
-from okf_wiki.settings import Settings, live_models, probe
-from okf_wiki.store import graph
+from okf_wiki.errors import InputError, ModelError
+from okf_wiki.models.llm import live_models, probe
+from okf_wiki.settings import Settings
 from okf_wiki.wiki import Wiki
 
 LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
@@ -61,6 +52,21 @@ class IngestRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
+
+
+class SettingsChanges(BaseModel):
+    """The fields of `settings.FIELDS` the page may send; unset ones are left alone, "" resets one (keeps a secret)."""
+
+    model_config = ConfigDict(extra="ignore")  # an older page sending a field we dropped still saves the rest
+
+    provider: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    mode: str | None = None
+    reasoning: str | None = None  # "true" turns it on, "" back to the default (off)
+    classifier_api_key: str | None = None
+    bundle: str | None = None
 
 
 def hostname(request: Request) -> str:
@@ -95,7 +101,8 @@ def create_app(
 
     `local_only` (a server bound to localhost) refuses requests naming any other Host.
     """
-    app = FastAPI(title="okf-wiki", version=__version__)
+    # No /docs, /redoc or /openapi.json: a local service, and the schema would map it for any page that can reach it.
+    app = FastAPI(title="okf-wiki", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.middleware("http")
     async def guard(request: Request, call_next: Callable[[Request], Any]) -> Any:
@@ -103,7 +110,28 @@ def create_app(
             return JSONResponse({"detail": "this wiki answers only at http://localhost"}, status_code=403)
         if request.method not in SAFE_METHODS and not same_origin(request):
             return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
+        size = request.headers.get("content-length", "")
+        if size.isdigit() and int(size) > max_bytes():
+            return JSONResponse({"detail": f"too large: the limit is {current().cfg.upload_mb} MB"}, status_code=413)
         return await call_next(request)
+
+    # The two failures every model-backed route shares: bad input is the caller's (422), a failing model is upstream (502).
+    @app.exception_handler(InputError)
+    async def input_error(request: Request, e: InputError) -> JSONResponse:
+        return JSONResponse({"detail": str(e)}, status_code=422)
+
+    @app.exception_handler(ModelError)
+    async def model_error(request: Request, e: ModelError) -> JSONResponse:
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+    # FastAPI's own 422 lists pydantic errors; the page shows `detail` as text, so say it in one line.
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, e: RequestValidationError) -> JSONResponse:
+        def where(loc: tuple[int | str, ...]) -> str:  # ("body", "question") -> question; ("body", 12) -> body
+            return ".".join(p for p in loc[1:] if isinstance(p, str)) or str(loc[0])
+
+        problems = "; ".join(f"{where(err['loc'])}: {err['msg']}" for err in e.errors())
+        return JSONResponse({"detail": problems}, status_code=422)
 
     app.state.wiki = wiki
     write_lock = threading.Lock()  # one writer at a time: ingests change files and indexes
@@ -111,7 +139,11 @@ def create_app(
     app.mount("/web", StaticFiles(directory=str(web)), name="web")
 
     def current() -> Wiki:
-        return app.state.wiki
+        wiki: Wiki = app.state.wiki
+        return wiki
+
+    def max_bytes() -> int:
+        return current().cfg.upload_mb * 1_000_000
 
     @app.get("/", response_class=HTMLResponse)
     def home() -> str:
@@ -126,39 +158,28 @@ def create_app(
     @app.post("/ingest")
     def ingest(req: IngestRequest) -> dict[str, Any]:
         with write_lock:
-            try:
-                return current().ingest(req.text, title=req.title, resource=req.resource).to_dict()
-            except ValueError as e:
-                raise HTTPException(422, str(e)) from e
-            except ModelError as e:
-                raise HTTPException(502, str(e)) from e
+            return current().ingest(req.text, title=req.title, resource=req.resource).to_dict()
 
     @app.post("/upload")
     async def upload(request: Request, filename: str) -> dict[str, Any]:
         """Catalogue one file sent as the raw request body (?filename=notes.pdf)."""
         if PurePath(filename).suffix.lower() not in SUFFIXES:
             raise HTTPException(415, f"{filename}: use .txt, .md or .pdf")
-        data = await request.body()
+        data = bytearray()
+        async for chunk in request.stream():  # a body sent without Content-Length is capped while it arrives
+            data += chunk
+            if len(data) > max_bytes():
+                raise HTTPException(413, f"too large: the limit is {current().cfg.upload_mb} MB")
 
         def run() -> dict[str, Any]:
             with write_lock:
-                return current().ingest_file(data, filename).to_dict()
+                return current().ingest_file(bytes(data), filename).to_dict()
 
-        try:
-            return await run_in_threadpool(run)
-        except ValueError as e:
-            raise HTTPException(422, str(e)) from e
-        except ModelError as e:
-            raise HTTPException(502, str(e)) from e
+        return await run_in_threadpool(run)
 
     @app.post("/ask")
     def ask(req: AskRequest) -> dict[str, Any]:
-        try:
-            return current().ask(req.question).to_dict()
-        except ValueError as e:
-            raise HTTPException(422, str(e)) from e
-        except ModelError as e:
-            raise HTTPException(502, str(e)) from e
+        return current().ask(req.question).to_dict()
 
     @app.get("/tree")
     def tree() -> dict[str, Any]:
@@ -203,34 +224,36 @@ def create_app(
             raise HTTPException(500, str(e)) from e
 
     @app.post("/settings")
-    def save_settings(request: Request, changes: dict[str, Any]) -> dict[str, Any]:
+    def save_settings(request: Request, changes: SettingsChanges) -> dict[str, Any]:
         store = editable(request)
         with write_lock:
             try:
-                cfg = store.save(changes)
+                cfg = store.save(changes.model_dump(exclude_unset=True))
             except ValueError as e:
                 raise HTTPException(422, str(e)) from e
+            # solo: the old Wiki is not closed, a question may still be using it; one pool per save, reclaimed by the GC.
             app.state.wiki = make_wiki(cfg)
             app.state.wiki.init()
         return {**store.view(), "editable": True}
 
     @app.post("/settings/test")
-    def test_settings(request: Request, changes: dict[str, Any]) -> dict[str, Any]:
+    def test_settings(request: Request, changes: SettingsChanges) -> dict[str, Any]:
         """Ask the model for one word with `changes` applied, without saving them."""
         try:
-            _, cfg = editable(request).apply(changes)
+            _, cfg = editable(request).apply(changes.model_dump(exclude_unset=True))
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
         try:
-            return {"ok": True, "model": cfg.llm.model, "reply": probe(make_wiki(cfg).llm)}
+            with make_wiki(cfg) as trial:
+                return {"ok": True, "model": cfg.llm.model, "reply": probe(trial.llm)}
         except ModelError as e:
             return {"ok": False, "model": cfg.llm.model, "error": str(e)}
 
     @app.post("/settings/models")
-    def list_models(request: Request, changes: dict[str, Any]) -> dict[str, Any]:
+    def list_models(request: Request, changes: SettingsChanges) -> dict[str, Any]:
         """The models the provider offers right now, with `changes` applied (the key may be the saved one)."""
         try:
-            _, cfg = editable(request).apply(changes)
+            _, cfg = editable(request).apply(changes.model_dump(exclude_unset=True))
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
         return {"models": live_models(cfg.llm)}
@@ -247,15 +270,11 @@ def serve(
     make_wiki: Callable[[WikiConfig], Wiki] = Wiki,
     open_browser: bool = False,
 ) -> None:
-    import logging
     import time
     import webbrowser
 
     import uvicorn
 
-    # One line per decision and per model call, next to uvicorn's request log.
-    logging.basicConfig(level=logging.WARNING, format="%(levelname)s:     %(message)s")
-    logging.getLogger("okf_wiki").setLevel(logging.INFO)
     wiki.init()
     app = create_app(wiki, settings=settings, make_wiki=make_wiki, local_only=host in LOOPBACK)
     server = uvicorn.Server(uvicorn.Config(app, host=host, port=port))

@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The `okf-wiki` command line, with `make_wiki` pointed at a Wiki built on the fakes."""
 
@@ -25,7 +14,7 @@ from typing import Any
 import pytest
 
 from okf_wiki import Wiki, WikiConfig, cli
-from okf_wiki.client import ModelError
+from okf_wiki.errors import ModelError
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 from tests.wiki.test_files import make_pdf
 
@@ -76,28 +65,21 @@ def test_mode_flag_makes_a_crow_wiki(
     assert classifier.ops == ["route"]
 
 
-def test_ingest_file_prints_the_created_note(
+def test_ingest_when_a_file_is_given_then_prints_the_note_and_records_the_path_as_resource(
     made: list[dict[str, Any]], bundle: Path, llm: FakeLLM, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # ARRANGE
     source = tmp_path / "memo.txt"
     source.write_text("Revenue is booked on delivery.", encoding="utf-8")
     script_ingest(llm)
 
-    assert run(bundle, "ingest", str(source)) == 0
+    # ACT
+    code = run(bundle, "ingest", str(source))
 
+    # ASSERT
+    assert code == 0
     assert capsys.readouterr().out == f"created: {NOTE}\n"
     assert "Revenue is booked on delivery." in llm.calls[0][1][-1]["content"]
-
-
-def test_ingest_file_records_its_path_as_the_resource(
-    made: list[dict[str, Any]], bundle: Path, llm: FakeLLM, tmp_path: Path
-) -> None:
-    source = tmp_path / "memo.txt"
-    source.write_text("Revenue is booked on delivery.", encoding="utf-8")
-    script_ingest(llm)
-
-    run(bundle, "ingest", str(source))
-
     [raw] = (bundle / "raw").glob("*.md")
     assert f"resource: {source}" in raw.read_text(encoding="utf-8")
 
@@ -140,7 +122,7 @@ def test_usage_summary_goes_to_stderr(
 def ingest_one(bundle: Path, llm: FakeLLM) -> None:
     """Put one note at the root of the wiki, outside the CLI."""
     script_ingest(llm)
-    Wiki(WikiConfig(bundle=bundle), llm=llm).ingest("Revenue is booked on delivery.")
+    Wiki(WikiConfig(bundle=bundle, mode="classic"), llm=llm).ingest("Revenue is booked on delivery.")
 
 
 def test_ask_prints_the_answer(
@@ -389,8 +371,8 @@ def test_load_dotenv_reads_values_without_overriding(tmp_path: Path, monkeypatch
 def test_the_packaged_demo_is_a_valid_wiki() -> None:
     from importlib import resources
 
-    from okf_wiki.check import check
-    from okf_wiki.store import WikiStore
+    from okf_wiki.bundle.check import check
+    from okf_wiki.bundle.store import WikiStore
 
     with resources.as_file(resources.files("okf_wiki") / "demo") as demo:
         root = WikiStore(demo, actor="test").load()
@@ -416,3 +398,41 @@ def test_demo_copies_the_example_once_and_opens_it(
     (demo / "mine.md").write_text("kept", encoding="utf-8")
     assert cli.main(["demo"]) == 0
     assert (demo / "mine.md").read_text(encoding="utf-8") == "kept"  # a second run reopens the copy
+
+
+@pytest.mark.parametrize("interrupt", [EOFError, KeyboardInterrupt])
+def test_setup_when_the_user_cancels_then_exits_2_and_saves_nothing(
+    monkeypatch: pytest.MonkeyPatch, home: Path, capsys: pytest.CaptureFixture[str], interrupt: type[BaseException]
+) -> None:
+    # ARRANGE
+    def cancel(question: str) -> str:
+        raise interrupt
+
+    monkeypatch.setattr(cli, "prompt", cancel)
+
+    # ACT
+    code = cli.main(["setup"])
+
+    # ASSERT
+    assert code == 2
+    assert capsys.readouterr().err.endswith("okf-wiki: setup cancelled\n")
+    assert not (home / ".config" / "llm-wiki" / "config.json").exists()
+
+
+def test_ingest_when_a_file_has_a_title_then_the_title_names_the_source(
+    made: list[dict[str, Any]], bundle: Path, llm: FakeLLM, tmp_path: Path
+) -> None:
+    # ARRANGE
+    source = tmp_path / "board-minutes.pdf"
+    source.write_bytes(make_pdf("Revenue is booked on delivery."))
+    script_ingest(llm)
+
+    # ACT
+    code = run(bundle, "ingest", str(source), "--title", "Q3 board")
+
+    # ASSERT
+    assert code == 0
+    prompt = llm.calls[0][1][-1]["content"]
+    assert "Revenue is booked on delivery." in prompt and "Source title: Q3 board" in prompt
+    [raw] = (bundle / "raw").glob("*.md")
+    assert f"resource: {source}" in raw.read_text(encoding="utf-8")

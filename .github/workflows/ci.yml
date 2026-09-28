@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked --extra dev  # the versions in uv.lock; fails if pyproject changed without `uv lock`
+      - run: uv run ruff check src tests
+      - run: uv run mypy
+      - run: uv run pytest -q --cov
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      # The wheel must carry the web page, the prompts and the demo, or `okf-wiki` starts without them.
+      - run: |
+          unzip -l dist/*.whl > files.txt
+          for f in okf_wiki/web/index.html okf_wiki/agents/prompts/librarian/system.md okf_wiki/demo/index.md; do
+            grep -q "$f" files.txt || { echo "missing from the wheel: $f"; exit 1; }
+          done

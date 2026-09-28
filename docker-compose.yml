@@ -1,5 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # llm-wiki-v2 as a server: one container, any OpenAI-compatible provider.
 #   cp .env.example .env          # choose the provider and set its key

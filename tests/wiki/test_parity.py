@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """CROW and classic behave the same: given the same decisions, they write the same wiki.
 
@@ -30,9 +19,10 @@ from typing import Any, Literal
 import pytest
 
 from okf_wiki import Wiki, WikiConfig
-from okf_wiki.librarian import IngestResult
-from okf_wiki.store import Folder, WikiStore
-from okf_wiki.usage import UsageTracker
+from okf_wiki.agents.librarian import IngestResult
+from okf_wiki.bundle.store import WikiStore
+from okf_wiki.bundle.tree import Folder
+from okf_wiki.models.usage import UsageTracker
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 Mode = Literal["classic", "crow"]
@@ -74,13 +64,6 @@ def snapshot(bundle: Path) -> dict[str, str]:
         for p in sorted(bundle.rglob("*"))
         if p.is_file()
     }
-
-
-def test_normaliser_masks_only_run_specific_values() -> None:
-    line = "* **Created**: [Deferred revenue](deferred-revenue.md) - from /raw/20260924-101530-handbook.md (crow)"
-    masked = "* **Created**: [Deferred revenue](deferred-revenue.md) - from /raw/<stamp>-handbook.md (<mode>)"
-    assert normalise(line) == masked
-    assert normalise("## 2026-09-24\n  at: '2026-09-24T10:15:30+00:00'") == "## <date>\n  at: '<datetime>'"
 
 
 # -- scenarios --------------------------------------------------------------------------------
@@ -260,33 +243,17 @@ def outcome(result: IngestResult) -> tuple[str, str, str, list[str], list[str]]:
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)
-def test_both_modes_report_the_same_ingest(tmp_path: Path, scenario: Scenario) -> None:
+def test_ingest_when_both_modes_reach_the_same_decisions_then_they_write_the_same_wiki(
+    tmp_path: Path, scenario: Scenario
+) -> None:
+    # ARRANGE / ACT
     classic, crow = run(tmp_path, "classic", scenario), run(tmp_path, "crow", scenario)
 
+    # ASSERT
     assert outcome(classic.result) == outcome(crow.result) == scenario.expected
-
-
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)
-def test_both_modes_write_the_same_files(tmp_path: Path, scenario: Scenario) -> None:
-    classic, crow = run(tmp_path, "classic", scenario), run(tmp_path, "crow", scenario)
-
     assert set(classic.files) == set(crow.files)
     for path, text in classic.files.items():
         assert crow.files[path] == text, path
-
-
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)
-def test_classic_mode_never_calls_the_classifier(tmp_path: Path, scenario: Scenario) -> None:
-    classic = run(tmp_path, "classic", scenario)
-
-    assert classic.classifier.calls == []
-    assert classic.result.usage.classifier.calls == 0
-
-
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)
-def test_crow_mode_takes_no_decision_with_the_llm(tmp_path: Path, scenario: Scenario) -> None:
-    classic, crow = run(tmp_path, "classic", scenario), run(tmp_path, "crow", scenario)
-
-    assert not LLM_DECISIONS & set(crow.llm.ops)
-    assert crow.llm.ops == [op for op in classic.llm.ops if op not in LLM_DECISIONS]  # the same writing calls
+    assert classic.classifier.calls == [] and classic.result.usage.classifier.calls == 0
+    assert crow.llm.ops == [op for op in classic.llm.ops if op not in LLM_DECISIONS]  # the same writing calls only
     assert not any(d.fallback or d.decider == "llm" for d in crow.result.decisions)

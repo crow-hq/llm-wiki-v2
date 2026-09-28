@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The CROW logo for the terminal: the pixel crow and its name, two pixels per character (▀ ▄ █)."""
 
@@ -50,9 +39,9 @@ def logo(*, color: bool = True) -> str:
     """The logo as text; without colour every pixel is drawn the same."""
     rows = [row.ljust(WIDTH) for row in PIXELS]
     lines = []
-    for top, bottom in zip(rows[::2], rows[1::2]):
+    for top, bottom in zip(rows[::2], rows[1::2], strict=True):
         line = ""
-        for a, b in zip(top, bottom):
+        for a, b in zip(top, bottom, strict=True):
             if a == b == " ":
                 line += " "
             elif not color:

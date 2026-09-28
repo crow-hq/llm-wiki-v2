@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The writing model against a mocked OpenAI-compatible `/chat/completions` endpoint."""
 
@@ -23,10 +12,11 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from okf_wiki.client import HttpModel, ModelError, reported_cost
 from okf_wiki.config import LLMConfig
-from okf_wiki.llm import LLM, extract_json
-from okf_wiki.usage import UsageTracker
+from okf_wiki.errors import ModelError
+from okf_wiki.models.client import HttpModel, reported_cost
+from okf_wiki.models.llm import LLM, extract_json
+from okf_wiki.models.usage import UsageTracker
 
 BASE_URL = "http://llm.test/v1"
 MODEL = "openrouter/test/writer"
@@ -58,9 +48,11 @@ def serve(*replies: Reply) -> tuple[httpx.Client, list[httpx.Request]]:
     return httpx.Client(transport=httpx.MockTransport(handle)), requests
 
 
-def make_llm(tracker: UsageTracker, *replies: Reply, api_key: str = "") -> tuple[LLM, list[httpx.Request]]:
+def make_llm(
+    tracker: UsageTracker, *replies: Reply, api_key: str = "test-key", provider: str = "openrouter"
+) -> tuple[LLM, list[httpx.Request]]:
     client, requests = serve(*replies)
-    cfg = LLMConfig(base_url=f"{BASE_URL}/", model=MODEL, api_key=api_key, temperature=0.3)
+    cfg = LLMConfig(provider=provider, base_url=f"{BASE_URL}/", model=MODEL, api_key=api_key, temperature=0.3)
     return LLM(cfg, tracker, client=client), requests
 
 
@@ -90,14 +82,17 @@ def test_complete_posts_system_and_user_messages(tracker: UsageTracker) -> None:
             {"role": "user", "content": "Say hello."},
         ],
         "temperature": 0.3,
+        "reasoning": {"enabled": False},  # openrouter: thinking off unless asked for
     }
 
 
-@pytest.mark.parametrize(("api_key", "authorization"), [("sk-test", "Bearer sk-test"), ("", None)])
+@pytest.mark.parametrize(
+    ("provider", "api_key", "authorization"), [("openrouter", "sk-test", "Bearer sk-test"), ("ollama", "", None)]
+)
 def test_bearer_auth_is_sent_only_with_an_api_key(
-    tracker: UsageTracker, api_key: str, authorization: str | None
+    tracker: UsageTracker, provider: str, api_key: str, authorization: str | None
 ) -> None:
-    llm, requests = make_llm(tracker, completion("ok"), api_key=api_key)
+    llm, requests = make_llm(tracker, completion("ok"), api_key=api_key, provider=provider)
 
     llm.complete("system", "user")
 
@@ -176,21 +171,22 @@ def test_transient_failures_are_retried(tracker: UsageTracker, failure: Reply) -
     assert len(requests) == 2
 
 
-def test_a_persistent_transport_error_raises_after_every_attempt(tracker: UsageTracker) -> None:
-    llm, requests = make_llm(tracker, httpx.ConnectError("connection refused"))
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [(httpx.ConnectError("connection refused"), "connection refused"), (httpx.Response(429, text="slow down"), "429")],
+    ids=["transport-error", "rate-limit"],
+)
+def test_complete_when_a_transient_failure_persists_then_raises_after_every_attempt(
+    tracker: UsageTracker, failure: Reply, message: str
+) -> None:
+    # ARRANGE
+    llm, requests = make_llm(tracker, failure)
 
-    with pytest.raises(ModelError, match="connection refused"):
+    # ACT
+    with pytest.raises(ModelError, match=message):
         llm.complete("system", "user")
 
-    assert len(requests) == HttpModel.attempts
-
-
-def test_a_persistent_rate_limit_raises_after_every_attempt(tracker: UsageTracker) -> None:
-    llm, requests = make_llm(tracker, httpx.Response(429, text="slow down"))
-
-    with pytest.raises(ModelError, match="429"):
-        llm.complete("system", "user")
-
+    # ASSERT
     assert len(requests) == HttpModel.attempts
 
 
@@ -246,7 +242,7 @@ def test_reported_cost_reads_the_openrouter_number(usage: dict[str, Any], cost: 
 
 def test_extra_body_is_merged_into_every_request() -> None:
     client, requests = serve(completion("ok"))
-    cfg = LLMConfig(base_url=BASE_URL, model=MODEL, extra_body={"provider": {"order": ["together"]}})
+    cfg = LLMConfig(base_url=BASE_URL, model=MODEL, api_key="test-key", extra_body={"provider": {"order": ["together"]}})
 
     LLM(cfg, UsageTracker(), client=client).complete("sys", "user")
 
@@ -259,6 +255,6 @@ def test_cached_tokens_are_read_from_the_usage_block() -> None:
     client, _ = serve(completion("ok", usage))
     tracker = UsageTracker()
 
-    LLM(LLMConfig(base_url=BASE_URL, model=MODEL), tracker, client=client).complete("s", "u")
+    LLM(LLMConfig(base_url=BASE_URL, model=MODEL, api_key="test-key"), tracker, client=client).complete("s", "u")
 
     assert tracker.snapshot().llm.cached_tokens == 256

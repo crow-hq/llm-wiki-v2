@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 """Configuration: plain pydantic models, filled from `OKF_*` environment variables."""
 
@@ -25,6 +14,7 @@ from typing import Any, Literal, NamedTuple
 from pydantic import BaseModel, Field, model_validator
 
 from okf_wiki import __version__
+from okf_wiki.errors import ConfigError
 
 
 class Provider(NamedTuple):
@@ -33,6 +23,8 @@ class Provider(NamedTuple):
     base_url: str
     key_env: str  # "" when the endpoint takes no key
     models: tuple[str, ...]  # suggestions; the first is the default
+    reasoning_off: Mapping[str, Any] | None = None  # request fields that turn thinking off; None: no one switch
+    reasoning_least: Mapping[str, Any] | None = None  # for models that must think and refuse the off switch with a 400
 
 
 PROVIDERS: dict[str, Provider] = {
@@ -41,6 +33,8 @@ PROVIDERS: dict[str, Provider] = {
     "openrouter": Provider(
         "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY",
         ("google/gemini-3.8-flash", "anthropic/claude-sonnet-5", "openai/gpt-6-luna", "deepseek/deepseek-v4.1-flash"),
+        {"reasoning": {"enabled": False}},  # deepseek-v4.1-flash: 35 output tokens to name a folder, 2722 with effort minimal
+        {"reasoning": {"effort": "minimal"}},  # gemini-3.8-flash must think: 400 to the off switch, this one it takes
     ),
     "openai": Provider("https://api.openai.com/v1", "OPENAI_API_KEY", ("gpt-6-luna", "gpt-6-sol")),
     "gemini": Provider(
@@ -59,8 +53,10 @@ class LLMConfig(BaseModel):
     base_url: str = ""  # empty: the provider's
     model: str = ""  # empty: the provider's first suggestion
     api_key: str = ""
-    temperature: float = 0.1
-    timeout: float = 120.0
+    temperature: float = Field(0.1, ge=0, le=2)
+    timeout: float = Field(120.0, gt=0)
+    # Thinking before answering made filing 5-40x slower in our runs (hidden tokens) and no better: off where the provider can.
+    reasoning: bool = False
     # Extra JSON fields for every request. OpenRouter example:
     # {"provider": {"order": ["together", "coreweave"]}} to pin faster providers.
     extra_body: dict[str, Any] = Field(default_factory=dict)
@@ -88,34 +84,48 @@ class ClassifierConfig(BaseModel):
     base_url: str = "https://openrouter.ai/api/v1"
     model: str = "typesafe/jev-1.13"  # pinned: thresholds are calibrated per model version
     api_key: str = ""
-    timeout: float = 60.0
-    state_chars: int = 6_000  # compact state: title, summary and opening passage
-    request_chars: int = 90_000  # state + questions per request (~32k tokens on OpenRouter)
+    timeout: float = Field(8.0, gt=0)  # it answers in under a second; a slow call is dropped and the LLM decides (paper: 60)
+    attempts: int = Field(1, gt=0)  # every caller falls back to the LLM, so a retry only makes the ingest wait (paper: 3)
+    state_chars: int = Field(6_000, gt=0)  # compact state: title, summary and opening passage
+    request_chars: int = Field(90_000, gt=0)  # state + questions per request (~32k tokens on OpenRouter)
 
 
 class CrowConfig(BaseModel):
-    """Thresholds of the CROW paper (§5.3). Calibrate them on a labelled sample of your wiki."""
+    """Thresholds of the CROW paper (§5.3). Calibrate them on a labelled sample of your wiki.
 
-    tau_route: float = 0.6  # routing Choice confidence below which the beam splits
-    tau_path: float = 0.5  # best path score below which routing falls back to the LLM
-    tau_ing: float = 0.5  # note-relevance probability for consolidation candidates
-    tau_cons: float = 0.6  # create-or-modify confidence below which a new note is created
-    tau_fold: float = 0.5  # retrieval: folder probability to explore it
-    tau_ret: float = 0.5  # retrieval: note probability to read it
-    tau_link: float = 0.6  # extension: relatedness probability for a See-also link
-    beam: int = 2  # b: paths kept per uncertain routing step, folders explored per level
-    k: int = 5  # CROW retrieval: notes passed to the answer
+    Ingestion values are the paper's package defaults (never calibrated, Table 2). Retrieval values
+    are the paper's calibrated ones (§8.4): at 0.5 most right notes were cut before ranking could act.
+    """
+
+    tau_route: float = Field(0.6, ge=0, le=1)  # routing Choice confidence below which the beam splits
+    tau_path: float = Field(0.5, ge=0, le=1)  # best path score below which routing falls back to the LLM
+    tau_ing: float = Field(0.5, ge=0, le=1)  # note-relevance probability for consolidation candidates
+    tau_cons: float = Field(0.6, ge=0, le=1)  # create-or-modify confidence below which a new note is created
+    tau_fold: float = Field(0.08, ge=0, le=1)  # retrieval: folder probability to explore it (paper default 0.5)
+    tau_ret: float = Field(0.1, ge=0, le=1)  # retrieval: note probability to read it (paper default 0.5)
+    tau_link: float = Field(0.6, ge=0, le=1)  # extension: relatedness probability for a See-also link
+    beam: int = Field(2, gt=0)  # b at ingestion: paths kept per uncertain routing step
+    # b at retrieval: folders explored per level; with low thresholds the beam, not tau_fold, bounds exploration
+    retrieval_beam: int = Field(6, gt=0)
+    k: int = Field(8, gt=0)  # CROW retrieval: notes passed to the answer (paper default 5)
+
+
+# WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).
+_TOP_LEVEL_ENV = (
+    "bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "upload_mb", "usage_log", "prompts_dir",
+)
 
 
 class WikiConfig(BaseModel):
     bundle: Path
     mode: Literal["classic", "crow"] = "crow"
     summarize: bool = True  # CROW step 0; False files the source verbatim
-    max_depth: int = 4  # deepest folder level the librarian may reach or create
-    max_steps: int = 12  # classic researcher: folders it may open per question
-    max_links: int = 5  # See-also links added per ingest
-    max_notes: int = 5  # classic researcher: notes read per question (CROW uses crow.k)
-    source_chars: int = 100_000  # longest source text sent to the LLM
+    max_depth: int = Field(4, ge=0)  # deepest folder level the librarian may reach or create
+    max_steps: int = Field(12, gt=0)  # classic researcher: folders it may open per question
+    max_links: int = Field(5, ge=0)  # See-also links added per ingest
+    max_notes: int = Field(8, gt=0)  # classic researcher and CROW's fallback: notes read per question (CROW uses crow.k)
+    source_chars: int = Field(100_000, gt=0)  # longest source text sent to the LLM
+    upload_mb: int = Field(25, gt=0)  # largest request body the server reads: a big PDF fits, a runaway upload does not fill memory
     actor: str = f"okf_wiki/{__version__}"  # OKF `generated.by`
     usage_log: Path | None = None  # optional JSONL audit of every model call
     prompts_dir: Path | None = None  # optional folder overriding packaged prompts
@@ -126,7 +136,10 @@ class WikiConfig(BaseModel):
     @model_validator(mode="after")
     def _share_the_openrouter_key(self) -> WikiConfig:
         """One OpenRouter key serves both models when the classifier has none of its own."""
-        if not self.classifier.api_key and self.llm.provider == "openrouter" and self.classifier.base_url == PROVIDERS["openrouter"].base_url:
+        openrouter = PROVIDERS["openrouter"].base_url
+        # Both at OpenRouter's own address: a key for a gateway named "openrouter" must not travel to the real one.
+        on_openrouter = self.llm.provider == "openrouter" and self.llm.base_url == openrouter and self.classifier.base_url == openrouter
+        if not self.classifier.api_key and on_openrouter:
             self.classifier.api_key = self.llm.api_key
         return self
 
@@ -137,7 +150,7 @@ class WikiConfig(BaseModel):
         """Build a config from `OKF_*` variables laid over `base` (e.g. the settings file); keyword overrides win."""
         env = os.environ if env is None else env
         top: dict[str, Any] = {}
-        for key in ("bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "usage_log", "prompts_dir"):
+        for key in _TOP_LEVEL_ENV:
             if value := env.get(f"OKF_{key.upper()}"):
                 top[key] = value
         llm: dict[str, Any] = {
@@ -147,7 +160,7 @@ class WikiConfig(BaseModel):
             try:
                 llm["extra_body"] = json.loads(llm["extra_body"])
             except ValueError as e:
-                raise ValueError(f"OKF_LLM_EXTRA_BODY must be a JSON object (single-quote it in .env): {e}") from e
+                raise ConfigError(f"OKF_LLM_EXTRA_BODY must be a JSON object (single-quote it in .env): {e}") from e
         clf = {
             f: env[f"OKF_CLASSIFIER_{f.upper()}"]
             for f in ClassifierConfig.model_fields

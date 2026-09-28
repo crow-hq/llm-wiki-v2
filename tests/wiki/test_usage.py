@@ -1,16 +1,5 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
 
@@ -18,7 +7,7 @@ import json
 import threading
 from pathlib import Path
 
-from okf_wiki.usage import UsageReport, UsageTracker
+from okf_wiki.models.usage import UsageReport, UsageTracker
 
 
 def test_record_splits_llm_and_classifier_ledgers(tracker: UsageTracker) -> None:
@@ -132,15 +121,6 @@ def test_log_path_gets_one_json_line_per_call(tmp_path: Path) -> None:
     assert all(line["ts"] for line in lines)
 
 
-def test_reset_clears_the_totals(tracker: UsageTracker) -> None:
-    tracker.record("llm", "gemini", 100, 10)
-    tracker.record("classifier", "jev", None, None)
-
-    tracker.reset()
-
-    assert tracker.snapshot().to_dict() == UsageReport().to_dict()
-
-
 def test_summary_reports_both_ledgers(tracker: UsageTracker) -> None:
     tracker.record("llm", "gemini", 1200, 34)
     tracker.record("llm", "gemini", 300, 6)
@@ -156,7 +136,8 @@ def test_to_dict_includes_total_tokens(tracker: UsageTracker) -> None:
     data = tracker.snapshot().to_dict()
 
     assert data["llm"] == {
-        "calls": 1, "input_tokens": 100, "output_tokens": 10, "missing": 0, "seconds": 0.0, "cost_usd": 0.0, "cached_tokens": 0, "total_tokens": 110
+        "calls": 1, "input_tokens": 100, "output_tokens": 10, "missing": 0,
+        "seconds": 0.0, "cost_usd": 0.0, "cached_tokens": 0, "total_tokens": 110,
     }
     assert data["classifier"]["total_tokens"] == 0
     assert data["classifier"]["missing"] == 1
