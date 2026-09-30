@@ -67,7 +67,7 @@ class CrowLibrarian(Librarian):
             return super().route(root, cand)
         best = max(finished, key=lambda p: p.score, default=None)
         if best is None or best.score < self.crow.tau_path:
-            return self._route_fallback(visited, cand, best.score if best else None)
+            return self._route_fallback(root, visited, cand, best.score if best else None)
         candidates = unique_objects(f for p in finished for f in p.folders)
         self.decide("route", "classifier", f"{best.folders[-1].label} ({best.end})", best.score)
         return Route(best.folders[-1], best.end == NEW, candidates)
@@ -111,7 +111,7 @@ class CrowLibrarian(Librarian):
                 visited.append(sub)
         return finished
 
-    def _route_fallback(self, visited: list[Folder], cand: Candidate, score: float | None) -> Route:
+    def _route_fallback(self, root: Folder, visited: list[Folder], cand: Candidate, score: float | None) -> Route:
         """§5.3: the LLM chooses among the folders the classifier explored, or opens a new one."""
         out = self.ask_json(
             "librarian/route_fallback",
@@ -119,11 +119,21 @@ class CrowLibrarian(Librarian):
             folders="\n".join(f"- {f.label}: {f.description or '(no description)'}" for f in visited),
             note=self.state(cand),
         )
-        wanted = out.folder.strip().rstrip("/") or "/"
-        folder = next((f for f in visited if f.label == wanted or f.rel == wanted.strip("/")), visited[0])
-        new = (out.action == "create" or folder.is_root) and self.can_create(folder)  # the root holds no notes
+        folder, unmade = self._deepest(root, out.folder)
+        # A path not made yet ("/finance/pricing" with no pricing) asks for a new subfolder of the deepest one that is.
+        new = (out.action == "create" or unmade or folder.is_root) and self.can_create(folder)  # the root holds no notes
         self.decide("route", "llm", f"{folder.label} ({NEW if new else HERE})", score, fallback=True)
         return Route(folder, new, folder.ancestors())
+
+    def _deepest(self, root: Folder, path: str) -> tuple[Folder, bool]:
+        """The deepest folder of `path` that exists, explored or not, and whether `path` goes on below it."""
+        folder = root
+        for name in (n for n in path.strip().strip("/").split("/") if n):
+            sub = next((f for f in self.children(folder) if f.name == name), None)
+            if sub is None:
+                return folder, True
+            folder = sub
+        return folder, False
 
     def find_match(self, pool: list[Note], cand: Candidate) -> Note | None:
         """Step 2: one batched Noul per note; the best one above tau_ing is the candidate."""

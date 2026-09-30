@@ -281,6 +281,59 @@ def test_low_best_score_when_the_llm_selects_the_root_then_a_new_folder_takes_th
     assert final_route(result).choice == f"/ ({NEW})" and final_route(result).fallback
 
 
+@pytest.mark.parametrize("action", ["create", "select"])
+def test_low_best_score_when_the_llm_names_a_folder_not_made_yet_then_it_is_made_under_its_parent(
+    crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier, action: str
+) -> None:
+    # ARRANGE: the LLM writes the path of the folder it wants, not the path of its parent
+    add_folder(crow_wiki, "/", "alpha", "Alpha things.")
+    llm.add(SUMMARIZE, draft("Q3 revenue")).add(ROUTE_FALLBACK, {"action": action, "folder": "/alpha/revenue"})
+    llm.add(NAME_FOLDER, {"name": "revenue", "description": "Revenue reports."})
+    uncertain_alpha(classifier)
+
+    # ACT
+    result = crow_wiki.ingest("Revenue grew.")
+
+    # ASSERT: nested under /alpha, not a new folder at the root
+    assert (result.created_folders, result.note) == (["/alpha/revenue"], "alpha/revenue/q3-revenue.md")
+    assert final_route(result).choice == f"/alpha ({NEW})" and final_route(result).fallback
+
+
+def test_low_best_score_when_the_llm_selects_a_folder_the_classifier_did_not_visit_then_the_note_goes_there(
+    crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier
+) -> None:
+    # ARRANGE: only / and /alpha are visited
+    two_folders(crow_wiki)
+    llm.add(SUMMARIZE, draft("Q3 revenue")).add(ROUTE_FALLBACK, {"action": "select", "folder": "/beta"})
+    uncertain_alpha(classifier)
+
+    # ACT
+    result = crow_wiki.ingest("Revenue grew.")
+
+    # ASSERT: filed in the folder that exists, no new folder at the root
+    assert llm.ops == [SUMMARIZE, ROUTE_FALLBACK]
+    assert (result.folder, result.note, result.created_folders) == ("/beta", "beta/q3-revenue.md", [])
+    assert final_route(result).choice == "/beta (Here)" and final_route(result).fallback
+
+
+def test_low_best_score_when_the_llm_names_a_folder_below_max_depth_then_the_note_stays_at_max_depth(
+    bundle: Path, llm: FakeLLM, classifier: FakeClassifier
+) -> None:
+    # ARRANGE
+    wiki = make_wiki(bundle, llm, classifier, max_depth=1)
+    add_folder(wiki, "/", "alpha", "Alpha things.")
+    llm.add(SUMMARIZE, draft("Q3 revenue")).add(ROUTE_FALLBACK, {"action": "create", "folder": "/alpha/revenue"})
+    classifier.add_choice("route", "alpha", {"alpha": 0.45, NEW: 0.35}, 0.3)
+    classifier.add_choice("route", NONE, {HERE: 0.4, NONE: 0.6}, 0.2)  # at max_depth: no New subfolder to offer
+
+    # ACT
+    result = wiki.ingest("Revenue grew.")
+
+    # ASSERT
+    assert (result.folder, result.note, result.created_folders) == ("/alpha", "alpha/q3-revenue.md", [])
+    assert final_route(result).choice == "/alpha (Here)" and final_route(result).fallback
+
+
 def test_every_path_ending_in_none_falls_back(crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
     two_folders(crow_wiki)
     llm.add(SUMMARIZE, draft("Q3 revenue")).add(ROUTE_FALLBACK, {"action": "select", "folder": "/beta"})
