@@ -1,0 +1,70 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:  # a manual run publishes to TestPyPI: the rehearsal before the first real release
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false  # a release must not restore a cache an earlier run could have poisoned
+      # The tag must name the version the code carries, or PyPI gets a release nobody tagged.
+      - name: The tag matches llmw2.__version__
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/llmw2/__init__.py)  # what llmw2.__version__ is, read without installing
+          [ "$TAG" = "v$version" ] || { echo "tag $TAG does not match version $version"; exit 1; }
+      - run: uv build
+      # The wheel must carry the web page, the prompts and the demo, or `llmwiki2` starts without them.
+      - run: |
+          unzip -l dist/*.whl > files.txt
+          for f in llmw2/web/index.html llmw2/agents/prompts/librarian/system.md llmw2/demo/index.md; do
+            grep -q "$f" files.txt || { echo "missing from the wheel: $f"; exit 1; }
+          done
+      - run: uvx twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing: PyPI trusts this workflow, no token is stored
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-testpypi:
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/

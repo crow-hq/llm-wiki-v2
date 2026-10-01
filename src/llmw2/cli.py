@@ -1,7 +1,7 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""`llmwiki2` command line: setup, init, ingest, ask, check, serve.
+"""`llmwiki2` command line: setup, init, ingest, sync, ask, check, serve.
 
 `llmwiki2` alone serves the wiki and opens it in the browser, where the settings
 page asks for what is missing; `llmwiki2 setup` asks the same in the terminal.
@@ -29,6 +29,7 @@ from llmw2.errors import ModelError
 from llmw2.logo import show_logo
 from llmw2.models.llm import probe
 from llmw2.settings import Settings, default_bundle, mask, ready, tilde
+from llmw2.sources import LocalFolderSource, sync
 from llmw2.wiki import Wiki
 
 
@@ -68,6 +69,9 @@ def main(argv: list[str] | None = None) -> int:
     ingest.add_argument("--title")
     ingest.add_argument("--resource", help="URL or path of the original")
     ingest.add_argument("--json", action="store_true", help="print the full result as JSON")
+    sync_cmd = sub.add_parser("sync", help="file a folder's documents and keep the wiki in step with it")
+    sync_cmd.add_argument("folder", type=Path)
+    sync_cmd.add_argument("--json", action="store_true", help="print the full report as JSON")
     ask = sub.add_parser("ask", help="answer a question from the wiki")
     ask.add_argument("question")
     ask.add_argument("--json", action="store_true", help="print the full answer as JSON")
@@ -190,6 +194,17 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
         else:
             created = f" (new folders: {', '.join(result.created_folders)})" if result.created_folders else ""
             print(f"{result.action}: {result.note}{created}")
+    elif args.command == "sync":
+        report = sync(wiki, LocalFolderSource(args.folder))
+        if args.json:
+            print(json.dumps(report.to_dict(), indent=2))
+        else:
+            counts = (f"{name} {count}" for name, count in report.to_dict().items() if name != "errors")
+            print(", ".join(counts))
+            for key, message in report.errors:
+                print(f"error: {key}: {message}", file=sys.stderr)
+        if report.errors:
+            return 1
     elif args.command == "ask":
         answer = wiki.ask(args.question)
         print(json.dumps(answer.to_dict(), indent=2) if args.json else answer.text)
@@ -208,6 +223,6 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
         serve(wiki, host=args.host, port=args.port, settings=Settings(bundle=args.bundle, mode=args.mode),
               make_wiki=build_wiki, open_browser=args.open)
 
-    if args.command in ("ingest", "ask"):
+    if args.command in ("ingest", "sync", "ask"):
         print(wiki.usage.summary(), file=sys.stderr)
     return 0

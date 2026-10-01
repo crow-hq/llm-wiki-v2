@@ -9,10 +9,10 @@ authors:
     given-names: Federico
   - family-names: Sassarini
     given-names: Marco
-version: 0.2.0
-date-released: 2026-09-24
+version: 0.3.0
+date-released: 2026-09-30
 license: AGPL-3.0-or-later
-repository-code: "https://github.com/fed3c3sa/llm-wiki-v2"
+repository-code: "https://github.com/crow-hq/llm-wiki-v2"
 keywords:
   - LLM wiki
   - knowledge base

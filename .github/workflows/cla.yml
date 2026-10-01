@@ -27,6 +27,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: signatures/cla.json
-          path-to-document: https://github.com/fed3c3sa/llm-wiki-v2/blob/main/CLA.md
+          path-to-document: https://github.com/crow-hq/llm-wiki-v2/blob/main/CLA.md
           branch: main
           allowlist: fed3c3sa,sassarini-marco,dependabot[bot]  # the owners need no licence from themselves

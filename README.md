@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/assets/crow-banner.jpg" alt="CROW: a pixel-art crow next to the word CROW" width="100%">
+  <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/crow-banner.jpg" alt="CROW: a pixel-art crow next to the word CROW" width="100%">
 </p>
 
 <p align="center">
-  <img src="docs/assets/crow-stats.svg" alt="An LLM wiki with no scaling limit. CROW vs classic: 89% right note read vs 62%; 2.1× faster per ingest (18.4s vs 38.6s); 68% fewer LLM tokens (5,508 vs 17,324)." width="100%">
+  <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/crow-stats.svg" alt="An LLM wiki with no scaling limit. CROW vs classic: 89% right note read vs 62%; 2.1× faster per ingest (18.4s vs 38.6s); 68% fewer LLM tokens (5,508 vs 17,324)." width="100%">
 </p>
 
 # LLM Wiki v2
@@ -42,7 +42,7 @@ roastery, with no key needed to browse it and its brain. It is copied to `~/llm-
 so you can add to it or delete it.
 
 <p align="center">
-  <img src="docs/assets/screenshot-settings.png" alt="The first-run page: pick a provider, paste its key, choose a model" width="90%">
+  <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/screenshot-settings.png" alt="The first-run page: pick a provider, paste its key, choose a model" width="90%">
 </p>
 
 > [!TIP]
@@ -111,7 +111,7 @@ CLI runs in the same image: `docker compose run --rm wiki llmwiki2 check`.
 | Endpoint | What it does |
 |---|---|
 | `GET /` | the web UI |
-| `POST /ingest` `{text, title?, resource?}` | file a source; returns the note, folders created, links and token usage |
+| `POST /ingest` `{text, title?, resource?, origin?}` | file a source (an `origin` `{source, account?, id, link?, version?, modified?}` makes a repeat with the same content or version return `"unchanged"`); returns the note, folders created, links and token usage |
 | `POST /upload?filename=…` (raw file body) | file a `.txt`, `.md` or `.pdf` file |
 | `POST /ask` `{question}` | answer with citations; returns the notes read and token usage |
 | `GET /tree` · `GET /note?path=…` | folder tree · one note (frontmatter and Markdown body) |
@@ -150,12 +150,29 @@ The same operations are on the command line:
 ```bash
 llmwiki2 --bundle ./wiki init
 llmwiki2 --bundle ./wiki ingest meeting.md     # or a .txt / .pdf
+llmwiki2 --bundle ./wiki sync ~/OneDrive       # file a folder and keep the wiki in step with it
 llmwiki2 --bundle ./wiki --mode classic ask "What did we decide about pricing?"
 llmwiki2 --bundle ./wiki check        # lint: OKF conformance, index drift, broken links
 llmwiki2 --bundle ./wiki serve        # the HTTP API and page (needs the [server] extra); plain `llmwiki2` also opens the browser
 llmwiki2 setup                        # provider, key and model, tested and saved
 llmwiki2 demo                         # an example wiki, copied to ~/llm-wiki-demo and opened
 ```
+
+To keep the wiki in step with a source, hand `sync` a connector. Each document
+keeps its `Origin` (where the original lives), so an unchanged file costs no model
+call and a deleted one is marked in the raw copy while its notes stay:
+
+```python
+from pathlib import Path
+from llmw2 import LocalFolderSource, sync
+
+report = sync(wiki, LocalFolderSource(Path("~/OneDrive")))   # a folder, e.g. one rclone keeps in sync
+print(report.to_dict())                                      # created, merged, unchanged, removed, skipped, errors
+```
+
+A connector for another service is any object with `name`, `account`,
+`changes(cursor) -> ChangeBatch` and `fetch(change) -> bytes` (`SourceConnector`);
+the cursor of the last sync is kept in `.llmw2/sync/` inside the wiki.
 
 Everything is a class you can subclass. `Librarian` and `Researcher` share an
 `Agent` base; the CROW versions override only their decision hooks. To change a
@@ -197,7 +214,7 @@ ask:     select notes (navigate the tree) → answer from them, with [path.md] c
 
 Both modes run the same pipeline and write the same kind of wiki: only the
 decider changes. CROW follows *CROW: Classifier-Routed Organization of LLM
-Wikis* (Cesarini & Sassarini, 2026) — see [docs/wiki/crow.md](docs/wiki/crow.md)
+Wikis* (Cesarini & Sassarini, 2026) — see [docs/wiki/crow.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/crow.md)
 for thresholds and fallbacks.
 
 **Tokens are tracked in two separate ledgers**, `llm` and `classifier`, per
@@ -252,7 +269,7 @@ Wikis are not checked against later OKF versions.
 The settings page and `llmwiki2 setup` cover provider, key, model, mode and
 wiki folder. Everything else, and every setting in Docker (`.env`) or in the
 library, comes from the environment; it wins over the settings file. The full
-list is in [.env.example](.env.example).
+list is in [.env.example](https://github.com/crow-hq/llm-wiki-v2/blob/main/.env.example).
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -274,8 +291,8 @@ list is in [.env.example](.env.example).
 | `OKF_UPLOAD_MB` | `25` | largest file or text the server accepts (413 above it) |
 | `OKF_LLM_EXTRA_BODY` | — | JSON added to every LLM request, e.g. `'{"provider":{"order":["together"]}}'` to pin fast OpenRouter providers |
 
-Providers, the settings file and the classifier route: [docs/wiki/providers.md](docs/wiki/providers.md).
-Prompts, one Markdown file each: [docs/wiki/prompts.md](docs/wiki/prompts.md).
+Providers, the settings file and the classifier route: [docs/wiki/providers.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/providers.md).
+Prompts, one Markdown file each: [docs/wiki/prompts.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/prompts.md).
 
 </details>
 
@@ -315,7 +332,7 @@ you change.
 
 - **Open Knowledge Format** by Google LLC —
   [GoogleCloudPlatform/open-knowledge-format](https://github.com/GoogleCloudPlatform/open-knowledge-format),
-  Apache-2.0. The wiki format is derived from OKF v0.2; see [NOTICE](NOTICE).
+  Apache-2.0. The wiki format is derived from OKF v0.2; see [NOTICE](https://github.com/crow-hq/llm-wiki-v2/blob/main/NOTICE).
 - **CROW** — F. Cesarini, M. Sassarini, *CROW: Classifier-Routed Organization of
   LLM Wikis*, version 1.0, 2026, [doi:10.5281/zenodo.22900601](https://doi.org/10.5281/zenodo.22900601).
 - **LLM Wiki** — A. Karpathy, [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), 2026.
@@ -324,14 +341,14 @@ you change.
 - The web UI ships [marked](https://github.com/markedjs/marked) (MIT),
   [DOMPurify](https://github.com/cure53/DOMPurify) (Apache-2.0 / MPL-2.0) and
   [d3](https://github.com/d3/d3) (ISC), and the fonts Pixelify Sans, JetBrains Mono
-  and IBM Plex Sans (SIL Open Font License 1.1); see [NOTICE](NOTICE).
+  and IBM Plex Sans (SIL Open Font License 1.1); see [NOTICE](https://github.com/crow-hq/llm-wiki-v2/blob/main/NOTICE).
 
-Licensed under the [GNU Affero General Public License v3.0 or later](LICENSE):
+Licensed under the [GNU Affero General Public License v3.0 or later](https://github.com/crow-hq/llm-wiki-v2/blob/main/LICENSE):
 free to use, study, change and share, including for your own business; if you
 offer a modified version to others, over a network too, you share its source
 under the same licence. Commercial licences without that obligation are
 available from the authors: open an issue to ask. Versions up to 0.2.0 were
 released under the Apache License 2.0 and stay available under it. Contributions
-are welcome under the [Contributor License Agreement](CLA.md); see
-[CONTRIBUTING.md](CONTRIBUTING.md). To cite this software, see
-[CITATION.cff](CITATION.cff).
+are welcome under the [Contributor License Agreement](https://github.com/crow-hq/llm-wiki-v2/blob/main/CLA.md); see
+[CONTRIBUTING.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/CONTRIBUTING.md). To cite this software, see
+[CITATION.cff](https://github.com/crow-hq/llm-wiki-v2/blob/main/CITATION.cff).

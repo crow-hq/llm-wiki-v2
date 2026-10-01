@@ -14,6 +14,7 @@ from typing import Any
 from llmw2 import Wiki, WikiConfig
 from llmw2.agents.librarian import IngestResult
 from llmw2.bundle.document import OKFDocument
+from llmw2.bundle.origin import content_hash
 from llmw2.bundle.tree import Note
 from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import FakeLLM
@@ -262,7 +263,7 @@ def test_match_and_modify_merges_the_note_in_place(classic_wiki: Wiki, llm: Fake
     [raw] = (bundle / "raw").iterdir()
     assert note.frontmatter["sources"] == [
         {"id": "s1", "resource": "/raw/seed.md", "title": "Seed"},
-        {"id": "s2", "resource": f"/raw/{raw.name}", "title": "Acme price rise"},
+        {"id": "s2", "resource": f"/raw/{raw.name}", "title": "Acme price rise", "hash": content_hash("Acme raised prices.")},
     ]
     assert "* **Merged**: [Acme pricing 2026](acme-pricing.md)" in (bundle / "log.md").read_text(encoding="utf-8")
 
