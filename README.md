@@ -25,7 +25,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 **2. Install the wiki:**
 
 ```bash
-uv tool install "llmw2[server] @ git+https://github.com/fed3c3sa/llm-wiki-v2"
+uv tool install "llmw2[server] @ git+https://github.com/crow-hq/llm-wiki-v2"
 ```
 
 **3. Start it:**
@@ -76,7 +76,7 @@ so you can add to it or delete it.
 <summary><b>Run it as a server with Docker</b></summary>
 
 ```bash
-git clone https://github.com/fed3c3sa/llm-wiki-v2 && cd llm-wiki-v2
+git clone https://github.com/crow-hq/llm-wiki-v2 && cd llm-wiki-v2
 cp .env.example .env          # choose OKF_LLM_PROVIDER and set its key
 docker compose up -d --build  # the wiki on :8000 (OKF_PORT to change)
 ```
@@ -126,7 +126,7 @@ CLI runs in the same image: `docker compose run --rm wiki llmwiki2 check`.
 <summary><b>Use it as a Python library and from the command line</b></summary>
 
 ```bash
-pip install "llmw2[server] @ git+https://github.com/fed3c3sa/llm-wiki-v2"
+pip install "llmw2[server] @ git+https://github.com/crow-hq/llm-wiki-v2"
 ```
 
 ```python
