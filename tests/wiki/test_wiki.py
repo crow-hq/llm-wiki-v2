@@ -11,9 +11,8 @@ from typing import Any
 import pytest
 
 from llmw2 import Wiki, WikiConfig
-from llmw2.agents.librarian import IngestResult, Librarian
-from llmw2.agents.librarian_crow import CrowLibrarian
-from llmw2.agents.researcher import CrowResearcher
+from llmw2.agents.librarian import IngestResult
+from llmw2.agents.steps import CLASSIC, CROW
 from llmw2.config import ClassifierConfig
 from llmw2.models.classifier import Classifier
 from tests.wiki.fakes import FakeClassifier, FakeLLM
@@ -139,7 +138,7 @@ def test_crow_mode_without_a_classifier_builds_one_from_config(bundle: Path, llm
     assert (wiki.classifier.base_url, wiki.classifier.model) == ("https://classifier.invalid/v1", "typesafe/jev-test")
     assert wiki.classifier.api_key == "sk-test"
     assert wiki.classifier.usage is wiki.tracker
-    assert isinstance(wiki.librarian(), CrowLibrarian) and isinstance(wiki.researcher(), CrowResearcher)
+    assert wiki.librarian().steps is CROW and wiki.researcher().steps is CROW
     assert wiki.usage.classifier.calls == 0
 
 
@@ -160,7 +159,7 @@ def test_classic_mode_builds_no_classifier(bundle: Path, llm: FakeLLM) -> None:
     wiki = Wiki(WikiConfig(bundle=bundle, mode="classic"), llm=llm)
 
     assert wiki.classifier is None
-    assert type(wiki.librarian()) is Librarian
+    assert wiki.librarian().steps is CLASSIC and wiki.researcher().steps is CLASSIC
 
 
 def test_from_env_reads_okf_variables(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

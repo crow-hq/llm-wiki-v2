@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /ingest` accepts an optional `origin` object.
 - Package metadata on PyPI: authors, keywords, classifiers, and project URLs (homepage, repository, issues, paper, changelog).
 - A release workflow that builds the package and publishes it to PyPI with trusted publishing when a `v*` tag is pushed. A manual run publishes to TestPyPI.
+- Customizable steps. The ingest and ask flows stay fixed. Each step is a function that a `Steps` set can replace: `extract`, `summarize`, `route`, `name_folder`, `match`, `consolidate`, `merge` and `relate` for ingest, and `select` and `answer` for ask. `CLASSIC` and `CROW` are the two ready-made sets. Pass your own with `Wiki(cfg, steps=replace(CROW, name="...", summarize=...))`. The API is provisional until ingests run in parallel.
+- `StepContext`, given to every step: the models, prompts, config and `decide()`. Model calls a custom step makes through it are counted in usage and decisions like the built-in ones.
+- `StepError`: a step that returns something the flow cannot take stops the ingest or the question with an error naming the step, before anything is written.
+- `fields`: `ingest` and `ingest_file` accept `fields=`, user data the steps read as `ctx.source.fields`. `Candidate.fields` and `NoteDraft.fields` are written to the note frontmatter under `fields:`.
+- `Route.create`: a route can ask for a whole folder path in one ingest, one `(name, description)` per level. Existing levels are reused.
+- Library documentation in `docs/library/` (the public API and the customizable steps) and runnable examples in `examples/`.
 
 ### Changed
 
@@ -27,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README links are absolute, so they work on the PyPI project page.
 - The repository moved to https://github.com/crow-hq/llm-wiki-v2 and all project URLs point there.
 - `wiki.origin`, the `unchanged` check and `sync` no longer reread every raw copy and the whole note tree for each item: an in-memory index rereads only the files that changed since the last look.
+- Every note source entry records the step set that wrote it (`steps: {name, hash}`), and the ingest log line ends with `(name hash)` instead of `(mode)`.
+- `CrowLibrarian` and `CrowResearcher` are gone. CROW is the classic step set with its decision steps replaced, and the steps live in `llmw2.agents.steps_classic` and `llmw2.agents.steps_crow`. Classic and CROW behave as before.
+- The tags of a new note are now cleaned the same way as on a merge, whichever `summarize` wrote them.
 
 ### Fixed
 

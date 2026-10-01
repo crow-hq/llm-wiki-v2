@@ -184,6 +184,7 @@ class WikiStore:
         body: str,
         tags: list[str],
         source: dict[str, Any],
+        fields: dict[str, Any] | None = None,
     ) -> Note:
         slug = self.unique_slug(folder, slugify(title))
         path = folder.path / f"{slug}.md"
@@ -196,6 +197,8 @@ class WikiStore:
             "generated": {"by": self.actor, "at": now_iso()},
             "sources": [{"id": "s1", **source}],
         }
+        if fields:
+            frontmatter["fields"] = dict(fields)
         note = Note(path, rel, frontmatter, body.rstrip() + "\n", folder)
         self._save(note)
         folder.notes.append(note)
@@ -211,8 +214,12 @@ class WikiStore:
         body: str,
         tags: list[str],
         source: dict[str, Any],
+        fields: dict[str, Any] | None = None,
     ) -> Note:
-        """Rewrite a note in place, keeping unknown frontmatter keys and its See-also links."""
+        """Rewrite a note in place, keeping unknown frontmatter keys and its See-also links.
+
+        `fields` are added to the note's own (new keys win).
+        """
         fm = note.frontmatter
         fm["title"], fm["description"] = title.strip(), summary.strip()
         fm["tags"] = list(dict.fromkeys([*note.tags, *tags]))
@@ -221,6 +228,9 @@ class WikiStore:
         used = {str(s.get("id")) for s in sources if isinstance(s, dict)}
         new_id = next(f"s{n}" for n in range(1, len(sources) + 2) if f"s{n}" not in used)
         fm["sources"] = [*sources, {"id": new_id, **source}]
+        if fields:
+            old = fm.get("fields")
+            fm["fields"] = {**(old if isinstance(old, dict) else {}), **fields}
         note.body = join_see_also(body, split_see_also(note.body)[1])
         self._save(note)
         if note.folder is not None:

@@ -28,3 +28,11 @@ class ModelError(WikiError, RuntimeError):
     def __init__(self, message: str, *, status: int | None = None) -> None:
         super().__init__(message)
         self.status = status  # the provider's HTTP status, when it answered with an error
+
+
+class StepError(WikiError):
+    """A step returned something the next one cannot take (or lacks what it needs); nothing was written."""
+
+    def __init__(self, step: str, message: str) -> None:
+        super().__init__(f"{step}: {message}")
+        self.step = step

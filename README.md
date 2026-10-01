@@ -174,22 +174,12 @@ A connector for another service is any object with `name`, `account`,
 `changes(cursor) -> ChangeBatch` and `fetch(change) -> bytes` (`SourceConnector`);
 the cursor of the last sync is kept in `.llmw2/sync/` inside the wiki.
 
-Everything is a class you can subclass. `Librarian` and `Researcher` share an
-`Agent` base; the CROW versions override only their decision hooks. To change a
-behaviour, override one method and hand your class to `Wiki`:
-
-```python
-from llmw2 import Wiki
-from llmw2.agents.librarian import Librarian
-
-class QuietLibrarian(Librarian):
-    def pick_related(self, note, others):
-        return []                            # never add See-also links
-
-class MyWiki(Wiki):
-    def librarian(self):
-        return QuietLibrarian(self.store, self.llm, self.prompts, self.cfg)
-```
+Every step of the ingest and ask flows (summarize, route, match, merge, select, answer…)
+is a function you can replace: with a rule, several model calls or a service of
+your own, while the core keeps checking and writing. The guide to the whole
+library is in [docs/library/](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/library/index.md),
+the steps in [docs/library/steps.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/library/steps.md),
+and runnable programs, some with no key, in [examples/](https://github.com/crow-hq/llm-wiki-v2/tree/main/examples).
 
 </details>
 
@@ -303,12 +293,14 @@ Prompts, one Markdown file each: [docs/wiki/prompts.md](https://github.com/crow-
 src/llmw2/            wiki (the Wiki facade), config, settings, errors, cli, server
 src/llmw2/models/     the model endpoints: HTTP client, LLM, CROW classifier, token usage
 src/llmw2/bundle/     the wiki on disk: OKF documents, the tree in memory, the store that writes it, file text, check
-src/llmw2/agents/     the Librarian (classic and CROW) and the Researcher, and the prompts they render
+src/llmw2/agents/     the ingest and ask flows (Librarian, Researcher), their steps (classic, CROW), and the prompts
 src/llmw2/agents/prompts/  shared/, librarian/, researcher/, classifier/ — one prompt per file
 src/llmw2/web/        the web UI: plain ES modules, no build step; vendor/ holds marked, DOMPurify, d3 and the fonts
 src/llmw2/demo/       the example wiki behind `llmwiki2 demo` (a fictional roastery)
 tests/wiki/              tests for every feature, with scripted fake models (no network)
 docs/wiki/               providers, CROW, prompts
+docs/library/            the library: API guide and custom steps
+examples/                runnable examples of the library
 ```
 
 ```bash

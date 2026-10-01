@@ -26,24 +26,24 @@ passage). `notes` lists notes as `- path: Title — summary`, and
 
 | File | Used by | Inputs | Output |
 |---|---|---|---|
-| `librarian/system` | every Librarian LLM call (`Agent.ask_json`) | embeds `shared/untrusted` | system message |
-| `librarian/summarize` | `Librarian.summarize` | `source_title`, `source_resource`, `source_text`; embeds `shared/note_rules` | JSON `title`, `summary`, `tags`, `body` |
-| `librarian/route` | `Librarian.route` (CROW: only on classifier error) | `folder`, `description`, `subfolders`, `can_create`, `note`; embeds `shared/folder_rules` | JSON `reasoning`, `action` (`descend`/`here`/`new`), `subfolder` |
-| `librarian/route_fallback` | `CrowLibrarian.route`, when unsure | `folders`, `note`; embeds `shared/folder_rules` | JSON `reasoning`, `action` (`select`/`create`), `folder` |
-| `librarian/name_folder` | `Librarian.name_folder` | `parent`, `parent_description`, `siblings`, `note`; embeds `shared/folder_rules` | JSON `name`, `description` |
-| `librarian/find_match` | `Librarian.find_match` | `note`, `notes` | JSON `reasoning`, `match` (path or null) |
-| `librarian/consolidate` | `Librarian.should_merge` | `note`, `existing` | JSON `reasoning`, `decision` (`modify`/`new`) |
-| `librarian/merge` | `Librarian.merge` | `title`, `summary`, `tags`, `body`, `source_text`; embeds `shared/note_rules` | JSON `title`, `summary`, `tags`, `body` |
-| `librarian/relate` | `Librarian.pick_related` | `note`, `notes`, `max_links` | JSON `reasoning`, `related` (paths) |
-| `researcher/system` | every Researcher LLM call | embeds `shared/untrusted` | system message |
-| `researcher/navigate` | `Researcher.select` | `question`, `visited`, `folder`, `description`, `subfolders`, `notes`, `selected`, `k` | JSON `reasoning`, `select`, `open`, `done` |
-| `researcher/answer` | `Researcher.answer` | `question`, `notes` (full text, one `### path` heading each) | Markdown with `[path.md]` citations |
-| `classifier/route` | `CrowLibrarian.route` | `folder` | Choice: `instructions`, `Here`, `New subfolder`, `None of these` |
-| `classifier/consolidate` | `CrowLibrarian.should_merge` | none | Choice: `instructions`, `Modify`, `New note` |
-| `classifier/note_relevance` | `CrowLibrarian.find_match` | `title`, `summary` | Noul question |
-| `classifier/relate` | `CrowLibrarian.pick_related` | `title`, `summary` | Noul question |
-| `classifier/retrieval_folder` | `CrowResearcher.select` | `name`, `description` | Noul question |
-| `classifier/retrieval_note` | `CrowResearcher.select` | `title`, `summary` | Noul question |
+| `librarian/system` | every ingest step LLM call (`StepContext.ask_json`) | embeds `shared/untrusted` | system message |
+| `librarian/summarize` | `steps_classic.summarize` | `source_title`, `source_resource`, `source_text`; embeds `shared/note_rules` | JSON `title`, `summary`, `tags`, `body` |
+| `librarian/route` | `steps_classic.route` (CROW: only on classifier error) | `folder`, `description`, `subfolders`, `can_create`, `note`; embeds `shared/folder_rules` | JSON `reasoning`, `action` (`descend`/`here`/`new`), `subfolder` |
+| `librarian/route_fallback` | `steps_crow.route`, when unsure | `folders`, `note`; embeds `shared/folder_rules` | JSON `reasoning`, `action` (`select`/`create`), `folder` |
+| `librarian/name_folder` | `steps_classic.name_folder` | `parent`, `parent_description`, `siblings`, `note`; embeds `shared/folder_rules` | JSON `name`, `description` |
+| `librarian/find_match` | `steps_classic.match` | `note`, `notes` | JSON `reasoning`, `match` (path or null) |
+| `librarian/consolidate` | `steps_classic.consolidate` | `note`, `existing` | JSON `reasoning`, `decision` (`modify`/`new`) |
+| `librarian/merge` | `steps_classic.merge` | `title`, `summary`, `tags`, `body`, `source_text`; embeds `shared/note_rules` | JSON `title`, `summary`, `tags`, `body` |
+| `librarian/relate` | `steps_classic.relate` | `note`, `notes`, `max_links` | JSON `reasoning`, `related` (paths) |
+| `researcher/system` | every ask step LLM call | embeds `shared/untrusted` | system message |
+| `researcher/navigate` | `steps_classic.select` | `question`, `visited`, `folder`, `description`, `subfolders`, `notes`, `selected`, `k` | JSON `reasoning`, `select`, `open`, `done` |
+| `researcher/answer` | `steps_classic.answer` | `question`, `notes` (full text, one `### path` heading each) | Markdown with `[path.md]` citations |
+| `classifier/route` | `steps_crow.route` | `folder` | Choice: `instructions`, `Here`, `New subfolder`, `None of these` |
+| `classifier/consolidate` | `steps_crow.consolidate` | none | Choice: `instructions`, `Modify`, `New note` |
+| `classifier/note_relevance` | `steps_crow.match` | `title`, `summary` | Noul question |
+| `classifier/relate` | `steps_crow.relate` | `title`, `summary` | Noul question |
+| `classifier/retrieval_folder` | `steps_crow.select` | `name`, `description` | Noul question |
+| `classifier/retrieval_note` | `steps_crow.select` | `title`, `summary` | Noul question |
 
 ## Syntax
 
