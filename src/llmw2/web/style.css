@@ -46,11 +46,15 @@ nav { flex: 1; overflow: auto; padding: 14px 12px 20px; }
 .folder > .line > .row .tri { font-size: 9px; color: var(--faint); width: 10px; transition: transform .15s; }
 .folder.open > .line > .row .tri { transform: rotate(90deg); }
 .folder > .line > .row .count { margin-left: auto; font-size: 11px; color: var(--faint); }
-.line { position: relative; } /* a sidebar row and its delete button, shown on hover */
-.del { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); width: 26px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: var(--raised); color: var(--faint); visibility: hidden; cursor: pointer; }
-.del svg { width: 14px; height: 14px; }
-.del:hover { color: var(--ember); }
-.line:hover > .del, .del:focus-visible { visibility: visible; }
+.label.catalogue { display: flex; align-items: center; justify-content: space-between; }
+.mini { font: 11px var(--mono); letter-spacing: .04em; text-transform: none; padding: 2px 8px; border: 1px solid var(--edge); border-radius: 4px; background: none; color: var(--soft); }
+.mini:hover { border-color: var(--ember); color: var(--cream); }
+.line { position: relative; } /* a sidebar row and its buttons (new folder, delete), shown on hover */
+.acts { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; visibility: hidden; }
+.acts button { width: 26px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: var(--raised); color: var(--faint); cursor: pointer; }
+.acts svg { width: 14px; height: 14px; }
+.acts .trash:hover { color: var(--ember); } .acts .plus:hover { color: var(--cream); }
+.line:hover > .acts, .acts:focus-within { visibility: visible; }
 .folder .desc { font: 12px/1.4 var(--text); color: var(--faint); padding: 0 8px 4px 26px; }
 .folder > .kids { display: none; margin-left: 13px; border-left: 1px dashed var(--edge); }
 .folder.open > .kids { display: block; }
@@ -160,6 +164,7 @@ dialog h3 { font: 700 30px var(--display); color: var(--cream); margin: 0 0 6px;
 dialog label { display: block; font: 13px var(--mono); color: #c7cfe2; margin-bottom: 6px; }
 dialog label small { color: var(--faint); }
 .dlg-hint { margin-right: auto; align-self: center; font: 11px var(--mono); color: var(--faint); }
+.dlg-error { font: 13px var(--mono); color: var(--ember-soft); margin: -4px 0 16px; }
 dialog input, dialog textarea { width: 100%; font: 15px var(--text); padding: 10px 12px; border: 1px solid var(--edge); border-radius: 8px; background: var(--field); color: var(--ink); margin-bottom: 10px; }
 dialog textarea { height: 260px; resize: vertical; margin-bottom: 16px; }
 dialog input { margin-bottom: 16px; }

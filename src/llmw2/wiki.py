@@ -8,6 +8,7 @@
     wiki.ingest(text, title="…", resource="https://…")
     wiki.ingest_file(Path("minutes.pdf").read_bytes(), "minutes.pdf")
     wiki.ask("…").text
+    wiki.create_folder("/", "finance", "Money in and out: budgets, invoices, pricing.")
     wiki.delete_note("finance/pricing.md"); wiki.delete_folder("/finance"); wiki.clear()
     wiki.usage.to_dict()                      # {"llm": …, "classifier": …, "by_model": …}
 """
@@ -23,7 +24,7 @@ from llmw2.agents.researcher import Answer, CrowResearcher, Researcher
 from llmw2.bundle.check import Problem, check
 from llmw2.bundle.files import extract_text, title_of
 from llmw2.bundle.store import Deleted, WikiStore
-from llmw2.bundle.tree import Folder
+from llmw2.bundle.tree import Folder, slugify
 from llmw2.config import WikiConfig
 from llmw2.errors import InputError
 from llmw2.models.classifier import Classifier
@@ -107,6 +108,28 @@ class Wiki:
 
     def tree(self) -> Folder:
         return self.store.load()
+
+    def create_folder(self, parent: str, name: str, description: str) -> Folder:
+        """Create a folder by hand under `parent` ("/" or "/finance"), named and described as the librarian would.
+
+        Both are required: the description is the line the librarian routes by. InputError for a missing one, a name
+        already taken, or a parent at max_depth (the librarian would never file below it); FileNotFoundError for no parent.
+        """
+        if not slugify(name, max_len=40, fallback=""):
+            raise InputError("a folder needs a name, in letters or digits")
+        if not description.strip():
+            raise InputError("a folder needs a description: one line saying what belongs in it")
+        self.store.init()
+        with self.store.lock():
+            at = self.store.load().find(parent)
+            if at is None:
+                raise FileNotFoundError(parent)
+            if at.depth >= self.cfg.max_depth:
+                raise InputError(f"no folder under {at.label}: the librarian files at most {self.cfg.max_depth} levels deep (max_depth)")
+            folder, created = self.store.create_folder(at, name, description)
+            if not created:
+                raise InputError(f"{folder.label} already exists")
+            return folder
 
     def delete_note(self, path: str) -> Deleted:
         """Delete a note ("finance/pricing.md"); links to it go from the other notes, and raw copies only it cites."""

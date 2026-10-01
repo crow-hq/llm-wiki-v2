@@ -3,7 +3,7 @@
 
 """HTTP API (extra `server`) and the local web UI at GET /.
 
-POST /ingest, POST /upload (a .txt/.md/.pdf file), POST /ask, GET /tree, GET /note,
+POST /ingest, POST /upload (a .txt/.md/.pdf file), POST /ask, POST /folder (one made by hand), GET /tree, GET /note,
 GET /graph, GET /usage, GET /check, GET /health; DELETE /note, DELETE /folder and
 DELETE /wiki (empty it); GET /settings, POST /settings,
 POST /settings/test and POST /settings/models when the app is given the settings file.
@@ -54,6 +54,12 @@ class IngestRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
+
+
+class FolderRequest(BaseModel):
+    parent: str = "/"
+    name: str
+    description: str
 
 
 class SettingsChanges(BaseModel):
@@ -234,6 +240,14 @@ def create_app(
                 return current().delete_note(path).to_dict()
             except FileNotFoundError as e:
                 raise HTTPException(404, f"no note at {path}") from e
+
+    @app.post("/folder")
+    def create_folder(req: FolderRequest) -> dict[str, Any]:
+        with write_lock:
+            try:
+                return current().create_folder(req.parent, req.name, req.description).to_dict()
+            except FileNotFoundError as e:
+                raise HTTPException(404, f"no folder at {req.parent}") from e
 
     @app.delete("/folder")
     def delete_folder(path: str) -> dict[str, Any]:
