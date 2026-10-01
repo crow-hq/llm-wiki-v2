@@ -33,6 +33,7 @@ import yaml
 
 from llmw2.bundle.document import DELIMITER, OKFDocument, OKFDocumentError
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
+from llmw2.bundle.origin_index import OriginIndex
 from llmw2.bundle.tree import (
     INDEX,
     LOG,
@@ -85,6 +86,7 @@ class WikiStore:
     def __init__(self, root: Path, *, actor: str) -> None:
         self.root = Path(root)
         self.actor = actor
+        self._origins = OriginIndex(self.root)
 
     # -- reading --------------------------------------------------------------
 
@@ -254,7 +256,7 @@ class WikiStore:
         fm["hash"] = content_hash(text)
         if origin is not None:
             fm["origin"] = origin.to_dict()
-            fm["seq"] = 1 + max((_seq(c) for _, c in self._origin_copies(origin.key)), default=0)  # save order per key
+            fm["seq"] = 1 + max((c.seq for c in self._origins.copies(origin.key)), default=0)  # save order per key
         fm["generated"] = {"by": self.actor, "at": now_iso()}
         (self.root / RAW).mkdir(exist_ok=True)
         write_atomic(self.root / RAW / f"{slug}.md", OKFDocument(fm, text).serialize())
@@ -265,26 +267,21 @@ class WikiStore:
 
         Copies no note cites (an ingest interrupted after saving the raw) are ignored: None if none is cited.
         """
-        copies = self._origin_copies(key)
+        copies = self._origins.copies(key)
         if not copies:
             return None
-        rels =[f"/{RAW}/{path.name}" for path, _ in copies]
+        rels = [f"/{RAW}/{c.name}" for c in copies]
         # Notes ordered by the newest copy they cite, so the last one cites the latest cited copy.
-        newest: dict[str, int] = {}
-        for note in self.load().all_notes():
-            cited = [rels.index(r) for r in _raw_sources(note) if r in rels]
-            if cited:
-                newest[note.rel] = max(cited)
+        newest = self._origins.citing(rels)
         if not newest:
             return None
         top = max(newest.values())
-        latest = copies[top][1]
-        version = latest["origin"].get("version")
+        latest = copies[top]
         return OriginRecord(
             raw=rels[top],
-            hash=str(latest["hash"]) if latest.get("hash") else None,
-            version=str(version) if version else None,
-            removed=bool(latest.get("removed")),
+            hash=latest.hash,
+            version=latest.version,
+            removed=latest.removed,
             notes=sorted(newest, key=lambda rel: (newest[rel], rel)),
         )
 
@@ -294,9 +291,11 @@ class WikiStore:
         Returns the record (None if the key is unknown). Notes stay: the wiki is memory.
         """
         changed = False
-        for path, fm in self._origin_copies(key):
-            if not fm.get("removed"):
+        for copy in self._origins.copies(key):
+            if not copy.removed:
+                path = self.root / RAW / copy.name
                 text = path.read_text(encoding="utf-8")
+                fm = OKFDocument.parse(text).frontmatter
                 end = text.index(f"\n{DELIMITER}\n", len(DELIMITER))  # a saved copy always has a frontmatter block
                 fm["removed"] = now_iso()
                 head = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).rstrip()
@@ -306,20 +305,6 @@ class WikiStore:
         if record is not None and changed:
             self.append_log("Source removed", "deleted at its source", record.raw.lstrip("/"), key)
         return record
-
-    def _origin_copies(self, key: str) -> list[tuple[Path, dict[str, Any]]]:
-        """The raw copies carrying this origin key with their frontmatter, oldest first."""
-        found: list[tuple[Path, dict[str, Any]]] = []
-        for path in (self.root / RAW).glob("*.md"):
-            try:
-                fm = OKFDocument.parse(path.read_text(encoding="utf-8")).frontmatter
-                origin = Origin.from_dict(fm["origin"]) if isinstance(fm.get("origin"), dict) else None
-            except (OKFDocumentError, InputError):
-                continue
-            if origin is not None and origin.key == key:
-                found.append((path, fm))
-        found.sort(key=lambda item: (_seq(item[1]), str(item[1].get("generated", {}).get("at", "")), item[0].stem))
-        return found
 
     def write_index(self, folder: Folder) -> None:
         parts: list[str] = []
@@ -431,12 +416,6 @@ class WikiStore:
 
     def _save(self, note: Note) -> None:
         write_atomic(note.path, OKFDocument(note.frontmatter, note.body).serialize())
-
-
-def _seq(frontmatter: dict[str, Any]) -> int:
-    """A raw copy's save order among the copies of its origin key (0 for copies saved without one)."""
-    seq = frontmatter.get("seq")
-    return seq if isinstance(seq, int) else 0
 
 
 def _raw_sources(note: Note) -> list[str]:

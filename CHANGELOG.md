@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The license is declared as the SPDX expression `AGPL-3.0-or-later`, which requires setuptools 77 or later to build.
 - README links are absolute, so they work on the PyPI project page.
 - The repository moved to https://github.com/crow-hq/llm-wiki-v2 and all project URLs point there.
+- `wiki.origin`, the `unchanged` check and `sync` no longer reread every raw copy and the whole note tree for each item: an in-memory index rereads only the files that changed since the last look.
 
 ### Fixed
 
