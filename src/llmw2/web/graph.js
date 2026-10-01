@@ -26,11 +26,13 @@ export function refreshGraph() {
 }
 
 // `onLive` runs after each live refresh (the sidebar reloads its tree and token counts);
-// `deleteFolder(path)` and `emptyWiki()` ask, delete, and refresh the page, the brain included.
-export async function showGraph(onLive, { deleteFolder, emptyWiki }) {
+// `deleteFolder(path)` and `emptyWiki()` ask, delete, and refresh the page, the brain included;
+// `newFolder(parent)` asks for a folder's name and description, in the focused folder or at the top.
+export async function showGraph(onLive, { deleteFolder, emptyWiki, newFolder }) {
   const view = $("#view");
   view.className = "brain";
   view.innerHTML = `<div class="brain-bar"><h2>Brain</h2><span class="crumbs" id="gstats"></span>
+    <button class="btn ghost small" type="button" id="gnew">New folder</button>
     <button class="btn danger small" type="button" id="gdel" hidden></button>
     <button class="btn danger small" type="button" id="gempty" hidden>Empty the wiki</button>
     <label><input type="checkbox" id="live"> live</label></div><div id="tip"></div><div class="legend" id="legend"></div>`;
@@ -116,15 +118,17 @@ export async function showGraph(onLive, { deleteFolder, emptyWiki }) {
     lit();
   }
 
-  function lit() { // dim what is outside the focused folder, and offer to delete that folder
+  function lit() { // dim what is outside the focused folder, and offer a new folder in it or to delete it
     const f = brain.focus, id = (x) => typeof x === "object" ? x.id : x; // a link end is a node once the simulation has it
     const inside = (n) => !f || f === "/" || n === f || n.startsWith(f.slice(1) + "/") || n.startsWith(f + "/");
     nodeLayer.selectAll("g.node").classed("dim", (n) => !inside(n.id));
     linkLayer.selectAll("line").classed("dim", (l) => !inside(id(l.source)) || !inside(id(l.target)));
+    $("#gnew").textContent = !f || f === "/" ? "New folder" : `New folder in ${f}`;
     $("#gdel").hidden = !f || f === "/";
     $("#gdel").textContent = `Delete ${f}`;
   }
 
+  $("#gnew").onclick = () => newFolder(brain.focus || "/");
   $("#gdel").onclick = () => deleteFolder(brain.focus);
   $("#gempty").onclick = () => emptyWiki();
   await refresh();

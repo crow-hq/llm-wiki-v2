@@ -18,7 +18,7 @@
     <a href="#"><img src="/web/img/crow.png" alt=""><div><h1>CROW</h1><small>LLM WIKI V2</small></div></a>
     <div class="models" id="models"></div>
   </div>
-  <nav><div class="label">Catalogue</div><div id="tree"></div></nav>
+  <nav><div class="label catalogue">Catalogue<button class="mini" id="newfolder" type="button" title="A new folder at the top level">+ Folder</button></div><div id="tree"></div></nav>
   <div class="ledgers">
     <div class="label" style="padding:0">Tokens</div>
     <div class="ledger llm"><b>LLM</b><span class="bar"><i id="bar-llm"></i></span><span class="nums" id="num-llm"></span></div>
@@ -38,7 +38,13 @@
   <div id="view"></div>
 </main>
 <div id="overlay"><div>Drop to catalogue<small>.txt · .md · .pdf — the librarian files each one</small></div></div>
-<div id="queue"></div>
+<div id="queue">
+  <section id="jobs" aria-label="Filing queue" hidden>
+    <div class="jobs-head"><b id="jobs-count" aria-live="polite"></b><button class="btn danger" id="jobs-stop" type="button" title="Drop what is still waiting; the one being filed finishes">Stop</button><button class="fold" id="jobs-fold" type="button" aria-label="Show the list" aria-expanded="true">▾</button></div>
+    <div class="jobs-bar"><i id="jobs-done"></i></div>
+    <div id="jobs-list"></div>
+  </section>
+</div>
 <dialog id="dlg">
   <form method="dialog" id="addform">
     <h3>New note</h3>
@@ -48,6 +54,18 @@
     <label for="txt">Text <small>(Markdown is fine)</small></label>
     <textarea id="txt" placeholder="What do you want the wiki to remember?" required></textarea>
     <div class="actions"><span class="dlg-hint">Ctrl+Enter to file it</span><button class="btn ghost" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok">File it →</button></div>
+  </form>
+</dialog>
+<dialog id="folderdlg">
+  <form method="dialog" id="folderform">
+    <h3>New folder</h3>
+    <p class="dlg-lead">A topic for notes, <b id="folder-where"></b>. The librarian reads its description to decide what to file here, so both are needed.</p>
+    <label for="folder-name">Name <small>(the topic, e.g. suppliers or hr-policies)</small></label>
+    <input id="folder-name" maxlength="40" required autocomplete="off" spellcheck="false" placeholder="e.g. suppliers">
+    <label for="folder-desc">Description <small>(one line: what belongs here)</small></label>
+    <input id="folder-desc" maxlength="150" required autocomplete="off" placeholder="e.g. Who we buy from: contracts, prices and contacts.">
+    <p class="dlg-error" id="folder-error" hidden></p>
+    <div class="actions"><button class="btn ghost" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok" id="folder-ok">Create folder</button></div>
   </form>
 </dialog>
 <dialog id="confirm">

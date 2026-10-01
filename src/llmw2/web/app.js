@@ -3,6 +3,7 @@
 
 import { $, api, esc, fmt, md, post } from "./util.js";
 import { leaveGraph, refreshGraph, showGraph } from "./graph.js";
+import { enqueue, startQueue } from "./queue.js";
 import { loadSettings, showSettings } from "./settings.js";
 
 const open = new Set(JSON.parse(localStorage.getItem("okf-open") || "[]"));
@@ -24,7 +25,7 @@ function renderFolder(f, isRoot) {
     const b = document.createElement("button");
     b.className = "note-link"; b.textContent = n.title; b.title = n.summary; b.dataset.path = n.path;
     b.onclick = () => (location.hash = "#/note/" + n.path);
-    kids.append(withDelete(b, `Delete the note ${n.title}`, () => deleteNote(n)));
+    kids.append(withButtons(b, [[`Delete the note ${n.title}`, "trash", () => deleteNote(n)]]));
   }
   if (isRoot) {
     if (!f.subfolders.length && !f.notes.length) kids.innerHTML = '<div class="empty">Empty — drop a file to start.</div>';
@@ -41,16 +42,20 @@ function renderFolder(f, isRoot) {
     box.classList.contains("open") ? open.add(f.path) : open.delete(f.path);
     localStorage.setItem("okf-open", JSON.stringify([...open]));
   };
-  box.append(withDelete(row, `Delete the folder ${f.path}`, () => deleteFolder(f)));
+  box.append(withButtons(row, [[`New folder in ${f.path}`, "plus", () => newFolder(f.path)], [`Delete the folder ${f.path}`, "trash", () => deleteFolder(f)]]));
   if (f.description) { const d = document.createElement("div"); d.className = "desc"; d.textContent = f.description; box.append(d); }
   box.append(kids);
   return box;
 }
-function withDelete(el, label, onDelete) { // a sidebar row with its delete button, shown on hover
-  const line = document.createElement("div"), del = document.createElement("button");
-  line.className = "line"; del.className = "del"; del.title = label; del.setAttribute("aria-label", label);
-  del.innerHTML = ICONS.trash; del.onclick = onDelete;
-  line.append(el, del);
+function withButtons(el, buttons) { // a sidebar row with its buttons ([label, icon, onClick]), shown on hover
+  const line = document.createElement("div"), acts = document.createElement("span");
+  line.className = "line"; acts.className = "acts";
+  for (const [label, icon, onClick] of buttons) {
+    const b = document.createElement("button");
+    b.className = icon; b.title = label; b.setAttribute("aria-label", label); b.innerHTML = ICONS[icon]; b.onclick = onClick;
+    acts.append(b);
+  }
+  line.append(el, acts);
   return line;
 }
 const findFolder = (f, path) => f.path === path ? f : f.subfolders.map((s) => findFolder(s, path)).find(Boolean);
@@ -82,6 +87,7 @@ const ICONS = {
   note: '<svg viewBox="0 0 24 24" fill="none" stroke="#ff4d2e" stroke-width="1.6"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="#7aa2ff" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/></svg>',
 };
 
 function home() {
@@ -99,7 +105,7 @@ function home() {
       <div class="art" role="img" aria-label="A pixel-art crow under a red moon, beside a glowing graph of notes"></div>
     </div>
     <div class="cards">
-      <div class="card">${ICONS.folder}<div><b>${folders} folder${folders === 1 ? "" : "s"}</b><span>New ones appear when nothing fits. Open them in the sidebar.</span></div></div>
+      <div class="card">${ICONS.folder}<div><b>${folders} folder${folders === 1 ? "" : "s"}</b><span>New ones appear when nothing fits, or make your own with + Folder in the sidebar.</span></div></div>
       <div class="card">${ICONS.note}<div><b>Notes and files</b><span>Write a note with + Note, or drop .txt, .md and .pdf files. PDFs need a text layer.</span></div></div>
       <div class="card">${ICONS.search}<div><b>Ask anything</b><span>Answers cite the notes they come from: click one to read it.</span></div></div>
     </div>`, true);
@@ -168,6 +174,7 @@ function route() {
     showGraph(() => loadTree().then(loadUsage), {
       deleteFolder: async (path) => { await loadTree(); const f = findFolder(tree, path); if (f) deleteFolder(f); },
       emptyWiki: async () => { await loadTree(); emptyWiki(); }, // counts as they are now
+      newFolder,
     });
   }
   else if (h === "#/settings") { current = ""; highlight(); showSettings(saved); }
@@ -175,39 +182,8 @@ function route() {
 }
 
 // -- filing: drop, pick, paste ------------------------------------------------
-const jobs = [];
-let running = false;
-function enqueue(label, send) {
-  const el = document.createElement("div");
-  el.className = "job"; el.innerHTML = `<div class="name"></div><div class="what"><span class="spin"></span> waiting…</div>`;
-  el.querySelector(".name").textContent = label;
-  $("#queue").append(el);
-  jobs.push({ el, send });
-  if (!running) drain();
-}
-async function drain() {
-  running = true;
-  while (jobs.length) {
-    const { el, send } = jobs.shift();
-    el.querySelector(".what").innerHTML = `<span class="spin"></span> the librarian is filing it…`;
-    try {
-      const r = await send();
-      const where = { merged: "merged into", unchanged: "already filed as" }[r.action] || "filed as";
-      const made = r.created_folders.length ? ` · new folder ${esc(r.created_folders.join(", "))}` : "";
-      el.classList.add("ok");
-      el.querySelector(".what").innerHTML = `${where} <a href="#/note/${esc(r.note)}">${esc(r.title)}</a>${made}`;
-      await loadTree(); loadUsage(); refreshGraph();
-      if (!location.hash) home();
-    } catch (e) {
-      el.classList.add("err"); el.querySelector(".what").textContent = e.message;
-      if (/\b40[13]\b|no API key/.test(e.message)) el.querySelector(".what").insertAdjacentHTML("beforeend", ' · <a href="#/settings">check the API key</a>');
-    }
-    setTimeout(() => el.remove(), 12000);
-  }
-  running = false;
-}
-const upload = (file) => enqueue(file.name, () =>
-  api("/upload?filename=" + encodeURIComponent(file.name), { method: "POST", body: file }));
+startQueue(async () => { await loadTree(); loadUsage(); refreshGraph(); if (!location.hash) home(); });
+const upload = (file) => enqueue(file.name, { file });
 
 let depth = 0;
 addEventListener("dragenter", (e) => { if (e.dataTransfer.types.includes("Files")) { depth++; $("#overlay").classList.add("on"); } });
@@ -230,6 +206,32 @@ $("#view").addEventListener("click", (e) => {
   else if (e.target.closest("[data-empty]")) emptyWiki();
   else if (e.target.closest("[data-delete-note]")) deleteNote({ path: current, title: $("h2.title")?.textContent || current });
 });
+
+// -- folders made by hand: a name and the line the librarian routes by, both required --
+function newFolder(parent) { // parent: "/" or "/finance"
+  $("#folderdlg").dataset.parent = parent;
+  $("#folder-where").textContent = parent === "/" ? "at the top level" : `in ${parent}`;
+  $("#folder-name").value = $("#folder-desc").value = ""; $("#folder-error").hidden = true;
+  $("#folderdlg").showModal(); $("#folder-name").focus();
+}
+$("#newfolder").onclick = () => newFolder("/");
+$("#folderform").onkeydown = (e) => { // Enter in a field creates: the form's first button is Cancel
+  if (e.key === "Enter" && e.target.matches("input")) { e.preventDefault(); $("#folderform").requestSubmit($("#folder-ok")); }
+};
+$("#folderform").onsubmit = async (e) => {
+  if (e.submitter?.value !== "ok") return; // Cancel closes it
+  e.preventDefault(); // open until the folder exists, so a refusal is read here
+  const ok = $("#folder-ok");
+  ok.disabled = true;
+  try {
+    const f = await post("/folder", { parent: $("#folderdlg").dataset.parent, name: $("#folder-name").value, description: $("#folder-desc").value });
+    $("#folderdlg").close();
+    tell(`Created ${f.path}`, "ok");
+    reveal(f.path.slice(1)); await loadTree(); refreshGraph();
+    if (!location.hash || location.hash === "#/") home();
+  } catch (err) { $("#folder-error").textContent = err.message; $("#folder-error").hidden = false; }
+  finally { ok.disabled = false; }
+};
 
 // -- deleting: a note, a folder, the whole wiki -------------------------------
 function confirmDelete({ title, text, action = "Delete", word = "" }) { // resolves true once the user confirms
@@ -285,8 +287,7 @@ $("#dlg").onclose = () => {
   if ($("#dlg").returnValue !== "ok") return;
   const text = $("#txt").value, title = $("#t").value.trim() || null;
   if (!text.trim()) return;
-  enqueue(title || text.slice(0, 40) + "…", () =>
-    post("/ingest", { text, title }));
+  enqueue(title || text.slice(0, 40) + "…", { text, title });
   $("#txt").value = ""; $("#t").value = "";
 };
 $("#ask").onsubmit = (e) => { e.preventDefault(); const q = $("#q").value.trim(); if (q) ask(q); };

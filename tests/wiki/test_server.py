@@ -125,6 +125,44 @@ def test_tree_lists_folders_and_notes(client: TestClient, llm: FakeLLM) -> None:
     }
 
 
+def test_create_folder_by_hand_lists_it_with_its_description_and_the_librarian_files_into_it(client: TestClient, llm: FakeLLM) -> None:
+    top = client.post("/folder", json={"name": "Finance", "description": " Money in\nand out. "})
+    sub = client.post("/folder", json={"parent": "/finance", "name": "pricing", "description": "What things cost."})
+    llm.add("librarian/summarize", draft("Alpha")).add("librarian/route", {"action": "descend", "subfolder": "finance"}, {"action": "here"})
+    llm.add("librarian/find_match", {"match": None}).add("librarian/relate", {"related": []})
+    filed = client.post("/ingest", json={"text": "Booked on delivery."}).json()
+
+    assert top.json() == {"path": "/finance", "description": "Money in and out.", "notes": [], "subfolders": []}
+    assert sub.json()["path"] == "/finance/pricing"
+    assert (filed["note"], filed["created_folders"]) == ("finance/alpha.md", [])
+    finance = client.get("/tree").json()["subfolders"][0]
+    assert [(f["path"], f["description"]) for f in finance["subfolders"]] == [("/finance/pricing", "What things cost.")]
+    assert client.get("/check").json() == []
+
+
+def test_create_folder_refuses_a_missing_name_or_description_a_taken_name_an_unknown_parent_and_max_depth(client: TestClient) -> None:
+    parent = "/"
+    for name in ("a", "b", "c", "d"):  # max_depth 4: /a/b/c/d is the deepest folder the librarian files to
+        assert client.post("/folder", json={"parent": parent, "name": name, "description": "Deeper."}).status_code == 200
+        parent = parent.rstrip("/") + "/" + name
+
+    refused = {
+        "no name": client.post("/folder", json={"name": " ?! ", "description": "Money."}),
+        "no description": client.post("/folder", json={"name": "finance", "description": "  "}),
+        "no description field": client.post("/folder", json={"name": "finance"}),
+        "taken": client.post("/folder", json={"name": "A", "description": "Again."}),
+        "too deep": client.post("/folder", json={"parent": parent, "name": "e", "description": "Deeper still."}),
+        "no parent": client.post("/folder", json={"parent": "/missing", "name": "e", "description": "Lost."}),
+    }
+
+    assert {k: r.status_code for k, r in refused.items()} == {k: 404 if k == "no parent" else 422 for k in refused}
+    assert "needs a name" in refused["no name"].json()["detail"]
+    assert "needs a description" in refused["no description"].json()["detail"]
+    assert refused["taken"].json()["detail"] == "/a already exists"
+    assert "max_depth" in refused["too deep"].json()["detail"]
+    assert [f["path"] for f in client.get("/tree").json()["subfolders"]] == ["/a"]
+
+
 def test_usage_grows_with_each_operation(client: TestClient, llm: FakeLLM) -> None:
     before = client.get("/usage").json()
     script_ingest(llm)
@@ -172,7 +210,7 @@ def test_home_serves_the_single_page_ui(client: TestClient) -> None:
 
     assert response.status_code == 200 and response.headers["content-type"].startswith("text/html")
     assert "<h1>CROW</h1>" in response.text
-    assert "/upload?filename=" in client.get("/web/app.js").text
+    assert "/upload?filename=" in client.get("/web/queue.js").text
 
 
 def test_note_returns_frontmatter_and_body(client: TestClient, llm: FakeLLM) -> None:

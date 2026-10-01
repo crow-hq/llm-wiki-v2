@@ -46,11 +46,15 @@ nav { flex: 1; overflow: auto; padding: 14px 12px 20px; }
 .folder > .line > .row .tri { font-size: 9px; color: var(--faint); width: 10px; transition: transform .15s; }
 .folder.open > .line > .row .tri { transform: rotate(90deg); }
 .folder > .line > .row .count { margin-left: auto; font-size: 11px; color: var(--faint); }
-.line { position: relative; } /* a sidebar row and its delete button, shown on hover */
-.del { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); width: 26px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: var(--raised); color: var(--faint); visibility: hidden; cursor: pointer; }
-.del svg { width: 14px; height: 14px; }
-.del:hover { color: var(--ember); }
-.line:hover > .del, .del:focus-visible { visibility: visible; }
+.label.catalogue { display: flex; align-items: center; justify-content: space-between; }
+.mini { font: 11px var(--mono); letter-spacing: .04em; text-transform: none; padding: 2px 8px; border: 1px solid var(--edge); border-radius: 4px; background: none; color: var(--soft); }
+.mini:hover { border-color: var(--ember); color: var(--cream); }
+.line { position: relative; } /* a sidebar row and its buttons (new folder, delete), shown on hover */
+.acts { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; visibility: hidden; }
+.acts button { width: 26px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: var(--raised); color: var(--faint); cursor: pointer; }
+.acts svg { width: 14px; height: 14px; }
+.acts .trash:hover { color: var(--ember); } .acts .plus:hover { color: var(--cream); }
+.line:hover > .acts, .acts:focus-within { visibility: visible; }
 .folder .desc { font: 12px/1.4 var(--text); color: var(--faint); padding: 0 8px 4px 26px; }
 .folder > .kids { display: none; margin-left: 13px; border-left: 1px dashed var(--edge); }
 .folder.open > .kids { display: block; }
@@ -130,11 +134,29 @@ a.cite:hover { background: var(--ember); color: #0b0f1e; }
 #overlay.on { display: grid; }
 #overlay div { border: 2px dashed var(--ember); border-radius: 14px; padding: 60px 80px; text-align: center; font: 700 36px var(--display); color: var(--cream); }
 #overlay small { display: block; margin-top: 10px; font: 12px var(--mono); color: var(--soft); }
-#queue { position: fixed; right: 22px; bottom: 22px; width: 340px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
+#queue { position: fixed; right: 22px; bottom: 22px; width: min(340px, calc(100vw - 44px)); display: flex; flex-direction: column; gap: 8px; z-index: 5; }
 .job { background: var(--panel); border: 1px solid var(--edge); border-left: 3px solid var(--muted); border-radius: 8px; padding: 10px 14px; font-size: 13px; box-shadow: 0 10px 30px rgba(0, 0, 0, .4); animation: rise .25s ease both; }
 .job.ok { border-left-color: var(--ok); } .job.err { border-left-color: var(--ember); }
-.job .name { font: 500 12px var(--mono); color: var(--cream); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .job .what { color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+/* the filing queue: one panel under the short-lived lines, its list scrolls within a fixed height */
+#jobs { order: 1; background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .4); overflow: hidden; animation: rise .25s ease both; }
+.jobs-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; }
+.jobs-head b { flex: 1; font: 500 12px var(--mono); color: var(--cream); }
+.jobs-head .btn { height: 26px; padding: 0 10px; font-size: 12px; }
+.fold { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); transition: transform .15s; }
+.fold:hover { background: var(--raised); color: var(--cream); }
+#jobs.folded .fold { transform: rotate(180deg); }
+.jobs-bar { height: 3px; background: #151d38; }
+.jobs-bar i { display: block; height: 100%; width: 0; background: var(--ember); transition: width .4s ease; }
+#jobs-list { max-height: min(300px, 40vh); overflow: auto; }
+#jobs.folded #jobs-list { display: none; }
+.task { padding: 7px 14px 7px 11px; border-left: 3px solid transparent; border-top: 1px solid var(--rule); font-size: 12px; }
+.task:first-child { border-top: 0; }
+.task .name { font-weight: 500; color: var(--cream); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task .what { color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.task .what:empty { display: none; }
+.task.wait .name { font-weight: 400; color: var(--faint); }
+.task.now { border-left-color: var(--amber); } .task.ok { border-left-color: var(--ok); } .task.err { border-left-color: var(--ember); }
 dialog { border: 1px solid var(--edge); border-radius: 12px; background: var(--panel); color: var(--ink); width: min(640px, 92vw); padding: 26px; }
 dialog::backdrop { background: rgba(3, 5, 13, .7); }
 dialog h3 { font: 700 30px var(--display); color: var(--cream); margin: 0 0 6px; }
@@ -142,6 +164,7 @@ dialog h3 { font: 700 30px var(--display); color: var(--cream); margin: 0 0 6px;
 dialog label { display: block; font: 13px var(--mono); color: #c7cfe2; margin-bottom: 6px; }
 dialog label small { color: var(--faint); }
 .dlg-hint { margin-right: auto; align-self: center; font: 11px var(--mono); color: var(--faint); }
+.dlg-error { font: 13px var(--mono); color: var(--ember-soft); margin: -4px 0 16px; }
 dialog input, dialog textarea { width: 100%; font: 15px var(--text); padding: 10px 12px; border: 1px solid var(--edge); border-radius: 8px; background: var(--field); color: var(--ink); margin-bottom: 10px; }
 dialog textarea { height: 260px; resize: vertical; margin-bottom: 16px; }
 dialog input { margin-bottom: 16px; }
