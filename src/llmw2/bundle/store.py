@@ -6,7 +6,8 @@
     wiki/
       index.md        root index (frontmatter: okf_version "0.2")
       log.md          newest-first change log
-      raw/            immutable copies of every ingested source (type: Source)
+      raw/            copies of every ingested source (type: Source): never edited, except that
+                      `mark_origin_removed` adds a `removed` timestamp to the frontmatter
       <note>.md       type: Note, title, description (the one-line summary), tags, generated, sources
       <folder>/
         index.md      "* [sub](sub/index.md) - description" and "* [Title](note.md) - summary"
@@ -28,7 +29,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from llmw2.bundle.document import OKFDocument, OKFDocumentError
+import yaml
+
+from llmw2.bundle.document import DELIMITER, OKFDocument, OKFDocumentError
+from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.tree import (
     INDEX,
     LOG,
@@ -90,7 +94,7 @@ class WikiStore:
         if not (self.root / INDEX).exists():
             self.write_index(Folder(self.root, ""))
         if not (self.root / LOG).exists():
-            _write(self.root / LOG, "# Wiki log\n")
+            write_atomic(self.root / LOG, "# Wiki log\n")
 
     @contextlib.contextmanager
     def lock(self) -> Iterator[None]:
@@ -237,17 +241,79 @@ class WikiStore:
         self._save(note)
         return True
 
-    def save_raw(self, text: str, *, title: str, resource: str | None) -> str:
-        """Keep an immutable copy of an ingested source; returns its bundle-absolute path ("/raw/…")."""
+    def save_raw(self, text: str, *, title: str, resource: str | None, origin: Origin | None = None) -> str:
+        """Keep a copy of an ingested source; returns its bundle-absolute path ("/raw/…").
+
+        The frontmatter records the text's hash and, when given, where the original lives.
+        """
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         slug = self.unique_slug(Folder(self.root / RAW, RAW), f"{stamp}-{slugify(title, max_len=40)}")
         fm: dict[str, Any] = {"type": SOURCE_TYPE, "title": title}
         if resource:
             fm["resource"] = resource
+        fm["hash"] = content_hash(text)
+        if origin is not None:
+            fm["origin"] = origin.to_dict()
+            fm["seq"] = 1 + max((_seq(c) for _, c in self._origin_copies(origin.key)), default=0)  # save order per key
         fm["generated"] = {"by": self.actor, "at": now_iso()}
         (self.root / RAW).mkdir(exist_ok=True)
-        _write(self.root / RAW / f"{slug}.md", OKFDocument(fm, text).serialize())
+        write_atomic(self.root / RAW / f"{slug}.md", OKFDocument(fm, text).serialize())
         return f"/{RAW}/{slug}.md"
+
+    def find_origin(self, key: str) -> OriginRecord | None:
+        """The latest raw copy ingested with this origin key, and the notes citing its copies."""
+        copies = self._origin_copies(key)
+        if not copies:
+            return None
+        rels = [f"/{RAW}/{path.name}" for path, _ in copies]
+        latest = copies[-1][1]
+        # Notes ordered by the newest copy they cite, so the last one cites the latest copy if any note does.
+        newest: dict[str, int] = {}
+        for note in self.load().all_notes():
+            cited = [rels.index(r) for r in _raw_sources(note) if r in rels]
+            if cited:
+                newest[note.rel] = max(cited)
+        version = latest["origin"].get("version")
+        return OriginRecord(
+            raw=rels[-1],
+            hash=str(latest["hash"]) if latest.get("hash") else None,
+            version=str(version) if version else None,
+            removed=bool(latest.get("removed")),
+            notes=sorted(newest, key=lambda rel: (newest[rel], rel)),
+        )
+
+    def mark_origin_removed(self, key: str) -> OriginRecord | None:
+        """Stamp `removed` on every raw copy of this key that lacks it; the copies' text is untouched.
+
+        Returns the record (None if the key is unknown). Notes stay: the wiki is memory.
+        """
+        changed = False
+        for path, fm in self._origin_copies(key):
+            if not fm.get("removed"):
+                text = path.read_text(encoding="utf-8")
+                end = text.index(f"\n{DELIMITER}\n", len(DELIMITER))  # a saved copy always has a frontmatter block
+                fm["removed"] = now_iso()
+                head = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).rstrip()
+                write_atomic(path, f"{DELIMITER}\n{head}{text[end:]}")
+                changed = True
+        record = self.find_origin(key)
+        if record is not None and changed:
+            self.append_log("Source removed", "deleted at its source", record.raw.lstrip("/"), key)
+        return record
+
+    def _origin_copies(self, key: str) -> list[tuple[Path, dict[str, Any]]]:
+        """The raw copies carrying this origin key with their frontmatter, oldest first."""
+        found: list[tuple[Path, dict[str, Any]]] = []
+        for path in (self.root / RAW).glob("*.md"):
+            try:
+                fm = OKFDocument.parse(path.read_text(encoding="utf-8")).frontmatter
+                origin = Origin.from_dict(fm["origin"]) if isinstance(fm.get("origin"), dict) else None
+            except (OKFDocumentError, InputError):
+                continue
+            if origin is not None and origin.key == key:
+                found.append((path, fm))
+        found.sort(key=lambda item: (_seq(item[1]), str(item[1].get("generated", {}).get("at", "")), item[0].stem))
+        return found
 
     def write_index(self, folder: Folder) -> None:
         parts: list[str] = []
@@ -259,7 +325,7 @@ class WikiStore:
         if folder.notes or not folder.subfolders:
             lines = [_entry(n.title, f"{n.slug}.md", n.summary) for n in folder.notes]
             parts.append("# Notes\n\n" + "\n".join(lines) + ("\n" if lines else ""))
-        _write(folder.path / INDEX, "\n".join(parts))
+        write_atomic(folder.path / INDEX, "\n".join(parts))
 
     def append_log(self, verb: str, text: str, link: str | None = None, link_title: str | None = None) -> None:
         """Newest first under a `## YYYY-MM-DD` heading (OKF §9)."""
@@ -275,7 +341,7 @@ class WikiStore:
             lines[at:at] = [today, "", entry, ""]
             if at > 0 and lines[at - 1] != "":
                 lines.insert(at, "")
-        _write(path, "\n".join(lines).rstrip() + "\n")
+        write_atomic(path, "\n".join(lines).rstrip() + "\n")
 
     # -- deleting -------------------------------------------------------------
 
@@ -309,7 +375,7 @@ class WikiStore:
             raw.unlink()
             deleted.sources.append(f"/{RAW}/{raw.name}")
         deleted.sources = list(dict.fromkeys(deleted.sources))
-        _write(self.root / LOG, "# Wiki log\n")
+        write_atomic(self.root / LOG, "# Wiki log\n")
         self.append_log("Emptied the wiki", f"{len(deleted.notes)} notes and {len(deleted.folders)} folders deleted")
         return deleted
 
@@ -358,7 +424,13 @@ class WikiStore:
         return candidate
 
     def _save(self, note: Note) -> None:
-        _write(note.path, OKFDocument(note.frontmatter, note.body).serialize())
+        write_atomic(note.path, OKFDocument(note.frontmatter, note.body).serialize())
+
+
+def _seq(frontmatter: dict[str, Any]) -> int:
+    """A raw copy's save order among the copies of its origin key (0 for copies saved without one)."""
+    seq = frontmatter.get("seq")
+    return seq if isinstance(seq, int) else 0
 
 
 def _raw_sources(note: Note) -> list[str]:
@@ -371,7 +443,7 @@ def _raw_sources(note: Note) -> list[str]:
     ]
 
 
-def _write(path: Path, text: str) -> None:
+def write_atomic(path: Path, text: str) -> None:
     """Write atomically, so a concurrent reader never sees half a file."""
     # One temporary name per process and thread: two writers never share, and so never clobber, a temp file.
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")

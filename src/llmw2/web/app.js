@@ -192,7 +192,7 @@ async function drain() {
     el.querySelector(".what").innerHTML = `<span class="spin"></span> the librarian is filing it…`;
     try {
       const r = await send();
-      const where = r.action === "merged" ? "merged into" : "filed as";
+      const where = { merged: "merged into", unchanged: "already filed as" }[r.action] || "filed as";
       const made = r.created_folders.length ? ` · new folder ${esc(r.created_folders.join(", "))}` : "";
       el.classList.add("ok");
       el.querySelector(".what").innerHTML = `${where} <a href="#/note/${esc(r.note)}">${esc(r.title)}</a>${made}`;

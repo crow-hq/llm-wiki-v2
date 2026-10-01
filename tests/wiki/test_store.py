@@ -433,6 +433,7 @@ def test_save_raw_writes_a_source_document(store: WikiStore, bundle: Path, clock
         "type": "Source",
         "title": "Q3 Report",
         "resource": "https://example.com/q3",
+        "hash": "sha256:debbcd723a6ecc3c43f6b6140e113c1e7d546fb6be0dc9989f7ece129b53872b",
         "generated": {"by": ACTOR, "at": "2026-09-24T12:00:00+00:00"},
     }
     assert doc.body == "Original text."

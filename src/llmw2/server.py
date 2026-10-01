@@ -34,6 +34,7 @@ from pydantic import BaseModel, ConfigDict
 
 from llmw2 import __version__
 from llmw2.bundle.files import SUFFIXES
+from llmw2.bundle.origin import Origin
 from llmw2.bundle.tree import graph
 from llmw2.config import WikiConfig
 from llmw2.errors import ConfigError, InputError, ModelError
@@ -46,10 +47,22 @@ LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
+class OriginModel(BaseModel):
+    """Where the text comes from at its source (see `llmw2.Origin`)."""
+
+    source: str
+    account: str = ""
+    id: str
+    link: str | None = None
+    version: str | None = None
+    modified: str | None = None
+
+
 class IngestRequest(BaseModel):
     text: str
     title: str | None = None
     resource: str | None = None
+    origin: OriginModel | None = None
 
 
 class AskRequest(BaseModel):
@@ -186,7 +199,8 @@ def create_app(
     @app.post("/ingest")
     def ingest(req: IngestRequest) -> dict[str, Any]:
         with write_lock:
-            return current().ingest(req.text, title=req.title, resource=req.resource).to_dict()
+            origin = Origin(**req.origin.model_dump()) if req.origin else None
+            return current().ingest(req.text, title=req.title, resource=req.resource, origin=origin).to_dict()
 
     @app.post("/upload")
     async def upload(request: Request, filename: str) -> dict[str, Any]:

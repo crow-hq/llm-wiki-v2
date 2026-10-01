@@ -22,6 +22,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, BeforeValidator
 
 from llmw2.agents.base import Agent, Decision, list_folders, list_notes
+from llmw2.bundle.origin import Origin, content_hash
 from llmw2.bundle.tree import Folder, Note, slugify
 from llmw2.models.usage import UsageReport
 
@@ -47,6 +48,7 @@ class Source:
     text: str
     title: str | None = None
     resource: str | None = None  # URL or path of the original, if any
+    origin: Origin | None = None  # where the original lives at its source, if it has one
 
 
 @dataclass
@@ -72,8 +74,8 @@ class Route:
 
 @dataclass
 class IngestResult:
-    action: Literal["created", "merged"]
-    note: str  # bundle path of the note written
+    action: Literal["created", "merged", "unchanged"]  # "unchanged": nothing was written
+    note: str  # bundle path of the note written ("" when unchanged and no note cites the source)
     title: str
     folder: str  # "/" or "/finance/pricing"
     created_folders: list[str]
@@ -138,8 +140,12 @@ class Librarian(Agent):
         with self.llm.usage.span() as used:
             root = self.store.load()
             cand = self.summarize(source)
-            raw = self.store.save_raw(source.text, title=source.title or cand.title, resource=source.resource)
-            ref = {"resource": raw, "title": source.title or cand.title}
+            raw = self.store.save_raw(
+                source.text, title=source.title or cand.title, resource=source.resource, origin=source.origin
+            )
+            ref: dict[str, Any] = {"resource": raw, "title": source.title or cand.title, "hash": content_hash(source.text)}
+            if source.origin is not None:
+                ref["origin"] = source.origin.to_dict()
             route = self.route(root, cand)
             pool = unique_objects(n for f in [*route.candidates, route.folder] for n in f.notes)
             match = self.find_match(pool, cand)
