@@ -6,7 +6,7 @@ FROM python:3.13-slim
 
 LABEL org.opencontainers.image.title="llm-wiki-v2" \
       org.opencontainers.image.description="LLM wiki in a Markdown format derived from the Open Knowledge Format" \
-      org.opencontainers.image.source="https://github.com/fed3c3sa/llm-wiki-v2" \
+      org.opencontainers.image.source="https://github.com/crow-hq/llm-wiki-v2" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 # Settings come from the environment (.env): OKF_CONFIG names a settings file the image never has.

@@ -17,7 +17,7 @@
 # or later (LICENSE); the Apache License 2.0 text is in LICENSES/Apache-2.0.md.
 
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -25,8 +25,23 @@ name = "llmw2"
 dynamic = ["version"]  # one source: llmw2.__version__, also written into every note it generates
 description = "LLM wiki in a Markdown format derived from the Open Knowledge Format: librarian, researcher and CROW classifier routing"
 readme = "README.md"
-license = { text = "AGPL-3.0-or-later" }
-classifiers = ["License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)"]
+license = "AGPL-3.0-or-later"  # SPDX expression; needs setuptools>=77, which also drops the License classifier
+license-files = ["LICENSE", "NOTICE", "LICENSES/*"]  # the Apache text must travel with the files taken from OKF
+authors = [{ name = "Federico Cesarini" }, { name = "Marco Sassarini" }]
+keywords = ["LLM wiki", "knowledge base", "Open Knowledge Format", "typed classifier", "CROW"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0",
@@ -39,11 +54,15 @@ dependencies = [
 server = ["fastapi>=0.110", "uvicorn>=0.29"]
 dev = ["pytest>=7.0", "pytest-cov>=5.0", "fastapi>=0.110", "uvicorn>=0.29", "ruff>=0.6", "mypy>=1.11", "types-PyYAML"]
 
+[project.urls]
+Homepage = "https://github.com/crow-hq/llm-wiki-v2"
+Repository = "https://github.com/crow-hq/llm-wiki-v2"
+Issues = "https://github.com/crow-hq/llm-wiki-v2/issues"
+Paper = "https://doi.org/10.5281/zenodo.22900601"
+Changelog = "https://github.com/crow-hq/llm-wiki-v2/blob/main/CHANGELOG.md"
+
 [project.scripts]
 llmwiki2 = "llmw2.cli:main"
-
-[tool.setuptools]
-license-files = ["LICENSE", "NOTICE", "LICENSES/*"]  # the Apache text must travel with the files taken from OKF
 
 [tool.setuptools.dynamic]
 version = { attr = "llmw2.__version__" }

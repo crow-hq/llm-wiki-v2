@@ -83,7 +83,7 @@ async function fileNext() {
     done(job, "err", esc(e.message) + key); render();
     return;
   }
-  const where = r.action === "merged" ? "merged into" : "filed as";
+  const where = { merged: "merged into", unchanged: "already filed as" }[r.action] || "filed as";
   const made = r.created_folders.length ? ` · new folder ${esc(r.created_folders.join(", "))}` : "";
   done(job, "ok", `${where} <a href="#/note/${esc(r.note)}">${esc(r.title)}</a>${made}`); render();
   await refresh().catch(() => {});

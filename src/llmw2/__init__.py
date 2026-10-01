@@ -10,10 +10,27 @@ LLM only writes text.
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
+from llmw2.bundle.origin import Origin
 from llmw2.config import WikiConfig
 from llmw2.errors import ConfigError, InputError, ModelError, WikiError
+from llmw2.sources import Change, ChangeBatch, LocalFolderSource, SourceConnector, SyncReport, sync
 from llmw2.wiki import Wiki
 
-__all__ = ["ConfigError", "InputError", "ModelError", "Wiki", "WikiConfig", "WikiError", "__version__"]
+__all__ = [
+    "Change",
+    "ChangeBatch",
+    "ConfigError",
+    "InputError",
+    "LocalFolderSource",
+    "ModelError",
+    "Origin",
+    "SourceConnector",
+    "SyncReport",
+    "Wiki",
+    "WikiConfig",
+    "WikiError",
+    "__version__",
+    "sync",
+]

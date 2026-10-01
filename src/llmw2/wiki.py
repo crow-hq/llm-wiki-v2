@@ -7,6 +7,10 @@
     wiki.init()
     wiki.ingest(text, title="…", resource="https://…")
     wiki.ingest_file(Path("minutes.pdf").read_bytes(), "minutes.pdf")
+    wiki.ingest_file(data, "minutes.pdf", origin=Origin("onedrive", "me", item_id, version=etag))  # unchanged → no model call
+    wiki.origin(key)                          # the latest raw copy and the notes for one original
+    wiki.mark_removed(key)                    # the original is gone at its source; the notes stay
+    sync(wiki, LocalFolderSource(Path("~/OneDrive")))   # keep the wiki in step with a source
     wiki.ask("…").text
     wiki.create_folder("/", "finance", "Money in and out: budgets, invoices, pricing.")
     wiki.delete_note("finance/pricing.md"); wiki.delete_folder("/finance"); wiki.clear()
@@ -23,6 +27,7 @@ from llmw2.agents.prompts import Prompts
 from llmw2.agents.researcher import Answer, CrowResearcher, Researcher
 from llmw2.bundle.check import Problem, check
 from llmw2.bundle.files import extract_text, title_of
+from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.store import Deleted, WikiStore
 from llmw2.bundle.tree import Folder, slugify
 from llmw2.config import WikiConfig
@@ -83,17 +88,49 @@ class Wiki:
     def init(self) -> None:
         self.store.init()
 
-    def ingest(self, text: str, *, title: str | None = None, resource: str | None = None) -> IngestResult:
+    def ingest(
+        self, text: str, *, title: str | None = None, resource: str | None = None, origin: Origin | None = None
+    ) -> IngestResult:
+        """File a text. With an `origin` already ingested with the same hash or version, nothing is done.
+
+        That case returns action "unchanged" (no model call, no file written) with the note that cites the copy.
+        """
         if not text.strip():
             raise InputError("nothing to ingest: the source is empty")
         self._require_classifier()
         self.store.init()
         with self.store.lock():  # the librarian reads the tree, then writes on what it read
-            return self.librarian().ingest(Source(text, title, resource))
+            if origin is not None and (known := self._unchanged(origin, text)) is not None:
+                return known
+            return self.librarian().ingest(Source(text, title, resource, origin))
 
-    def ingest_file(self, data: bytes, filename: str, *, resource: str | None = None) -> IngestResult:
+    def ingest_file(
+        self, data: bytes, filename: str, *, resource: str | None = None, origin: Origin | None = None
+    ) -> IngestResult:
         """Ingest a .txt, .md or .pdf file; its name becomes the source title."""
-        return self.ingest(extract_text(data, filename), title=title_of(filename), resource=resource or filename)
+        link = resource or (origin.link if origin else None) or filename
+        return self.ingest(extract_text(data, filename), title=title_of(filename), resource=link, origin=origin)
+
+    def origin(self, key: str) -> OriginRecord | None:
+        """The latest raw copy ingested for an origin key (`Origin.key`), or None if there is none."""
+        return self.store.find_origin(key)
+
+    def mark_removed(self, key: str) -> OriginRecord | None:
+        """The original was deleted at its source: its raw copies are marked, its notes stay. None if unknown."""
+        with self.store.lock():
+            return self.store.mark_origin_removed(key)
+
+    def _unchanged(self, origin: Origin, text: str) -> IngestResult | None:
+        """The result to give back when this origin is already filed with the same content or version."""
+        record = self.store.find_origin(origin.key)
+        if record is None or record.removed:
+            return None
+        if record.hash != content_hash(text) and not (origin.version and origin.version == record.version):
+            return None
+        rel = record.notes[-1] if record.notes else ""
+        title = self.store.read(rel).title if rel else ""
+        folder = "/" + rel.rpartition("/")[0]
+        return IngestResult("unchanged", rel, title, folder, [], [], [], UsageReport())
 
     def ask(self, question: str) -> Answer:
         if not question.strip():
