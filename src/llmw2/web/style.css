@@ -130,11 +130,29 @@ a.cite:hover { background: var(--ember); color: #0b0f1e; }
 #overlay.on { display: grid; }
 #overlay div { border: 2px dashed var(--ember); border-radius: 14px; padding: 60px 80px; text-align: center; font: 700 36px var(--display); color: var(--cream); }
 #overlay small { display: block; margin-top: 10px; font: 12px var(--mono); color: var(--soft); }
-#queue { position: fixed; right: 22px; bottom: 22px; width: 340px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
+#queue { position: fixed; right: 22px; bottom: 22px; width: min(340px, calc(100vw - 44px)); display: flex; flex-direction: column; gap: 8px; z-index: 5; }
 .job { background: var(--panel); border: 1px solid var(--edge); border-left: 3px solid var(--muted); border-radius: 8px; padding: 10px 14px; font-size: 13px; box-shadow: 0 10px 30px rgba(0, 0, 0, .4); animation: rise .25s ease both; }
 .job.ok { border-left-color: var(--ok); } .job.err { border-left-color: var(--ember); }
-.job .name { font: 500 12px var(--mono); color: var(--cream); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .job .what { color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+/* the filing queue: one panel under the short-lived lines, its list scrolls within a fixed height */
+#jobs { order: 1; background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .4); overflow: hidden; animation: rise .25s ease both; }
+.jobs-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; }
+.jobs-head b { flex: 1; font: 500 12px var(--mono); color: var(--cream); }
+.jobs-head .btn { height: 26px; padding: 0 10px; font-size: 12px; }
+.fold { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); transition: transform .15s; }
+.fold:hover { background: var(--raised); color: var(--cream); }
+#jobs.folded .fold { transform: rotate(180deg); }
+.jobs-bar { height: 3px; background: #151d38; }
+.jobs-bar i { display: block; height: 100%; width: 0; background: var(--ember); transition: width .4s ease; }
+#jobs-list { max-height: min(300px, 40vh); overflow: auto; }
+#jobs.folded #jobs-list { display: none; }
+.task { padding: 7px 14px 7px 11px; border-left: 3px solid transparent; border-top: 1px solid var(--rule); font-size: 12px; }
+.task:first-child { border-top: 0; }
+.task .name { font-weight: 500; color: var(--cream); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task .what { color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.task .what:empty { display: none; }
+.task.wait .name { font-weight: 400; color: var(--faint); }
+.task.now { border-left-color: var(--amber); } .task.ok { border-left-color: var(--ok); } .task.err { border-left-color: var(--ember); }
 dialog { border: 1px solid var(--edge); border-radius: 12px; background: var(--panel); color: var(--ink); width: min(640px, 92vw); padding: 26px; }
 dialog::backdrop { background: rgba(3, 5, 13, .7); }
 dialog h3 { font: 700 30px var(--display); color: var(--cream); margin: 0 0 6px; }

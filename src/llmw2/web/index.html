@@ -38,7 +38,13 @@
   <div id="view"></div>
 </main>
 <div id="overlay"><div>Drop to catalogue<small>.txt · .md · .pdf — the librarian files each one</small></div></div>
-<div id="queue"></div>
+<div id="queue">
+  <section id="jobs" aria-label="Filing queue" hidden>
+    <div class="jobs-head"><b id="jobs-count" aria-live="polite"></b><button class="btn danger" id="jobs-stop" type="button" title="Drop what is still waiting; the one being filed finishes">Stop</button><button class="fold" id="jobs-fold" type="button" aria-label="Show the list" aria-expanded="true">▾</button></div>
+    <div class="jobs-bar"><i id="jobs-done"></i></div>
+    <div id="jobs-list"></div>
+  </section>
+</div>
 <dialog id="dlg">
   <form method="dialog" id="addform">
     <h3>New note</h3>

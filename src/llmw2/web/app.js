@@ -3,6 +3,7 @@
 
 import { $, api, esc, fmt, md, post } from "./util.js";
 import { leaveGraph, refreshGraph, showGraph } from "./graph.js";
+import { enqueue, startQueue } from "./queue.js";
 import { loadSettings, showSettings } from "./settings.js";
 
 const open = new Set(JSON.parse(localStorage.getItem("okf-open") || "[]"));
@@ -175,39 +176,8 @@ function route() {
 }
 
 // -- filing: drop, pick, paste ------------------------------------------------
-const jobs = [];
-let running = false;
-function enqueue(label, send) {
-  const el = document.createElement("div");
-  el.className = "job"; el.innerHTML = `<div class="name"></div><div class="what"><span class="spin"></span> waiting…</div>`;
-  el.querySelector(".name").textContent = label;
-  $("#queue").append(el);
-  jobs.push({ el, send });
-  if (!running) drain();
-}
-async function drain() {
-  running = true;
-  while (jobs.length) {
-    const { el, send } = jobs.shift();
-    el.querySelector(".what").innerHTML = `<span class="spin"></span> the librarian is filing it…`;
-    try {
-      const r = await send();
-      const where = r.action === "merged" ? "merged into" : "filed as";
-      const made = r.created_folders.length ? ` · new folder ${esc(r.created_folders.join(", "))}` : "";
-      el.classList.add("ok");
-      el.querySelector(".what").innerHTML = `${where} <a href="#/note/${esc(r.note)}">${esc(r.title)}</a>${made}`;
-      await loadTree(); loadUsage(); refreshGraph();
-      if (!location.hash) home();
-    } catch (e) {
-      el.classList.add("err"); el.querySelector(".what").textContent = e.message;
-      if (/\b40[13]\b|no API key/.test(e.message)) el.querySelector(".what").insertAdjacentHTML("beforeend", ' · <a href="#/settings">check the API key</a>');
-    }
-    setTimeout(() => el.remove(), 12000);
-  }
-  running = false;
-}
-const upload = (file) => enqueue(file.name, () =>
-  api("/upload?filename=" + encodeURIComponent(file.name), { method: "POST", body: file }));
+startQueue(async () => { await loadTree(); loadUsage(); refreshGraph(); if (!location.hash) home(); });
+const upload = (file) => enqueue(file.name, { file });
 
 let depth = 0;
 addEventListener("dragenter", (e) => { if (e.dataTransfer.types.includes("Files")) { depth++; $("#overlay").classList.add("on"); } });
@@ -285,8 +255,7 @@ $("#dlg").onclose = () => {
   if ($("#dlg").returnValue !== "ok") return;
   const text = $("#txt").value, title = $("#t").value.trim() || null;
   if (!text.trim()) return;
-  enqueue(title || text.slice(0, 40) + "…", () =>
-    post("/ingest", { text, title }));
+  enqueue(title || text.slice(0, 40) + "…", { text, title });
   $("#txt").value = ""; $("#t").value = "";
 };
 $("#ask").onsubmit = (e) => { e.preventDefault(); const q = $("#q").value.trim(); if (q) ask(q); };

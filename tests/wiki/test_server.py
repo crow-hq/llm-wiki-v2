@@ -172,7 +172,7 @@ def test_home_serves_the_single_page_ui(client: TestClient) -> None:
 
     assert response.status_code == 200 and response.headers["content-type"].startswith("text/html")
     assert "<h1>CROW</h1>" in response.text
-    assert "/upload?filename=" in client.get("/web/app.js").text
+    assert "/upload?filename=" in client.get("/web/queue.js").text
 
 
 def test_note_returns_frontmatter_and_body(client: TestClient, llm: FakeLLM) -> None:
