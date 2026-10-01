@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Provenance on ingest. `ingest` and `ingest_file` accept an `Origin` (source, account, id, and optionally link, version and modified time) that says where a document comes from.
 - Raw copies record a content hash, and the origin and a save sequence number when one is given. Notes cite the hash and origin of their sources.
 - A new `unchanged` ingest result: when a document with the same origin was already filed with the same content or version, no model call is made and nothing is written.
-- `wiki.origin(key)` returns the latest raw copy and the notes for one original.
+- `wiki.origin(key)` returns the latest raw copy cited by a note and the notes for one original.
 - `wiki.mark_removed(key)` records that an original was deleted at its source. The raw copies are marked and the notes are kept.
 - Source connector protocol (`SourceConnector`, `Change`, `ChangeBatch`) and `sync(wiki, connector)`, which files what changed since the last run and resumes from the saved cursor. Unreadable items are listed in the report and the sync continues.
 - `LocalFolderSource`, a connector for a local folder (for example an rclone-synced OneDrive). Hidden files, symbolic links and unsupported file types are ignored.
@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The license is declared as the SPDX expression `AGPL-3.0-or-later`, which requires setuptools 77 or later to build.
 - README links are absolute, so they work on the PyPI project page.
 - The repository moved to https://github.com/crow-hq/llm-wiki-v2 and all project URLs point there.
+- `wiki.origin`, the `unchanged` check and `sync` no longer reread every raw copy and the whole note tree for each item: an in-memory index rereads only the files that changed since the last look.
+
+### Fixed
+
+- A document whose ingest was interrupted after its raw copy was saved is no longer treated as unchanged forever. Only raw copies cited by a note count for `unchanged`, `wiki.origin` and `sync`, and the raw copy is now saved right before the note is written.
 
 ## [0.2.0] - 2026-09-24
 

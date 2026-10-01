@@ -219,6 +219,18 @@ def test_a_removed_item_that_returns_is_filed_again(wiki: Wiki, llm: FakeLLM) ->
     assert report.created == 1
 
 
+def test_an_orphan_raw_copy_with_the_incoming_version_does_not_make_sync_skip_the_item(wiki: Wiki, llm: FakeLLM) -> None:
+    script(llm)
+    orphan = upsert("a", "v1").origin
+    wiki.store.save_raw("Text a.", title="a", resource=None, origin=orphan)
+    source = Fake(ChangeBatch([upsert("a", "v1")], "c1"), files={"a": b"Text a."})
+
+    report = sync(wiki, source)
+
+    assert report == SyncReport(created=1)
+    assert source.fetched == ["a"]
+
+
 # -- LocalFolderSource ------------------------------------------------------------------
 
 

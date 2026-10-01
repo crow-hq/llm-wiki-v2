@@ -59,10 +59,10 @@ class Origin:
 
 @dataclass
 class OriginRecord:
-    """What the wiki holds for one origin key: its latest raw copy and the notes that cite any copy."""
+    """What the wiki holds for one origin key: its latest raw copy cited by a note and the notes that cite any copy."""
 
-    raw: str  # bundle path of the latest raw copy ("/raw/…")
+    raw: str  # bundle path of the latest raw copy cited by a note ("/raw/…")
     hash: str | None  # of that copy; None for copies saved before hashes were kept
     version: str | None
-    removed: bool  # the latest copy is marked as deleted at the source
+    removed: bool  # that copy is marked as deleted at the source
     notes: list[str] = field(default_factory=list)  # bundle paths; those citing the latest copy come last
