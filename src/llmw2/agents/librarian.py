@@ -140,18 +140,13 @@ class Librarian(Agent):
         with self.llm.usage.span() as used:
             root = self.store.load()
             cand = self.summarize(source)
-            raw = self.store.save_raw(
-                source.text, title=source.title or cand.title, resource=source.resource, origin=source.origin
-            )
-            ref: dict[str, Any] = {"resource": raw, "title": source.title or cand.title, "hash": content_hash(source.text)}
-            if source.origin is not None:
-                ref["origin"] = source.origin.to_dict()
             route = self.route(root, cand)
             pool = unique_objects(n for f in [*route.candidates, route.folder] for n in f.notes)
             match = self.find_match(pool, cand)
             created: list[str] = []
             if match is not None and self.should_merge(match, cand):
                 draft = self.merge(match, source)
+                raw, ref = self.save_source(source, cand)
                 note = self.store.update_note(
                     match, title=draft.title, summary=draft.summary, body=draft.body, tags=clean_tags(draft.tags), source=ref
                 )
@@ -161,6 +156,7 @@ class Librarian(Agent):
                 if route.new and self.can_create(folder):
                     folder, is_new = self.store.create_folder(folder, *self.name_folder(folder, cand))
                     created += [folder.label] if is_new else []
+                raw, ref = self.save_source(source, cand)
                 note = self.store.write_note(
                     folder, title=cand.title, summary=cand.summary, body=cand.body, tags=cand.tags, source=ref
                 )
@@ -181,6 +177,18 @@ class Librarian(Agent):
             self.decisions,
             used,
         )
+
+    def save_source(self, source: Source, cand: Candidate) -> tuple[str, dict[str, Any]]:
+        """Keep the raw copy and build the note's source entry; called right before the note is written.
+
+        Saved this late so an interrupted ingest leaves no raw copy that no note cites.
+        """
+        title = source.title or cand.title
+        raw = self.store.save_raw(source.text, title=title, resource=source.resource, origin=source.origin)
+        ref: dict[str, Any] = {"resource": raw, "title": title, "hash": content_hash(source.text)}
+        if source.origin is not None:
+            ref["origin"] = source.origin.to_dict()
+        return raw, ref
 
     def can_create(self, folder: Folder) -> bool:
         return folder.depth < self.cfg.max_depth

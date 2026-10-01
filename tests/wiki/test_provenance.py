@@ -12,10 +12,11 @@ from typing import Any
 
 import pytest
 
-from llmw2 import InputError, Origin, Wiki
+from llmw2 import InputError, ModelError, Origin, Wiki
 from llmw2.bundle import store as store_module
 from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.origin import content_hash
+from llmw2.bundle.store import WikiStore
 from tests.wiki.fakes import FakeLLM
 
 ORIGIN = Origin("onedrive", "me", "item-1", link="https://od.test/1", version="v1", modified="2026-09-01T10:00:00+00:00")
@@ -331,3 +332,112 @@ def test_latest_copy_survives_lost_mtimes_and_a_deleted_older_copy(wiki: Wiki, l
     record = wiki.origin(KEY)
     assert record is not None and record.version == "v3"
     assert read(bundle / record.raw.lstrip("/")).frontmatter["seq"] == 3
+
+
+# -- a raw copy is only kept once a note cites it ---------------------------------------------
+
+
+def fail_first_write(wiki: Wiki, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The first note write raises, as an interruption after the raw copy would; the second goes through."""
+    real = WikiStore.write_note
+    attempts: list[int] = []
+
+    def write_note(self: WikiStore, *args: Any, **kwargs: Any) -> Any:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("interrupted")
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(wiki.store, "write_note", write_note.__get__(wiki.store))
+
+
+def test_an_interrupted_ingest_is_filed_as_created_when_it_runs_again_and_the_note_cites_a_raw_copy(
+    wiki: Wiki, llm: FakeLLM, bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ARRANGE
+    script(llm)
+    script(llm)
+    fail_first_write(wiki, monkeypatch)
+    with pytest.raises(RuntimeError):
+        wiki.ingest("Booked on delivery.", origin=ORIGIN)
+
+    # ACT
+    again = wiki.ingest("Booked on delivery.", origin=ORIGIN)
+
+    # ASSERT
+    assert again.action == "created"
+    [source] = read(bundle / again.note).frontmatter["sources"]
+    assert "/raw/" in source["resource"]
+    copy = read(bundle / source["resource"].lstrip("/"))
+    assert copy.frontmatter["hash"] == content_hash("Booked on delivery.")
+    record = wiki.origin(KEY)
+    assert record is not None and record.raw == source["resource"] and record.notes == [again.note]
+
+
+def test_a_model_error_during_the_merge_leaves_no_new_raw_copy(
+    wiki: Wiki, llm: FakeLLM, bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script(llm)
+    llm.replies["librarian/find_match"] = [{"match": "finance/seed.md"}]
+    llm.add("librarian/consolidate", {"decision": "modify"})
+    real_chat = llm.chat
+
+    def chat(messages: list[dict[str, str]], *, op: str = "") -> str:
+        if op == "librarian/merge":
+            raise ModelError("llm 500")
+        return real_chat(messages, op=op)
+
+    monkeypatch.setattr(llm, "chat", chat)
+    before = raws(bundle)
+
+    with pytest.raises(ModelError):
+        wiki.ingest("Booked on delivery.", origin=ORIGIN)
+
+    assert raws(bundle) == before
+    assert wiki.origin(KEY) is None
+
+
+def test_an_orphan_raw_copy_is_not_an_origin_and_its_document_is_ingested_as_created(wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
+    script(llm)
+    wiki.store.save_raw("Booked on delivery.", title="Memo", resource=None, origin=ORIGIN)
+
+    record = wiki.origin(KEY)
+    result = wiki.ingest("Booked on delivery.", origin=ORIGIN)
+
+    assert record is None
+    assert result.action == "created"
+    assert wiki.origin(KEY) is not None
+
+
+def test_the_origin_ignores_a_later_orphan_copy_and_its_document_is_not_unchanged(wiki: Wiki, llm: FakeLLM) -> None:
+    script(llm)
+    script(llm, "Second")
+    first = wiki.ingest("Booked on delivery.", origin=ORIGIN)
+    cited = wiki.origin(KEY)
+    wiki.store.save_raw("Booked monthly.", title="Memo", resource=None, origin=Origin("onedrive", "me", "item-1", version="v2"))
+
+    record = wiki.origin(KEY)
+    result = wiki.ingest("Booked monthly.", origin=Origin("onedrive", "me", "item-1", version="v2"))
+
+    assert cited is not None and record is not None
+    assert (record.raw, record.hash, record.version) == (cited.raw, content_hash("Booked on delivery."), "v1")
+    assert record.notes == [first.note]
+    assert result.action != "unchanged"
+
+
+def test_only_the_latest_cited_copy_counts_so_an_older_version_is_filed_again(wiki: Wiki, llm: FakeLLM) -> None:
+    script(llm)
+    script(llm, "Second")
+    script(llm, "Third")
+    wiki.ingest("Booked on delivery.", origin=ORIGIN)
+    wiki.ingest("Booked monthly.", origin=Origin("onedrive", "me", "item-1", version="v2"))
+
+    result = wiki.ingest("Booked on delivery.", origin=ORIGIN)
+
+    assert result.action != "unchanged"
+
+
+def test_mark_removed_of_a_key_with_only_orphan_copies_gives_none(wiki: Wiki) -> None:
+    wiki.store.save_raw("Booked on delivery.", title="Memo", resource=None, origin=ORIGIN)
+
+    assert wiki.mark_removed(KEY) is None

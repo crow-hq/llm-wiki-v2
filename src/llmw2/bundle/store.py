@@ -261,21 +261,27 @@ class WikiStore:
         return f"/{RAW}/{slug}.md"
 
     def find_origin(self, key: str) -> OriginRecord | None:
-        """The latest raw copy ingested with this origin key, and the notes citing its copies."""
+        """The latest raw copy with this origin key that a note cites, and the notes citing any of its copies.
+
+        Copies no note cites (an ingest interrupted after saving the raw) are ignored: None if none is cited.
+        """
         copies = self._origin_copies(key)
         if not copies:
             return None
-        rels = [f"/{RAW}/{path.name}" for path, _ in copies]
-        latest = copies[-1][1]
-        # Notes ordered by the newest copy they cite, so the last one cites the latest copy if any note does.
+        rels =[f"/{RAW}/{path.name}" for path, _ in copies]
+        # Notes ordered by the newest copy they cite, so the last one cites the latest cited copy.
         newest: dict[str, int] = {}
         for note in self.load().all_notes():
             cited = [rels.index(r) for r in _raw_sources(note) if r in rels]
             if cited:
                 newest[note.rel] = max(cited)
+        if not newest:
+            return None
+        top = max(newest.values())
+        latest = copies[top][1]
         version = latest["origin"].get("version")
         return OriginRecord(
-            raw=rels[-1],
+            raw=rels[top],
             hash=str(latest["hash"]) if latest.get("hash") else None,
             version=str(version) if version else None,
             removed=bool(latest.get("removed")),

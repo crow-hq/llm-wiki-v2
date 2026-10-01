@@ -8,7 +8,7 @@
     wiki.ingest(text, title="…", resource="https://…")
     wiki.ingest_file(Path("minutes.pdf").read_bytes(), "minutes.pdf")
     wiki.ingest_file(data, "minutes.pdf", origin=Origin("onedrive", "me", item_id, version=etag))  # unchanged → no model call
-    wiki.origin(key)                          # the latest raw copy and the notes for one original
+    wiki.origin(key)                          # the latest raw copy cited by a note, and the notes, for one original
     wiki.mark_removed(key)                    # the original is gone at its source; the notes stay
     sync(wiki, LocalFolderSource(Path("~/OneDrive")))   # keep the wiki in step with a source
     wiki.ask("…").text
@@ -112,7 +112,7 @@ class Wiki:
         return self.ingest(extract_text(data, filename), title=title_of(filename), resource=link, origin=origin)
 
     def origin(self, key: str) -> OriginRecord | None:
-        """The latest raw copy ingested for an origin key (`Origin.key`), or None if there is none."""
+        """The latest raw copy cited by a note for an origin key (`Origin.key`), or None if no note cites one."""
         return self.store.find_origin(key)
 
     def mark_removed(self, key: str) -> OriginRecord | None:
