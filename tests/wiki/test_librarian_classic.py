@@ -13,6 +13,7 @@ from typing import Any
 
 from llmw2 import Wiki, WikiConfig
 from llmw2.agents.librarian import IngestResult
+from llmw2.agents.steps import CLASSIC
 from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.origin import content_hash
 from llmw2.bundle.tree import Note
@@ -113,7 +114,7 @@ def test_first_ingest_writes_raw_copy_index_and_log(classic_wiki: Wiki, llm: Fak
     assert "* [Acme pricing](acme-pricing.md) - What Acme pricing says." in pricing.splitlines()
     log = (bundle / "log.md").read_text(encoding="utf-8")
     assert re.search(r"^## \d{4}-\d{2}-\d{2}$", log, re.MULTILINE)
-    assert f"* **Created**: [Acme pricing](pricing/acme-pricing.md) - from {raw_path} (classic)" in log.splitlines()
+    assert f"* **Created**: [Acme pricing](pricing/acme-pricing.md) - from {raw_path} (classic {CLASSIC.hash})" in log.splitlines()
 
 
 def test_empty_pool_skips_find_match_and_relate(classic_wiki: Wiki, llm: FakeLLM) -> None:
@@ -263,7 +264,13 @@ def test_match_and_modify_merges_the_note_in_place(classic_wiki: Wiki, llm: Fake
     [raw] = (bundle / "raw").iterdir()
     assert note.frontmatter["sources"] == [
         {"id": "s1", "resource": "/raw/seed.md", "title": "Seed"},
-        {"id": "s2", "resource": f"/raw/{raw.name}", "title": "Acme price rise", "hash": content_hash("Acme raised prices.")},
+        {
+            "id": "s2",
+            "resource": f"/raw/{raw.name}",
+            "title": "Acme price rise",
+            "hash": content_hash("Acme raised prices."),
+            "steps": {"name": "classic", "hash": CLASSIC.hash},
+        },
     ]
     assert "* **Merged**: [Acme pricing 2026](acme-pricing.md)" in (bundle / "log.md").read_text(encoding="utf-8")
 

@@ -7,9 +7,8 @@ System One API) takes every filing and retrieval decision by scoring fixed
 options, and the LLM only writes notes, merges, folder names and answers. Each
 classifier decision has a threshold, and when the classifier is not confident
 enough, or fails, that step goes back to the LLM. Both modes run the same
-pipeline and write the same kind of wiki, because `CrowLibrarian` and
-`CrowResearcher` override only the decision hooks of `Librarian` and
-`Researcher`. It is the default; `OKF_MODE=classic` or `--mode classic` lets the LLM take the
+pipeline and write the same kind of wiki, because `CROW` replaces only the decision
+steps of `CLASSIC` (see [customizable steps](../library/steps.md)). It is the default; `OKF_MODE=classic` or `--mode classic` lets the LLM take the
 decisions instead. The classifier needs an OpenRouter key: with OpenRouter as provider its key
 serves both, otherwise `llmwiki2 setup` and the settings page ask for one (or switch to classic).
 
@@ -35,7 +34,7 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 
 | Step | Classic decider | CROW decider | Primitive | Threshold | Fallback |
 |---|---|---|---|---|---|
-| folder routing | LLM `researcher/navigate`. It opens folders from a frontier, at most `OKF_MAX_STEPS` (12), and stops once it has `OKF_MAX_NOTES` (8) notes, or says it is done after selecting at least one (a "done" with nothing selected only closes that folder). | `classifier/retrieval_folder`: one Noul per subfolder, level by level. At each level it keeps the top `retrieval_beam` above `tau_fold`. | Noul | `tau_fold`, `retrieval_beam` | LLM navigation (`Researcher.select`) when no note is selected, or on error |
+| folder routing | LLM `researcher/navigate`. It opens folders from a frontier, at most `OKF_MAX_STEPS` (12), and stops once it has `OKF_MAX_NOTES` (8) notes, or says it is done after selecting at least one (a "done" with nothing selected only closes that folder). | `classifier/retrieval_folder`: one Noul per subfolder, level by level. At each level it keeps the top `retrieval_beam` above `tau_fold`. | Noul | `tau_fold`, `retrieval_beam` | LLM navigation (`steps_classic.select`) when no note is selected, or on error |
 | note scoring | same `navigate` call, which also selects notes | `classifier/retrieval_note`: one Noul per note in the explored folders (including the root). It keeps the top `k` above `tau_ret`. | Noul | `tau_ret`, `k` | LLM navigation when no note clears `tau_ret`, or on error |
 | answer | LLM `researcher/answer`, citing `[path.md]` | same LLM step | - | - | - |
 

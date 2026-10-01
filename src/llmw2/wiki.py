@@ -21,12 +21,13 @@ from __future__ import annotations
 
 from typing import Any, Self
 
-from llmw2.agents.librarian import IngestResult, Librarian, Source
-from llmw2.agents.librarian_crow import CrowLibrarian
+from llmw2.agents.data import Source
+from llmw2.agents.librarian import IngestResult, Librarian
 from llmw2.agents.prompts import Prompts
-from llmw2.agents.researcher import Answer, CrowResearcher, Researcher
+from llmw2.agents.researcher import Answer, Researcher
+from llmw2.agents.steps import CLASSIC, CROW, StepContext, Steps, check_extract
 from llmw2.bundle.check import Problem, check
-from llmw2.bundle.files import extract_text, title_of
+from llmw2.bundle.files import title_of
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.store import Deleted, WikiStore
 from llmw2.bundle.tree import Folder, slugify
@@ -44,9 +45,14 @@ class Wiki:
         *,
         llm: LLM | None = None,
         classifier: Classifier | None = None,
+        steps: Steps | None = None,
     ) -> None:
-        """Models are built from `cfg` unless given; given ones must share one UsageTracker."""
+        """Models are built from `cfg` unless given; given ones must share one UsageTracker.
+
+        Without `steps`, `cfg.mode` picks CLASSIC or CROW (it also decides whether the classifier is built).
+        """
         self.cfg = cfg
+        self.steps = steps or (CROW if cfg.mode == "crow" else CLASSIC)
         self.tracker = llm.usage if llm else classifier.usage if classifier else UsageTracker(cfg.usage_log)
         if classifier is not None and classifier.usage is not self.tracker:
             raise ValueError("the llm and the classifier must record into the same UsageTracker")
@@ -74,26 +80,29 @@ class Wiki:
         return cls(WikiConfig.from_env(**overrides))
 
     def librarian(self) -> Librarian:
-        """A fresh Librarian for one ingest (CROW or classic, per `mode`)."""
-        if self.cfg.mode == "crow" and self.classifier is not None:
-            return CrowLibrarian(self.store, self.llm, self.prompts, self.cfg, self.classifier)
-        return Librarian(self.store, self.llm, self.prompts, self.cfg)
+        """A fresh Librarian for one ingest, running this wiki's steps."""
+        return Librarian(self.store, self.llm, self.prompts, self.cfg, self.steps, self.classifier)
 
     def researcher(self) -> Researcher:
-        """A fresh Researcher for one question (CROW or classic, per `mode`)."""
-        if self.cfg.mode == "crow" and self.classifier is not None:
-            return CrowResearcher(self.store, self.llm, self.prompts, self.cfg, self.classifier)
-        return Researcher(self.store, self.llm, self.prompts, self.cfg)
+        """A fresh Researcher for one question, running this wiki's steps."""
+        return Researcher(self.store, self.llm, self.prompts, self.cfg, self.steps, self.classifier)
 
     def init(self) -> None:
         self.store.init()
 
     def ingest(
-        self, text: str, *, title: str | None = None, resource: str | None = None, origin: Origin | None = None
+        self,
+        text: str,
+        *,
+        title: str | None = None,
+        resource: str | None = None,
+        origin: Origin | None = None,
+        fields: dict[str, Any] | None = None,
     ) -> IngestResult:
         """File a text. With an `origin` already ingested with the same hash or version, nothing is done.
 
         That case returns action "unchanged" (no model call, no file written) with the note that cites the copy.
+        `fields` is user data the steps may read (`ctx.source.fields`).
         """
         if not text.strip():
             raise InputError("nothing to ingest: the source is empty")
@@ -102,14 +111,22 @@ class Wiki:
         with self.store.lock():  # the librarian reads the tree, then writes on what it read
             if origin is not None and (known := self._unchanged(origin, text)) is not None:
                 return known
-            return self.librarian().ingest(Source(text, title, resource, origin))
+            return self.librarian().ingest(Source(text, title, resource, origin, dict(fields or {})))
 
     def ingest_file(
-        self, data: bytes, filename: str, *, resource: str | None = None, origin: Origin | None = None
+        self,
+        data: bytes,
+        filename: str,
+        *,
+        resource: str | None = None,
+        origin: Origin | None = None,
+        fields: dict[str, Any] | None = None,
     ) -> IngestResult:
-        """Ingest a .txt, .md or .pdf file; its name becomes the source title."""
+        """Ingest a file (.txt, .md or .pdf with the default `extract` step); its name becomes the source title."""
         link = resource or (origin.link if origin else None) or filename
-        return self.ingest(extract_text(data, filename), title=title_of(filename), resource=link, origin=origin)
+        ctx = StepContext(self.llm, self.classifier, self.prompts, self.cfg, system_prompt="librarian/system")
+        text = check_extract(self.steps.extract(ctx, data, filename))
+        return self.ingest(text, title=title_of(filename), resource=link, origin=origin, fields=fields)
 
     def origin(self, key: str) -> OriginRecord | None:
         """The latest raw copy cited by a note for an origin key (`Origin.key`), or None if no note cites one."""

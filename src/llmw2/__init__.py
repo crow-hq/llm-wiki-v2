@@ -12,21 +12,32 @@ from __future__ import annotations
 
 __version__ = "0.3.0"
 
+from llmw2.agents.data import Candidate, NoteDraft, Route, Source
+from llmw2.agents.steps import CLASSIC, CROW, StepContext, Steps
 from llmw2.bundle.origin import Origin
 from llmw2.config import WikiConfig
-from llmw2.errors import ConfigError, InputError, ModelError, WikiError
+from llmw2.errors import ConfigError, InputError, ModelError, StepError, WikiError
 from llmw2.sources import Change, ChangeBatch, LocalFolderSource, SourceConnector, SyncReport, sync
 from llmw2.wiki import Wiki
 
 __all__ = [
+    "CLASSIC",
+    "CROW",
+    "Candidate",
     "Change",
     "ChangeBatch",
     "ConfigError",
     "InputError",
     "LocalFolderSource",
     "ModelError",
+    "NoteDraft",
     "Origin",
+    "Route",
+    "Source",
     "SourceConnector",
+    "StepContext",
+    "StepError",
+    "Steps",
     "SyncReport",
     "Wiki",
     "WikiConfig",
