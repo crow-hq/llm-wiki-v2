@@ -5,15 +5,16 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from llmw2.batch import Item
 from llmw2.bundle.store import write_atomic
 from llmw2.bundle.tree import slugify
-from llmw2.errors import InputError
 from llmw2.sources.base import Change, SourceConnector
 
 if TYPE_CHECKING:
@@ -28,16 +29,20 @@ class SyncReport:
     removed: int = 0
     skipped: int = 0  # not fetched (same version), or a removal of something never filed
     errors: list[tuple[str, str]] = field(default_factory=list)  # (origin key, message) of items that could not be filed
+    stopped: str | None = None  # why the sync ended before the last page (a model failing); None when it ran to the end
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def sync(wiki: Wiki, connector: SourceConnector) -> SyncReport:
-    """Bring the wiki up to date with `connector`.
+def sync(wiki: Wiki, connector: SourceConnector, *, concurrency: int | None = None) -> SyncReport:
+    """Bring the wiki up to date with `connector`, one page of changes at a time.
 
-    An item that cannot be read (unsupported type, scanned PDF) goes into `errors` and the sync goes on. A model or
-    configuration failure stops it; the cursor of the last finished batch is kept, so the next run resumes there.
+    An item that cannot be read (unsupported type, scanned PDF) goes into `errors` and the sync goes on. A page is
+    filed with `Wiki.ingest_many`, so `concurrency` (default `cfg.concurrency`) documents are prepared at once.
+    A model failure stops the sync: the report comes back with `stopped` set, and the cursor stays at the last page
+    that was finished, so the next run resumes there and does not pay again for what was filed. A missing key
+    raises ConfigError.
     """
     wiki.init()
     state = _state_path(wiki, connector)
@@ -45,8 +50,9 @@ def sync(wiki: Wiki, connector: SourceConnector) -> SyncReport:
     report = SyncReport()
     while True:
         batch = connector.changes(cursor)
-        for change in batch.changes:
-            _apply(wiki, connector, change, report)
+        _apply(wiki, connector, batch.changes, report, concurrency)
+        if report.stopped:
+            return report
         cursor = batch.cursor
         state.parent.mkdir(parents=True, exist_ok=True)
         write_atomic(state, json.dumps({"cursor": cursor}))
@@ -54,24 +60,29 @@ def sync(wiki: Wiki, connector: SourceConnector) -> SyncReport:
             return report
 
 
-def _apply(wiki: Wiki, connector: SourceConnector, change: Change, report: SyncReport) -> None:
-    key = change.origin.key
-    if change.kind == "remove":
-        if wiki.mark_removed(key) is None:
+def _apply(wiki: Wiki, connector: SourceConnector, changes: list[Change], report: SyncReport, concurrency: int | None) -> None:
+    """One page: the last change of each origin, removals first, then what is new or changed as one batch."""
+    last = {change.origin.key: change for change in changes}
+    items = []
+    for key, change in last.items():
+        if change.kind == "remove":
+            if wiki.mark_removed(key) is None:
+                report.skipped += 1
+            else:
+                report.removed += 1
+            continue
+        known = wiki.origin(key)
+        if known is not None and not known.removed and change.origin.version and known.version == change.origin.version:
             report.skipped += 1
+            continue
+        items.append(Item(change.filename, fetch=functools.partial(connector.fetch, change), origin=change.origin))
+    done = wiki.ingest_many(items, concurrency=concurrency)
+    for item, result in done.results:
+        if isinstance(result, Exception):
+            report.errors.append((item.origin.key if item.origin else item.filename, str(result)))
         else:
-            report.removed += 1
-        return
-    known = wiki.origin(key)
-    if known is not None and not known.removed and change.origin.version and known.version == change.origin.version:
-        report.skipped += 1
-        return
-    try:
-        result = wiki.ingest_file(connector.fetch(change), change.filename, origin=change.origin)
-    except InputError as e:
-        report.errors.append((key, str(e)))
-        return
-    setattr(report, result.action, getattr(report, result.action) + 1)
+            setattr(report, result.action, getattr(report, result.action) + 1)
+    report.stopped = done.stopped
 
 
 def _state_path(wiki: Wiki, connector: SourceConnector) -> Path:

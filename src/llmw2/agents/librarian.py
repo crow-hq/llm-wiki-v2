@@ -35,7 +35,7 @@ from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport
 
-__all__ = ["Candidate", "IngestResult", "Librarian", "NoteDraft", "Route", "Source"]
+__all__ = ["Candidate", "IngestResult", "Librarian", "NoteDraft", "Prepared", "Route", "Source"]
 
 
 @dataclass
@@ -53,6 +53,16 @@ class IngestResult:
         return {**asdict(self), "usage": self.usage.to_dict()}
 
 
+@dataclass
+class Prepared:
+    """A source summarized and waiting to be filed: what `Librarian.prepare` hands to `Librarian.file`."""
+
+    source: Source
+    candidate: Candidate
+    usage: UsageReport  # the model calls made so far for this source
+    decisions: list[Decision] = field(default_factory=list)
+
+
 class Librarian:
     """One instance serves one ingest, so its trace of decisions is never shared."""
 
@@ -65,11 +75,23 @@ class Librarian:
         self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="librarian/system")
 
     def ingest(self, source: Source) -> IngestResult:
+        return self.file(self.prepare(source))
+
+    def prepare(self, source: Source) -> Prepared:
+        """The part of an ingest that does not read the tree: summarize. Needs no lock, and may run in parallel."""
+        self.ctx.source = source
+        with self.ctx.llm.usage.span() as used:
+            cand = check_summarize(self.steps.summarize(self.ctx, source))
+        return Prepared(source, cand, used, list(self.ctx.decisions))
+
+    def file(self, prepared: Prepared) -> IngestResult:
+        """The rest: from a fresh `load()` to the log. The caller holds the wiki's lock."""
         steps, ctx = self.steps, self.ctx
+        source, cand = prepared.source, prepared.candidate
         ctx.source = source
+        ctx.decisions = list(prepared.decisions)
         with ctx.llm.usage.span() as used:
             root = self.store.load()
-            cand = check_summarize(steps.summarize(ctx, source))
             route = check_route(steps.route(ctx, root, cand), root, self.cfg)
             pool = unique_objects(n for f in [*route.candidates, route.folder] for n in f.notes)
             match = check_match(steps.match(ctx, pool, cand), pool)
@@ -114,6 +136,8 @@ class Librarian:
                 self.store.link(note, other)
             verb = "Merged" if action == "merged" else "Created"
             self.store.append_log(verb, f"from {raw} ({steps.name} {steps.hash})", note.rel, note.title)
+        total = prepared.usage.copy()
+        total.merge(used)
         return IngestResult(
             action,
             note.rel,
@@ -122,7 +146,7 @@ class Librarian:
             created,
             [r.rel for r in related],
             ctx.decisions,
-            used,
+            total,
         )
 
     def save_source(self, source: Source, cand: Candidate) -> tuple[str, dict[str, Any]]:

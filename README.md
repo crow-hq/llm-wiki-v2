@@ -279,6 +279,7 @@ list is in [.env.example](https://github.com/crow-hq/llm-wiki-v2/blob/main/.env.
 | `OKF_CONFIG` | `~/.config/llm-wiki/config.json` | the settings file |
 | `OKF_PROMPTS_DIR` | — | folder whose prompt files replace the packaged ones |
 | `OKF_UPLOAD_MB` | `25` | largest file or text the server accepts (413 above it) |
+| `OKF_CONCURRENCY` | `1` | documents read and summarized at once by `sync`, the web page and `Wiki.ingest_many` (1 to 16); filing stays one at a time |
 | `OKF_LLM_EXTRA_BODY` | — | JSON added to every LLM request, e.g. `'{"provider":{"order":["together"]}}'` to pin fast OpenRouter providers |
 
 Providers, the settings file and the classifier route: [docs/wiki/providers.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/providers.md).

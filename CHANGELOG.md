@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `wiki.ingest_many(items, concurrency=, on_result=)` files a batch of `Item`s, preparing up to `concurrency` documents at once (fetch, extract, the "unchanged" check and `summarize`) and filing them one at a time, in order of their original's modified time, under the wiki's lock. It returns a `BatchReport` (`results`, `not_done`, `stopped`). A model failure stops the batch: the documents before the failed one are filed, the rest are reported in `not_done`. Provisional until the parallel and serial results have been compared.
+- `Item` and `BatchReport` are exported from `llmw2`. `Librarian.prepare` and `Librarian.file` are the two phases of `Librarian.ingest`.
+- `concurrency` in `WikiConfig` (`OKF_CONCURRENCY`, the settings page; 1 to 16, default 1) and `llmwiki2 sync --concurrency N`.
+- `GET /health` reports `concurrency`. The server reads and summarizes up to that many uploads at once and files them one at a time, and the page's filing queue sends that many at once.
+- `SyncReport.stopped`: why a sync ended before the last page.
+
+### Changed
+
+- The steps API is declared stable. `extract` and `summarize` may run in parallel on different threads and must be thread-safe; the other ingest steps run one document at a time, under the lock.
+- `sync` files each page of changes with `ingest_many`: one change per origin (the last), removals first, items of a known version not fetched. A model failure no longer raises: `sync` returns the report with `stopped` set and keeps the cursor of the last finished page, and `llmwiki2 sync` exits with 2.
+- The calls of a custom `extract` are now counted in the `usage` of the `IngestResult`.
+- `ingest` and `ingest_file` no longer hold the wiki's lock while the model summarizes; they take it to file. The wiki's lock also holds between threads of one process, Windows included, so the server no longer wraps ingests in a lock of its own.
+
 ## [0.3.0] - 2026-09-30
 
 ### Added

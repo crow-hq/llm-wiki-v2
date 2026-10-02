@@ -91,6 +91,7 @@ class SettingsChanges(BaseModel):
     classifier_model: str | None = None
     classifier_api_key: str | None = None
     bundle: str | None = None
+    concurrency: str | None = None
     # CROW thresholds (settings.FIELDS "crow_*"): a number as text, "" for the classifier's preset value
     crow_tau_route: str | None = None
     crow_tau_path: str | None = None
@@ -181,7 +182,7 @@ def create_app(
         return JSONResponse({"detail": problems}, status_code=422)
 
     app.state.wiki = wiki
-    write_lock = threading.Lock()  # one writer at a time: ingests change files and indexes
+    write_lock = threading.Lock()  # the edits by hand and the settings, one at a time; ingests take the bundle's lock
     web = resources.files("llmw2") / "web"
     app.mount("/web", StaticFiles(directory=str(web)), name="web")
 
@@ -200,13 +201,13 @@ def create_app(
     def health() -> dict[str, Any]:
         wiki = current()
         classifier = wiki.classifier.model if wiki.classifier else None
-        return {"status": "ok", "mode": wiki.cfg.mode, "llm": wiki.llm.model, "classifier": classifier}
+        return {"status": "ok", "mode": wiki.cfg.mode, "llm": wiki.llm.model, "classifier": classifier, "concurrency": wiki.cfg.concurrency}
 
     @app.post("/ingest")
     def ingest(req: IngestRequest) -> dict[str, Any]:
-        with write_lock:
-            origin = Origin(**req.origin.model_dump()) if req.origin else None
-            return current().ingest(req.text, title=req.title, resource=req.resource, origin=origin).to_dict()
+        # No write lock: the wiki bounds reading and summarizing by its concurrency, and files under the bundle's lock.
+        origin = Origin(**req.origin.model_dump()) if req.origin else None
+        return current().ingest(req.text, title=req.title, resource=req.resource, origin=origin).to_dict()
 
     @app.post("/upload")
     async def upload(request: Request, filename: str) -> dict[str, Any]:
@@ -219,11 +220,7 @@ def create_app(
             if len(data) > max_bytes():
                 raise HTTPException(413, f"too large: the limit is {current().cfg.upload_mb} MB")
 
-        def run() -> dict[str, Any]:
-            with write_lock:
-                return current().ingest_file(bytes(data), filename).to_dict()
-
-        return await run_in_threadpool(run)
+        return await run_in_threadpool(lambda: current().ingest_file(bytes(data), filename).to_dict())
 
     @app.post("/ask")
     def ask(req: AskRequest) -> dict[str, Any]:

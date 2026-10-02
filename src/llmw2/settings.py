@@ -55,6 +55,7 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "classifier_model": ("classifier", "model"),
     "classifier_api_key": ("classifier", "api_key"),
     "bundle": ("bundle",),
+    "concurrency": ("concurrency",),
     # CROW thresholds live with the classifier, so each classifier provider keeps its own (see "remembered").
     **{f"crow_{name}": ("classifier", "crow", name) for name in CrowConfig.model_fields},
     # How each model is called; kept per provider too, like its key and model.
@@ -148,6 +149,7 @@ class Settings:
             "classifier_model": ["OKF_CLASSIFIER_MODEL"],
             "classifier_api_key": ["OKF_CLASSIFIER_API_KEY", key_env(CLASSIFIER_PROVIDERS, classifier_provider)],
             "bundle": ["OKF_BUNDLE"],
+            "concurrency": ["OKF_CONCURRENCY"],
             **{f"crow_{name}": [f"OKF_{name.upper()}"] for name in CrowConfig.model_fields},
             **{name: [f"OKF_LLM_{name.upper()}"] for name in PARAMS["llm"]},
             **{f"classifier_{name}": [f"OKF_CLASSIFIER_{name.upper()}"] for name in PARAMS["classifier"]},
@@ -172,6 +174,7 @@ class Settings:
                 "classifier_model": cfg.classifier.model,
                 "classifier_api_key": mask(cfg.classifier.api_key),
                 "bundle": str(cfg.bundle),
+                "concurrency": cfg.concurrency,
                 **{f"crow_{name}": value for name, value in cfg.crow.model_dump().items()},
                 **{name: getattr(cfg.llm, name) for name in PARAMS["llm"]},
                 **{f"classifier_{name}": getattr(cfg.classifier, name) for name in PARAMS["classifier"]},

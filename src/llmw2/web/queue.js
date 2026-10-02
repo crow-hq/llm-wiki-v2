@@ -1,12 +1,14 @@
 // Copyright 2026 Federico Cesarini, Marco Sassarini. SPDX-License-Identifier: AGPL-3.0-or-later
-// Filing: dropped files and new notes wait in one queue, filed one at a time. The queue is kept in IndexedDB, so a
-// reload picks it up; one tab at a time sends it (a Web Lock), and Stop drops whatever is still waiting.
+// Filing: dropped files and new notes wait in one queue, sent to the server in order, as many at once as the wiki's
+// concurrency allows (one by default). The queue is kept in IndexedDB, so a reload picks it up; one tab at a time
+// sends it (a Web Lock), and Stop drops whatever is still waiting.
 
 import { $, api, esc, post } from "./util.js";
 
 const jobs = []; // not filed yet, in order: {id, label, file} or {id, label, text, title}, each with `el`, its row
-let current = null; // the job handed to the server: Stop leaves it, as the server files it anyway
+const sending = new Set(); // the jobs handed to the server: Stop leaves them, as the server files them anyway
 let running = false, waiting = false, total = 0, filed = 0, failed = 0, refresh = async () => {};
+let width = 1, lanes = 0, finish = null; // jobs in flight at most, senders now running, and what ends the run
 
 // -- the stored queue: a job leaves it once sent, so a reload never sends one twice ---------------------------
 let opened;
@@ -37,9 +39,10 @@ function render() {
   if (!rows) total = filed = failed = 0; // emptied: the next batch counts from one
   $("#jobs").hidden = !rows;
   $("#jobs-count").textContent = !left ? `${filed} filed` + (failed ? ` · ${failed} failed` : "")
-    : waiting ? "Waiting for another tab to finish" : `Filing ${total - left + 1} of ${total}`;
+    : waiting ? "Waiting for another tab to finish"
+    : sending.size > 1 ? `Filing ${total - left + 1}–${total - left + sending.size} of ${total}` : `Filing ${total - left + 1} of ${total}`;
   $("#jobs-done").style.width = `${100 * (total - left) / (total || 1)}%`;
-  $("#jobs-stop").hidden = !jobs.some((j) => j !== current);
+  $("#jobs-stop").hidden = !jobs.some((j) => !sending.has(j));
 }
 function say(job, kind, html) { job.el.className = "task " + kind; job.el.querySelector(".what").innerHTML = html; }
 function add(job) {
@@ -52,7 +55,7 @@ function add(job) {
 }
 function drop(job) { jobs.splice(jobs.indexOf(job), 1); job.el.remove(); total--; }
 function done(job, kind, html) { // the row stays a while with the result
-  jobs.splice(jobs.indexOf(job), 1); say(job, kind, html);
+  jobs.splice(jobs.indexOf(job), 1); sending.delete(job); say(job, kind, html);
   if (kind === "ok") filed++; else failed++;
   setTimeout(() => { job.el.remove(); render(); }, 12000);
 }
@@ -64,9 +67,11 @@ function fold(folded) {
 
 // -- filing ---------------------------------------------------------------------------------------------------------
 const answering = () => fetch("/health").then((r) => r.ok, () => false);
-async function fileNext() {
-  const job = current = jobs[0];
-  if (!await claim(job)) { drop(job); render(); return; }
+const concurrency = () => fetch("/health").then((r) => r.json(), () => null)
+  .then((h) => Math.min(16, Math.max(1, Number(h?.concurrency) || 1)));
+async function fileNext(job) {
+  sending.add(job);
+  if (!await claim(job)) { sending.delete(job); drop(job); render(); return; }
   say(job, "now", '<span class="spin"></span> the librarian is filing it…'); render();
   let r;
   try {
@@ -75,7 +80,7 @@ async function fileNext() {
       : post("/ingest", { text: job.text, title: job.title }));
   } catch (e) {
     if (e instanceof TypeError && !await answering()) { // no server (stopped, restarting): keep the job, try again
-      current = null; await keep(job);
+      sending.delete(job); await keep(job);
       say(job, "now", '<span class="spin"></span> the wiki is not answering: trying again…'); render();
       return new Promise((wake) => setTimeout(wake, 5000));
     }
@@ -88,12 +93,20 @@ async function fileNext() {
   done(job, "ok", `${where} <a href="#/note/${esc(r.note)}">${esc(r.title)}</a>${made}`); render();
   await refresh().catch(() => {});
 }
+const idle = () => jobs.find((j) => !sending.has(j));
+function spawn() { // senders up to `width`, each taking the next job not yet sent until none is left
+  while (lanes < width && idle()) {
+    lanes++;
+    (async () => { for (let job; (job = idle());) await fileNext(job); })().finally(() => { if (!--lanes) finish?.(); });
+  }
+}
 function drain() {
-  if (running) return;
+  if (running) return void (finish && spawn()); // still waiting for the lock: the run takes the new job when it starts
   running = true;
   const work = async () => {
     waiting = false;
-    try { while (jobs.length) await fileNext(); } finally { running = false; current = null; render(); }
+    width = await concurrency();
+    try { await new Promise((done) => { finish = done; spawn(); if (!lanes) done(); }); } finally { running = false; finish = null; render(); }
   };
   if (!navigator.locks) return void work(); // not a secure context (a LAN address): this tab sends alone
   navigator.locks.request("okf-queue", { ifAvailable: true }, (lock) => {
@@ -120,7 +133,7 @@ export async function startQueue(onFiled) {
 }
 
 $("#jobs-stop").onclick = () => {
-  const dropped = jobs.filter((j) => j !== current);
+  const dropped = jobs.filter((j) => !sending.has(j));
   dropped.forEach(drop); forget(dropped.map((j) => j.id)); render();
 };
 $("#jobs-fold").onclick = () => fold(!$("#jobs").classList.contains("folded"));

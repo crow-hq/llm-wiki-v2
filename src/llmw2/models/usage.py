@@ -16,7 +16,7 @@ import logging
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -57,6 +57,10 @@ class Usage:
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
 
+    def merge(self, other: Usage) -> None:
+        for f in fields(self):
+            setattr(self, f.name, getattr(self, f.name) + getattr(other, f.name))
+
     def to_dict(self) -> dict[str, float]:
         return {**asdict(self), "total_tokens": self.total_tokens}
 
@@ -92,6 +96,14 @@ class UsageReport:
             by_model={k: Usage(**asdict(v)) for k, v in self.by_model.items()},
             by_op={k: Usage(**asdict(v)) for k, v in self.by_op.items()},
         )
+
+    def merge(self, other: UsageReport) -> None:
+        """Add `other`'s calls to this report (the two phases of one ingest, run in different threads)."""
+        self.llm.merge(other.llm)
+        self.classifier.merge(other.classifier)
+        for mine, theirs in ((self.by_model, other.by_model), (self.by_op, other.by_op)):
+            for key, usage in theirs.items():
+                mine.setdefault(key, Usage()).merge(usage)
 
     def to_dict(self) -> dict[str, Any]:
         return {

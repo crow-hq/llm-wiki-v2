@@ -10,8 +10,7 @@ disk. Inside a step anything goes: no model, one call, many calls, a rule, a
 web service. The core checks what a step returns and stops with `StepError`
 before using it.
 
-> **Provisional.** The signatures may change when ingests can run in parallel.
-> The sets `CLASSIC` and `CROW` and the data classes below are the part to rely on.
+The API of `Steps`, the ten signatures and the data classes below is stable.
 
 ## The two flows
 
@@ -20,7 +19,16 @@ ingest:  extract* → summarize → route → (name_folder) → match → consol
 ask:     select → answer
 ```
 
-`*` `extract` only runs for `ingest_file`, which turns the bytes of a file into text.
+`*` `extract` only runs for `ingest_file` (and for the `data` and `fetch` items of `ingest_many`), which turn the bytes of a file into text.
+
+### What runs where
+
+`ingest_many` (and the server, and `sync`) prepare several documents at once, each on a thread of its own:
+
+- `extract` and `summarize` run in parallel, on different threads, for different documents. They must be thread-safe: no shared state without a lock of yours. They do not receive the tree, so they do not need the wiki's lock.
+- The others (`route`, `name_folder`, `match`, `consolidate`, `merge`, `relate`) run one document at a time, under the wiki's lock, on a tree read just before. They never overlap, and can rely on that. `select` and `answer` belong to a question and take no lock.
+
+Each document gets its own `StepContext`, so `ctx.decisions` and `ctx.source` are never shared. With `concurrency` 1 everything runs one document after the other, as in a plain loop of `ingest_file`.
 
 ```
                         text ──► summarize ──► route ──► match ──► consolidate ──┐
@@ -114,7 +122,8 @@ is given.
 | `need_classifier(step)` | the classifier, or `StepError` if there is none |
 
 Model calls made through `ctx.llm` and `ctx.classifier` are counted in the
-usage like the core's own (`wiki.usage` and, for `ingest` and `ask`, the result's `usage`).
+usage like the core's own (`wiki.usage` and, for `ingest` and `ask`, the result's `usage`; for an
+ingest, that includes the calls of a custom `extract`).
 
 ## Writing a step set
 
@@ -228,7 +237,6 @@ Other things worth knowing:
 
 - Errors raised by your own code, or by a model, are not wrapped: they go up as they are.
 - A custom `select` is **not** cut to `max_notes` by the core. Return as many as the answer should read (the default steps limit themselves).
-- A model call inside a custom `extract` is counted in `wiki.usage` but **not** in the `usage` of the `IngestResult` of that ingest: `extract` runs before the ingest starts.
 - `extract` only runs for `ingest_file`. `ingest` takes text.
 - An ingest whose `origin` is unchanged returns `"unchanged"` before any step runs.
 - `Route(new=True)` is ignored where the folder is already at `max_depth`.

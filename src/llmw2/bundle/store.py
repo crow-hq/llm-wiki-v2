@@ -80,6 +80,17 @@ class Deleted:
         return asdict(self)
 
 
+_thread_locks: dict[str, threading.Lock] = {}
+_thread_locks_guard = threading.Lock()
+
+
+def _thread_lock(root: Path) -> threading.Lock:
+    """The lock of a bundle folder within this process, the same for every path that names it."""
+    key = os.path.realpath(root)
+    with _thread_locks_guard:
+        return _thread_locks.setdefault(key, threading.Lock())
+
+
 class WikiStore:
     """Reads the folder tree and writes notes, folders, links, index.md and log.md."""
 
@@ -100,21 +111,23 @@ class WikiStore:
 
     @contextlib.contextmanager
     def lock(self) -> Iterator[None]:
-        """Hold the bundle for writing: one writer at a time across processes (the CLI and a server).
+        """Hold the bundle for writing: one writer at a time across threads and processes (the CLI and a server).
 
-        An advisory flock on the bundle folder itself, so no lock file lands in the wiki.
+        A lock per bundle folder within the process, shared by every store on it (the server rebuilds its wiki when
+        the settings change), then an advisory flock on the folder itself, so no lock file lands in the wiki.
         """
-        try:
-            import fcntl
-        except ImportError:  # solo: Windows has no flock; there only the server's in-process lock holds
-            yield
-            return
-        fd = os.open(self.root, os.O_RDONLY)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            yield
-        finally:
-            os.close(fd)  # closing the descriptor releases the lock
+        with _thread_lock(self.root):
+            try:
+                import fcntl
+            except ImportError:  # Windows has no flock: there only the lock within the process holds
+                yield
+                return
+            fd = os.open(self.root, os.O_RDONLY)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                yield
+            finally:
+                os.close(fd)  # closing the descriptor releases the lock
 
     def load(self) -> Folder:
         if not self.root.is_dir():
