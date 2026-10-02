@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta, tzinfo
@@ -565,3 +566,29 @@ def test_graph_has_folders_notes_containment_and_see_also_links(tmp_path: Path) 
     edges = {(e["source"], e["target"], e["kind"]) for e in g["links"]}
     assert ("/", "/finance", "contains") in edges and ("/finance/pricing", b.rel, "contains") in edges
     assert [e for e in g["links"] if e["kind"] == "see_also"] == [{"source": a.rel, "target": b.rel, "kind": "see_also"}]
+
+
+# -- the lock holds between threads, with or without flock -------------------------------------------------------
+
+
+@pytest.mark.parametrize("flock", [True, False], ids=["flock", "no-flock"])
+def test_lock_when_two_stores_on_one_folder_lock_from_two_threads_then_they_take_turns(
+    bundle: Path, monkeypatch: pytest.MonkeyPatch, flock: bool
+) -> None:
+    if not flock:  # as on Windows: importing fcntl fails, and only the lock within the process is left
+        monkeypatch.setitem(sys.modules, "fcntl", None)
+    first, second = WikiStore(bundle, actor=ACTOR), WikiStore(bundle / ".", actor=ACTOR)  # two paths, one folder
+    first.init()
+    inside, waited = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with first.lock():
+            inside.set()
+            assert not waited.wait(0.2), "the second store got in while the first held the lock"
+
+    with ThreadPoolExecutor(1) as pool:
+        held = pool.submit(hold)
+        assert inside.wait(5)
+        with second.lock():
+            waited.set()
+        held.result(5)

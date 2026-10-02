@@ -22,3 +22,6 @@ open_ruoter_key.txt
 
 # Sample notes to try the wiki with (local only)
 /sample/
+
+# Raw results of the benchmarks, when run without --out
+/ingest_parallel.json

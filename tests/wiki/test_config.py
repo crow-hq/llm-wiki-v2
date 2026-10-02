@@ -32,6 +32,7 @@ def env_for(bundle: Path, **variables: str) -> dict[str, str]:
         ("OKF_RETRIEVAL_BEAM", "4", "crow.retrieval_beam", 4),
         ("OKF_CLASSIFIER_ATTEMPTS", "3", "classifier.attempts", 3),
         ("OKF_UPLOAD_MB", "5", "upload_mb", 5),
+        ("OKF_CONCURRENCY", "4", "concurrency", 4),
     ],
 )
 def test_from_env_when_a_variable_is_set_then_its_field_takes_the_value(
@@ -227,8 +228,16 @@ def test_invalid_extra_body_names_the_variable(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "fields",
-    [{"crow": {"tau_route": 1.5}}, {"crow": {"tau_ret": -0.1}}, {"crow": {"beam": 0}}, {"crow": {"k": 0}}, {"upload_mb": 0}],
-    ids=["tau-above-1", "tau-below-0", "beam-0", "k-0", "upload-0"],
+    [
+        {"crow": {"tau_route": 1.5}},
+        {"crow": {"tau_ret": -0.1}},
+        {"crow": {"beam": 0}},
+        {"crow": {"k": 0}},
+        {"upload_mb": 0},
+        {"concurrency": 0},
+        {"concurrency": 17},
+    ],
+    ids=["tau-above-1", "tau-below-0", "beam-0", "k-0", "upload-0", "concurrency-0", "concurrency-17"],
 )
 def test_config_when_a_limit_is_out_of_range_then_raises(tmp_path: Path, fields: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
@@ -241,3 +250,20 @@ def test_config_when_max_depth_and_max_links_are_zero_then_accepted(tmp_path: Pa
 
     # ASSERT
     assert (config.max_depth, config.max_links) == (0, 0)
+
+
+def test_concurrency_defaults_to_four_and_accepts_one_to_sixteen(tmp_path: Path) -> None:
+    assert WikiConfig(bundle=tmp_path).concurrency == 4
+    assert [WikiConfig(bundle=tmp_path, concurrency=k).concurrency for k in (1, 8, 16)] == [1, 8, 16]
+
+
+@pytest.mark.parametrize("value", ["0", "17", "-1", "many"])
+def test_from_env_when_okf_concurrency_is_out_of_range_or_not_a_number_then_raises(tmp_path: Path, value: str) -> None:
+    with pytest.raises(ValidationError, match="concurrency"):
+        WikiConfig.from_env(env_for(tmp_path, OKF_CONCURRENCY=value))
+
+
+def test_from_env_when_a_concurrency_override_is_given_then_it_wins_over_the_variable(tmp_path: Path) -> None:
+    config = WikiConfig.from_env(env_for(tmp_path, OKF_CONCURRENCY="4"), concurrency=2)
+
+    assert config.concurrency == 2

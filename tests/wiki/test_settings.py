@@ -432,3 +432,48 @@ def test_managed_when_okf_llm_timeout_is_set_then_the_parameter_is_locked() -> N
     settings = Settings({"OKF_LLM_TIMEOUT": "300", "OKF_CLASSIFIER_ATTEMPTS": "3"})
 
     assert {"timeout", "classifier_attempts"} <= set(settings.managed("openrouter"))
+
+
+def test_save_when_concurrency_is_set_then_it_is_kept_and_shown_and_read_back() -> None:
+    settings = Settings({})
+
+    cfg = settings.save({"provider": "ollama", "mode": "classic", "concurrency": "3"})
+
+    assert cfg.concurrency == 3
+    assert str(written(settings)["concurrency"]) == "3"
+    assert settings.view()["values"]["concurrency"] == 3
+    assert Settings({}).config().concurrency == 3
+
+
+def test_save_when_concurrency_is_emptied_then_it_goes_back_to_the_default_and_is_not_written() -> None:
+    settings = Settings({})
+    settings.save({"provider": "ollama", "mode": "classic", "concurrency": "3"})
+
+    cfg = settings.save({"concurrency": "", "mode": "classic"})
+
+    assert cfg.concurrency == 4
+    assert "concurrency" not in written(settings)
+
+
+@pytest.mark.parametrize("value", ["0", "17", "lots"])
+def test_save_when_concurrency_is_out_of_range_then_it_is_refused_and_nothing_is_written(value: str) -> None:
+    settings = Settings({})
+
+    with pytest.raises(ValueError, match="concurrency"):
+        settings.save({"provider": "ollama", "mode": "classic", "concurrency": value})
+
+    assert not settings.path.exists()
+
+
+def test_okf_concurrency_wins_over_the_file_and_locks_the_field() -> None:
+    settings = Settings({"OKF_CONCURRENCY": "3"})
+
+    cfg = settings.save({"provider": "ollama", "mode": "classic", "concurrency": "6"})
+
+    assert cfg.concurrency == 3
+    assert "concurrency" in settings.managed("ollama")
+    assert "concurrency" not in written(settings)
+
+
+def test_a_concurrency_flag_wins_over_the_variable(tmp_path: Path) -> None:
+    assert Settings({"OKF_CONCURRENCY": "4"}, concurrency=2, bundle=tmp_path).config().concurrency == 2

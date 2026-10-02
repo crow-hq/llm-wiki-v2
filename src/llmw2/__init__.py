@@ -14,6 +14,7 @@ __version__ = "0.3.0"
 
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.steps import CLASSIC, CROW, StepContext, Steps
+from llmw2.batch import BatchReport, Item
 from llmw2.bundle.origin import Origin
 from llmw2.config import WikiConfig
 from llmw2.errors import ConfigError, InputError, ModelError, StepError, WikiError
@@ -23,11 +24,13 @@ from llmw2.wiki import Wiki
 __all__ = [
     "CLASSIC",
     "CROW",
+    "BatchReport",
     "Candidate",
     "Change",
     "ChangeBatch",
     "ConfigError",
     "InputError",
+    "Item",
     "LocalFolderSource",
     "ModelError",
     "NoteDraft",

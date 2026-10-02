@@ -94,7 +94,7 @@ export async function showSettings(onSaved, said = "") {
         Let the model think before it answers</label>
         <div class="hint">Off by default: thinking makes every note several times slower and costlier, and rarely files it better. Kept to a minimum on OpenRouter; other providers follow their model's default.</div>${lockNote("reasoning")}</div>
       <div class="field"><label>Model parameters</label>${params(LLM_PARAMS)}</div>
-      <details class="advanced" id="advanced"><summary>Advanced: CROW mode, the classifier and its parameters, wiki folder</summary>
+      <details class="advanced" id="advanced"><summary>Advanced: CROW mode, the classifier and its parameters, wiki folder, parallel filing</summary>
         <div class="field"><label for="mode">Who decides where notes go</label>
           <select id="mode" ${locked("mode") ? "disabled" : ""}>
             <option value="crow"${v.mode === "crow" ? " selected" : ""}>crow — a typed classifier decides (recommended: faster, fewer tokens)</option>
@@ -121,6 +121,9 @@ export async function showSettings(onSaved, said = "") {
         </div>
         <div class="field"><label for="bundle">Wiki folder</label>
           <input id="bundle" value="${esc(v.bundle)}" ${locked("bundle") ? "disabled" : ""}>${lockNote("bundle")}</div>
+        <div class="field"><label for="concurrency">Documents filed in parallel</label>
+          <input id="concurrency" type="number" min="1" max="16" value="${esc(v.concurrency)}" ${locked("concurrency") ? "disabled" : ""}>
+          <div class="hint">How many documents are read and summarized at once; they are still filed one at a time. 1 files them strictly in turn.</div>${lockNote("concurrency")}</div>
       </details>
       <div class="actions">
         <button class="btn" id="save" ${s.editable ? "" : "disabled"}>${s.ready ? "Save" : "Save and start →"}</button>
@@ -181,7 +184,7 @@ export async function showSettings(onSaved, said = "") {
     if (crow && preset.needs_key && !saved && !shared) $("#advanced").open = true; // CROW cannot start without it
   };
   const fields = ["provider", "base_url", "api_key", "model", "mode", "reasoning",
-    "classifier_provider", "classifier_base_url", "classifier_model", "classifier_api_key", "bundle", ...paramIds.llm, ...paramIds.classifier, ...crowIds];
+    "classifier_provider", "classifier_base_url", "classifier_model", "classifier_api_key", "bundle", "concurrency", ...paramIds.llm, ...paramIds.classifier, ...crowIds];
   const number = (f) => { // a threshold as the server takes it: a fraction for a percentage, "" for the preset's
     const n = f.slice(5), raw = $("#" + f).value.trim();
     return raw === "" ? "" : PERCENT.has(n) ? String(Number(raw) / 100) : String(Math.round(Number(raw)));

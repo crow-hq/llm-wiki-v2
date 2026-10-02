@@ -71,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     ingest.add_argument("--json", action="store_true", help="print the full result as JSON")
     sync_cmd = sub.add_parser("sync", help="file a folder's documents and keep the wiki in step with it")
     sync_cmd.add_argument("folder", type=Path)
+    sync_cmd.add_argument("--concurrency", type=int, help="documents prepared at once, 1 to 16 (env OKF_CONCURRENCY)")
     sync_cmd.add_argument("--json", action="store_true", help="print the full report as JSON")
     ask = sub.add_parser("ask", help="answer a question from the wiki")
     ask.add_argument("question")
@@ -195,14 +196,18 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
             created = f" (new folders: {', '.join(result.created_folders)})" if result.created_folders else ""
             print(f"{result.action}: {result.note}{created}")
     elif args.command == "sync":
-        report = sync(wiki, LocalFolderSource(args.folder))
+        report = sync(wiki, LocalFolderSource(args.folder), concurrency=args.concurrency)
         if args.json:
             print(json.dumps(report.to_dict(), indent=2))
         else:
-            counts = (f"{name} {count}" for name, count in report.to_dict().items() if name != "errors")
+            counts = (f"{name} {count}" for name, count in report.to_dict().items() if name not in ("errors", "stopped"))
             print(", ".join(counts))
             for key, message in report.errors:
                 print(f"error: {key}: {message}", file=sys.stderr)
+        if report.stopped:
+            print(f"llmwiki2: sync stopped, run it again to go on: {report.stopped}", file=sys.stderr)
+        if report.stopped:
+            return 2
         if report.errors:
             return 1
     elif args.command == "ask":

@@ -64,6 +64,18 @@ def test_saving_settings_rebuilds_the_wiki(local: TestClient, rebuilt: list[Wiki
     assert (home / ".config" / "llm-wiki" / "config.json").is_file()
 
 
+def test_saving_concurrency_rebuilds_the_wiki_with_it_and_health_reports_it(local: TestClient, rebuilt: list[WikiConfig]) -> None:
+    assert local.get("/health").json()["concurrency"] == 4
+
+    response = local.post("/settings", json={"provider": "ollama", "mode": "classic", "concurrency": "3"})
+
+    assert response.status_code == 200
+    assert response.json()["values"]["concurrency"] == 3
+    assert rebuilt[-1].concurrency == 3
+    assert local.get("/health").json()["concurrency"] == 3
+    assert local.post("/settings", json={"concurrency": "99"}).status_code == 422
+
+
 def test_invalid_settings_are_a_422_and_change_nothing(local: TestClient, rebuilt: list[WikiConfig]) -> None:
     response = local.post("/settings", json={"provider": "custom"})
 

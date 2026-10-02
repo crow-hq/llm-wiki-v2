@@ -10,6 +10,9 @@ parsing, retries on invalid JSON, batching and usage accounting all run for real
 from __future__ import annotations
 
 import json
+import re
+import time
+import zlib
 from collections.abc import Callable
 from typing import Any
 
@@ -100,3 +103,83 @@ class FakeClassifier(Classifier):
     @property
     def ops(self) -> list[str]:
         return [op for op, _, _ in self.calls]
+
+
+class ContentLLM(LLM):
+    """A model whose every answer depends only on the prompt it is given, never on the order of the calls.
+
+    That makes it safe under parallel ingest: the same prompt gets the same reply from any thread. Sources are
+    written "topic: <group>-<n>" then free lines. Notes are titled "About <topic>"; a note goes in a folder named
+    after the group (the part of the topic before the first "-"); a second source of one topic matches that note
+    and is merged into it (its text appended); every note is related to the others it is shown.
+    A source containing one of `fail_on`'s keys makes its summarize call fail with that error.
+    """
+
+    def __init__(self, usage: UsageTracker, *, fail_on: dict[str, Exception] | None = None, jitter: float = 0.0) -> None:
+        super().__init__(LLMConfig(model="fake/llm"), usage)
+        self.calls: list[tuple[str, list[dict[str, str]]]] = []
+        self.fail_on = fail_on or {}
+        self.jitter = jitter  # up to this many seconds of delay per call, picked from the prompt: shuffles who finishes first
+
+    @property
+    def ops(self) -> list[str]:
+        return [op for op, _ in self.calls]
+
+    def chat(self, messages: list[dict[str, str]], *, op: str = "") -> str:
+        user = messages[1]["content"]
+        self.calls.append((op, [dict(m) for m in messages]))
+        if self.jitter:
+            time.sleep(self.jitter * (zlib.crc32(user.encode()) % 7) / 6)
+        self.usage.record("llm", self.model, *LLM_TOKENS, op=op)
+        if op == "librarian/summarize":
+            for key, error in self.fail_on.items():
+                if key in user:
+                    raise error
+        handler = getattr(self, "_" + op.rpartition("/")[2], None)
+        if handler is None:
+            raise AssertionError(f"ContentLLM: no answer for {op!r}")
+        return json.dumps(handler(user))
+
+    # -- the answers ---------------------------------------------------------------
+
+    @staticmethod
+    def _between(text: str, start: str, end: str) -> str:
+        """What lies between the LAST `start` and the `end` after it."""
+        head = text.rindex(start) + len(start)
+        return text[head : text.index(end, head)]
+
+    def _summarize(self, user: str) -> dict[str, Any]:
+        text = self._between(user, "<source>\n", "\n</source>")
+        topic = re.match(r"topic: (\S+)", text)
+        name = topic.group(1) if topic else "misc-0"
+        return {"title": f"About {name}", "summary": f"All on {name}.", "tags": [name.split("-")[0]], "body": text}
+
+    def _route(self, user: str) -> dict[str, Any]:
+        group = self._between(user, "Title: About ", "\n").split("-")[0]
+        folders = self._between(user, "Its subfolders (name: description):\n", "\n\n<note>").splitlines()
+        if any(line.startswith(f"- {group}:") for line in folders):
+            return {"action": "descend", "subfolder": group}
+        return {"action": "new" if "(root of the wiki)" in user else "here"}
+
+    def _name_folder(self, user: str) -> dict[str, Any]:
+        group = self._between(user, "Title: About ", "\n").split("-")[0]
+        return {"name": group, "description": f"Notes on {group}."}
+
+    def _find_match(self, user: str) -> dict[str, Any]:
+        title = self._between(user, "Title: ", "\n")
+        notes = self._between(user, "<notes>\n", "\n</notes>").splitlines()
+        found = next((line[2:].split(":", 1)[0] for line in notes if f": {title} — " in line), None)
+        return {"match": found}
+
+    def _consolidate(self, user: str) -> dict[str, Any]:
+        return {"decision": "modify"}
+
+    def _merge(self, user: str) -> dict[str, Any]:
+        title = self._between(user, "Existing note\nTitle: ", "\n")
+        summary = self._between(user, "\nSummary: ", "\n")
+        body = self._between(user, "<existing>\n", "\n</existing>")
+        return {"title": title, "summary": summary, "tags": [], "body": body + "\n\n" + self._between(user, "<source>\n", "\n</source>")}
+
+    def _relate(self, user: str) -> dict[str, Any]:
+        notes = self._between(user, "<notes>\n", "\n</notes>").splitlines()
+        return {"related": [line[2:].split(":", 1)[0] for line in notes if line.startswith("- ")]}

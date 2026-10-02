@@ -7,13 +7,16 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from llmw2 import Change, ChangeBatch, InputError, LocalFolderSource, ModelError, Origin, SyncReport, Wiki, WikiConfig, cli, sync
-from tests.wiki.fakes import FakeClassifier, FakeLLM
+from llmw2.models.usage import UsageTracker
+from tests.wiki.fakes import ContentLLM, FakeClassifier, FakeLLM
+from tests.wiki.test_ingest_many import Probe, make_wiki
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
@@ -90,7 +93,7 @@ def test_sync_ingests_each_upsert_and_reports_created(wiki: Wiki, llm: FakeLLM) 
     assert report == SyncReport(created=2)
     assert source.cursors == [None]
     assert wiki.origin("fake:Team A:a") is not None and wiki.origin("fake:Team A:b") is not None
-    assert report.to_dict() == {"created": 2, "merged": 0, "unchanged": 0, "removed": 0, "skipped": 0, "errors": []}
+    assert report.to_dict() == {"created": 2, "merged": 0, "unchanged": 0, "removed": 0, "skipped": 0, "errors": [], "stopped": None}
 
 
 def test_sync_skips_a_known_version_without_fetching(wiki: Wiki, llm: FakeLLM) -> None:
@@ -145,9 +148,9 @@ def test_sync_stops_on_a_model_error_and_keeps_the_previous_cursor(wiki: Wiki, l
 
     monkeypatch.setattr(llm, "chat", chat)
 
-    with pytest.raises(ModelError):
-        sync(wiki, source)
+    report = sync(wiki, source)  # a model failure no longer raises: the report says why it stopped
 
+    assert report.stopped and "llm 401" in report.stopped
     assert saved_cursor(wiki) == "c1"
 
 
@@ -229,6 +232,191 @@ def test_an_orphan_raw_copy_with_the_incoming_version_does_not_make_sync_skip_th
 
     assert report == SyncReport(created=1)
     assert source.fetched == ["a"]
+
+
+# -- sync, in parallel -------------------------------------------------------------
+
+
+def topic_files(*ids: str) -> dict[str, bytes]:
+    """One document per id, each on a topic of its own (red-<n>, n counted from 0 over the ids given)."""
+    return {item: f"topic: red-{n}\nBody of {item}.".encode() for n, item in enumerate(ids)}
+
+
+class Threaded(Fake):
+    """A connector that notes which threads fetched, and can be asked what was already removed when a fetch began."""
+
+    def __init__(self, *batches: ChangeBatch, files: dict[str, bytes] | None = None) -> None:
+        super().__init__(*batches, files=files)
+        self.threads: set[int] = set()
+        self.on_fetch: list[Any] = []
+
+    def fetch(self, change: Change) -> bytes:
+        self.threads.add(threading.get_ident())
+        for check in self.on_fetch:
+            check()
+        return super().fetch(change)
+
+
+@pytest.fixture
+def pllm() -> ContentLLM:
+    return ContentLLM(UsageTracker())
+
+
+@pytest.fixture
+def par(bundle: Path, pllm: ContentLLM) -> Wiki:
+    """A classic wiki on a model whose answers do not depend on the order of the calls, filing three at a time."""
+    return make_wiki(bundle, concurrency=3, llm=pllm)
+
+
+def test_sync_files_a_page_in_parallel_and_reports_created(par: Wiki) -> None:
+    probe = Probe(pause=0.03)
+    probe.want = 3
+    par.steps = probe.steps
+    ids = [f"d{n}" for n in range(9)]
+    source = Fake(ChangeBatch([upsert(i) for i in ids], "c1"), files=topic_files(*ids))
+
+    report = sync(par, source)
+
+    assert report == SyncReport(created=9)
+    assert probe.prep_max == 3 and probe.serial_max == 1
+    assert saved_cursor(par) == "c1" and par.check() == []
+
+
+def test_sync_takes_concurrency_from_its_argument_over_the_config(par: Wiki) -> None:
+    probe = Probe(pause=0.03)
+    par.steps = probe.steps
+    ids = [f"d{n}" for n in range(8)]
+
+    sync(par, Fake(ChangeBatch([upsert(i) for i in ids], "c1"), files=topic_files(*ids)), concurrency=2)
+
+    assert probe.prep_max == 2
+
+
+def test_sync_fetches_on_a_worker_thread(par: Wiki) -> None:
+    source = Threaded(ChangeBatch([upsert("a"), upsert("b")], "c1"), files=topic_files("a", "b"))
+
+    sync(par, source)
+
+    assert source.threads and threading.get_ident() not in source.threads
+
+
+def test_sync_applies_only_the_last_change_of_an_origin_in_a_page(par: Wiki) -> None:
+    source = Fake(ChangeBatch([upsert("a", "v1"), upsert("b"), upsert("a", "v2")], "c1"), files=topic_files("a", "b"))
+
+    report = sync(par, source)
+
+    assert report == SyncReport(created=2)
+    assert sorted(source.fetched) == ["a", "b"]  # a once
+    record = par.origin("fake:Team A:a")
+    assert record is not None and record.version == "v2"
+
+
+def test_sync_when_an_item_is_added_then_removed_in_one_page_does_nothing_for_it(par: Wiki) -> None:
+    source = Fake(ChangeBatch([upsert("a"), remove("a")], "c1"), files=topic_files("a"))
+
+    report = sync(par, source)
+
+    assert report == SyncReport(skipped=1)
+    assert source.fetched == [] and par.origin("fake:Team A:a") is None
+
+
+def test_sync_when_an_item_is_removed_then_returns_in_one_page_files_it_again(par: Wiki) -> None:
+    sync(par, Fake(ChangeBatch([upsert("a", "v1")], "c1"), files=topic_files("a")))
+
+    report = sync(par, Fake(ChangeBatch([remove("a"), upsert("a", "v2")], "c2"), files={"a": b"topic: red-0\nBody, edited."}))
+
+    assert (report.removed, report.merged + report.created) == (0, 1)
+    record = par.origin("fake:Team A:a")
+    assert record is not None and not record.removed and record.version == "v2"
+
+
+def test_sync_removes_before_it_fetches_anything_in_a_page(par: Wiki) -> None:
+    files = topic_files("old", "a", "b")
+    sync(par, Fake(ChangeBatch([upsert("old")], "c1"), files=files))
+    removed_at_fetch: list[bool] = []
+    source = Threaded(ChangeBatch([upsert("a"), upsert("b"), remove("old")], "c2"), files=files)
+
+    def seen() -> None:
+        record = par.origin("fake:Team A:old")
+        removed_at_fetch.append(record is not None and record.removed)
+
+    source.on_fetch.append(seen)
+
+    report = sync(par, source)
+
+    assert (report.removed, report.created) == (1, 2)
+    assert removed_at_fetch == [True, True]
+
+
+def test_sync_fetches_only_what_is_new_or_changed_in_a_mixed_page(par: Wiki) -> None:
+    sync(par, Fake(ChangeBatch([upsert("a", "v1")], "c1"), files=topic_files("a")))
+    source = Fake(ChangeBatch([upsert("a", "v1"), upsert("b", "v1"), upsert("c", "v1")], "c2"), files=topic_files("a", "b", "c"))
+
+    report = sync(par, source)
+
+    assert report == SyncReport(created=2, skipped=1)
+    assert sorted(source.fetched) == ["b", "c"]
+
+
+def test_sync_that_stops_on_a_model_error_returns_a_partial_report_and_keeps_the_cursor(par: Wiki, pllm: ContentLLM) -> None:
+    ids = ["a", "b", "c", "d", "e", "f"]
+    files = topic_files(*ids)
+    pllm.fail_on["red-3\n"] = ModelError("llm 429 from http://llm.test: busy", status=429)  # "d"
+    source = Fake(
+        ChangeBatch([upsert(i) for i in ids[:2]], "c1", more=True),
+        ChangeBatch([upsert(i) for i in ids[2:]], "c2"),
+        files=files,
+    )
+
+    report = sync(par, source)
+
+    assert report.stopped and "429" in report.stopped
+    assert (report.created, report.errors) == (3, [])  # a, b and c: the page's documents before the failed one
+    assert source.cursors == [None, "c1"]  # asked for no third page
+    assert saved_cursor(par) == "c1"
+    assert par.check() == []
+
+
+def test_the_next_sync_after_a_stop_resumes_at_the_page_and_does_not_pay_again_for_what_was_filed(par: Wiki, pllm: ContentLLM) -> None:
+    ids = ["a", "b", "c", "d", "e", "f"]
+    files = topic_files(*ids)
+    pllm.fail_on["red-3\n"] = ModelError("llm 429", status=429)
+    pages = lambda: (  # noqa: E731
+        ChangeBatch([upsert(i) for i in ids[:2]], "c1", more=True),
+        ChangeBatch([upsert(i) for i in ids[2:]], "c2"),
+    )
+    sync(par, Fake(*pages(), files=files))
+    pllm.fail_on.clear()
+    summarized = len([1 for op, _ in pllm.calls if op == "librarian/summarize"])
+    resume = Fake(pages()[1], files=files)
+
+    report = sync(par, resume)
+
+    assert resume.cursors == ["c1"]
+    assert (report.created, report.skipped, report.stopped) == (3, 1, None)  # d, e, f are new; c, filed before, is the same version
+    assert sorted(resume.fetched) == ["d", "e", "f"]
+    assert len([1 for op, _ in pllm.calls if op == "librarian/summarize"]) - summarized == 3
+    assert saved_cursor(par) == "c2"
+    again = Fake(ChangeBatch([upsert(i) for i in ids], "c3"), files=files)
+    assert sync(par, again) == SyncReport(skipped=6) and again.fetched == []
+    assert par.check() == []
+
+
+def test_sync_when_the_model_fails_on_the_first_document_files_nothing_and_saves_no_cursor(par: Wiki, pllm: ContentLLM) -> None:
+    pllm.fail_on["red-0\n"] = ModelError("llm 503", status=503)
+    source = Fake(ChangeBatch([upsert("a"), upsert("b")], "c1"), files=topic_files("a", "b"))
+
+    report = sync(par, source)
+
+    assert report.stopped and report.created == 0
+    assert not (par.cfg.bundle / ".llmw2" / "sync").exists() or not list((par.cfg.bundle / ".llmw2" / "sync").glob("*.json"))
+
+
+def test_a_finished_sync_has_no_stop_reason(par: Wiki) -> None:
+    report = sync(par, Fake(ChangeBatch([upsert("a")], "c1"), files=topic_files("a")))
+
+    assert report.stopped is None
+    assert report.to_dict()["stopped"] is None
 
 
 # -- LocalFolderSource ------------------------------------------------------------------
@@ -362,7 +550,8 @@ def test_cli_sync_json_prints_the_report(bundle: Path, llm: FakeLLM, folder: Pat
 
     assert cli.main(["--bundle", str(bundle), "sync", str(folder), "--json"]) == 0
 
-    assert json.loads(capsys.readouterr().out) == {"created": 2, "merged": 0, "unchanged": 0, "removed": 0, "skipped": 0, "errors": []}
+    expected = {"created": 2, "merged": 0, "unchanged": 0, "removed": 0, "skipped": 0, "errors": [], "stopped": None}
+    assert json.loads(capsys.readouterr().out) == expected
 
 
 @pytest.mark.usefixtures("made")
@@ -383,6 +572,86 @@ def test_cli_sync_of_a_missing_folder_fails(bundle: Path, tmp_path: Path, capsys
     assert cli.main(["--bundle", str(bundle), "sync", str(tmp_path / "nope")]) != 0
 
     assert "not a folder" in capsys.readouterr().err
+
+
+@pytest.fixture
+def topics(tmp_path: Path) -> Path:
+    """A folder of six documents, each on a topic of its own."""
+    path = tmp_path / "topics"
+    path.mkdir()
+    for n in range(6):
+        (path / f"doc-{n}.md").write_text(f"topic: red-{n}\nBody {n}.", encoding="utf-8")
+    return path
+
+
+def use(monkeypatch: pytest.MonkeyPatch, where: Path, probe: Probe, llm: ContentLLM, concurrency: int = 3) -> None:
+    """Make the command build its wiki on `llm` and the probe's steps, filing `concurrency` at a time unless the flag says otherwise."""
+
+    def make(*, bundle: Path | None = None, mode: str | None = None) -> Wiki:
+        return make_wiki(bundle or where, concurrency=concurrency, steps=probe.steps, llm=llm)
+
+    monkeypatch.setattr(cli, "make_wiki", make)
+
+
+def test_cli_sync_concurrency_sets_how_many_documents_are_prepared_at_once(
+    bundle: Path, topics: Path, monkeypatch: pytest.MonkeyPatch, pllm: ContentLLM, capsys: pytest.CaptureFixture[str]
+) -> None:
+    probe = Probe(pause=0.03)
+    use(monkeypatch, bundle, probe, pllm, concurrency=4)
+
+    assert cli.main(["--bundle", str(bundle), "sync", str(topics), "--concurrency", "2"]) == 0
+
+    assert probe.prep_max == 2
+    assert capsys.readouterr().out.strip() == "created 6, merged 0, unchanged 0, removed 0, skipped 0"
+
+
+def test_cli_sync_without_concurrency_uses_the_config(
+    bundle: Path, topics: Path, monkeypatch: pytest.MonkeyPatch, pllm: ContentLLM
+) -> None:
+    probe = Probe(pause=0.03)
+    use(monkeypatch, bundle, probe, pllm, concurrency=3)
+
+    assert cli.main(["--bundle", str(bundle), "sync", str(topics)]) == 0
+
+    assert probe.prep_max == 3
+
+
+def test_cli_sync_exits_non_zero_when_it_stops_and_says_why(
+    bundle: Path, topics: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    llm = ContentLLM(UsageTracker(), fail_on={"red-3\n": ModelError("llm 429 from http://llm.test: busy", status=429)})
+    use(monkeypatch, bundle, Probe(pause=0.0), llm)
+
+    code = cli.main(["--bundle", str(bundle), "sync", str(topics)])
+
+    captured = capsys.readouterr()
+    assert code != 0
+    assert "429" in captured.err
+    assert "created 3" in captured.out  # what was filed before it stopped is reported
+    assert not list((bundle / ".llmw2" / "sync").glob("*.json"))  # the cursor did not move
+
+
+def test_cli_sync_json_of_a_stopped_run_carries_the_reason(
+    bundle: Path, topics: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    llm = ContentLLM(UsageTracker(), fail_on={"red-3\n": ModelError("llm 429", status=429)})
+    use(monkeypatch, bundle, Probe(pause=0.0), llm)
+
+    code = cli.main(["--bundle", str(bundle), "sync", str(topics), "--json"])
+
+    assert code != 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["created"] == 3 and "429" in report["stopped"]
+
+
+def test_cli_sync_with_concurrency_below_one_fails_and_files_nothing(
+    bundle: Path, topics: Path, monkeypatch: pytest.MonkeyPatch, pllm: ContentLLM
+) -> None:
+    use(monkeypatch, bundle, Probe(pause=0.0), pllm)
+
+    assert cli.main(["--bundle", str(bundle), "sync", str(topics), "--concurrency", "0"]) != 0
+
+    assert pllm.calls == []
 
 
 # -- HTTP -------------------------------------------------------------------------------

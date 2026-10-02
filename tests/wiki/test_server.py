@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,9 @@ from llmw2.errors import ModelError
 from llmw2.server import create_app
 from tests.wiki.fakes import FakeLLM
 from tests.wiki.test_files import make_pdf
+from tests.wiki.test_ingest_many import Probe, make_wiki
 
+TIMEOUT = 5  # seconds a test waits for another thread before calling it a bug
 FOLDER = {"name": "finance", "description": "Money in and out."}
 NOTE = "finance/revenue-recognition.md"  # the root holds no notes: the first one opens a folder
 
@@ -200,6 +203,125 @@ def test_concurrent_ingests_both_succeed(client: TestClient, llm: FakeLLM, bundl
     assert sorted(r.json()["usage"]["llm"]["calls"] for r in responses) == [3, 5]  # each counts only its own calls
     listed = {link for _, link, _ in parse_index((bundle / "finance" / "index.md").read_text(encoding="utf-8"))}
     assert listed == {"alpha.md", "beta.md"}
+
+
+# -- concurrent requests: prepared in parallel, filed in turn -----------------------------
+
+
+def serve(bundle: Path, probe: Probe, concurrency: int) -> TestClient:
+    return TestClient(create_app(make_wiki(bundle, concurrency=concurrency, steps=probe.steps)))
+
+
+def upload(client: TestClient, n: int) -> Any:
+    return client.post("/upload", params={"filename": f"doc-{n}.md"}, content=f"topic: red-{n}\nBody {n}.".encode())
+
+
+def post_ingest(client: TestClient, n: int) -> Any:
+    return client.post("/ingest", json={"text": f"topic: red-{n}\nBody {n}.", "title": f"doc {n}"})
+
+
+@pytest.mark.parametrize("k", [1, 3])
+def test_health_reports_the_concurrency(client: TestClient, bundle: Path, k: int) -> None:
+    assert client.get("/health").json()["concurrency"] == 4
+
+    assert serve(bundle / "k", Probe(), k).get("/health").json()["concurrency"] == k
+
+
+@pytest.mark.parametrize("send", [upload, post_ingest], ids=["upload", "ingest"])
+def test_two_concurrent_requests_with_two_workers_are_prepared_together_and_filed_in_turn(bundle: Path, send: Any) -> None:
+    probe = Probe(pause=0.05)
+    probe.want = 2  # each summarize waits until the other is in flight too: it never gets there if preparing is serial
+    client = serve(bundle, probe, 2)
+    start = threading.Barrier(2)
+
+    def post(n: int) -> Any:
+        start.wait(TIMEOUT)
+        return send(client, n)
+
+    with ThreadPoolExecutor(2) as pool:
+        responses = list(pool.map(post, [0, 1]))
+
+    assert [r.status_code for r in responses] == [200, 200]
+    assert probe.prep_max == 2 and probe.serial_max == 1
+    assert sorted(r.json()["note"] for r in responses) == ["red/about-red-0.md", "red/about-red-1.md"]
+    assert client.get("/check").json() == []
+
+
+@pytest.mark.parametrize("send", [upload, post_ingest], ids=["upload", "ingest"])
+def test_concurrent_requests_with_one_worker_are_prepared_one_at_a_time(bundle: Path, send: Any) -> None:
+    probe = Probe(pause=0.05)
+    client = serve(bundle, probe, 1)
+    start = threading.Barrier(3)
+
+    def post(n: int) -> Any:
+        start.wait(TIMEOUT)
+        return send(client, n)
+
+    with ThreadPoolExecutor(3) as pool:
+        futures = [pool.submit(post, n) for n in range(3)]
+        responses = [f.result(timeout=30) for f in futures]
+
+    assert [r.status_code for r in responses] == [200] * 3
+    assert probe.prep_max == 1 and probe.serial_max == 1
+    assert len(probe.filed) == 3
+
+
+def test_a_request_is_prepared_while_another_is_being_filed(bundle: Path) -> None:
+    filing, second_prepared = threading.Event(), threading.Event()
+
+    def hold(name: str, args: tuple[Any, ...]) -> None:
+        if name == "route" and not filing.is_set():
+            filing.set()  # the first request to reach filing waits for the other one's preparation to finish
+            assert second_prepared.wait(TIMEOUT), "the second request was not prepared while the first was filed"
+
+    def prepare(source: Any) -> None:
+        if filing.wait(0.5) and source.text.startswith("topic: red-1"):
+            second_prepared.set()
+
+    probe = Probe(pause=0.0, hook=prepare, serial_hook=hold)
+    client = serve(bundle, probe, 2)
+
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(upload, client, 0)
+        assert _wait(lambda: probe.started, "the first upload never began")
+        second = pool.submit(upload, client, 1)
+        responses = [first.result(timeout=30), second.result(timeout=30)]
+
+    assert [r.status_code for r in responses] == [200, 200]
+    assert second_prepared.is_set()
+
+
+def _wait(cond: Any, why: str) -> bool:
+    deadline = time.monotonic() + TIMEOUT
+    while time.monotonic() < deadline:
+        if cond():
+            return True
+        time.sleep(0.005)
+    raise AssertionError(why)
+
+
+def test_two_concurrent_ingests_of_one_origin_file_it_once_and_the_other_is_unchanged(bundle: Path) -> None:
+    probe = Probe(pause=0.02)
+    probe.want = 2  # both pass the unlocked "unchanged" check before either is filed
+    client = serve(bundle, probe, 2)
+    body = {"text": "topic: red-1\nThe memo.", "origin": {"source": "test", "account": "me", "id": "memo", "version": "v1"}}
+
+    with ThreadPoolExecutor(2) as pool:
+        responses = list(pool.map(lambda _: client.post("/ingest", json=body), range(2)))
+
+    assert [r.status_code for r in responses] == [200, 200]
+    assert sorted(r.json()["action"] for r in responses) == ["created", "unchanged"]
+    assert len(list(bundle.rglob("about-*.md"))) == 1 and len(list((bundle / "raw").glob("*.md"))) == 1
+
+
+def test_a_failing_request_does_not_block_the_next_one(bundle: Path) -> None:
+    probe = Probe(pause=0.0)
+    client = serve(bundle, probe, 1)
+
+    bad = client.post("/upload", params={"filename": "empty.md"}, content=b"   ")
+    good = upload(client, 0)
+
+    assert (bad.status_code, good.status_code) == (422, 200)
 
 
 # -- the web UI and its endpoints ---------------------------------------------------------
