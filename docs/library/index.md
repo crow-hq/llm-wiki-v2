@@ -40,7 +40,7 @@ The fields you will touch most:
 | `max_depth` | `4` | deepest folder level the librarian may reach or create |
 | `max_links` | `5` | See-also links added per ingest |
 | `max_notes` | `8` | notes read per question in classic mode |
-| `concurrency` | `1` | documents prepared at once by `ingest_many`, `sync` and the server (1 to 16; `OKF_CONCURRENCY`) |
+| `concurrency` | `4` | documents prepared at once by `ingest_many`, `sync` and the server (1 to 16; `OKF_CONCURRENCY`) |
 | `llm`, `classifier`, `crow` | | the models and the CROW thresholds |
 
 ## Wiki
@@ -99,9 +99,6 @@ confidence) and `usage` (the tokens spent by this ingest).
 Both have `to_dict()`.
 
 ## Filing many documents
-
-> **Provisional.** `ingest_many`, `Item` and `BatchReport` may change until the benchmark of parallel against
-> serial filing is in; `concurrency` stays at 1 until then.
 
 ```python
 from llmw2 import Item

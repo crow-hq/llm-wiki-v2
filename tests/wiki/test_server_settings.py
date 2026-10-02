@@ -65,7 +65,7 @@ def test_saving_settings_rebuilds_the_wiki(local: TestClient, rebuilt: list[Wiki
 
 
 def test_saving_concurrency_rebuilds_the_wiki_with_it_and_health_reports_it(local: TestClient, rebuilt: list[WikiConfig]) -> None:
-    assert local.get("/health").json()["concurrency"] == 1
+    assert local.get("/health").json()["concurrency"] == 4
 
     response = local.post("/settings", json={"provider": "ollama", "mode": "classic", "concurrency": "3"})
 

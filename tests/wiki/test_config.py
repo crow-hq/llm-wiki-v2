@@ -252,8 +252,8 @@ def test_config_when_max_depth_and_max_links_are_zero_then_accepted(tmp_path: Pa
     assert (config.max_depth, config.max_links) == (0, 0)
 
 
-def test_concurrency_defaults_to_one_and_accepts_one_to_sixteen(tmp_path: Path) -> None:
-    assert WikiConfig(bundle=tmp_path).concurrency == 1
+def test_concurrency_defaults_to_four_and_accepts_one_to_sixteen(tmp_path: Path) -> None:
+    assert WikiConfig(bundle=tmp_path).concurrency == 4
     assert [WikiConfig(bundle=tmp_path, concurrency=k).concurrency for k in (1, 8, 16)] == [1, 8, 16]
 
 

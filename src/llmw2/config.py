@@ -179,7 +179,7 @@ class WikiConfig(BaseModel):
     max_notes: int = Field(8, gt=0)  # classic researcher and CROW's fallback: notes read per question (CROW uses crow.k)
     source_chars: int = Field(100_000, gt=0)  # longest source text sent to the LLM
     upload_mb: int = Field(25, gt=0)  # largest request body the server reads: a big PDF fits, a runaway upload does not fill memory
-    concurrency: int = Field(1, ge=1, le=16)  # documents prepared (extracted, summarized) at once by a batch or the server
+    concurrency: int = Field(4, ge=1, le=16)  # documents prepared (extracted, summarized) at once by a batch or the server
     actor: str = f"llmw2/{__version__}"  # OKF `generated.by`
     usage_log: Path | None = None  # optional JSONL audit of every model call
     prompts_dir: Path | None = None  # optional folder overriding packaged prompts

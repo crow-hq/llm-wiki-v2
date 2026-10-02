@@ -1,6 +1,6 @@
 // Copyright 2026 Federico Cesarini, Marco Sassarini. SPDX-License-Identifier: AGPL-3.0-or-later
 // Filing: dropped files and new notes wait in one queue, sent to the server in order, as many at once as the wiki's
-// concurrency allows (one by default). The queue is kept in IndexedDB, so a reload picks it up; one tab at a time
+// concurrency allows (four by default). The queue is kept in IndexedDB, so a reload picks it up; one tab at a time
 // sends it (a Web Lock), and Stop drops whatever is still waiting.
 
 import { $, api, esc, post } from "./util.js";

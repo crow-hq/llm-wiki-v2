@@ -222,7 +222,7 @@ def post_ingest(client: TestClient, n: int) -> Any:
 
 @pytest.mark.parametrize("k", [1, 3])
 def test_health_reports_the_concurrency(client: TestClient, bundle: Path, k: int) -> None:
-    assert client.get("/health").json()["concurrency"] == 1
+    assert client.get("/health").json()["concurrency"] == 4
 
     assert serve(bundle / "k", Probe(), k).get("/health").json()["concurrency"] == k
 
