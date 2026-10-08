@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (round 7, long documents: the facts measure)
+
+- Benchmark `note_facts.py`: headline recall is the primary measure, read by summarized and copied notes (`recall_headline_summarized`, `recall_headline_copied`, the same for marginal), next to `note_ratio` (note length against its sources), `verbatim` (share of 8-word shingles taken from the sources) and `copied_share` (notes with `verbatim` ≥ 0.3). A copy of the source no longer passes for a good summary.
+
 ### Changed (round 6, long sources: stable route, less waste)
 
 - The CROW `route` of a source longer than twice `note_chars` reads the deterministic state without the native summary (`source_state(..., native=False)`; sections and openings only), not the candidate's compact state: stable and less misled by a wrong summary. `STATE_VERSION` is 2.

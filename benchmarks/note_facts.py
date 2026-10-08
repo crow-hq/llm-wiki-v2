@@ -19,6 +19,10 @@ matched without regard to spaces. Per variant, the mean over its runs:
   (expected, as "previously");
 - invented_numbers: numbers of the note (at least two digits) that are neither in the sources filed into it nor in the note
   it started from, per note; note_chars: the length of the body, and over_cap, the share of notes longer than 1.2 times `--note-chars`.
+- headline recall is the primary measure: marginal recall depends on the note's length, and a copy of the source finds facts by
+  copying them. So recall is read split by summarized and copied notes (recall_headline_summarized, recall_headline_copied and the
+  same for marginal), next to note_ratio (the note's length against its sources), verbatim (the share of its 8-word shingles that
+  are in its sources) and copied_share (the share of notes with a verbatim of 0.3 or more).
 The notes counted are those that received a document of the corpora, once each in a run. A document with no note counts as
 not found.
 """
@@ -51,6 +55,17 @@ SEPARATORS = re.compile(rf"[{GAP}.,]")
 CURRENCY = re.compile(r"[€$£]|\b(?:eur|euros?)\b")
 MARKS = ("headline", "marginal")
 POSITIONS = ("begin", "middle", "tail")
+SHINGLE = 8  # words per shingle
+COPIED = 0.3  # a note is a copy when at least this share of its shingles is in its sources
+FIRST = (  # the rows of the report that come first
+    "recall_headline",
+    "recall_headline_summarized",
+    "recall_headline_copied",
+    "note_ratio",
+    "copied_share",
+    "recall_marginal",
+    "recall_marginal_summarized",
+)
 
 
 # -- the normalisation ---------------------------------------------------------------------------------
@@ -90,6 +105,21 @@ def invented(body: str, references: Iterable[str]) -> set[str]:
     return numbers(body) - known
 
 
+def shingles(text: str, n: int = SHINGLE) -> set[str]:
+    """The runs of `n` consecutive words of a text (lower case), each joined by a space."""
+    words = re.findall(r"\w+", text.lower())
+    return {" ".join(words[i : i + n]) for i in range(len(words) - n + 1)}
+
+
+def verbatim_share(body: str, sources: Iterable[str], n: int = SHINGLE) -> float:
+    """The share of the shingles of `body` that are in the `sources`: 0.0 for a body with none."""
+    mine = shingles(body, n)
+    known: set[str] = set()
+    for text in sources:
+        known |= shingles(text, n)
+    return len(mine & known) / len(mine) if mine else 0.0
+
+
 # -- the facts of one note ---------------------------------------------------------------------------------
 
 
@@ -123,15 +153,27 @@ def recall_metrics(records: list[dict[str, Any]]) -> dict[str, float | None]:
     changed = [r for r in records if "old_found" in r]
     out["superseded_ok"] = share([r["found"] for r in changed])
     out["superseded_kept"] = share([r["old_found"] for r in changed])
+    for kind in MARKS:
+        for copied, name in ((False, "summarized"), (True, "copied")):
+            out[f"recall_{kind}_{name}"] = share([r["found"] for r in records if r["kind"] == kind and r.get("copied") is copied])
     return out
 
 
 def note_metrics(notes: list[dict[str, Any]], cap: int | None) -> dict[str, float | None]:
-    """invented_numbers, note_chars and over_cap of notes `{"chars", "invented"}`: one record per note."""
+    """invented_numbers, note_chars, over_cap and the length and copy measures of notes `{"chars", "invented", ...}`: one record per note.
+
+    `ratio`, `verbatim` and `copied` are optional in a record: without them note_ratio, verbatim and copied_share are None.
+    """
+    ratios = [n["ratio"] for n in notes if n.get("ratio") is not None]
+    verbatims = [n["verbatim"] for n in notes if n.get("verbatim") is not None]
+    copies = [n["copied"] for n in notes if "copied" in n]
     return {
         "invented_numbers": statistics.fmean(n["invented"] for n in notes) if notes else None,
         "note_chars": statistics.fmean(n["chars"] for n in notes) if notes else None,
         "over_cap": share([n["chars"] > OVER * cap for n in notes]) if cap else None,
+        "note_ratio": statistics.fmean(ratios) if ratios else None,
+        "verbatim": statistics.fmean(verbatims) if verbatims else None,
+        "copied_share": share(copies),
     }
 
 
@@ -144,10 +186,9 @@ def mean_of_runs(per_run: list[dict[str, float | None]]) -> dict[str, float | No
 # -- reading the runs ------------------------------------------------------------------------------------
 
 
-def note_body(wiki: Path, rel: str) -> str | None:
-    """The body of a note of a kept wiki without frontmatter and See-also; None if the file is not there or not a note."""
-    path = wiki / rel
-    if not rel or not path.is_file():
+def note_body(wiki: Path, rel: str | None) -> str | None:
+    """The body of a note of a kept wiki without frontmatter and See-also; None if there is none or it is not a note."""
+    if not rel or not (path := wiki / rel).is_file():
         return None
     try:
         return split_see_also(OKFDocument.parse(path.read_text(encoding="utf-8")).body)[0]
@@ -177,10 +218,6 @@ def score_run(
 
     `docs` is the `docs` of the run in the raw JSON of stability.py: `docs[filename]["note"]` is the note of a document.
     """
-    per_doc: dict[str, list[dict[str, Any]]] = {}
-    for name, doc_facts in facts.items():
-        if name in docs:
-            per_doc[name] = check_facts(note_body(wiki, docs[name].get("note", "")), doc_facts)
     sources: dict[str, list[str]] = defaultdict(list)  # note -> the texts filed into it
     for name, record in docs.items():
         if record.get("note") and name in texts:
@@ -190,7 +227,26 @@ def score_run(
         if (body := note_body(wiki, rel)) is not None:
             earlier = base / rel
             references = sources[rel] + ([earlier.read_text(encoding="utf-8")] if earlier.is_file() else [])
-            notes.append({"note": rel, "chars": len(body), "invented": len(invented(body, references))})
+            source_chars = sum(len(t) for t in sources[rel])
+            verbatim = verbatim_share(body, sources[rel])
+            ratio = len(body) / source_chars if source_chars else None
+            notes.append(
+                {
+                    "note": rel,
+                    "chars": len(body),
+                    "invented": len(invented(body, references)),
+                    "source_chars": source_chars,
+                    "ratio": ratio,
+                    "verbatim": verbatim,
+                    "copied": verbatim >= COPIED,
+                }
+            )
+    copied = {n["note"]: n["copied"] for n in notes}
+    per_doc: dict[str, list[dict[str, Any]]] = {}
+    for name, doc_facts in facts.items():
+        if name in docs:
+            rel = docs[name].get("note", "")
+            per_doc[name] = [{**r, "copied": copied.get(rel, False)} for r in check_facts(note_body(wiki, rel), doc_facts)]
     return {
         "docs": per_doc,
         "notes": notes,
@@ -223,11 +279,13 @@ def grid(rows: list[list[str]]) -> str:
 def report_text(variants: dict[str, dict[str, Any]]) -> str:
     """A table of metrics with a column per variant, then of the recall per document."""
     names = list(variants)
-    metrics = [m for m in next(iter(variants.values()))["metrics"]]
+    present = next(iter(variants.values()))["metrics"]
+    metrics = [*(m for m in FIRST if m in present), *(m for m in present if m not in FIRST)]
     out = [grid([["metric", *names], *([m, *(cell(variants[v]["metrics"].get(m)) for v in names)] for m in metrics)])]
     docs = sorted({d for v in variants.values() for d in v["per_doc"]})
-    recall = [[d, *(cell(variants[v]["per_doc"].get(d, {}).get("fact_recall")) for v in names)] for d in docs]
-    out += ["", "fact_recall per document", grid([["document", *names], *recall])]
+    for metric in ("fact_recall", "recall_headline"):
+        recall = [[d, *(cell(variants[v]["per_doc"].get(d, {}).get(metric)) for v in names)] for d in docs]
+        out += ["", f"{metric} per document", grid([["document", *names], *recall])]
     return "\n".join(out)
 
 

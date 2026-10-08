@@ -44,8 +44,9 @@ dollars: the price per token on OpenRouter can double between days.
 
 ## Known limits of the measures
 
-- The corpora are synthetic. The facts of `long2` are exact strings, so `note_facts.py` rewards a note that copies the
-  source (a 72k note for a 71k document scores 1.0): read recall together with note length.
+- The corpora are synthetic. The facts of `long2` are exact strings, so a note that copies the source (a 72k note for a
+  71k document) finds them all: read `recall_headline_summarized` with `note_ratio` and `copied_share`, not `fact_recall`
+  alone. A paraphrased fact ("2.9k €") counts as lost.
 - With 5 runs per side only large effects are visible; 10+10 for decisions on the growth corpus, 4+4 at least on `long2`.
 - Labels are strict: `folder_accuracy` counts a subfolder of the right folder as wrong (`folder_prefix_accuracy` does not),
   and `new_accuracy` counts any created folder, single-document ones included.
