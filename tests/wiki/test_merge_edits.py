@@ -29,6 +29,9 @@ READ = 14_000  # a text room of 8 000 next to a small note: the least a chunk ma
 CHUNK = 8_000
 
 BODY = (
+    "# Background\n\n"
+    + "Plain words about the setting go on and on here without any value at all. " * 14  # as long as note_chars
+    + "\n\n"
     "# Overview\n\nThe limit is 30 units. Owner: Anna Rossi.\n\n"
     "## Details\n\nSub detail words.\n\n"
     "# Pricing\n\nPrice is 1,200 per month.\n\n"
@@ -247,7 +250,7 @@ def test_an_edit_not_found_is_rejected_and_the_body_keeps_its_passage(bundle: Pa
 
 
 def test_an_ambiguous_edit_is_rejected_and_the_body_keeps_its_passage(bundle: Path, llm: FakeLLM) -> None:
-    body = "# Overview\n\nStatus: active.\n\n# Pricing\n\nStatus: active.\n\nPrice is 1,200 per month.\n"
+    body = "# Overview\n\nStatus: active.\n\n# Pricing\n\nStatus: active.\n\nPrice is 1,200 per month.\n" + BODY.split("# Overview")[0]
     raw = long_raw("The status is now closed. ")
 
     draft = run_merge(bundle, llm, raw, [reply(edit("Status: active.", "Status: closed.")), reply()], body=body)

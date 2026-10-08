@@ -305,9 +305,14 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
         body, title, summary, tags = source.text, source.title or "(none)", "(none)", "(none)"
     long_source = len(source.text) > CONSOLIDATE_SOURCE_MAX * ctx.cfg.effective_note_chars
     if long_source and ctx.cfg.merge_mode == "edits":
-        draft = merge_edits(ctx, note, source)
-        _warn_if_long("merge", draft.title, draft.body, ctx.cfg.target_note_chars(len(source.text), len(existing)))
-        return draft
+        revised = _revision_diff(ctx, note, source)
+        share = ctx.cfg.target_note_chars(len(source.text))
+        if revised is not None or len(existing) >= share:
+            draft = merge_edits(ctx, note, source, revised=revised)
+            _warn_if_long("merge", draft.title, draft.body, ctx.cfg.target_note_chars(len(source.text), len(existing)))
+            return draft
+        log.info("merge: %s takes the rewrite: the source revises no cited copy and the note (%d characters) is under its share (%d)",
+                 note.rel, len(existing), share)  # fmt: skip
     cut = len(source.text) if long_source else len(body)  # a long source is merged from its text, not from the candidate
     if cut > budget:
         log.warning("merge: the incoming text is cut from %d to %d characters to fit the call", cut, budget)
@@ -382,7 +387,10 @@ class Edits(BaseModel):
     additions: list[Addition] = []
 
 
-def merge_edits(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
+_UNSET: Any = object()
+
+
+def merge_edits(ctx: StepContext, note: Note, source: Source, revised: Any = _UNSET) -> NoteDraft:
     """Merge a long source as edits the model proposes and code applies; title, summary and tags stay the note's.
 
     The model reads the changes of the source against the raw copy it revises, else the source itself, in chunks that
@@ -391,7 +399,8 @@ def merge_edits(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
     """
     existing = note.main_body()
     body = existing
-    revised = _revision_diff(ctx, note, source)
+    if revised is _UNSET:
+        revised = _revision_diff(ctx, note, source)
     text = source.text if revised is None else revised
     kind = "a new source" if revised is None else "the changes between the previous version of this source and the new one"
     budget = max(MIN_CHUNK, ctx.cfg.effective_read_chars - PROMPT_ROOM - len(existing))
@@ -409,12 +418,14 @@ def merge_edits(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
             body, why = _apply_edit(body, edit, known)
             if why:
                 rejected[why] += 1
+                log.debug("merge: %s rejected for %s: %r", why, note.rel, edit.find[:120])
             else:
                 applied += 1
         for add in out.additions:
             body, why = _apply_addition(body, add, known)
             if why:
                 rejected[why] += 1
+                log.debug("merge: %s rejected for %s: %r", why, note.rel, add.text[:120])
             else:
                 applied += 1
 
@@ -480,9 +491,60 @@ def _apply_edit(body: str, edit: Edit, known: set[str]) -> tuple[str, str]:
         return body, "invented"
     replace = edit.replace
     removed = _lost_originals(edit.find, old - new)
-    if removed and "previously" not in replace:
-        replace += f" (previously {', '.join(removed)})"
+    if removed:
+        if "\n" in edit.find or "\n" in replace or _row_cells(replace) is not None:
+            replace = _note_removed(edit.find, replace, removed)
+        elif "previously" not in replace:
+            replace += f" (previously {', '.join(removed)})"
     return body.replace(edit.find, replace, 1), ""
+
+
+def _row_cells(line: str) -> list[str] | None:
+    """The cells of a markdown table row (a line that starts and ends with a pipe), else None."""
+    s = line.strip()
+    return s[1:-1].split("|") if len(s) > 1 and s.startswith("|") and s.endswith("|") else None
+
+
+def _line_key(line: str) -> str:
+    cells = _row_cells(line)
+    return (cells[0] if cells else line).strip().lower()
+
+
+def _note_removed(find: str, replace: str, removed: list[str]) -> str:
+    """The replace with "(previously ...)" put on the line (and, in a table row, the cell) that took the place of each removed value."""
+    before, after = find.split("\n"), replace.split("\n")
+    pair: dict[int, int] = {}  # find line -> replace line
+    keys = ([_line_key(x) for x in before], [_line_key(x) for x in after])
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, *keys, autojunk=False).get_opcodes():
+        if tag == "equal" or (tag == "replace" and i2 - i1 == j2 - j1):
+            pair.update({i1 + k: j1 + k for k in range(i2 - i1)})
+    last = max((j for j, x in enumerate(after) if x.strip()), default=-1)
+    notes: dict[tuple[int, int | None], list[str]] = {}  # (replace line, cell or None) -> values
+    for raw in removed:
+        norm = next(iter(incoming_values(raw)), "")
+        i = next((i for i, x in enumerate(before) if norm in incoming_values(x)), -1)
+        j, cell = pair.get(i, last), None
+        if j < 0:
+            continue
+        target, source = _row_cells(after[j]), _row_cells(before[i]) if i in pair else None
+        if target is not None:
+            cell = len(target) - 1
+            if source is not None and len(source) == len(target):
+                cell = next((c for c, x in enumerate(source) if norm in incoming_values(x)), cell)
+        notes.setdefault((j, cell), []).append(raw)
+    for (j, cell), values in notes.items():
+        text = f"(previously {', '.join(values)})"
+        if cell is None:
+            if "previously" not in after[j]:
+                base = after[j].rstrip()
+                after[j] = f"{base} {text}" + after[j][len(base) :]
+            continue
+        parts = after[j].split("|")  # a row's cells are parts[1:-1]
+        base = parts[cell + 1].rstrip()
+        if "previously" not in base:
+            parts[cell + 1] = f"{base} {text}" + parts[cell + 1][len(base) :]
+        after[j] = "|".join(parts)
+    return "\n".join(after)
 
 
 def _apply_addition(body: str, add: Addition, known: set[str]) -> tuple[str, str]:
