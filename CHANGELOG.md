@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added (round 7, proportional note length)
 
-- `note_length` (`OKF_NOTE_LENGTH`): `fixed` (the default, nothing changes) or `proportional`. A proportional note is about a quarter of its source (`NOTE_RATIO`), never below `note_chars`, up to what a call holds and `NOTE_MAX` (45000); a merge asks for the existing note plus that share (`WikiConfig.target_note_chars`). It sets the length rule of `summarize_combine` and `merge`, their reply caps, the length warning and the Ollama context check. The decision hash includes it only when it is not `fixed`.
+- `note_length` (`OKF_NOTE_LENGTH`): `fixed` (the default, nothing changes) or `proportional`. A proportional note is about a quarter of its source (`NOTE_RATIO`), never below `note_chars`, up to what a call holds and `NOTE_MAX` (45000); a merge asks for the existing note plus that share (`WikiConfig.target_note_chars`). It sets the length rule of `summarize_combine` and `merge`, their reply caps, the length warning and the Ollama context check. The decision hash includes it only when it is not `fixed`. Under `proportional` a part of a long source keeps all it writes, within its share of what the combine call reads (`min(room // parts, half its block)`), not just `note_chars // 2`.
+- `summarize`: after the combine call, a warning when the note lacks values (codes, numbers, two-word names) of its part notes; nothing is retried or changed.
 
 ### Fixed (round 7, merge)
 

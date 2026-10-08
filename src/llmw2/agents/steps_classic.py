@@ -146,10 +146,12 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
             f"the source is too long to summarize with read_chars {cfg.effective_read_chars}: "
             f"it takes {n} parts and the notes of all of them must fit in one call; raise read_chars"
         )
-    parts = []
+    parts, written = [], []
     for k, block in enumerate(blocks, 1):
         heading = block.heading or "(no heading)"
-        cap = min(cfg.effective_note_chars // 2, room // n, len(block.text) // 2)
+        cap = min(room // n, len(block.text) // 2)  # proportional: the notes of all parts still fit in the combine call
+        if cfg.note_length == "fixed":
+            cap = min(cap, cfg.effective_note_chars // 2)
         reply_chars = max(MIN_PART, math.ceil(PART_REPLY_FACTOR * cap))  # close to what is kept; `cut_notes` trims below
         try:
             args: dict[str, Any] = {
@@ -172,17 +174,24 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
             kept = cut_notes(notes, cap)
             log.warning("summarize: part %d of %d: notes cut from %d to %d characters", k, n, len(notes), len(kept))
             notes = kept
+        written.append(notes)
         parts.append(f"Part {k} of {n} — {heading}\n{notes}")
     target = cfg.target_note_chars(len(source.text))
-    return ctx.ask_json(
+    part_notes = "\n\n".join(parts)
+    draft = ctx.ask_json(
         "librarian/summarize_combine",
         NoteDraft,
         source_title=source.title or "(none)",
         source_resource=source.resource or "(none)",
-        part_notes="\n\n".join(parts),
+        part_notes=part_notes,
         note_chars=target,
         **({} if cfg.note_length == "fixed" else {"reply_chars": math.ceil(1.2 * target)}),  # fixed: the default cap of a note
     )
+    wanted = incoming_values("\n\n".join(written))  # the notes only: a heading such as "Green Coffee" is not a value
+    missing = wanted - incoming_values(draft.body)
+    if missing:  # only logged: nothing is asked again
+        log.warning("summarize: the note of %r lacks %d of %d values of its part notes", draft.title, len(missing), len(wanted))
+    return draft
 
 
 def cut_notes(notes: str, cap: int) -> str:

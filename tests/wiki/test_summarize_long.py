@@ -202,7 +202,8 @@ def test_notes_within_their_cap_are_passed_whole_and_without_a_warning(
     with caplog.at_level(logging.WARNING):
         classic.summarize(context(llm, source), source)
 
-    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+    # no cut warning; the values check after the combine may warn
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING and "cut" in r.getMessage()] == []
 
 
 def test_a_source_too_long_for_the_budget_is_an_input_error_naming_read_chars(tracker: UsageTracker) -> None:
