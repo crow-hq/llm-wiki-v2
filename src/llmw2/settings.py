@@ -60,7 +60,11 @@ FIELDS: dict[str, tuple[str, ...]] = {
     **{f"crow_{name}": ("classifier", "crow", name) for name in CrowConfig.model_fields},
     # How each model is called; kept per provider too, like its key and model.
     "temperature": ("llm", "temperature"),
+    "seed": ("llm", "seed"),
+    "pin_provider": ("llm", "pin_provider"),  # comma-separated
     "timeout": ("llm", "timeout"),
+    "read_chars": ("llm", "read_chars"),  # characters one prompt may hold; kept per provider, empty: automatic
+    "note_chars": ("note_chars",),  # about how long a note may be; empty: automatic
     "classifier_timeout": ("classifier", "timeout"),
     "classifier_attempts": ("classifier", "attempts"),
     "classifier_state_chars": ("classifier", "state_chars"),
@@ -68,7 +72,12 @@ FIELDS: dict[str, tuple[str, ...]] = {
 }
 # The parameters of each model the page edits (a number each), with the default a new provider starts from.
 PARAMS = {
-    "llm": {name: LLMConfig.model_fields[name].default for name in ("temperature", "timeout")},
+    "llm": {
+        **{name: LLMConfig.model_fields[name].default for name in ("temperature", "timeout")},
+        "seed": "",  # not set; "pin_provider" and "read_chars" likewise: text in the page, "" clears
+        "pin_provider": "",
+        "read_chars": "",
+    },
     "classifier": {name: ClassifierConfig.model_fields[name].default for name in ("timeout", "attempts", "state_chars", "request_chars")},
 }
 SECRETS = frozenset({"api_key", "classifier_api_key"})  # never sent back; an empty one keeps what is saved
@@ -150,6 +159,7 @@ class Settings:
             "classifier_api_key": ["OKF_CLASSIFIER_API_KEY", key_env(CLASSIFIER_PROVIDERS, classifier_provider)],
             "bundle": ["OKF_BUNDLE"],
             "concurrency": ["OKF_CONCURRENCY"],
+            "note_chars": ["OKF_NOTE_CHARS"],
             **{f"crow_{name}": [f"OKF_{name.upper()}"] for name in CrowConfig.model_fields},
             **{name: [f"OKF_LLM_{name.upper()}"] for name in PARAMS["llm"]},
             **{f"classifier_{name}": [f"OKF_CLASSIFIER_{name.upper()}"] for name in PARAMS["classifier"]},
@@ -175,8 +185,9 @@ class Settings:
                 "classifier_api_key": mask(cfg.classifier.api_key),
                 "bundle": str(cfg.bundle),
                 "concurrency": cfg.concurrency,
+                "note_chars": "" if cfg.note_chars is None else cfg.note_chars,
                 **{f"crow_{name}": value for name, value in cfg.crow.model_dump().items()},
-                **{name: getattr(cfg.llm, name) for name in PARAMS["llm"]},
+                **{name: param(cfg.llm, name) for name in PARAMS["llm"]},
                 **{f"classifier_{name}": getattr(cfg.classifier, name) for name in PARAMS["classifier"]},
             },
             "ready": ready(cfg),
@@ -210,7 +221,7 @@ class Settings:
             active = cfg.llm if section == "llm" else cfg.classifier
             base_url = (saved.get(section) or {}).get("base_url", "")
             out[section][active.provider] = {"model": active.model, "base_url": base_url, "api_key": mask(active.api_key)}
-            out[section][active.provider].update({k: getattr(active, k) for k in PARAMS[section]})
+            out[section][active.provider].update({k: param(active, k) for k in PARAMS[section]})
         out["classifier"][cfg.classifier.provider]["crow"] = cfg.crow.model_dump()
         return out
 
@@ -268,6 +279,12 @@ class Settings:
         return cfg
 
 
+def param(model: LLMConfig | ClassifierConfig, name: str) -> Any:
+    """A model parameter as the page edits it: unset is "", a list of providers is comma-separated text."""
+    value = getattr(model, name)
+    return "" if value is None else ",".join(value) if isinstance(value, list) else value
+
+
 def key_env(providers: Mapping[str, Provider], name: str) -> str:
     return providers[name].key_env if name in providers else ""
 
@@ -311,7 +328,7 @@ def is_default(field: str, value: str, classifier_provider: str) -> bool:
     try:
         return default is not None and math.isclose(float(value), float(default))
     except ValueError:
-        return False
+        return value == default  # a choice such as fallback_menu
 
 
 def openrouter_key(saved: Mapping[str, Any]) -> str:

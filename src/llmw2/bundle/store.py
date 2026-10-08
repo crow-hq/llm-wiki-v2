@@ -23,6 +23,7 @@ import logging
 import os
 import shutil
 import threading
+import time
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -55,6 +56,9 @@ from llmw2.bundle.tree import (
 from llmw2.errors import InputError
 
 log = logging.getLogger(__name__)
+
+REPLACE_ATTEMPTS = 6  # about 0.3 s in all: long enough for a reader to close the file it was reading
+
 
 def now_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
@@ -124,7 +128,7 @@ class WikiStore:
                 return
             fd = os.open(self.root, os.O_RDONLY)
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX)
+                fcntl.flock(fd, fcntl.LOCK_EX)  # type: ignore[attr-defined,unused-ignore]  # stubs hide it on Windows
                 yield
             finally:
                 os.close(fd)  # closing the descriptor releases the lock
@@ -456,7 +460,14 @@ def write_atomic(path: Path, text: str) -> None:
     # One temporary name per process and thread: two writers never share, and so never clobber, a temp file.
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
-        tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
+        tmp.write_text(text, encoding="utf-8", newline="\n")  # "\n" on every system: a bundle moves between them
+        for attempt in range(REPLACE_ATTEMPTS):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:  # Windows: the target is open in another thread or process for a moment
+                if attempt == REPLACE_ATTEMPTS - 1:
+                    raise
+                time.sleep(0.01 * 2**attempt)
     finally:
         tmp.unlink(missing_ok=True)

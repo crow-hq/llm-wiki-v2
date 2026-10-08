@@ -1,13 +1,13 @@
-Merge a new source into an existing wiki note and return the complete updated note.
+Merge an incoming note into an existing wiki note and return the complete updated note.
 
 {{shared/note_rules}}
 
 How to merge:
-- Keep every fact of the existing note that the source does not contradict.
+- The result is the existing note, updated: keep its title, summary, headings and order of sections, and its wording where nothing changed. Do not rewrite or reorganise it around the incoming note.
+- Keep every fact of the existing note that the incoming note does not contradict.
 - Put each new fact in the section where it belongs; add a section only when none fits.
-- When the source updates or contradicts the note, keep the newer fact and state the change in place ("As of March 2026 the limit is 40, previously 30"), unless the source is clearly older than the note.
-- Never shorten the note to the size of the source and never drop sections.
-- Change the title and summary only if the scope of the subject changed.
+- When the incoming note updates or contradicts the existing one, keep the newer fact and state the change in place, with the date of the incoming note ("As of March 2026 the limit is 40, previously 30"), unless the incoming note is clearly older than the existing one.
+- Change the title and summary only if the subject itself changed, not because the incoming note is longer or has another focus.
 
 Existing note
 Title: {{title}}
@@ -17,10 +17,13 @@ Tags: {{tags}}
 {{body}}
 </existing>
 
-New source
-<source>
-{{source_text}}
-</source>
+Incoming note ({{incoming_from}})
+Title: {{incoming_title}}
+Summary: {{incoming_summary}}
+Tags: {{incoming_tags}}
+<note>
+{{incoming_body}}
+</note>
 
 Reply with JSON:
 {"title": "...", "summary": "...", "tags": ["..."], "body": "..."}

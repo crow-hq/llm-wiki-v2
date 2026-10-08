@@ -275,7 +275,8 @@ def test_a_request_is_prepared_while_another_is_being_filed(bundle: Path) -> Non
             assert second_prepared.wait(TIMEOUT), "the second request was not prepared while the first was filed"
 
     def prepare(source: Any) -> None:
-        if filing.wait(0.5) and source.text.startswith("topic: red-1"):
+        # the second document finishes its preparation only once the first is being filed; the first never waits
+        if source.text.startswith("topic: red-1") and filing.wait(TIMEOUT):
             second_prepared.set()
 
     probe = Probe(pause=0.0, hook=prepare, serial_hook=hold)

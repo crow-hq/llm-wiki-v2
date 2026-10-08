@@ -29,6 +29,7 @@ from llmw2 import (
 )
 from llmw2.agents.base import Decision
 from llmw2.agents.researcher import NO_ANSWER
+from llmw2.agents.steps import decision_hash
 from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.tree import Folder, Note
 from llmw2.models.usage import UsageReport
@@ -682,19 +683,22 @@ def test_steps_default_to_the_classic_functions_and_the_default_name_is_custom()
 def test_note_source_and_log_line_carry_the_steps_name_and_hash(offline: Callable[[Steps], Wiki], bundle: Path) -> None:
     steps = Steps(summarize=one, route=o_route, match=o_match, consolidate=o_consolidate, relate=o_relate)
 
-    result = offline(steps).ingest("Text.")
+    wiki = offline(steps)
+    result = wiki.ingest("Text.")
 
+    decided = decision_hash(steps, wiki.cfg, wiki.prompts)
     [source] = read(bundle / result.note).frontmatter["sources"]
-    assert source["steps"] == {"name": "custom", "hash": steps.hash}
-    assert f"(custom {steps.hash})" in (bundle / "log.md").read_text(encoding="utf-8")
+    assert source["steps"] == {"name": "custom", "hash": decided}
+    assert f"(custom {decided}, {wiki.cfg.llm.model})" in (bundle / "log.md").read_text(encoding="utf-8")
 
 
 def test_a_merge_adds_the_steps_entry_to_the_new_source(offline: Callable[[Steps], Wiki], bundle: Path) -> None:
-    offline(MERGING).ingest("Text.")
+    wiki = offline(MERGING)
+    wiki.ingest("Text.")
 
     [seeded, merged] = read(bundle / SEED).frontmatter["sources"]
     assert "steps" not in seeded
-    assert merged["steps"] == {"name": "offline", "hash": MERGING.hash}
+    assert merged["steps"] == {"name": "offline", "hash": decision_hash(MERGING, wiki.cfg, wiki.prompts)}
 
 
 def test_classic_provenance(classic_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
@@ -704,8 +708,9 @@ def test_classic_provenance(classic_wiki: Wiki, llm: FakeLLM, bundle: Path) -> N
     result = classic_wiki.ingest("Acme text.")
 
     assert classic_wiki.steps is CLASSIC
-    assert read(bundle / result.note).frontmatter["sources"][0]["steps"] == {"name": "classic", "hash": CLASSIC.hash}
-    assert f"(classic {CLASSIC.hash})" in (bundle / "log.md").read_text(encoding="utf-8")
+    decided = decision_hash(CLASSIC, classic_wiki.cfg, classic_wiki.prompts)
+    assert read(bundle / result.note).frontmatter["sources"][0]["steps"] == {"name": "classic", "hash": decided}
+    assert f"(classic {decided}, {classic_wiki.cfg.llm.model})" in (bundle / "log.md").read_text(encoding="utf-8")
 
 
 def test_crow_provenance(crow_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
@@ -715,8 +720,9 @@ def test_crow_provenance(crow_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
     result = crow_wiki.ingest("Acme text.")
 
     assert crow_wiki.steps is CROW
-    assert read(bundle / result.note).frontmatter["sources"][0]["steps"] == {"name": "crow", "hash": CROW.hash}
-    assert f"(crow {CROW.hash})" in (bundle / "log.md").read_text(encoding="utf-8")
+    decided = decision_hash(CROW, crow_wiki.cfg, crow_wiki.prompts)
+    assert read(bundle / result.note).frontmatter["sources"][0]["steps"] == {"name": "crow", "hash": decided}
+    assert f"(crow {decided}, {crow_wiki.cfg.llm.model})" in (bundle / "log.md").read_text(encoding="utf-8")
 
 
 def test_the_hash_is_eight_hex_characters_and_stable() -> None:
@@ -920,7 +926,7 @@ def test_a_patent_note_keeps_what_was_known_in_its_frontmatter(patents: Wiki, bu
 
     assert fm["title"] == "EP100 Catalyst process" and fm["description"] == "A catalyst." and fm["tags"] == ["chemistry"]
     assert fm["fields"] == {"number": "EP100", "category": "chemistry", "applicant": "Acme"}
-    assert fm["sources"][0]["steps"] == {"name": "patents", "hash": PATENTS.hash}
+    assert fm["sources"][0]["steps"] == {"name": "patents", "hash": decision_hash(PATENTS, patents.cfg, patents.prompts)}
     assert len(raws(bundle)) == 5
 
 

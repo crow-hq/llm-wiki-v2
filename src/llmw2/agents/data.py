@@ -32,6 +32,7 @@ class Candidate:
     tags: list[str]
     body: str
     fields: dict[str, Any] = field(default_factory=dict)  # written to the note's frontmatter under `fields:`
+    state: str = ""  # what the routing decisions read; empty: built from the source text (see `agents.state`)
 
     def compact(self, max_chars: int) -> str:
         """Title, summary and opening passage: the state every decision reads."""

@@ -588,12 +588,12 @@ def custom_extract(ctx: StepContext, data: bytes, filename: str) -> str:
 
 
 class CountingLLM(ContentLLM):
-    def chat(self, messages: list[dict[str, str]], *, op: str = "") -> str:
+    def chat(self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
         if op == "custom/extract":
             self.calls.append((op, messages))
             self.usage.record("llm", self.model, *LLM_TOKENS, op=op)
             return "ok"
-        return super().chat(messages, op=op)
+        return super().chat(messages, op=op, json_mode=json_mode, max_tokens=max_tokens)
 
 
 def test_each_items_usage_holds_its_own_extract_summarize_and_filing_calls_and_nothing_else(tmp_path: Path) -> None:

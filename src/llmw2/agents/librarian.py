@@ -12,6 +12,7 @@ output of every step is checked before it is used.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from functools import cached_property
 from typing import Any, Literal
 
 from llmw2.agents.base import Decision, clean_tags, unique_objects
@@ -27,6 +28,7 @@ from llmw2.agents.steps import (
     check_relate,
     check_route,
     check_summarize,
+    decision_hash,
 )
 from llmw2.bundle.origin import content_hash
 from llmw2.bundle.store import WikiStore
@@ -74,6 +76,11 @@ class Librarian:
         self.steps = steps
         self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="librarian/system")
 
+    @cached_property
+    def hash(self) -> str:
+        """What the provenance says decided: the steps, prompts and decision parameters (see `decision_hash`)."""
+        return decision_hash(self.steps, self.cfg, self.ctx.prompts)
+
     def ingest(self, source: Source) -> IngestResult:
         return self.file(self.prepare(source))
 
@@ -89,6 +96,7 @@ class Librarian:
         steps, ctx = self.steps, self.ctx
         source, cand = prepared.source, prepared.candidate
         ctx.source = source
+        ctx.candidate = cand
         ctx.decisions = list(prepared.decisions)
         with ctx.llm.usage.span() as used:
             root = self.store.load()
@@ -96,7 +104,8 @@ class Librarian:
             pool = unique_objects(n for f in [*route.candidates, route.folder] for n in f.notes)
             match = check_match(steps.match(ctx, pool, cand), pool)
             created: list[str] = []
-            if match is not None and check_consolidate(steps.consolidate(ctx, match, cand)):
+            merging = match is not None and check_consolidate(steps.consolidate(ctx, match, cand))
+            if match is not None and merging:
                 draft = check_merge(steps.merge(ctx, match, source))
                 raw, ref = self.save_source(source, cand)
                 note = self.store.update_note(
@@ -131,11 +140,13 @@ class Librarian:
                 )
                 action = "created"
             others = [n for n in unique_objects([*pool, *note.folder.notes]) if n is not note] if note.folder else pool
-            related = check_relate(steps.relate(ctx, note, others), note, others)[: self.cfg.max_links] if others else []
+            related = check_relate(steps.relate(ctx, note, others), note, others) if others else []
+            related = related[: self.cfg.max_links]
             for other in related:
                 self.store.link(note, other)
             verb = "Merged" if action == "merged" else "Created"
-            self.store.append_log(verb, f"from {raw} ({steps.name} {steps.hash})", note.rel, note.title)
+            via = f", via {','.join(self.cfg.llm.pin_provider)}" if self.cfg.llm.pin_provider else ""
+            self.store.append_log(verb, f"from {raw} ({steps.name} {self.hash}, {self.cfg.llm.model}{via})", note.rel, note.title)
         total = prepared.usage.copy()
         total.merge(used)
         return IngestResult(
@@ -159,5 +170,5 @@ class Librarian:
         ref: dict[str, Any] = {"resource": raw, "title": title, "hash": content_hash(source.text)}
         if source.origin is not None:
             ref["origin"] = source.origin.to_dict()
-        ref["steps"] = {"name": self.steps.name, "hash": self.steps.hash}
+        ref["steps"] = {"name": self.steps.name, "hash": self.hash}
         return raw, ref

@@ -140,6 +140,10 @@ class UsageTracker:
         seconds: float = 0.0,
         cost: float | None = None,
         cached: int | None = None,
+        provider: str | None = None,  # who served the call, when the response says (OpenRouter does)
+        temperature: float | None = None,
+        seed: int | None = None,
+        finish_reason: str | None = None,  # why the reply ended ("stop", "length"), when the response says
     ) -> None:
         if input_tokens is None and output_tokens is None:
             log.warning("%s call %r (%s) returned no usage", kind, op, model)
@@ -160,6 +164,10 @@ class UsageTracker:
                     "seconds": round(seconds, 3),
                     "cost_usd": cost,
                     "cached_tokens": cached,
+                    "provider": provider,
+                    "temperature": temperature,
+                    "seed": seed,
+                    "finish_reason": finish_reason,
                 }
                 with self._log_path.open("a", encoding="utf-8") as f:
                     f.write(json.dumps(line) + "\n")

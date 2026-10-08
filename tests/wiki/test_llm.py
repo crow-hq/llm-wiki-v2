@@ -134,20 +134,19 @@ def test_json_parses_a_wrapped_object(tracker: UsageTracker, reply: str) -> None
     assert len(requests) == 1
 
 
-def test_json_retries_once_with_the_validation_error(tracker: UsageTracker) -> None:
+def test_json_retries_once_without_the_broken_reply(tracker: UsageTracker) -> None:
     llm, requests = make_llm(tracker, completion('{"name": "Cats"}'), completion('{"title": "Cats"}'))
 
     assert llm.json("system", "Name it.", Title) == Title(title="Cats")
 
     first, second = (sent(r)["messages"] for r in requests)
     assert "single JSON object" in first[-1]["content"]
-    assert second[: len(first)] == first
-    assert second[len(first)] == {"role": "assistant", "content": '{"name": "Cats"}'}
-    correction = second[len(first) + 1]
-    assert correction["role"] == "user"
-    assert "not valid" in correction["content"]
-    assert "title" in correction["content"] and "Field required" in correction["content"]
-    assert len(second) == len(first) + 2
+    assert [m["role"] for m in second] == ["system", "user"]
+    assert second[0] == first[0]
+    assert second[1]["content"].startswith(first[1]["content"])
+    assert "A previous reply to this request was not valid: " in second[1]["content"]
+    assert "title" in second[1]["content"] and "Field required" in second[1]["content"]
+    assert "response_format" not in sent(requests[0]) and sent(requests[1])["response_format"] == {"type": "json_object"}
 
 
 def test_json_raises_after_two_invalid_replies(tracker: UsageTracker) -> None:

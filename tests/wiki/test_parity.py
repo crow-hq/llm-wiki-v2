@@ -47,7 +47,7 @@ REVENUE = "finance/revenue-recognition.md"
 _DATETIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")  # generated.at
 _RAW_STAMP = re.compile(r"\b\d{8}-\d{6}-")  # raw/<YYYYMMDD-HHMMSS>-<slug>.md
 _LOG_DATE = re.compile(r"^## \d{4}-\d{2}-\d{2}$", re.MULTILINE)
-_MODE = re.compile(r" \((?:classic|crow) [0-9a-f]{8}\)$", re.MULTILINE)  # the ingest log line names the steps and their hash
+_MODE = re.compile(r" \((?:classic|crow) [0-9a-f]{8}, [^)]+\)$", re.MULTILINE)  # the ingest log line names the steps and their hash
 _STEPS = re.compile(r"^( *)steps:\n\1  name: \w+\n\1  hash: [0-9a-f]{8}$", re.MULTILINE)  # so does the note's source entry
 
 

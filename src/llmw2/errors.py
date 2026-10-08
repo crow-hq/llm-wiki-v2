@@ -30,6 +30,14 @@ class ModelError(WikiError, RuntimeError):
         self.status = status  # the provider's HTTP status, when it answered with an error
 
 
+class ReplyCut(ModelError):
+    """The model's reply hit the length limit (finish_reason length), so it is unfinished; `text` is what it wrote."""
+
+    def __init__(self, message: str, *, text: str = "", status: int | None = None) -> None:
+        super().__init__(message, status=status)
+        self.text = text
+
+
 class StepError(WikiError):
     """A step returned something the next one cannot take (or lacks what it needs); nothing was written."""
 

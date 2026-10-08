@@ -37,7 +37,7 @@ class FakeLLM(LLM):
         self.replies.setdefault(op, []).extend(replies)
         return self
 
-    def chat(self, messages: list[dict[str, str]], *, op: str = "") -> str:
+    def chat(self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
         self.calls.append((op, [dict(m) for m in messages]))
         self.usage.record("llm", self.model, *LLM_TOKENS, op=op)
         if not self.replies.get(op):
@@ -125,7 +125,7 @@ class ContentLLM(LLM):
     def ops(self) -> list[str]:
         return [op for op, _ in self.calls]
 
-    def chat(self, messages: list[dict[str, str]], *, op: str = "") -> str:
+    def chat(self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
         user = messages[1]["content"]
         self.calls.append((op, [dict(m) for m in messages]))
         if self.jitter:
@@ -178,7 +178,7 @@ class ContentLLM(LLM):
         title = self._between(user, "Existing note\nTitle: ", "\n")
         summary = self._between(user, "\nSummary: ", "\n")
         body = self._between(user, "<existing>\n", "\n</existing>")
-        return {"title": title, "summary": summary, "tags": [], "body": body + "\n\n" + self._between(user, "<source>\n", "\n</source>")}
+        return {"title": title, "summary": summary, "tags": [], "body": body + "\n\n" + self._between(user, "<note>\n", "\n</note>")}
 
     def _relate(self, user: str) -> dict[str, Any]:
         notes = self._between(user, "<notes>\n", "\n</notes>").splitlines()

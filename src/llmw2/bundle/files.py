@@ -26,7 +26,8 @@ def extract_text(data: bytes, filename: str) -> str:
         raise InputError(f"{filename}: unsupported file type {suffix!r} (use .txt, .md or .pdf)")
     if b"\x00" in data[:8192]:  # git's test for binary: text never holds a NUL byte
         raise InputError(f"{filename}: a binary file, not text")
-    return data.decode("utf-8-sig", errors="replace")
+    # One kind of line end: the same file saved on Windows and elsewhere is the same text, with the same hash.
+    return data.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
 
 
 def title_of(filename: str) -> str:

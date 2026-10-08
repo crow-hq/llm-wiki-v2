@@ -72,6 +72,7 @@ class Classifier(HttpModel):
             op=op,
             seconds=time.perf_counter() - start,
             cost=reported_cost(usage),
+            provider=data["provider"] if isinstance(data.get("provider"), str) else None,
         )
         answers = data.get("answers")
         # A wrong base URL can answer 200 with an HTML page; check the shape, not the status.

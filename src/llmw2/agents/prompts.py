@@ -9,6 +9,7 @@ directory passed as `override_dir` (env `OKF_PROMPTS_DIR`) wins file by file.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from importlib import resources
 from pathlib import Path
@@ -28,6 +29,11 @@ class Prompts:
         if not resource.is_file():
             raise FileNotFoundError(f"no prompt named {name!r}")
         return resource.read_text(encoding="utf-8")
+
+    def fingerprint(self) -> str:
+        """First 12 hex chars of a sha256 over the text of every template as `load` resolves it (overrides included)."""
+        text = "\0".join(f"{name}\0{self.load(name)}" for name in self.names())
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
     def render(self, name: str, /, **values: object) -> str:
         """Fill `{{var}}` from `values` and `{{shared/x}}` from shared fragments; a missing value raises."""
