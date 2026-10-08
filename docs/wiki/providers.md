@@ -59,7 +59,10 @@ fall back to the LLM, one decision at a time.
 | `OKF_LLM_BASE_URL` | the provider's | required for `custom` |
 | `OKF_LLM_API_KEY` | the provider's key variable | Bearer token; wins over the provider's variable |
 | `OKF_LLM_TEMPERATURE` | `0.1` | |
+| `OKF_LLM_SEED` | — | sent with every request when set |
+| `OKF_LLM_PIN_PROVIDER` | — | OpenRouter only, comma-separated: only these providers answer, in order, with no fallback |
 | `OKF_LLM_TIMEOUT` | `120` | seconds per request |
+| `OKF_LLM_READ_CHARS` | by provider | characters one request may hold, text and rules together (at least 8000): 100000 on OpenRouter, OpenAI and Gemini, 16000 on Ollama and custom. Longer sources are read in parts. With Ollama, set the model's `num_ctx` to hold it (about 3.5 characters a token): testing the model in the settings page warns when it is smaller |
 | `OKF_LLM_EXTRA_BODY` | — | JSON merged into every request, e.g. OpenRouter provider pinning |
 
 | Provider | Base URL | Key variable | Default model |
@@ -80,6 +83,20 @@ The client sends `POST {base_url}/chat/completions` (up to 3 attempts on 408,
 429, 500, 502-504, 529) and asks once more if a JSON reply does not validate.
 Costs are recorded when the provider reports them in the `usage` block, as
 OpenRouter does.
+
+**Output cap.** Every call the steps make through `ctx.ask_json` and `ctx.ask_text` carries
+a limit on the reply (`max_tokens`; `max_completion_tokens` on OpenAI): 3 times the length
+asked for at 3.5 characters a token, at least 1024 tokens, so a note of `note_chars` 10000 may
+take 8572. The one-call summary of a source longer than `note_chars` takes its length from the
+source instead, since a summary needs no cap below its source. A model that may think (reasoning on, or a provider with no switch to turn it off)
+gets 32000 more tokens, since thinking counts against the limit. A reply cut at the limit is
+asked once more, shorter, and a second cut fails the source with a `ModelError`. A provider that
+refuses the field (a vLLM whose context is too small, say) is asked again without it, and
+later requests leave it out. The limit is not part of the decision hash. A limit set in
+`OKF_LLM_EXTRA_BODY` (`max_tokens` or `max_completion_tokens`) wins. Known limit: 3.5 characters a
+token fits Latin-script text; Chinese, Japanese or Korean text, or a model that escapes non-ASCII
+characters in JSON, takes more tokens a character, and a long note may be cut: lift the limit
+with `extra_body`.
 
 ## The classifier (CROW), through the System One API
 
@@ -113,7 +130,7 @@ A `custom` classifier starts from the Laya thresholds preset ([crow.md](crow.md#
 and its model from `typed-decisions`, the Laya checkpoint that preset was measured on;
 `auto` lets Laya pick its English or multilingual checkpoint per note.
 
-The settings page edits each model's parameters too: the LLM's temperature and timeout,
+The settings page edits each model's parameters too: the LLM's temperature, timeout and characters per call,
 the classifier's timeout, attempts, note text read and request size (the variables above),
 kept per provider like its key and model.
 
@@ -134,7 +151,7 @@ for the classifier.
 | `result.usage` on `IngestResult` and `Answer` (the `"usage"` field of `POST /ingest` and `POST /ask`) | that one ingest or question |
 | `wiki.usage`, `GET /usage` | all calls since the process started |
 | CLI, on stderr after `ingest` and `ask` | one line, e.g. `llm 4 calls 9,812 in / 1,204 out \| classifier 3 calls 2,950 in / 0 out` |
-| `OKF_USAGE_LOG=<file>` | one JSON line per call: `ts`, `kind`, `model`, `op`, `input_tokens`, `output_tokens` |
+| `OKF_USAGE_LOG=<file>` | one JSON line per call: `ts`, `kind`, `model`, `op`, `input_tokens`, `output_tokens`, `seconds`, `cost_usd`, `cached_tokens`, `provider`, `temperature`, `seed`, `finish_reason` (`stop`, `length`, ...; the LLM only) |
 
 - `op` is the prompt name for LLM calls (e.g. `librarian/route`), and the step
   for classifier calls (`route`, `match`, `consolidate`, `relate`,

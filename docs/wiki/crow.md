@@ -19,11 +19,11 @@ under `src/llmw2/agents/prompts/`.
 
 | Step | Classic decider | CROW decider | Primitive | Threshold | Fallback |
 |---|---|---|---|---|---|
-| 0 summarize | LLM `librarian/summarize` | same LLM step. `OKF_SUMMARIZE=false` files the source verbatim. | - | - | - |
-| 1 route | LLM `librarian/route`, one level at a time | `classifier/route` at each level. Options are the subfolders, `Here` (not at the root, which holds no notes: in an empty wiki `New subfolder` is the one way and nothing is asked), `New subfolder` (below `OKF_MAX_DEPTH`) and `None of these` (not at the root). A path's score is the geometric mean of its edge probabilities. | Choice | `tau_route`, `beam`, `tau_path` | LLM `librarian/route_fallback` over the folders visited, when no path finishes or the best score is below `tau_path`. On error, LLM `librarian/route`. An LLM that picks the root opens a new folder there instead. It may name a folder the classifier did not visit; a path that does not exist yet (`/finance/pricing` with no `pricing`) opens a new subfolder in the deepest folder of it that does. |
+| 0 summarize | LLM `librarian/summarize`. A source longer than one call (`OKF_LLM_READ_CHARS` less 6000 characters for the prompt) is read in parts: `librarian/summarize_part` takes notes on each block of it, in turn, and `librarian/summarize_combine` writes the note from them. | same LLM step. `OKF_SUMMARIZE=false` files the source verbatim. | - | - | - |
+| 1 route | LLM `librarian/route`, one level at a time | `classifier/route` at each level. Options are the subfolders, `Here` (not at the root, which holds no notes: in an empty wiki `New subfolder` is the one way and nothing is asked), `New subfolder` (below `OKF_MAX_DEPTH`) and `None of these` (not at the root). A path's score is the geometric mean of its edge probabilities. With `votes` above 1, a level whose confidence is within `vote_band` of `tau_route`, or whose top two options are closer than that, is asked `votes` times and the averaged answer decides; if the best path then scores within `vote_band` of `tau_path`, the beam runs once more with every level averaged. | Choice | `tau_route`, `beam`, `tau_path`, `votes`, `vote_band` | LLM `librarian/route_fallback`, when no path finishes or the best score is below `tau_path`. Its menu is the folders the classifier visited; with `fallback_menu` set to `tree` (an extension of the paper, as `relate` is) it also lists the other folders of the wiki, up to 8000 characters, the visited ones first. On error, LLM `librarian/route`. An LLM that picks the root opens a new folder there instead. It may name a folder the classifier did not visit; a path that does not exist yet (`/finance/pricing` with no `pricing`) opens a new subfolder in the deepest folder of it that does. |
 | 2 relevance | LLM `librarian/find_match` | `classifier/note_relevance`: one Noul per note in the candidate folders, batched. The best note wins if its probability is above `tau_ing`. | Noul | `tau_ing` | Below `tau_ing`: no match. On error, LLM `librarian/find_match`. |
-| 3 consolidation | LLM `librarian/consolidate` | `classifier/consolidate`: a Choice between `Modify` and `New note`. The note is merged only if the choice is `Modify` with confidence at least `tau_cons`. | Choice | `tau_cons` | When unsure, a new note is written. On error, LLM `librarian/consolidate`. |
-| write | LLM `librarian/merge` or `librarian/name_folder` | same LLM step | - | - | - |
+| 3 consolidation | LLM `librarian/consolidate` | `classifier/consolidate`: a Choice between `Modify` and `New note`. It reads the source state (as routing does) when the source is at most twice `note_chars` long, else the candidate's compact form. The note is merged only if the choice is `Modify` with confidence at least `tau_cons`. | Choice | `tau_cons` | When unsure, a new note is written. On error, LLM `librarian/consolidate`. |
+| write | LLM `librarian/merge` or `librarian/name_folder`. A merge reads the existing note and the incoming note (the candidate that step 0 wrote, with the source's title and location), not the whole source; what does not fit in the call is cut and logged. If the draft is unchanged, or drops more than half of the new codes, numbers and names of the incoming text, the merge is asked once more from the source with `librarian/merge_source`. | same LLM step | - | - | - |
 | relate | LLM `librarian/relate` | `classifier/relate`: one Noul per candidate. Links go to notes above `tau_link`, at most `OKF_MAX_LINKS` (5). | Noul | `tau_link` | On error, LLM `librarian/relate`. |
 
 In step 2, the candidate folders are every folder on the finished beam paths. In
@@ -49,6 +49,9 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 | `tau_fold` | `OKF_TAU_FOLD` | 0.08 | 0.15 | Folder probability must be above this to explore the folder |
 | `tau_ret` | `OKF_TAU_RET` | 0.1 | 0.2 | Note probability must be above this to read the note |
 | `tau_link` | `OKF_TAU_LINK` | 0.6 | 0.5 | Relatedness must be above this to add a See-also link |
+| `votes` | `OKF_VOTES` | 1 | 1 | Routing: classifier calls averaged on a borderline decision (1: off) |
+| `vote_band` | `OKF_VOTE_BAND` | 0.05 | 0.05 | Routing: how close to `tau_route`, `tau_path` or a tie between two options counts as borderline |
+| `fallback_menu` | `OKF_FALLBACK_MENU` | visited | visited | Routing fallback: folders the LLM chooses among, `visited` (those the classifier explored) or `tree` (those and the rest of the wiki); `tree` is an extension of the paper |
 | `beam` | `OKF_BEAM` | 2 | 2 | Ingestion: paths kept per uncertain routing step |
 | `retrieval_beam` | `OKF_RETRIEVAL_BEAM` | 6 | 6 | Retrieval: folders explored per level |
 | `k` | `OKF_K` | 8 | 5 | CROW retrieval: notes passed to the answer |
@@ -84,7 +87,7 @@ choice, confidence, fallback)`. You can read it from
 
 | `step` | `choice` | `confidence` holds | Calibrates |
 |---|---|---|---|
-| `route_step` | options kept at one level | Choice confidence | `tau_route` |
+| `route_step` | options kept at one level, ending ` (n votes)` when averaged over n calls | Choice confidence (the mean when averaged) | `tau_route` |
 | `route` | `"/folder (Here)"` or `"/folder (New subfolder)"` | path score (`fallback: true` when the LLM chose) | `tau_path` |
 | `match` | note path, or `none` | best note probability | `tau_ing` |
 | `consolidate` | `modify` or `new` | Choice confidence | `tau_cons` |
@@ -122,7 +125,19 @@ changes or the wiki grows.
   hook decides. In the decisions, that step's `decider` is `llm`. A failed route
   also records `choice: "error"`, and a failed retrieval records
   `step: "select"`, both with `fallback: true`.
-- **Every decision reads a compact state**, not the full source: the title, the
+- **Route reads a deterministic state**, built from the source text and not from the
+  LLM's summary, which differs on every run. A text that fits in
+  `OKF_CLASSIFIER_STATE_CHARS` is read whole. A longer one is read as its own summary (or
+  introduction), the list of its sections and the opening of each; without headings, as
+  passages at even offsets. A custom `summarize` may set `Candidate.state` itself.
+  For a source longer than twice `note_chars` the route reads sections and openings only, not the native summary (the
+  state is still deterministic; `steps_crow.routing_state`), unless `summarize` set the state.
+  **Limit (sources up to twice `note_chars`; longer ones skip the native summary):** the state of a source leads with its own summary (up to 40% of it),
+  so a summary that misrepresents the document misleads the route. In a benchmark, a laboratory manual
+  whose executive summary dwelt on customer complaints went to `/customers` in
+  half the runs or more. The summary is still used, because a faithful one is the best
+  short description of a long text.
+- **The other decisions read a compact state**, not the full source: the title, the
   summary and the opening passage, up to `OKF_CLASSIFIER_STATE_CHARS` (6000).
   Consolidation also adds the existing note, up to half of
   `OKF_CLASSIFIER_REQUEST_CHARS`. For retrieval, the state is the question.

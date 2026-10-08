@@ -41,6 +41,8 @@ The fields you will touch most:
 | `max_links` | `5` | See-also links added per ingest |
 | `max_notes` | `8` | notes read per question in classic mode |
 | `concurrency` | `4` | documents prepared at once by `ingest_many`, `sync` and the server (1 to 16; `OKF_CONCURRENCY`) |
+| `llm.seed` | none | a seed sent with every request (`OKF_LLM_SEED`); providers that support it answer the same prompt the same way |
+| `llm.pin_provider` | none | OpenRouter only (`OKF_LLM_PIN_PROVIDER`, comma-separated): the providers that may answer, in order, with no fallback to others. Another provider logs a warning and ignores it. `llm.extra_body["provider"]` wins |
 | `llm`, `classifier`, `crow` | | the models and the CROW thresholds |
 
 ## Wiki
