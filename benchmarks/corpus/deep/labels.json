@@ -1,0 +1,517 @@
+{
+  "about": "Synthetic deep benchmark: the 30 growth documents with labels remapped to the deep demo, and 12 new documents (31-34 misleading surface, 35-38 ambiguous across branches, 39-42 new folders in two groups). Written by benchmarks/make_deep_corpus.py.",
+  "docs": {
+    "01-wholesale-credit-limits.md": {
+      "kind": "existing",
+      "folders": [
+        "/customers",
+        "/customers/wholesale",
+        "/customers/subscriptions",
+        "/customers/policies"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "02-refund-policy-change-october.md": {
+      "kind": "update",
+      "folders": [
+        "/customers",
+        "/customers/wholesale",
+        "/customers/subscriptions",
+        "/customers/policies"
+      ],
+      "merge_into": "customers/policies/refund-policy.md",
+      "group": null
+    },
+    "03-job-description-training-specialist.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g1"
+    },
+    "04-coffee-advent-calendar.md": {
+      "kind": "existing",
+      "folders": [
+        "/ideas",
+        "/ideas/products",
+        "/ideas/customers",
+        "/ideas/experiences"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "05-portello-wholesale-price-request.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/customers",
+        "/customers/wholesale",
+        "/customers/subscriptions",
+        "/customers/policies",
+        "/products",
+        "/products/coffees",
+        "/products/pricing"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "06-kenya-sample-evaluation.md": {
+      "kind": "existing",
+      "folders": [
+        "/sourcing",
+        "/sourcing/importers",
+        "/sourcing/origins",
+        "/sourcing/risk"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "07-aurora-profile-autumn-adjustment.md": {
+      "kind": "update",
+      "folders": [
+        "/operations/roasting",
+        "/operations/roasting/profiles",
+        "/operations/roasting/quality",
+        "/operations/roasting/equipment"
+      ],
+      "merge_into": "operations/roasting/profiles/aurora-roast-profile.md",
+      "group": null
+    },
+    "08-organic-certification-feasibility.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g2"
+    },
+    "09-christmas-shipping-cutoffs.md": {
+      "kind": "existing",
+      "folders": [
+        "/operations/shipping",
+        "/operations/shipping/carriers",
+        "/operations/shipping/packing"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "10-cafe-portello-decaf-training-follow-up.md": {
+      "kind": "update",
+      "folders": [
+        "/customers",
+        "/customers/wholesale",
+        "/customers/subscriptions",
+        "/customers/policies"
+      ],
+      "merge_into": "customers/wholesale/cafe-portello.md",
+      "group": null
+    },
+    "11-tasting-bar-plan-and-licence.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g3",
+      "alt_folders": [
+        "/ideas/experiences"
+      ]
+    },
+    "12-weekly-sync-16-september-2026.md": {
+      "kind": "existing",
+      "folders": [
+        "/meetings",
+        "/meetings/board",
+        "/meetings/team"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "13-colombia-trip-and-next-steps.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/sourcing",
+        "/sourcing/importers",
+        "/sourcing/origins",
+        "/sourcing/risk",
+        "/meetings",
+        "/meetings/board",
+        "/meetings/team"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "14-hedging-january-2027-fixings.md": {
+      "kind": "update",
+      "folders": [
+        "/sourcing",
+        "/sourcing/importers",
+        "/sourcing/origins",
+        "/sourcing/risk"
+      ],
+      "merge_into": "sourcing/risk/green-coffee-price-hedging.md",
+      "group": null
+    },
+    "15-interview-scorecard-production-staff.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g1"
+    },
+    "16-winter-blend-christmas.md": {
+      "kind": "existing",
+      "folders": [
+        "/products",
+        "/products/coffees",
+        "/products/pricing"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "17-sample-roasting-new-lots.md": {
+      "kind": "existing",
+      "folders": [
+        "/operations/roasting",
+        "/operations/roasting/profiles",
+        "/operations/roasting/quality",
+        "/operations/roasting/equipment"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "18-carrier-rate-changes-november.md": {
+      "kind": "update",
+      "folders": [
+        "/operations/shipping",
+        "/operations/shipping/carriers",
+        "/operations/shipping/packing"
+      ],
+      "merge_into": "operations/shipping/carriers/carriers-and-delivery-times.md",
+      "group": null
+    },
+    "19-compostable-bag-supplier-quotes.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g2",
+      "alt_folders": [
+        "/operations/shipping/packing"
+      ]
+    },
+    "20-customer-survey-grind-options.md": {
+      "kind": "existing",
+      "folders": [
+        "/customers",
+        "/customers/wholesale",
+        "/customers/subscriptions",
+        "/customers/policies"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "21-carrier-delay-lombardy-incident.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/operations/shipping",
+        "/operations/shipping/carriers",
+        "/operations/shipping/packing",
+        "/customers",
+        "/customers/wholesale",
+        "/customers/subscriptions",
+        "/customers/policies"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "22-roaster-maintenance-october-service.md": {
+      "kind": "update",
+      "folders": [
+        "/operations/roasting",
+        "/operations/roasting/profiles",
+        "/operations/roasting/quality",
+        "/operations/roasting/equipment"
+      ],
+      "merge_into": "operations/roasting/equipment/roaster-maintenance.md",
+      "group": null
+    },
+    "23-events-calendar-autumn-2026.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g3",
+      "alt_folders": [
+        "/ideas/experiences"
+      ]
+    },
+    "24-gift-subscription-cards.md": {
+      "kind": "existing",
+      "folders": [
+        "/ideas",
+        "/ideas/products",
+        "/ideas/customers",
+        "/ideas/experiences"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "25-andes-direct-new-payment-terms.md": {
+      "kind": "update",
+      "folders": [
+        "/sourcing",
+        "/sourcing/importers",
+        "/sourcing/origins",
+        "/sourcing/risk"
+      ],
+      "merge_into": "sourcing/importers/andes-direct-importer.md",
+      "group": null
+    },
+    "26-new-hire-induction-checklist.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g1"
+    },
+    "27-second-roaster-quote-board-discussion.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/operations/roasting",
+        "/operations/roasting/profiles",
+        "/operations/roasting/quality",
+        "/operations/roasting/equipment",
+        "/meetings",
+        "/meetings/board",
+        "/meetings/team"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "28-board-meeting-september-2026.md": {
+      "kind": "existing",
+      "folders": [
+        "/meetings",
+        "/meetings/board",
+        "/meetings/team"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "29-pause-option-pilot-results.md": {
+      "kind": "update",
+      "folders": [
+        "/ideas",
+        "/ideas/products",
+        "/ideas/customers",
+        "/ideas/experiences"
+      ],
+      "merge_into": "ideas/customers/pause-instead-of-cancel.md",
+      "group": null
+    },
+    "30-sustainability-report-outline.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g2"
+    },
+    "31-board-meeting-17-november-2026.md": {
+      "kind": "existing",
+      "folders": [
+        "/sourcing/risk"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "32-customer-email-thread-late-order.md": {
+      "kind": "existing",
+      "folders": [
+        "/operations/roasting/equipment"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "33-idea-memo-rolling-out-the-new-prices.md": {
+      "kind": "existing",
+      "folders": [
+        "/products/pricing"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "34-team-meeting-24-november-2026.md": {
+      "kind": "existing",
+      "folders": [
+        "/operations/shipping/carriers"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "35-hedged-prices-and-the-2027-list.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/sourcing/risk",
+        "/sourcing",
+        "/products/pricing",
+        "/products"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "36-caffe-dora-late-parcels-complaint.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/customers/wholesale",
+        "/customers",
+        "/operations/shipping/carriers",
+        "/operations/shipping"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "37-subscriber-survey-monthly-micro-lot-box.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/customers/subscriptions",
+        "/customers",
+        "/ideas/products",
+        "/ideas"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "38-board-decision-roaster-service-contract.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/meetings/board",
+        "/meetings",
+        "/operations/roasting/equipment",
+        "/operations/roasting"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "39-roastery-energy-use-2026.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g4",
+      "alt_folders": [
+        "/operations/roasting/equipment"
+      ]
+    },
+    "40-heat-recovery-proposal-for-the-exhaust.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g4",
+      "alt_folders": [
+        "/operations/roasting/equipment"
+      ]
+    },
+    "41-coffee-school-autumn-courses.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g5",
+      "alt_folders": [
+        "/ideas/experiences",
+        "/customers"
+      ]
+    },
+    "42-coffee-school-first-cohorts-report.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g5",
+      "alt_folders": [
+        "/ideas/experiences",
+        "/customers"
+      ]
+    },
+    "43-decaf-processing-partners-compared.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g6",
+      "alt_folders": [
+        "/sourcing/importers",
+        "/products/coffees"
+      ]
+    },
+    "44-decaf-processing-trial-results.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g6",
+      "alt_folders": [
+        "/sourcing/importers",
+        "/products/coffees"
+      ]
+    },
+    "45-webshop-platform-migration-plan.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g7",
+      "alt_folders": [
+        "/customers/subscriptions"
+      ]
+    },
+    "46-payment-provider-switch-checklist.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g7",
+      "alt_folders": [
+        "/customers/subscriptions"
+      ]
+    },
+    "47-food-safety-audit-november-2026.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g8",
+      "alt_folders": [
+        "/operations/roasting/quality"
+      ]
+    },
+    "48-haccp-plan-revision.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g8",
+      "alt_folders": [
+        "/operations/roasting/quality"
+      ]
+    },
+    "49-new-bag-artwork-brief.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g9",
+      "alt_folders": [
+        "/products/coffees",
+        "/operations/shipping/packing"
+      ]
+    },
+    "50-label-printer-and-bag-supplier-quotes.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g9",
+      "alt_folders": [
+        "/products/coffees",
+        "/operations/shipping/packing"
+      ]
+    },
+    "51-insurance-renewal-2027.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": null
+    },
+    "52-farmers-market-stall-weekends.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": null,
+      "alt_folders": [
+        "/ideas/experiences",
+        "/customers"
+      ]
+    }
+  }
+}
