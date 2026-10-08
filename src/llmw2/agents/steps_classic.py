@@ -8,6 +8,7 @@ Public, so a custom step can reuse them: `replace(CLASSIC, summarize=lambda ctx,
 
 from __future__ import annotations
 
+import difflib
 import logging
 import math
 import re
@@ -18,6 +19,7 @@ from pydantic import BaseModel, BeforeValidator
 from llmw2.agents.base import clean_tags, list_folders, list_notes
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.state import source_state, split_blocks
+from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.files import extract_text
 from llmw2.bundle.tree import Folder, Note
 from llmw2.config import PROMPT_ROOM
@@ -45,6 +47,9 @@ MERGE_UNCHANGED_NOTE = (
     "\n\nThe previous reply returned the note unchanged, but the source has these values the note lacks; "
     'update the note with each of them, stating the value it replaces ("previously …") where it replaces one:\n'
 )
+REVISION_MIN = 0.5  # a source sharing this much of its 8-word shingles with a raw copy the note cites revises that copy
+MIN_CHUNK = 8_000  # the least of the text an edits merge reads per call, however full the note
+EDITS_CHARS = 16_000  # about how long the reply of an edits merge is: a list of edits, not a note
 SOFT_CAP = 1.2 # a note body longer than the length asked for, times this, is logged, not cut
 
 # Routing options of the paper (§5.1 step 1) and consolidation options (step 3).
@@ -299,6 +304,10 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
     else:
         body, title, summary, tags = source.text, source.title or "(none)", "(none)", "(none)"
     long_source = len(source.text) > CONSOLIDATE_SOURCE_MAX * ctx.cfg.effective_note_chars
+    if long_source and ctx.cfg.merge_mode == "edits":
+        draft = merge_edits(ctx, note, source)
+        _warn_if_long("merge", draft.title, draft.body, ctx.cfg.target_note_chars(len(source.text), len(existing)))
+        return draft
     cut = len(source.text) if long_source else len(body)  # a long source is merged from its text, not from the candidate
     if cut > budget:
         log.warning("merge: the incoming text is cut from %d to %d characters to fit the call", cut, budget)
@@ -356,6 +365,147 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
             draft = again
     _warn_if_long("merge", draft.title, draft.body, ctx.cfg.target_note_chars(len(source.text), len(existing)))
     return draft
+
+
+class Edit(BaseModel):
+    find: str
+    replace: str
+
+
+class Addition(BaseModel):
+    section: str
+    text: str
+
+
+class Edits(BaseModel):
+    edits: list[Edit] = []
+    additions: list[Addition] = []
+
+
+def merge_edits(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
+    """Merge a long source as edits the model proposes and code applies; title, summary and tags stay the note's.
+
+    The model reads the changes of the source against the raw copy it revises, else the source itself, in chunks that
+    fit next to the note. An edit is applied only if its `find` occurs once and its new values are in the text read;
+    the values it removes are kept in place ("previously ...").
+    """
+    existing = note.main_body()
+    body = existing
+    revised = _revision_diff(ctx, note, source)
+    text = source.text if revised is None else revised
+    kind = "a new source" if revised is None else "the changes between the previous version of this source and the new one"
+    budget = max(MIN_CHUNK, ctx.cfg.effective_read_chars - PROMPT_ROOM - len(existing))
+    chunks = [b.text for b in split_blocks(text, budget)]
+    applied, rejected = 0, {"not found": 0, "ambiguous": 0, "invented": 0}
+
+    def ask(chunk: str, changes: str) -> None:
+        nonlocal body, applied
+        out = ctx.ask_json(
+            "librarian/merge_edits", Edits, title=note.title, summary=note.summary, body=body, changes=changes, kind=kind,
+            reply_chars=EDITS_CHARS,
+        )  # fmt: skip
+        known = incoming_values(chunk)
+        for edit in out.edits:
+            body, why = _apply_edit(body, edit, known)
+            if why:
+                rejected[why] += 1
+            else:
+                applied += 1
+        for add in out.additions:
+            body, why = _apply_addition(body, add, known)
+            if why:
+                rejected[why] += 1
+            else:
+                applied += 1
+
+    for chunk in chunks:
+        ask(chunk, chunk)
+    missing = incoming_values(text) - incoming_values(existing)
+    if chunks and body == existing and missing:
+        log.warning("merge: the edits for %s changed nothing although the source has new values: asking again", note.rel)
+        listed = _lost_originals(text, missing)
+        ask(chunks[0], chunks[0] + MERGE_UNCHANGED_NOTE + "\n".join(f"- {v}" for v in listed))
+    refused = sum(rejected.values())
+    (log.warning if refused else log.info)(
+        "merge: %s by edits: %d applied, %d rejected (not found %d, ambiguous %d, invented %d)",
+        note.rel, applied, refused, rejected["not found"], rejected["ambiguous"], rejected["invented"],
+    )  # fmt: skip
+    return NoteDraft(title=note.title, summary=note.summary, tags=list(note.tags), body=body)
+
+
+def _shingles(text: str) -> set[tuple[str, ...]]:
+    words = text.lower().split()
+    return {tuple(words[i : i + 8]) for i in range(len(words) - 7)}
+
+
+def _paragraphs(text: str) -> list[str]:
+    return [p for p in re.split(r"\n\s*\n", text) if p.strip()]
+
+
+def _revision_diff(ctx: StepContext, note: Note, source: Source) -> str | None:
+    """The paragraphs the source changes against the cited raw copy it most resembles, or None if it revises none."""
+    new = _shingles(source.text)
+    cited = note.frontmatter.get("sources")
+    best, best_share, best_text = "", 0.0, ""
+    for ref in cited if isinstance(cited, list) else []:
+        resource = str(ref.get("resource") or "") if isinstance(ref, dict) else ""
+        path = ctx.cfg.bundle / resource.lstrip("/")
+        if not resource.startswith("/raw/") or not path.is_file():
+            continue
+        old = OKFDocument.parse(path.read_text(encoding="utf-8")).body
+        share = len(new & _shingles(old)) / len(new) if new else 0.0
+        if share > best_share:
+            best, best_share, best_text = resource, share, old
+    if best_share < REVISION_MIN:
+        return None
+    before, after = _paragraphs(best_text), _paragraphs(source.text)
+    blocks: list[str] = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes():
+        if tag == "replace":
+            blocks.append("BEFORE:\n" + "\n\n".join(before[i1:i2]) + "\nAFTER:\n" + "\n\n".join(after[j1:j2]))
+        elif tag == "insert":
+            blocks.append("ADDED:\n" + "\n\n".join(after[j1:j2]))
+    diff = "\n\n---\n\n".join(blocks)
+    log.info("merge: the source is a revision of %s (share %.2f): the model reads %d characters of changes", best, best_share, len(diff))
+    return diff
+
+
+def _apply_edit(body: str, edit: Edit, known: set[str]) -> tuple[str, str]:
+    """The body with the edit applied, and why it was rejected ("" if it was applied)."""
+    count = body.count(edit.find) if edit.find else 0
+    if count != 1:
+        return body, "not found" if count == 0 else "ambiguous"
+    old, new = incoming_values(edit.find), incoming_values(edit.replace)
+    if new - old - known:
+        return body, "invented"
+    replace = edit.replace
+    removed = _lost_originals(edit.find, old - new)
+    if removed and "previously" not in replace:
+        replace += f" (previously {', '.join(removed)})"
+    return body.replace(edit.find, replace, 1), ""
+
+
+def _apply_addition(body: str, add: Addition, known: set[str]) -> tuple[str, str]:
+    """The body with the text added at the end of the section named, or in a new one; and why it was rejected."""
+    if incoming_values(add.text) - known:
+        return body, "invented"
+    wanted, text = add.section.strip().lstrip("#").strip().lower(), add.text.strip()  # "Pricing" names "# Pricing" too
+    lines = body.split("\n")
+    start, level, end = -1, 0, len(lines)
+    for i, line in enumerate(lines):
+        m = re.match(r"(#+)\s", line)
+        if m and start < 0 and line[len(m.group(1)) :].strip().lower() == wanted:
+            start, level = i, len(m.group(1))
+        elif m and start >= 0 and len(m.group(1)) <= level:
+            end = i
+            break
+    if start < 0:
+        heading = add.section.strip()
+        return body + "\n\n" + (heading if heading.startswith("#") else "# " + heading) + "\n" + text, ""
+    head, tail = lines[:end], lines[end:]
+    while len(head) > start + 1 and not head[-1].strip():
+        head.pop()
+    return "\n".join([*head, "", text, *([""] if tail else []), *tail]), ""
 
 
 def _source_values(note: Note, existing: str, source: Source, budget: int, reply_chars: int) -> dict[str, Any]:

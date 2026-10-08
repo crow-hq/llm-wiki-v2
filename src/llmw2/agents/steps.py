@@ -228,6 +228,8 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
     }
     if cfg.note_length != "fixed":
         decisive["note_length"] = cfg.note_length  # only when set: the hash of a fixed length stays what it was
+    if cfg.merge_mode != "rewrite":
+        decisive["merge_mode"] = cfg.merge_mode  # only when set, like note_length
     return hashlib.sha256(json.dumps(decisive, sort_keys=True).encode("utf-8")).hexdigest()[:8]
 
 
