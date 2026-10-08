@@ -87,7 +87,9 @@ OpenRouter does.
 **Output cap.** Every call the steps make through `ctx.ask_json` and `ctx.ask_text` carries
 a limit on the reply (`max_tokens`; `max_completion_tokens` on OpenAI): 3 times the length
 asked for at 3.5 characters a token, at least 1024 tokens, so a note of `note_chars` 10000 may
-take 8572. The one-call summary of a source longer than `note_chars` takes its length from the
+take 8572. With `note_length` `proportional` (`OKF_NOTE_LENGTH`; the default is `fixed`) the note
+of a long source is about a quarter of it, at least `note_chars` and at most what a call holds (45000), and
+the caps of `summarize_combine` and `merge` follow it. The one-call summary of a source longer than `note_chars` takes its length from the
 source instead, since a summary needs no cap below its source. A model that may think (reasoning on, or a provider with no switch to turn it off)
 gets 32000 more tokens, since thinking counts against the limit. A reply cut at the limit is
 asked once more, shorter, and a second cut fails the source with a `ModelError`. A provider that

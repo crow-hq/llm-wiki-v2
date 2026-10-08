@@ -56,6 +56,8 @@ PROVIDERS: dict[str, Provider] = {
 # Characters a prompt takes beyond the text it carries (rules, instructions, titles), and the usual longest note body.
 PROMPT_ROOM = 6_000
 NOTE_CAP = 10_000
+NOTE_RATIO = 4  # a proportional note is about this many times shorter than its source
+NOTE_MAX = 45_000  # the longest note a proportional length asks for, when a call holds that much
 
 JEV = "typesafe/jev-1.13"  # pinned: thresholds are calibrated per model version
 
@@ -193,7 +195,7 @@ def crow_preset(classifier_provider: str) -> str:
 # WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).
 _TOP_LEVEL_ENV = (
     "bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency", "usage_log",
-    "prompts_dir", "note_chars",
+    "prompts_dir", "note_chars", "note_length",
 )
 
 
@@ -208,6 +210,7 @@ class WikiConfig(BaseModel):
     # Deprecated: the characters one prompt may hold, when `llm.read_chars` is not set (see `effective_read_chars`).
     source_chars: int = Field(100_000, gt=0)
     note_chars: int | None = Field(None, ge=1_000)  # about how long a note body may be; None: automatic (see `effective_note_chars`)
+    note_length: Literal["fixed", "proportional"] = "fixed"  # a note about `note_chars` long, or in proportion to its source
     upload_mb: int = Field(25, gt=0)  # largest request body the server reads: a big PDF fits, a runaway upload does not fill memory
     concurrency: int = Field(4, ge=1, le=16)  # documents prepared (extracted, summarized) at once by a batch or the server
     actor: str = f"llmw2/{__version__}"  # OKF `generated.by`
@@ -254,6 +257,20 @@ class WikiConfig(BaseModel):
     def effective_note_chars(self) -> int:
         """About how long a note body may be: `note_chars` or NOTE_CAP, and never more than half the text of a prompt."""
         return max(1_000, min(self.note_chars or NOTE_CAP, (self.effective_read_chars - PROMPT_ROOM) // 2))
+
+    @property
+    def note_ceiling(self) -> int:
+        """The longest note a call can hold: `effective_note_chars` when `note_length` is fixed, else up to NOTE_MAX."""
+        if self.note_length == "fixed":
+            return self.effective_note_chars
+        return max(self.effective_note_chars, min(NOTE_MAX, (self.effective_read_chars - PROMPT_ROOM) // 2))
+
+    def target_note_chars(self, source_chars: int, existing_chars: int = 0) -> int:
+        """About how long the note being written should be: for a merge, the existing note and the share the source adds."""
+        if self.note_length == "fixed":
+            return self.effective_note_chars
+        own = min(self.note_ceiling, max(self.effective_note_chars, source_chars // NOTE_RATIO))
+        return min(self.note_ceiling, existing_chars + own)
 
     @classmethod
     def from_env(

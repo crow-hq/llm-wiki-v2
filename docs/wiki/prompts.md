@@ -57,7 +57,8 @@ passage). `notes` lists notes as `- path: Title — summary`, and
   shared fragment are filled with the values of the prompt that embeds it:
   `shared/note_rules` uses `{{note_chars}}` and `{{length_rule}}`, which
   `StepContext.ask_json` and `ask_text` pass to every prompt (the note length,
-  `effective_note_chars`, and the "Length" bullet that states it), so a prompt of
+  `effective_note_chars`, and the "Length" bullet that states it; `summarize_combine` and `merge` pass the
+  length they want instead when `note_length` is `proportional`), so a prompt of
   your own that embeds `note_rules` needs no extra value. `{{length_rule}}` is
   the bullet with its `- ` and its newline, and the placeholder stands at the
   start of a line with no newline after it, so an empty value leaves no bullet

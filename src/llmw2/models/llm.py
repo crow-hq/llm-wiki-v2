@@ -198,6 +198,7 @@ class LLM(HttpModel):
                 if max_tokens is None or cut_retried:
                     raise
                 cut_retried = True
+                log.warning("llm %s: the reply was cut at max_tokens %d: asking again, shorter", op or "json", max_tokens)
                 notes += _cut_note(max_tokens)
                 continue
             try:
@@ -255,7 +256,7 @@ def context_warning(cfg: WikiConfig, client: httpx.Client | None = None) -> str 
     finally:
         if own:
             http.close()
-    need = cfg.effective_read_chars + 1.2 * cfg.effective_note_chars  # a prompt and the note the model writes, in characters
+    need = cfg.effective_read_chars + 1.2 * cfg.note_ceiling  # a prompt and the note the model writes, in characters
     if need / CHARS_PER_TOKEN <= num_ctx:
         return None
     return (

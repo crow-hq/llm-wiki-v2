@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (round 7, proportional note length)
+
+- `note_length` (`OKF_NOTE_LENGTH`): `fixed` (the default, nothing changes) or `proportional`. A proportional note is about a quarter of its source (`NOTE_RATIO`), never below `note_chars`, up to what a call holds and `NOTE_MAX` (45000); a merge asks for the existing note plus that share (`WikiConfig.target_note_chars`). It sets the length rule of `summarize_combine` and `merge`, their reply caps, the length warning and the Ollama context check. The decision hash includes it only when it is not `fixed`.
+
+### Fixed (round 7, merge)
+
+- `merge` of a long source (`merge_source`) logs the text it cuts (the source against the budget), not the candidate's body.
+- When a `merge_source` draft comes back unchanged although the source has new values, the second request names those values (as the lost-values request does) instead of repeating the first.
+- `LLM.json` logs a warning when a reply is cut at `max_tokens` and asked again shorter.
+
 ### Added (round 7, long documents: the facts measure)
 
 - Benchmark `note_facts.py`: headline recall is the primary measure, read by summarized and copied notes (`recall_headline_summarized`, `recall_headline_copied`, the same for marginal), next to `note_ratio` (note length against its sources), `verbatim` (share of 8-word shingles taken from the sources) and `copied_share` (notes with `verbatim` ≥ 0.3). A copy of the source no longer passes for a good summary.

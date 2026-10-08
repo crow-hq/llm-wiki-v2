@@ -20,7 +20,7 @@ from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.state import source_state, split_blocks
 from llmw2.bundle.files import extract_text
 from llmw2.bundle.tree import Folder, Note
-from llmw2.config import PROMPT_ROOM, WikiConfig
+from llmw2.config import PROMPT_ROOM
 from llmw2.errors import InputError, ModelError
 
 if TYPE_CHECKING:
@@ -41,7 +41,11 @@ MERGE_LOST_NOTE = (
     "\n\nThe previous version of the merged note dropped these values of the existing note; keep each of them, "
     'stating the newer value next to it ("previously …") where the incoming text replaces it:\n'
 )
-SOFT_CAP = 1.2 # a note body longer than this many times `effective_note_chars` is logged, not cut
+MERGE_UNCHANGED_NOTE = (
+    "\n\nThe previous reply returned the note unchanged, but the source has these values the note lacks; "
+    'update the note with each of them, stating the value it replaces ("previously …") where it replaces one:\n'
+)
+SOFT_CAP = 1.2 # a note body longer than the length asked for, times this, is logged, not cut
 
 # Routing options of the paper (§5.1 step 1) and consolidation options (step 3).
 HERE, NEW, NONE = "Here", "New subfolder", "None of these"
@@ -125,7 +129,7 @@ def summarize(ctx: StepContext, source: Source) -> Candidate:
         draft = _summarize_in_parts(ctx, source, room)
     state = source_state(source.title, source.text, ctx.cfg.classifier.state_chars)
     cand = Candidate(draft.title.strip(), draft.summary.strip(), clean_tags(draft.tags), draft.body.strip(), state=state)
-    _warn_if_long("summarize", cand.title, cand.body, ctx.cfg)
+    _warn_if_long("summarize", cand.title, cand.body, ctx.cfg.target_note_chars(len(source.text)))
     return cand
 
 
@@ -169,12 +173,15 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
             log.warning("summarize: part %d of %d: notes cut from %d to %d characters", k, n, len(notes), len(kept))
             notes = kept
         parts.append(f"Part {k} of {n} — {heading}\n{notes}")
+    target = cfg.target_note_chars(len(source.text))
     return ctx.ask_json(
         "librarian/summarize_combine",
         NoteDraft,
         source_title=source.title or "(none)",
         source_resource=source.resource or "(none)",
         part_notes="\n\n".join(parts),
+        note_chars=target,
+        **({} if cfg.note_length == "fixed" else {"reply_chars": math.ceil(1.2 * target)}),  # fixed: the default cap of a note
     )
 
 
@@ -197,10 +204,9 @@ def cut_notes(notes: str, cap: int) -> str:
     return notes[:cap].rstrip() or notes.lstrip()[:cap].rstrip()  # a start of only whitespace: the first words instead
 
 
-def _warn_if_long(op: str, title: str, body: str, cfg: WikiConfig) -> None:
+def _warn_if_long(op: str, title: str, body: str, asked: int) -> None:
     """The length of a note is asked for, not enforced: a body well over the wish is only logged."""
-    if len(body) > SOFT_CAP * cfg.effective_note_chars:
-        asked = cfg.effective_note_chars
+    if len(body) > SOFT_CAP * asked:
         log.warning("%s: %r has a body of %d characters, over %.1f times the %d asked", op, title, len(body), SOFT_CAP, asked)
 
 
@@ -283,10 +289,12 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
         body, title, summary, tags = cand.body, cand.title, cand.summary or "(none)", ", ".join(cand.tags) or "(none)"
     else:
         body, title, summary, tags = source.text, source.title or "(none)", "(none)", "(none)"
-    if len(body) > budget:
-        log.warning("merge: the incoming text is cut from %d to %d characters to fit the call", len(body), budget)
+    long_source = len(source.text) > CONSOLIDATE_SOURCE_MAX * ctx.cfg.effective_note_chars
+    cut = len(source.text) if long_source else len(body)  # a long source is merged from its text, not from the candidate
+    if cut > budget:
+        log.warning("merge: the incoming text is cut from %d to %d characters to fit the call", cut, budget)
     came = ", ".join(x for x in (source.title or title, source.resource) if x)
-    reply_chars = len(existing) + ctx.cfg.effective_note_chars
+    reply_chars = len(existing) + ctx.cfg.target_note_chars(len(source.text))
     prompt, field = "librarian/merge", "incoming_body"
     values: dict[str, Any] = {
         "title": note.title,
@@ -297,17 +305,21 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
         "incoming_summary": summary,
         "incoming_tags": tags,
         "incoming_body": body[:budget],
+        "note_chars": ctx.cfg.target_note_chars(len(source.text), len(existing)),
         "incoming_from": f"written from {came}" if cand is not None else f"the source {came}",
         "source_text": "" if cand is not None else body[:budget],
         # The merge rewrites the whole existing note: its cap grows with it (a note of 36k characters failed at 3 times note_chars).
         "reply_chars": reply_chars,
     }
-    if len(source.text) > CONSOLIDATE_SOURCE_MAX * ctx.cfg.effective_note_chars:
+    if long_source:
         # A long source: the candidate is a summary of it and misses values; read the text itself (no guard, no candidate call).
         prompt, field, values = "librarian/merge_source", "source_text", _source_values(note, existing, source, budget, reply_chars)
         draft = ctx.ask_json(prompt, NoteDraft, **values)
-        if draft.body.strip() == existing.strip() and incoming_values(source.text[:budget]) - incoming_values(existing):
+        missing = incoming_values(source.text[:budget]) - incoming_values(existing)
+        if draft.body.strip() == existing.strip() and missing:
             log.warning("merge: the draft of %s is unchanged although the source has new values: asking again", note.rel)
+            listed = _lost_originals(source.text[:budget], missing)
+            values["source_text"] += MERGE_UNCHANGED_NOTE + "\n".join(f"- {v}" for v in listed)
             draft = ctx.ask_json(prompt, NoteDraft, **values)
     else:
         draft = ctx.ask_json(prompt, NoteDraft, **values)
@@ -333,7 +345,7 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
         again = ctx.ask_json(prompt, NoteDraft, **values)
         if len(old - incoming_values(again.body)) < len(lost):
             draft = again
-    _warn_if_long("merge", draft.title, draft.body, ctx.cfg)
+    _warn_if_long("merge", draft.title, draft.body, ctx.cfg.target_note_chars(len(source.text), len(existing)))
     return draft
 
 
