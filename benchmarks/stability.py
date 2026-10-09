@@ -425,11 +425,13 @@ def steps_for(args: argparse.Namespace, mode: str) -> Any:
     return replace(base, name=f"{base.name}-" + "-".join(sorted(changes)), **changes)
 
 
-def keep_wiki(bundle: Path, keep: Path, variant: str, n: int) -> None:
-    """Copy the final wiki of run `n` (from 0) to `keep/<variant>/run<n + 1>`, in place of what was there."""
+def keep_wiki(bundle: Path, keep: Path, variant: str, n: int, usage: Path | None = None) -> None:
+    """Copy the final wiki of run `n` (from 0) to `keep/<variant>/run<n + 1>`, in place of what was there, with `.usage.jsonl`."""
     target = keep / variant / f"run{n + 1}"
     shutil.rmtree(target, ignore_errors=True)
     shutil.copytree(bundle, target)
+    if usage is not None and usage.is_file():  # every call: tokens, cost, seconds, op
+        shutil.copy(usage, target / ".usage.jsonl")
 
 
 def menu_arg(text: str) -> str:
@@ -507,7 +509,7 @@ def run_once(
             if replay:
                 replay.save()  # also when the run stops
         if args.keep:
-            keep_wiki(bundle, args.keep, variant, n)
+            keep_wiki(bundle, args.keep, variant, n, cfg.usage_log)
         return {
             "docs": outcomes_of(report, existing_notes),
             "existing_folders": existing_folders,
