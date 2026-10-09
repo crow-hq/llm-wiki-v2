@@ -12,6 +12,7 @@ import difflib
 import logging
 import math
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator
@@ -50,6 +51,10 @@ MERGE_UNCHANGED_NOTE = (
 REVISION_MIN = 0.5  # a source sharing this much of its 8-word shingles with a raw copy the note cites revises that copy
 MIN_CHUNK = 8_000  # the least of the text an edits merge reads per call, however full the note
 EDITS_CHARS = 16_000  # about how long the reply of an edits merge is: a list of edits, not a note
+LOCATE_BY_CLASSIFIER = True  # the typed classifier, not only code, picks the note unit a change updates
+LOCATE_TOP = 15  # a change is located among this many units of the note, the best by a cheap prefilter
+LOCATE_MARGIN = 0.1  # the classifier's pick must lead the next option by this much of probability
+CONTEXT_CHARS = 600  # the paragraph a change is in goes with it, cut to this
 SOFT_CAP = 1.2 # a note body longer than the length asked for, times this, is logged, not cut
 
 # Routing options of the paper (§5.1 step 1) and consolidation options (step 3).
@@ -304,8 +309,13 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
     else:
         body, title, summary, tags = source.text, source.title or "(none)", "(none)", "(none)"
     long_source = len(source.text) > CONSOLIDATE_SOURCE_MAX * ctx.cfg.effective_note_chars
-    if long_source and ctx.cfg.merge_mode == "edits":
-        revised = _revision_diff(ctx, note, source)
+    if long_source and ctx.cfg.merge_mode in ("edits", "located"):
+        copy = _revised_copy(ctx, note, source) if ctx.cfg.merge_mode == "located" else None
+        if copy is not None:
+            draft = merge_located(ctx, note, source, copy[1])
+            _warn_if_long("merge", draft.title, draft.body, ctx.cfg.target_note_chars(len(source.text), len(existing)))
+            return draft
+        revised = None if ctx.cfg.merge_mode == "located" else _revision_diff(ctx, note, source)  # located: no cited copy is revised
         share = ctx.cfg.target_note_chars(len(source.text))
         if revised is not None or len(existing) >= share:
             draft = merge_edits(ctx, note, source, revised=revised)
@@ -444,6 +454,235 @@ def merge_edits(ctx: StepContext, note: Note, source: Source, revised: Any = _UN
     return NoteDraft(title=note.title, summary=note.summary, tags=list(note.tags), body=body)
 
 
+class UnitText(BaseModel):
+    id: str
+    text: str
+
+
+class Located(BaseModel):
+    units: list[UnitText] = []
+    additions: list[Addition] = []
+
+
+@dataclass
+class Change:
+    before: str  # the old sentences ("" for a new paragraph)
+    after: str  # the new ones
+    context: str  # the new paragraph they are in ("" if it is `after`)
+
+
+_LIST_ITEM = re.compile(r"\s*([-*+] |\d+[.)] )")
+_HEADING = re.compile(r"#+\s")
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+")
+
+
+def _sentences(paragraphs: list[str]) -> list[str]:
+    """A sentence ends at a newline, or at `.`, `!`, `?` followed by space; a table row is one sentence."""
+    out: list[str] = []
+    for par in paragraphs:
+        for line in par.split("\n"):
+            out += [s.strip() for s in ([line] if _row_cells(line) is not None else _SENTENCE_BREAK.split(line)) if s.strip()]
+    return out
+
+
+def _joined(sentences: list[str]) -> str:
+    return ("\n" if any(_row_cells(s) is not None for s in sentences) else " ").join(sentences)
+
+
+def _sentence_changes(old: str, new: str) -> list[Change]:
+    """What the new text changes against the old: each new paragraph, and the sentences a changed paragraph replaces."""
+    before, after = _paragraphs(old), _paragraphs(new)
+    changes: list[Change] = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes():
+        if tag == "insert":
+            changes += [Change("", par, "") for par in after[j1:j2]]
+        elif tag == "replace":
+            old_s, new_s = _sentences(before[i1:i2]), _sentences(after[j1:j2])
+            for t, a1, a2, b1, b2 in difflib.SequenceMatcher(None, old_s, new_s, autojunk=False).get_opcodes():
+                if t == "equal" or b1 == b2:  # a deleted sentence gives nothing
+                    continue
+                text = _joined(new_s[b1:b2])
+                par = next((p.strip() for p in after[j1:j2] if new_s[b1] in p), "")
+                changes.append(Change(_joined(old_s[a1:a2]), text, "" if par == text else par[:CONTEXT_CHARS]))
+    return changes
+
+
+def _units(body: str) -> list[tuple[int, int]]:
+    """Spans of the note's units: a block between blank lines, else each heading, table row or list item of it on its own."""
+    spans: list[tuple[int, int]] = []
+    at = 0
+    for cut, resume in [*((m.start(), m.end()) for m in re.finditer(r"\n\s*\n", body)), (len(body), len(body))]:
+        block = body[at:cut]
+        lead = re.match(r"(?:[ \t]*\n)*", block)
+        start, end = at + (lead.end() if lead else 0), at + len(block.rstrip())
+        at = resume
+        if end <= start:
+            continue
+        lines: list[tuple[int, int, str]] = []
+        pos = start
+        for line in body[start:end].split("\n"):
+            lines.append((pos, pos + len(line), line))
+            pos += len(line) + 1
+        each = all(_row_cells(x) is not None or _LIST_ITEM.match(x) for _, _, x in lines[1:])
+        group: tuple[int, int] | None = None
+        for a, b, line in lines:
+            if each or _HEADING.match(line):
+                if group:
+                    spans.append(group)
+                    group = None
+                spans.append((a, b))
+            else:
+                group = (group[0] if group else a, b)
+        if group:
+            spans.append(group)
+    return spans
+
+
+def _shingles3(text: str) -> set[tuple[str, ...]]:
+    words = re.findall(r"\w+", text.lower())
+    return {tuple(words[i : i + 3]) for i in range(len(words) - 2)}
+
+
+def _locate(ctx: StepContext, change: Change, texts: list[str], failed: list[bool]) -> tuple[int, str]:
+    """The index of the unit a change updates and who found it ("code" or "classifier"), or (-1, "") if it updates none.
+
+    `failed` is set (once per merge) when the classifier raises: the rest is located by code.
+    """
+    values, grams = incoming_values(change.before), _shingles3(change.before)
+    held = [incoming_values(t) for t in texts]
+    heading = [bool(_HEADING.match(t)) for t in texts]
+    removed = values - incoming_values(change.after)
+    holders = [i for i, h in enumerate(held) if removed and not heading[i] and removed <= h]
+    if len(holders) == 1:
+        return holders[0], "code"
+    scored = sorted((-(10 * len(values & held[i]) + len(grams & _shingles3(t))), i) for i, t in enumerate(texts) if not heading[i])
+    top = [i for score, i in scored if score < 0][:LOCATE_TOP]
+    if not top:
+        return -1, ""
+    if ctx.classifier is not None and LOCATE_BY_CLASSIFIER and not failed[0]:
+        options = {f"u{k}": texts[i][:600] for k, i in enumerate(top, 1)}
+        options["new"] = "None of these: the change adds a fact the note does not state"
+        state = f"A change to a document.\nBEFORE:\n{change.before[:3000]}\nAFTER:\n{change.after[:3000]}"
+        try:
+            ask = "Which paragraph of the note states what this change updates?"
+            answer = ctx.classifier.choice(state, ask, options, op="merge/locate")
+        except Exception as e:
+            failed[0] = True
+            log.warning("merge: the classifier failed locating a change, code locates the rest: %s", e)
+        else:
+            probs = answer.probabilities
+            lead = probs.get(answer.choice, 0.0) - max((p for k, p in probs.items() if k != answer.choice), default=0.0)
+            if answer.choice in options and answer.choice != "new" and lead >= LOCATE_MARGIN - 1e-9:
+                return top[int(answer.choice[1:]) - 1], "classifier"
+            return -1, ""
+    return (top[0], "code") if removed & held[top[0]] else (-1, "")
+
+
+def merge_located(ctx: StepContext, note: Note, source: Source, old_text: str) -> NoteDraft:
+    """Merge a revision of a raw copy the note cites: code splits it into changes and finds the note unit each updates.
+
+    The model rewrites only the units that have changes (by id) and writes the facts the note lacks as additions.
+    A rewritten unit is applied only if it holds no value that its old text and its changes lack; the values it
+    replaces are kept in place ("previously ..."). Title, summary and tags stay the note's.
+    """
+    body = note.main_body()
+    spans = _units(body)
+    texts = [body[a:b] for a, b in spans]
+    by_unit: dict[int, list[Change]] = {}
+    facts: list[Change] = []
+    found = {"code": 0, "classifier": 0}
+    dropped, failed = 0, [False]
+    present = incoming_values(body)
+    changes = _sentence_changes(old_text, source.text)
+    for change in changes:
+        at, how = _locate(ctx, change, texts, failed) if change.before else (-1, "")
+        if at >= 0:
+            by_unit.setdefault(at, []).append(change)
+            found[how] += 1
+        elif incoming_values(change.after) - present:
+            facts.append(change)
+        else:
+            dropped += 1
+    if not by_unit and not facts:
+        log.info(
+            "merge: %s located: %d changes (0 by code, 0 by classifier, 0 additions, %d dropped), 0 units rewritten, "
+            "0 additions applied, 0 rejected (invented 0, empty 0, unknown 0)",
+            note.rel, len(changes), dropped,
+        )  # fmt: skip
+        return NoteDraft(title=note.title, summary=note.summary, tags=list(note.tags), body=body)
+
+    def where(c: Change) -> str:
+        return f"\n  (in: {c.context})" if c.context else ""
+
+    items: list[tuple[str, int, Change | None]] = []  # (rendered, unit index or -1, fact)
+    for i in sorted(by_unit):
+        lines = "\n".join(f"- BEFORE: {c.before}\n  AFTER: {c.after}{where(c)}" for c in by_unit[i])
+        items.append((f"[u{i + 1}]\n{texts[i]}\nChanges:\n{lines}", i, None))
+    items += [(f"- {c.after}{where(c)}", -1, c) for c in facts]
+    outline = "\n".join(line for line in body.split("\n") if _HEADING.match(line)) or "(no headings)"
+    room = max(MIN_CHUNK, ctx.cfg.effective_read_chars - PROMPT_ROOM - len(outline))
+    batches: list[list[tuple[str, int, Change | None]]] = [[]]
+    used = 0
+    for item in items:
+        if batches[-1] and used + len(item[0]) > room:
+            batches.append([])
+            used = 0
+        batches[-1].append(item)
+        used += len(item[0])
+
+    done: dict[int, str] = {}
+    adds: list[tuple[Addition, set[str]]] = []
+    rejected = {"invented": 0, "empty": 0, "unknown": 0}
+
+    def reject(why: str, text: str) -> None:
+        rejected[why] += 1
+        log.debug("merge: %s rejected for %s: %r", why, note.rel, text[:120])
+
+    for batch in batches:
+        sent = {i for _, i, _ in batch if i >= 0}
+        added = [c for _, _, c in batch if c is not None]
+        reply = int(1.3 * sum(len(texts[i]) for i in sent)) + min(sum(len(c.after) for c in added), 8_000) + 1_000
+        out = ctx.ask_json(
+            "librarian/merge_located", Located, title=note.title, summary=note.summary, outline=outline,
+            units="\n\n".join(r for r, i, _ in batch if i >= 0) or "(none)",
+            facts="\n".join(r for r, i, _ in batch if i < 0) or "(none)", reply_chars=reply,
+        )  # fmt: skip
+        for unit in out.units:
+            i = int(unit.id[1:]) - 1 if re.fullmatch(r"u\d+", unit.id) else -1
+            if i not in sent or i in done:
+                reject("unknown", unit.text)
+                continue
+            new = unit.text.strip()
+            if not new:
+                reject("empty", unit.text)
+                continue
+            known = incoming_values("\n".join(f"{c.before}\n{c.after}\n{c.context}" for c in by_unit[i]))
+            if incoming_values(new) - incoming_values(texts[i]) - known:
+                reject("invented", new)
+                continue
+            lost = incoming_values(texts[i]) - incoming_values(new)
+            done[i] = _note_removed(texts[i], new, _lost_originals(texts[i], lost)) if lost else new
+        known = incoming_values("\n".join(f"{c.after}\n{c.context}" for c in added))
+        adds += [(add, known) for add in out.additions]
+    for i in sorted(done, reverse=True):
+        body = body[: spans[i][0]] + done[i].strip("\n") + body[spans[i][1] :]
+    applied = 0
+    for add, known in adds:
+        body, why = _apply_addition(body, add, known)
+        if why:
+            reject(why, add.text)
+        else:
+            applied += 1
+    refused = sum(rejected.values())
+    (log.warning if refused else log.info)(
+        "merge: %s located: %d changes (%d by code, %d by classifier, %d additions, %d dropped), %d units rewritten, "
+        "%d additions applied, %d rejected (invented %d, empty %d, unknown %d)",
+        note.rel, len(changes), found["code"], found["classifier"], len(facts), dropped, sum(done[i] != texts[i] for i in done),
+        applied, refused, rejected["invented"], rejected["empty"], rejected["unknown"],
+    )  # fmt: skip
+    return NoteDraft(title=note.title, summary=note.summary, tags=list(note.tags), body=body)
+
+
 def _shingles(text: str) -> set[tuple[str, ...]]:
     words = text.lower().split()
     return {tuple(words[i : i + 8]) for i in range(len(words) - 7)}
@@ -453,8 +692,8 @@ def _paragraphs(text: str) -> list[str]:
     return [p for p in re.split(r"\n\s*\n", text) if p.strip()]
 
 
-def _revision_diff(ctx: StepContext, note: Note, source: Source) -> str | None:
-    """The paragraphs the source changes against the cited raw copy it most resembles, or None if it revises none."""
+def _revised_copy(ctx: StepContext, note: Note, source: Source) -> tuple[str, str, float] | None:
+    """The cited raw copy the source most resembles (resource, body, share of the source's shingles in it), or None if it revises none."""
     new = _shingles(source.text)
     cited = note.frontmatter.get("sources")
     best, best_share, best_text = "", 0.0, ""
@@ -467,8 +706,15 @@ def _revision_diff(ctx: StepContext, note: Note, source: Source) -> str | None:
         share = len(new & _shingles(old)) / len(new) if new else 0.0
         if share > best_share:
             best, best_share, best_text = resource, share, old
-    if best_share < REVISION_MIN:
+    return None if best_share < REVISION_MIN else (best, best_text, best_share)
+
+
+def _revision_diff(ctx: StepContext, note: Note, source: Source) -> str | None:
+    """The paragraphs the source changes against the cited raw copy it most resembles, or None if it revises none."""
+    copy = _revised_copy(ctx, note, source)
+    if copy is None:
         return None
+    best, best_text, best_share = copy
     before, after = _paragraphs(best_text), _paragraphs(source.text)
     blocks: list[str] = []
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes():
