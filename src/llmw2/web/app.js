@@ -119,7 +119,12 @@ async function showNote(path) {
     const fm = n.frontmatter, gen = fm.generated || {};
     const sources = (fm.sources || []).map((s) =>
       `<div>[${esc(s.id)}] <a href="#/note/${esc(String(s.resource || "").replace(/^\//, ""))}">${esc(s.title || s.resource)}</a></div>`).join("");
-    const kind = fm.type === "Source" ? "raw source · " : "";
+    const archived = fm.status === "archived";
+    const link = (path, text) => `<a href="#/note/${esc(String(path).replace(/^\//, ""))}">${esc(text)}</a>`;
+    const versions = [ // a note revised in place points to its archived versions, an archived one to the current note
+      archived && fm.archived_from ? `<div>Current version: ${link(fm.archived_from, fm.archived_from)}</div>` : "",
+      fm.previous_version ? `<div>Previous version: ${link(fm.previous_version, fm.previous_version)}</div>` : ""].join("");
+    const kind = fm.type === "Source" ? "raw source · " : archived ? "archived version · " : "";
     show(`<div class="crumbs">${kind}/${esc(n.path)}</div>
       <h2 class="title">${esc(n.title)}</h2>
       ${n.summary ? `<p class="lead">${esc(n.summary)}</p>` : ""}
@@ -129,6 +134,7 @@ async function showNote(path) {
         ${fm.resource ? `<span>from <a href="${esc(fm.resource)}" target="_blank" rel="noopener">${esc(fm.resource)}</a></span>` : ""}</div>
       <div class="md" id="body">${md(n.body)}</div>
       ${sources ? `<div class="sources"><div class="label" style="padding:0">Sources</div>${sources}</div>` : ""}
+      ${versions ? `<div class="sources"><div class="label" style="padding:0">Versions</div>${versions}</div>` : ""}
       ${kind ? "" : '<div class="note-actions"><button class="btn danger small" type="button" data-delete-note>Delete note</button></div>'}`);
     wireLinks($("#body"), n.path);
   } catch (e) { show(`<p class="lead">${esc(e.message)}</p>`); }
