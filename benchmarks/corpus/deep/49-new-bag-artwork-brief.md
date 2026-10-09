@@ -1,6 +1,6 @@
 # New bag artwork: the brief
 
-**To:** Elena Fabbri, Graphic Designer (elena@lumencoffee.it)  
+**To:** Elena Fabbri, Graphic Designer (elena@lumencoffee.example)  
 **From:** Matteo Conti, Head of Operations  
 **Date:** 7 September 2026  
 **Priority:** High – deadline 3 November 2026  
@@ -76,7 +76,7 @@ The degassing valve is a black circular patch (25 mm diameter). Artwork must not
 | Printer proof approval | 27 October 2026 | Signed off by Matteo Conti |
 | Bags printed and delivered to roastery | 3 November 2026 | 5000 units (250 g) + 2000 units (1 kg) total across all three ranges |
 
-**Printer**: Carta & Caffè S.r.l., Via Principe Amedeo 18, Turin. Contact: Giorgio Ferri (giorgio@cartacaffe.it). They have our bag templates and valve specs.
+**Printer**: Carta & Caffè S.r.l., Via Principe Amedeo 18, Turin. Contact: Giorgio Ferri (giorgio@cartacaffe.example). They have our bag templates and valve specs.
 
 ---
 

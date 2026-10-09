@@ -60,7 +60,7 @@ Our school runs in the roastery at Via Bologna 14, Turin. All courses include co
 
 - All courses take place in the roastery’s training space (ground floor, next to the 15 kg Diedrich roaster). Doors open 15 minutes before start.
 - Payment due at booking via bank transfer or in person at the roastery (cash or card). No refunds within 7 days of the session; you can transfer your seat to another person.
-- Dietary needs: please email school@lumencoffee.it at least 48 hours ahead.
+- Dietary needs: please email school@lumencoffee.example at least 48 hours ahead.
 - Minors under 16 must be accompanied by a paying adult.
 - The roastery is wheelchair accessible (ramp at side entrance).
 
@@ -68,7 +68,7 @@ Our school runs in the roastery at Via Bologna 14, Turin. All courses include co
 
 ## How to book
 
-Email school@lumencoffee.it with your preferred session name, date, and number of seats. We confirm within 24 hours. For full sessions, we keep a waitlist (max 2 names per date).
+Email school@lumencoffee.example with your preferred session name, date, and number of seats. We confirm within 24 hours. For full sessions, we keep a waitlist (max 2 names per date).
 
 ---
 

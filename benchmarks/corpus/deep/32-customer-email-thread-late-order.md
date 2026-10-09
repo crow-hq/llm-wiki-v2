@@ -1,7 +1,7 @@
 # Customer email thread: the order that left late
 
-**From:** Marco Bianchi <marco@cafeportello.it>  
-**To:** orders@lumencoffee.com  
+**From:** Marco Bianchi <marco@cafeportello.example>  
+**To:** orders@lumencoffee.example  
 **Date:** 14 October 2026, 09:23  
 **Subject:** Weekly order – left a day late  
 
@@ -17,8 +17,8 @@ Owner, Café Portello
 
 ---
 
-**From:** Elena Rossi <elena.rossi@lumencoffee.com>  
-**To:** Marco Bianchi <marco@cafeportello.it>  
+**From:** Elena Rossi <elena.rossi@lumencoffee.example>  
+**To:** Marco Bianchi <marco@cafeportello.example>  
 **Date:** 14 October 2026, 14:07  
 **Subject:** Re: Weekly order – left a day late  
 
@@ -63,4 +63,4 @@ Again, my apologies.
 Best regards,  
 Elena Rossi  
 Account Manager, Lumen Coffee Roasters  
-elena.rossi@lumencoffee.com
+elena.rossi@lumencoffee.example

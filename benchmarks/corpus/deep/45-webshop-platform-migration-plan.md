@@ -55,7 +55,7 @@ No change for wholesale invoices (still bank transfer with 30-day terms).
 ## Who does what
 
 - **Chiara V.** – overall coordination, communication with BeanLogic support (ticket #BL-4261), weekly status updates to Matteo
-- **Luca** – technical migration: export/import scripts, Stripe token mapping, DNS change for shop.lumencoffee.it (CNAME to BeanLogic on 12 Oct at 08:00)
+- **Luca** – technical migration: export/import scripts, Stripe token mapping, DNS change for shop.lumencoffee.example (CNAME to BeanLogic on 12 Oct at 08:00)
 - **Elena** – subscriber data cleanup (remove 14 inactive accounts from 2025), test subscription billing in staging, answer subscriber emails during first week post-migration
 - **Sara** – verify financial reconciliation: old vs new platform for September revenue (€8,240), confirm no double charges on 14 Oct
 - **Andrea** – coordinate wholesale accounts: send new login instructions to Café Portello (contact: Marco) and 27 other cafés by 9 Oct

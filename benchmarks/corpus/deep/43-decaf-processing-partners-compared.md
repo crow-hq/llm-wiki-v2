@@ -22,7 +22,7 @@ We currently process Night Shift through Swiss Water (Burnaby, Canada). With ris
 **Notes:**  
 - Current partner since 2023. Reliable but long lead time.  
 - Shipping from Mombasa to Vancouver adds 14–18 days before processing.  
-- Contact: Sarah Chen (sarah@swisswater.com). Last quote received 10 Sept 2026.
+- Contact: Sarah Chen (sarah@swisswater.example). Last quote received 10 Sept 2026.
 
 ---
 
@@ -39,7 +39,7 @@ We currently process Night Shift through Swiss Water (Burnaby, Canada). With ris
 **Notes:**  
 - Shipping from Ethiopia to Cali via Panama Canal: ~22 days, but processing window is smaller.  
 - We could combine with a Colombia green purchase (e.g., from Andes Direct’s Huila lot) to reduce per-kg freight.  
-- Contact: Ana Lucía Rojas (ana@decafeandino.co). Quote valid until 15 Nov 2026.  
+- Contact: Ana Lucía Rojas (ana@decafeandino.example). Quote valid until 15 Nov 2026.  
 - **Risk:** EA residue limits (EU max 10 mg/kg). Their lab reports show <2 mg/kg. We need third-party test.
 
 ---
@@ -57,7 +57,7 @@ We currently process Night Shift through Swiss Water (Burnaby, Canada). With ris
 **Notes:**  
 - Shipping from Mombasa to Hamburg: ~12 days. Total lead time ~24 days.  
 - Minimum lot is large for Night Shift (we roast ~120 kg/month). Would require stockpiling.  
-- Contact: Dr. Klaus Weber (k.weber@nordicdecaf.de). Quote received 20 Sept 2026.  
+- Contact: Dr. Klaus Weber (k.weber@nordicdecaf.example). Quote received 20 Sept 2026.  
 - **Advantage:** EU-based, no import duties on processed decaf (vs. Canada and Colombia).
 
 ---
