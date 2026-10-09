@@ -582,8 +582,8 @@ def merge_located(ctx: StepContext, note: Note, source: Source, old_text: str) -
     """Merge a revision of a raw copy the note cites: code splits it into changes and finds the note unit each updates.
 
     The model rewrites only the units that have changes (by id) and writes the facts the note lacks as additions.
-    A rewritten unit is applied only if it holds no value that its old text and its changes lack; the values it
-    replaces are kept in place ("previously ..."). Title, summary and tags stay the note's.
+    A rewritten unit is applied only if it holds no value that its old text and its changes lack and loses none that
+    its changes do not replace; the values it replaces are kept in place ("previously ..."). Title, summary and tags stay the note's.
     """
     body = note.main_body()
     spans = _units(body)
@@ -606,7 +606,7 @@ def merge_located(ctx: StepContext, note: Note, source: Source, old_text: str) -
     if not by_unit and not facts:
         log.info(
             "merge: %s located: %d changes (0 by code, 0 by classifier, 0 additions, %d dropped), 0 units rewritten, "
-            "0 additions applied, 0 rejected (invented 0, empty 0, unknown 0)",
+            "0 additions applied, 0 rejected (invented 0, empty 0, unknown 0, dropped 0)",
             note.rel, len(changes), dropped,
         )  # fmt: skip
         return NoteDraft(title=note.title, summary=note.summary, tags=list(note.tags), body=body)
@@ -632,7 +632,7 @@ def merge_located(ctx: StepContext, note: Note, source: Source, old_text: str) -
 
     done: dict[int, str] = {}
     adds: list[tuple[Addition, set[str]]] = []
-    rejected = {"invented": 0, "empty": 0, "unknown": 0}
+    rejected = {"invented": 0, "empty": 0, "unknown": 0, "dropped": 0}
 
     def reject(why: str, text: str) -> None:
         rejected[why] += 1
@@ -661,6 +661,10 @@ def merge_located(ctx: StepContext, note: Note, source: Source, old_text: str) -
                 reject("invented", new)
                 continue
             lost = incoming_values(texts[i]) - incoming_values(new)
+            replaced = set().union(*(incoming_values(c.before) - incoming_values(c.after) for c in by_unit[i]))
+            if lost - replaced:
+                reject("dropped", new)
+                continue
             done[i] = _note_removed(texts[i], new, _lost_originals(texts[i], lost)) if lost else new
         known = incoming_values("\n".join(f"{c.after}\n{c.context}" for c in added))
         adds += [(add, known) for add in out.additions]
@@ -676,9 +680,10 @@ def merge_located(ctx: StepContext, note: Note, source: Source, old_text: str) -
     refused = sum(rejected.values())
     (log.warning if refused else log.info)(
         "merge: %s located: %d changes (%d by code, %d by classifier, %d additions, %d dropped), %d units rewritten, "
-        "%d additions applied, %d rejected (invented %d, empty %d, unknown %d)",
+        "%d additions applied, %d rejected (invented %d, empty %d, unknown %d, dropped %d)",
         note.rel, len(changes), found["code"], found["classifier"], len(facts), dropped, sum(done[i] != texts[i] for i in done),
         applied, refused, rejected["invented"], rejected["empty"], rejected["unknown"],
+        rejected["dropped"],
     )  # fmt: skip
     return NoteDraft(title=note.title, summary=note.summary, tags=list(note.tags), body=body)
 
@@ -740,8 +745,11 @@ def _apply_edit(body: str, edit: Edit, known: set[str]) -> tuple[str, str]:
     if removed:
         if "\n" in edit.find or "\n" in replace or _row_cells(replace) is not None:
             replace = _note_removed(edit.find, replace, removed)
-        elif "previously" not in replace:
-            replace += f" (previously {', '.join(removed)})"
+        else:
+            seen = incoming_values(replace)
+            removed = [v for v in _without_repeated_numbers(removed) if _DROP.sub("", v.lower()) not in seen]
+            if removed:
+                replace += f" (previously {', '.join(removed)})"
     return body.replace(edit.find, replace, 1), ""
 
 
@@ -759,6 +767,7 @@ def _line_key(line: str) -> str:
 def _note_removed(find: str, replace: str, removed: list[str]) -> str:
     """The replace with "(previously ...)" put on the line (and, in a table row, the cell) that took the place of each removed value."""
     before, after = find.split("\n"), replace.split("\n")
+    removed = _without_repeated_numbers(removed)
     pair: dict[int, int] = {}  # find line -> replace line
     keys = ([_line_key(x) for x in before], [_line_key(x) for x in after])
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, *keys, autojunk=False).get_opcodes():
@@ -779,18 +788,25 @@ def _note_removed(find: str, replace: str, removed: list[str]) -> str:
                 cell = next((c for c, x in enumerate(source) if norm in incoming_values(x)), cell)
         notes.setdefault((j, cell), []).append(raw)
     for (j, cell), values in notes.items():
-        text = f"(previously {', '.join(values)})"
-        if cell is None:
-            if "previously" not in after[j]:
-                base = after[j].rstrip()
-                after[j] = f"{base} {text}" + after[j][len(base) :]
-            continue
         parts = after[j].split("|")  # a row's cells are parts[1:-1]
-        base = parts[cell + 1].rstrip()
-        if "previously" not in base:
-            parts[cell + 1] = f"{base} {text}" + parts[cell + 1][len(base) :]
-        after[j] = "|".join(parts)
+        base = (after[j] if cell is None else parts[cell + 1]).rstrip()
+        seen = incoming_values(base)
+        values = [v for v in values if _DROP.sub("", v.lower()) not in seen]  # already on the line or in the cell
+        if not values:
+            continue
+        text = f"{base} (previously {', '.join(values)})"
+        if cell is None:
+            after[j] = text + after[j][len(base) :]
+        else:
+            parts[cell + 1] = text + parts[cell + 1][len(base) :]
+            after[j] = "|".join(parts)
     return "\n".join(after)
+
+
+def _without_repeated_numbers(values: list[str]) -> list[str]:
+    """The values without the numbers whose digits are also inside a code of the list (`5870` with `AJP-5870`)."""
+    codes = [_DROP.sub("", v.lower()) for v in values if _CODE.fullmatch(v)]
+    return [v for v in values if _CODE.fullmatch(v) or not any(_DROP.sub("", v.lower()) in c for c in codes)]
 
 
 def _apply_addition(body: str, add: Addition, known: set[str]) -> tuple[str, str]:

@@ -962,7 +962,7 @@ def test_an_unknown_id_and_an_id_not_sent_are_ignored(bundle: Path, llm: FakeLLM
 
     assert draft.body.strip() == STD_BODY.strip()
     [line] = summary_lines(caplog)
-    assert "unknown 2)" in line.getMessage()
+    assert "unknown 2, dropped 0)" in line.getMessage()
 
 
 def test_an_id_returned_twice_is_applied_once(bundle: Path, llm: FakeLLM, caplog: pytest.LogCaptureFixture) -> None:
@@ -980,7 +980,7 @@ def test_an_id_returned_twice_is_applied_once(bundle: Path, llm: FakeLLM, caplog
     assert "Extra." not in draft.body
     assert "The limit is 40 units. Owner: Anna Rossi. (previously 30)" in draft.body
     [line] = summary_lines(caplog)
-    assert "unknown 1)" in line.getMessage()
+    assert "unknown 1, dropped 0)" in line.getMessage()
 
 
 def test_an_addition_goes_at_the_end_of_its_section(bundle: Path, llm: FakeLLM) -> None:
@@ -1082,7 +1082,7 @@ def test_no_decision_is_recorded(bundle: Path, llm: FakeLLM) -> None:
 
 SUMMARY = re.compile(
     r"merge: \S+ located: (\d+) changes \((\d+) by code, (\d+) by classifier, (\d+) additions, (\d+) dropped\), "
-    r"(\d+) units rewritten, (\d+) additions applied, (\d+) rejected \(invented (\d+), empty (\d+), unknown (\d+)\)"
+    r"(\d+) units rewritten, (\d+) additions applied, (\d+) rejected \(invented (\d+), empty (\d+), unknown (\d+), dropped (\d+)\)"
 )
 
 
@@ -1099,7 +1099,7 @@ def test_the_summary_line_counts_and_is_an_info_when_nothing_was_rejected(
     assert line.levelno == logging.INFO
     m = SUMMARY.search(line.getMessage())
     assert m
-    assert [int(x) for x in m.groups()] == [3, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0]
+    assert [int(x) for x in m.groups()] == [3, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0]
     assert "finance/seed.md" in line.getMessage()
 
 
@@ -1115,7 +1115,7 @@ def test_the_summary_line_is_a_warning_when_something_was_rejected(bundle: Path,
     assert line.levelno == logging.WARNING
     m = SUMMARY.search(line.getMessage())
     assert m
-    assert [int(x) for x in m.groups()[5:]] == [0, 0, 3, 1, 1, 1]
+    assert [int(x) for x in m.groups()[5:]] == [0, 0, 3, 1, 1, 1, 0]
 
 
 def test_a_by_classifier_location_is_counted(bundle: Path, llm: FakeLLM, caplog: pytest.LogCaptureFixture) -> None:

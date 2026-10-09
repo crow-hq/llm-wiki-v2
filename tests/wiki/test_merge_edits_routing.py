@@ -322,7 +322,7 @@ def test_rows_with_a_different_cell_count_get_the_note_in_the_last_cell() -> Non
 def test_a_cell_that_already_says_previously_gets_nothing_more() -> None:
     got = applied("| cerrado | 60% | 12 |", "| cerrado | 50% previously sixty | 14 |")
 
-    assert got == "| cerrado | 50% previously sixty | 14 (previously 12) |"
+    assert got == "| cerrado | 50% previously sixty (previously 60) | 14 (previously 12) |"
 
 
 def test_a_table_row_that_says_previously_in_the_row_but_not_in_the_cell_gets_the_note_in_the_cell() -> None:
@@ -387,7 +387,7 @@ def test_the_last_non_blank_line_skips_trailing_blank_lines() -> None:
 def test_a_plain_line_that_says_previously_gets_nothing_more_in_a_block() -> None:
     got = applied("Limit: 30 units\nOwner: Anna Rossi", "Limit: 40 units, previously thirty\nOwner: Luca Verdi")
 
-    assert got == "Limit: 40 units, previously thirty\nOwner: Luca Verdi (previously Anna Rossi)"
+    assert got == "Limit: 40 units, previously thirty (previously 30)\nOwner: Luca Verdi (previously Anna Rossi)"
 
 
 def test_an_edit_that_removes_no_value_adds_no_note_in_a_table() -> None:
