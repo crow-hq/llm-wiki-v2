@@ -127,7 +127,9 @@ changes or the wiki grows.
   reads the archived copy after the note, may cite it, and is told to answer with the earlier value
   (`HISTORY_HINT`, added to the question). In classic the `jev` checks are absent: code decides alone.
 - **`relate` extends the preprint.** See-also links were outside the preprint;
-  the paper's v1.0 describes them (§5.4).
+  the paper's v1.0 describes them (§5.4). The candidates also include up to 40 notes anywhere in the wiki
+  that share rare values (codes, amounts, dates, names held by few notes) with the note, skipping notes that
+  already have 12 See-also links; that is an extension of the paper.
 - **Folders are created lazily.** A `New subfolder` route creates the folder,
   named by the LLM with `librarian/name_folder`, only when a new note is written
   into it. If step 3 merges instead, no folder is created, so a merge never

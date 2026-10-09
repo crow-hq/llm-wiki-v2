@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, field
 from functools import cached_property
 from typing import Any, Literal
 
-from llmw2.agents import revisions
+from llmw2.agents import linking, revisions
 from llmw2.agents.base import Decision, clean_tags, unique_objects
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.prompts import Prompts
@@ -148,6 +148,11 @@ class Librarian:
                 )
                 action = "created"
             others = [n for n in unique_objects([*pool, *note.folder.notes]) if n is not note] if note.folder else pool
+            if ctx.classifier is not None:
+                found = linking.rare_scores(root, note, {n.rel for n in others} | {note.rel})
+                others = [*others, *(n for n, _ in found)]
+                if found:
+                    ctx.decide("relate_candidates", "code", f"{len(found)} by rare values", scores={n.rel: round(s, 3) for n, s in found})
             related = check_relate(steps.relate(ctx, note, others), note, others) if others else []
             related = related[: self.cfg.max_links]
             for other in related:
