@@ -203,8 +203,9 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
     The step code (`steps.hash`), the text of every prompt as `prompts` resolves it, the writing model, the classifier
     model (CROW only), temperature, seed, pinned providers, the CROW thresholds, `max_depth`, `max_links`, `mode`,
     `summarize`, the size of the state routing reads (`state_chars`, `STATE_VERSION`), how much one
-    call reads and how long a note may be (`effective_read_chars`, `effective_note_chars`, and `note_length` unless fixed)
-    and `SUMMARY_VERSION`. Keys, addresses, timeouts, attempts, other sizes, concurrency and logs do not change the decisions: not in it.
+    call reads and how long a note may be (`effective_read_chars`, `effective_note_chars`, and `note_length` unless fixed),
+    `SUMMARY_VERSION`, and `relate_rare_values` and `answer_conflicts` when switched off. Keys, addresses, timeouts,
+    attempts, other sizes, concurrency and logs do not change the decisions: not in it.
     """
     decisive = {
         "steps": steps.hash,
@@ -228,6 +229,10 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
     }
     if cfg.note_length != "fixed":
         decisive["note_length"] = cfg.note_length  # only when set: the hash of a fixed length stays what it was
+    if not cfg.relate_rare_values:
+        decisive["relate_rare_values"] = False  # only when off: the hash of the default stays what it was
+    if not cfg.answer_conflicts:
+        decisive["answer_conflicts"] = False
     return hashlib.sha256(json.dumps(decisive, sort_keys=True).encode("utf-8")).hexdigest()[:8]
 
 

@@ -43,6 +43,8 @@ The fields you will touch most:
 | `concurrency` | `4` | documents prepared at once by `ingest_many`, `sync` and the server (1 to 16; `OKF_CONCURRENCY`) |
 | `llm.seed` | none | a seed sent with every request (`OKF_LLM_SEED`); providers that support it answer the same prompt the same way |
 | `llm.pin_provider` | none | OpenRouter only (`OKF_LLM_PIN_PROVIDER`, comma-separated): the providers that may answer, in order, with no fallback to others. Another provider logs a warning and ignores it. `llm.extra_body["provider"]` wins |
+| `relate_rare_values` | `True` | CROW: `relate` also weighs notes that share rare values (`OKF_RELATE_RARE_VALUES`); `False` keeps 0.3.0's `relate` |
+| `answer_conflicts` | `True` | CROW: the answer is asked with a hint when the notes read disagree (`OKF_ANSWER_CONFLICTS`); `False` keeps 0.3.0's answer input |
 | `llm`, `classifier`, `crow` | | the models and the CROW thresholds |
 
 ## Wiki

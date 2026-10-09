@@ -148,7 +148,7 @@ class Librarian:
                 )
                 action = "created"
             others = [n for n in unique_objects([*pool, *note.folder.notes]) if n is not note] if note.folder else pool
-            if ctx.classifier is not None:
+            if ctx.classifier is not None and self.cfg.relate_rare_values:
                 found = linking.rare_scores(root, note, {n.rel for n in others} | {note.rel})
                 others = [*others, *(n for n, _ in found)]
                 if found:

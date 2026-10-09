@@ -195,8 +195,9 @@ def crow_preset(classifier_provider: str) -> str:
 # WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).
 _TOP_LEVEL_ENV = (
     "bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency", "usage_log",
-    "prompts_dir", "note_chars", "note_length", "revisions",
+    "prompts_dir", "note_chars", "note_length", "revisions", "relate_rare_values", "answer_conflicts",
 )
+_BOOL_ENV = {"1": True, "true": True, "yes": True, "on": True, "0": False, "false": False, "no": False, "off": False}
 
 
 class WikiConfig(BaseModel):
@@ -214,6 +215,10 @@ class WikiConfig(BaseModel):
     # A source that revises the one document a note cites: the note replaced by the new version with the old body archived
     # ("replace", the default; OKF_REVISIONS), or merged into the note ("merge"). See `agents.revisions`.
     revisions: Literal["merge", "replace"] = "replace"
+    # CROW: `relate` also weighs the notes anywhere that share rare values with the new one (OKF_RELATE_RARE_VALUES; false: 0.3.0's relate).
+    relate_rare_values: bool = True
+    # CROW: `ask` asks the typed `ask/conflict` question and hints at disagreeing notes (OKF_ANSWER_CONFLICTS; false: 0.3.0's answer input).
+    answer_conflicts: bool = True
     upload_mb: int = Field(25, gt=0)  # largest request body the server reads: a big PDF fits, a runaway upload does not fill memory
     concurrency: int = Field(4, ge=1, le=16)  # documents prepared (extracted, summarized) at once by a batch or the server
     actor: str = f"llmw2/{__version__}"  # OKF `generated.by`
@@ -284,7 +289,12 @@ class WikiConfig(BaseModel):
         top: dict[str, Any] = {}
         for key in _TOP_LEVEL_ENV:
             if value := env.get(f"OKF_{key.upper()}"):
-                top[key] = value
+                if key in ("relate_rare_values", "answer_conflicts"):
+                    if value.strip().lower() not in _BOOL_ENV:
+                        raise ConfigError(f"OKF_{key.upper()} must be one of 1/0, true/false, yes/no, on/off, not {value!r}")
+                    top[key] = _BOOL_ENV[value.strip().lower()]
+                else:
+                    top[key] = value
         llm: dict[str, Any] = {
             f: env[f"OKF_LLM_{f.upper()}"] for f in LLMConfig.model_fields if env.get(f"OKF_LLM_{f.upper()}")
         }

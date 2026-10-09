@@ -128,11 +128,13 @@ changes or the wiki grows.
   (`HISTORY_HINT`, added to the question). Whenever the researcher passes two or more notes to the answer, one typed
   question (`ask/conflict`) reads the passage of each note closest to the question and asks whether the notes
   disagree; above 0.4 the question gets `CONFLICT_HINT` (after the history hint), asking the answer to report every
-  value and say which note gives which and which source is more recent. In classic the `jev` checks are absent: code decides alone.
+  value and say which note gives which and which source is more recent. `answer_conflicts = false`
+  (`OKF_ANSWER_CONFLICTS`) skips the question and the hint (0.3.0's answer input). In classic the `jev` checks are absent: code decides alone.
 - **`relate` extends the preprint.** See-also links were outside the preprint;
   the paper's v1.0 describes them (§5.4). The candidates also include up to 40 notes anywhere in the wiki
   that share rare values (codes, amounts, dates, names held by few notes) with the note, skipping notes that
-  already have 12 See-also links; that is an extension of the paper.
+  already have 12 See-also links; that is an extension of the paper. `relate_rare_values = false`
+  (`OKF_RELATE_RARE_VALUES`) leaves them out (0.3.0's `relate`).
 - **Folders are created lazily.** A `New subfolder` route creates the folder,
   named by the LLM with `librarian/name_folder`, only when a new note is written
   into it. If step 3 merges instead, no folder is created, so a merge never

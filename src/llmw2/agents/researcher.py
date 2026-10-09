@@ -72,7 +72,7 @@ class Researcher:
     def _conflicting(self, question: str, notes: list[Note]) -> bool:
         """Whether the notes read disagree on the answer to the question (CROW, 2 notes at least)."""
         ctx = self.ctx
-        if ctx.classifier is None or len(notes) < 2:
+        if not self.cfg.answer_conflicts or ctx.classifier is None or len(notes) < 2:
             return False
         try:
             p = ctx.classifier.nouls(conflicts.conflict_state(question, notes), {"q": conflicts.CONFLICT}, op="ask/conflict")["q"]
