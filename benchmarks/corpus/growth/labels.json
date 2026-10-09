@@ -1,0 +1,233 @@
+{
+  "about": "Synthetic growth benchmark: 30 new documents for the Lumen demo wiki, labelled by where a stable filer should put them (existing folder, merge into a note, new folder group, or ambiguous).",
+  "docs": {
+    "01-wholesale-credit-limits.md": {
+      "kind": "existing",
+      "folders": [
+        "/customers"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "02-refund-policy-change-october.md": {
+      "kind": "update",
+      "folders": [
+        "/customers"
+      ],
+      "merge_into": "customers/refund-policy.md",
+      "group": null
+    },
+    "03-job-description-training-specialist.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g1"
+    },
+    "04-coffee-advent-calendar.md": {
+      "kind": "existing",
+      "folders": [
+        "/ideas"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "05-portello-wholesale-price-request.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/customers",
+        "/products"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "06-kenya-sample-evaluation.md": {
+      "kind": "existing",
+      "folders": [
+        "/sourcing"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "07-aurora-profile-autumn-adjustment.md": {
+      "kind": "update",
+      "folders": [
+        "/operations/roasting"
+      ],
+      "merge_into": "operations/roasting/aurora-roast-profile.md",
+      "group": null
+    },
+    "08-organic-certification-feasibility.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g2"
+    },
+    "09-christmas-shipping-cutoffs.md": {
+      "kind": "existing",
+      "folders": [
+        "/operations/shipping"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "10-cafe-portello-decaf-training-follow-up.md": {
+      "kind": "update",
+      "folders": [
+        "/customers"
+      ],
+      "merge_into": "customers/cafe-portello.md",
+      "group": null
+    },
+    "11-tasting-bar-plan-and-licence.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g3"
+    },
+    "12-weekly-sync-16-september-2026.md": {
+      "kind": "existing",
+      "folders": [
+        "/meetings"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "13-colombia-trip-and-next-steps.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/sourcing",
+        "/meetings"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "14-hedging-january-2027-fixings.md": {
+      "kind": "update",
+      "folders": [
+        "/sourcing"
+      ],
+      "merge_into": "sourcing/green-coffee-price-hedging.md",
+      "group": null
+    },
+    "15-interview-scorecard-production-staff.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g1"
+    },
+    "16-winter-blend-christmas.md": {
+      "kind": "existing",
+      "folders": [
+        "/products"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "17-sample-roasting-new-lots.md": {
+      "kind": "existing",
+      "folders": [
+        "/operations/roasting"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "18-carrier-rate-changes-november.md": {
+      "kind": "update",
+      "folders": [
+        "/operations/shipping"
+      ],
+      "merge_into": "operations/shipping/carriers-and-delivery-times.md",
+      "group": null
+    },
+    "19-compostable-bag-supplier-quotes.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g2"
+    },
+    "20-customer-survey-grind-options.md": {
+      "kind": "existing",
+      "folders": [
+        "/customers"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "21-carrier-delay-lombardy-incident.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/operations/shipping",
+        "/customers"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "22-roaster-maintenance-october-service.md": {
+      "kind": "update",
+      "folders": [
+        "/operations/roasting"
+      ],
+      "merge_into": "operations/roasting/roaster-maintenance.md",
+      "group": null
+    },
+    "23-events-calendar-autumn-2026.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g3"
+    },
+    "24-gift-subscription-cards.md": {
+      "kind": "existing",
+      "folders": [
+        "/ideas"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "25-andes-direct-new-payment-terms.md": {
+      "kind": "update",
+      "folders": [
+        "/sourcing"
+      ],
+      "merge_into": "sourcing/andes-direct-importer.md",
+      "group": null
+    },
+    "26-new-hire-induction-checklist.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g1"
+    },
+    "27-second-roaster-quote-board-discussion.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/operations/roasting",
+        "/meetings"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "28-board-meeting-september-2026.md": {
+      "kind": "existing",
+      "folders": [
+        "/meetings"
+      ],
+      "merge_into": null,
+      "group": null
+    },
+    "29-pause-option-pilot-results.md": {
+      "kind": "update",
+      "folders": [
+        "/ideas"
+      ],
+      "merge_into": "ideas/pause-instead-of-cancel.md",
+      "group": null
+    },
+    "30-sustainability-report-outline.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": null,
+      "group": "g2"
+    }
+  }
+}

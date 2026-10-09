@@ -42,7 +42,7 @@ def test_shared_fragments_are_inlined() -> None:
 
 
 def test_shared_fragments_are_not_placeholders() -> None:
-    assert Prompts().placeholders("librarian/summarize") == {"source_title", "source_resource", "source_text"}
+    assert Prompts().placeholders("librarian/summarize") == {"source_title", "source_resource", "source_text", "length_rule"}
 
 
 def test_a_missing_value_raises_key_error() -> None:

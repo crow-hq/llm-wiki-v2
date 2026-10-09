@@ -19,7 +19,7 @@ class Decision:
     """One decision of an ingest or a question, kept to calibrate thresholds (CROW §5.3)."""
 
     step: str  # route, match, consolidate, relate, navigate, select, …
-    decider: Literal["llm", "classifier", "rule"]
+    decider: Literal["llm", "classifier", "rule", "code"]  # "code": a check the code makes alone (revisions)
     choice: str
     confidence: float | None = None
     fallback: bool = False  # the classifier was not confident (or failed) and the LLM decided

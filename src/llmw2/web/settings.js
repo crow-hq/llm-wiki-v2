@@ -22,7 +22,10 @@ const CLF_NAME = { openrouter: "OpenRouter (Jev)", typesafe: "TypeSafe (Jev)", c
 // How each model is called: [field, label, what it does, input limits]. Kept per provider, like its key and model.
 const LLM_PARAMS = [
   ["temperature", "Temperature", "How freely the model writes: 0 gives the same words every time. The wiki uses 0.1: filing wants consistency.", 'min="0" max="2"'],
+  ["seed", "Seed", "A number sent with every request: providers that support it answer the same prompt the same way. Empty: none.", ""],
+  ["pin_provider", "Providers (OpenRouter)", "Comma-separated, such as DeepInfra, Novita: only these answer, in this order, and a call fails when none is up. Empty: OpenRouter chooses.", "", "text"],
   ["timeout", "Timeout (seconds)", "How long to wait for one reply before it fails. Raise it for a slow local model.", 'min="1"'],
+  ["read_chars", "Characters per call", "Most characters one request to the model may hold, text and rules together. A longer document is read in parts. Empty: automatic, by provider (100000 on OpenRouter, OpenAI and Gemini; 16000 on Ollama and custom servers).", 'min="8000"'],
 ];
 const CLF_PARAMS = [
   ["classifier_timeout", "Timeout (seconds)", "How long to wait for one decision; a slower one is dropped and the LLM decides.", 'min="0.5"'],
@@ -30,7 +33,7 @@ const CLF_PARAMS = [
   ["classifier_state_chars", "Note text read", "Characters of the incoming note each decision reads: its title, summary and opening.", 'min="500"'],
   ["classifier_request_chars", "Request size", "Most characters per request; a longer list of candidates is split into several requests.", 'min="1000"'],
 ];
-// The CROW decision thresholds: [name, label, "%" for a probability shown as a percentage, what it does].
+// The CROW decision thresholds: [name, label, "%" for a probability shown as a percentage, what it does, the choices if it is not a number].
 const CROW = [
   ["tau_route", "Routing: sure", "%", "A routing choice at least this sure follows only its best folder; below, the best two paths are followed."],
   ["tau_path", "Routing: ask the LLM below", "%", "When the best folder path scores less than this, the LLM decides where the note goes. Higher: the LLM decides more often."],
@@ -39,10 +42,14 @@ const CROW = [
   ["tau_link", "See also", "%", "Notes above this get a See-also link to each other."],
   ["tau_fold", "Search: folders", "%", "To answer a question, folders above this are opened."],
   ["tau_ret", "Search: notes", "%", "To answer a question, notes above this are read."],
+  ["votes", "Routing votes", "", "Classifier calls averaged when a routing decision is close to a threshold. 1: one call, no averaging."],
+  ["vote_band", "Routing: close means within", "%", "How near a threshold, or a tie between two folders, a routing decision must be to be asked again."],
+  ["fallback_menu", "Routing: LLM fallback menu", "", "Folders the LLM chooses among when the classifier is not sure: the folders it visited, or those plus the whole tree.", ["visited", "tree"]],
   ["beam", "Routing beam", "", "Folder paths followed at once when a routing choice is unsure."],
   ["retrieval_beam", "Search beam", "", "Folders opened per level to answer a question."],
   ["k", "Notes read (top k)", "", "At most this many notes are read to write an answer."],
 ];
+const CHOICES = new Set(CROW.filter(([, , , , choices]) => choices).map(([n]) => n));
 const PERCENT = new Set(CROW.filter(([, , unit]) => unit).map(([n]) => n));
 const shown = (n, x) => x === undefined || x === null || x === "" ? "" : PERCENT.has(n) ? String(Math.round(Number(x) * 1000) / 10) : String(x);
 const PRESET_NAME = { jev: "Jev", laya: "Laya" };
@@ -63,8 +70,8 @@ export async function showSettings(onSaved, said = "") {
   const s = await api("/settings");
   const v = s.values, managed = new Set(s.managed), locked = (f) => !s.editable || managed.has(f);
   const lockNote = (f) => managed.has(f) ? '<div class="hint">Set by the environment or a command-line flag.</div>' : "";
-  const params = (list) => `<div class="thresholds">${list.map(([id, label, hint, limits]) => `<label class="th"><span>${esc(label)}</span>
-    <span class="num"><input id="${id}" type="number" step="any" ${limits} value="${esc(v[id])}" ${locked(id) ? "disabled" : ""}></span>
+  const params = (list) => `<div class="thresholds">${list.map(([id, label, hint, limits, type = "number"]) => `<label class="th"><span>${esc(label)}</span>
+    <span class="num"><input id="${id}" type="${type}" step="any" ${limits} value="${esc(v[id])}" ${locked(id) ? "disabled" : ""}></span>
     <small>${esc(managed.has(id) ? "Set by the environment or a command-line flag." : hint)}</small></label>`).join("")}</div>`;
   const clfOptions = Object.keys(s.classifier_providers).map((p) =>
     `<option value="${esc(p)}"${p === v.classifier_provider ? " selected" : ""}>${esc(CLF_NAME[p] || p)}</option>`).join("");
@@ -114,8 +121,9 @@ export async function showSettings(onSaved, said = "") {
             <div class="hint" id="clf-key-hint">Stays on this computer, in a file only you can read.</div>${lockNote("classifier_api_key")}</div>
           <div class="field"><label>Classifier parameters</label>${params(CLF_PARAMS)}</div>
           <div class="field" id="f-crow"><label>Decision thresholds</label>
-            <div class="thresholds">${CROW.map(([n, label, unit, hint]) => `<label class="th"><span>${esc(label)}</span>
-              <span class="num"><input id="crow_${n}" type="number" step="any" min="${unit ? 0 : 1}"${unit ? ' max="100"' : ""} value="${shown(n, v["crow_" + n])}" ${locked("crow_" + n) ? "disabled" : ""}>${unit ? "<i>%</i>" : ""}</span>
+            <div class="thresholds">${CROW.map(([n, label, unit, hint, choices]) => `<label class="th"><span>${esc(label)}</span>
+              <span class="num">${choices ? `<select id="crow_${n}" ${locked("crow_" + n) ? "disabled" : ""}>${choices.map((c) => `<option${c === v["crow_" + n] ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>`
+                : `<input id="crow_${n}" type="number" step="any" min="${unit ? 0 : 1}"${unit ? ' max="100"' : ""} value="${shown(n, v["crow_" + n])}" ${locked("crow_" + n) ? "disabled" : ""}>`}${unit ? "<i>%</i>" : ""}</span>
               <small>${esc(hint)}</small></label>`).join("")}</div>
             <div class="hint" id="crow-hint"></div></div>
         </div>
@@ -124,6 +132,9 @@ export async function showSettings(onSaved, said = "") {
         <div class="field"><label for="concurrency">Documents filed in parallel</label>
           <input id="concurrency" type="number" min="1" max="16" value="${esc(v.concurrency)}" ${locked("concurrency") ? "disabled" : ""}>
           <div class="hint">How many documents are read and summarized at once; they are still filed one at a time. 1 files them strictly in turn.</div>${lockNote("concurrency")}</div>
+        <div class="field"><label for="note_chars">Note length</label>
+          <input id="note_chars" type="number" min="1000" step="any" value="${esc(v.note_chars)}" ${locked("note_chars") ? "disabled" : ""}>
+          <div class="hint">About how many characters a note body may have; the model is asked to stay within it, and a longer note is not cut. Empty: automatic (10000, less when Characters per call is small).</div>${lockNote("note_chars")}</div>
       </details>
       <div class="actions">
         <button class="btn" id="save" ${s.editable ? "" : "disabled"}>${s.ready ? "Save" : "Save and start →"}</button>
@@ -184,10 +195,10 @@ export async function showSettings(onSaved, said = "") {
     if (crow && preset.needs_key && !saved && !shared) $("#advanced").open = true; // CROW cannot start without it
   };
   const fields = ["provider", "base_url", "api_key", "model", "mode", "reasoning",
-    "classifier_provider", "classifier_base_url", "classifier_model", "classifier_api_key", "bundle", "concurrency", ...paramIds.llm, ...paramIds.classifier, ...crowIds];
-  const number = (f) => { // a threshold as the server takes it: a fraction for a percentage, "" for the preset's
+    "classifier_provider", "classifier_base_url", "classifier_model", "classifier_api_key", "bundle", "concurrency", "note_chars", ...paramIds.llm, ...paramIds.classifier, ...crowIds];
+  const number = (f) => { // a threshold as the server takes it: a fraction for a percentage, "" for the preset's; a choice as it is
     const n = f.slice(5), raw = $("#" + f).value.trim();
-    return raw === "" ? "" : PERCENT.has(n) ? String(Number(raw) / 100) : String(Math.round(Number(raw)));
+    return raw === "" || CHOICES.has(n) ? raw : PERCENT.has(n) ? String(Number(raw) / 100) : String(Math.round(Number(raw)));
   };
   const value = (f) => f === "provider" ? provider.value
     : f === "reasoning" ? ($("#reasoning").checked ? "true" : "") // "" is the default: off
@@ -252,7 +263,8 @@ export async function showSettings(onSaved, said = "") {
     try {
       const r = await post("/settings/test", changes()), c = r.classifier; // c: only in CROW mode
       const text = (r.ok ? `✓ ${esc(r.model)} answered` : `✗ ${esc(r.error)}`)
-        + (!c ? "" : c.ok ? ` · ✓ classifier ${esc(c.model)} answered` : ` · ✗ classifier: ${esc(c.error)}`);
+        + (!c ? "" : c.ok ? ` · ✓ classifier ${esc(c.model)} answered` : ` · ✗ classifier: ${esc(c.error)}`)
+        + (r.warning ? ` · ⚠ ${esc(r.warning)}` : "");
       status(text, r.ok && (!c || c.ok) ? "ok" : "err");
     } catch (e) { status(`✗ ${esc(e.message)}`, "err"); }
   };

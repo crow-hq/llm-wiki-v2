@@ -18,6 +18,12 @@ from llmw2.models.classifier import Classifier
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 REVENUE, PRICING = "finance/revenue-recognition.md", "finance/pricing-tiers.md"
+MERGE_REPLY = {
+    "title": "Revenue recognition",
+    "summary": "When revenue is booked, monthly for subscriptions.",
+    "tags": ["finance"],
+    "body": "All about revenue recognition, booked monthly.",
+}
 
 
 def draft(title: str, summary: str) -> dict[str, Any]:
@@ -42,7 +48,7 @@ def ingest_classic(wiki: Wiki, llm: FakeLLM) -> list[IngestResult]:
     llm.add("librarian/route", {"action": "descend", "subfolder": "finance"}, {"action": "here"})
     llm.add("librarian/find_match", {"match": REVENUE})
     llm.add("librarian/consolidate", {"decision": "modify"})
-    llm.add("librarian/merge", draft("Revenue recognition", "When revenue is booked, monthly for subscriptions."))
+    llm.add("librarian/merge", MERGE_REPLY)
     llm.add("librarian/relate", {"related": []})
     third = wiki.ingest("Subscriptions are recognised monthly.")
     return [first, second, third]
@@ -66,7 +72,7 @@ def ingest_crow(wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> list[In
     classifier.add_choice("route", "Here", {"Here": 0.8, "None of these": 0.2}, 0.8)
     classifier.noul_scores.update(match={"Revenue recognition": 0.9}, relate={})
     classifier.add_choice("consolidate", "Modify", {"Modify": 0.9, "New note": 0.1}, 0.9)
-    llm.add("librarian/merge", draft("Revenue recognition", "When revenue is booked, monthly for subscriptions."))
+    llm.add("librarian/merge", MERGE_REPLY)
     third = wiki.ingest("Subscriptions are recognised monthly.")
     return [first, second, third]
 

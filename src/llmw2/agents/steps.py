@@ -19,6 +19,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import inspect
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -32,17 +33,27 @@ from llmw2.agents import steps_crow as crow
 from llmw2.agents.base import Decision
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.prompts import Prompts
+from llmw2.agents.state import STATE_VERSION, source_state
 from llmw2.bundle.tree import Folder, Note, slugify
 from llmw2.config import WikiConfig
 from llmw2.errors import StepError
 from llmw2.models.classifier import Classifier
-from llmw2.models.llm import LLM
+from llmw2.models.llm import LLM, reply_tokens
 
-__all__ = ["CLASSIC", "CROW", "StepContext", "StepError", "Steps"]
+__all__ = ["CLASSIC", "CROW", "StepContext", "StepError", "Steps", "decision_hash"]
 
 T = TypeVar("T", bound=BaseModel)
 
 log = logging.getLogger(__name__)
+
+
+# The Length bullet of `shared/note_rules`, with its "- " and its newline: `{{length_rule}}` stands at the start of a line,
+# with no newline after it, so an empty value leaves no bullet and no blank line.
+LENGTH_RULE = (
+    "- Length: the body is at most about {note_chars} characters. When the subject needs more, first write more "
+    "compactly (tables, lists, no repetition), then drop marginal details; never drop a fact that changed or one "
+    "marked as previously.\n"
+)
 
 
 @dataclass
@@ -59,20 +70,41 @@ class StepContext:
     cfg: WikiConfig
     system_prompt: str = ""  # librarian/system for the ingest steps, researcher/system for the ask steps
     source: Source | None = None  # the source being ingested (None while asking)
+    candidate: Candidate | None = None  # the note `summarize` wrote from it (None while asking and while summarizing)
     decisions: list[Decision] = field(default_factory=list)
 
-    def ask_json(self, prompt: str, schema: type[T], **values: object) -> T:
-        system = self.prompts.render(self.system_prompt)
-        return self.llm.json(system, self.prompts.render(prompt, **values), schema, op=prompt)
+    def ask_json(self, prompt: str, schema: type[T], *, reply_chars: int | None = None, **values: object) -> T:
+        """Render `prompt` with `values` and ask for a JSON reply.
 
-    def ask_text(self, prompt: str, **values: object) -> str:
+        `reply_chars` is about how long the reply should be (default: a note, `effective_note_chars`); it sets the
+        output cap, and a reply cut by it is asked once more, shorter. It is not a prompt value: a prompt cannot
+        have a variable of that name.
+        """
         system = self.prompts.render(self.system_prompt)
-        return self.llm.complete(system, self.prompts.render(prompt, **values), op=prompt)
+        cap = reply_tokens(self.cfg.effective_note_chars if reply_chars is None else reply_chars)
+        return self.llm.json(system, self.prompts.render(prompt, **self._values(values)), schema, op=prompt, max_tokens=cap)
+
+    def ask_text(
+        self, prompt: str, *, reply_chars: int | None = None, keep_cut: bool = False, cut: list[str] | None = None, **values: object
+    ) -> str:
+        """Like `ask_json`, for a plain-text reply.
+
+        `keep_cut`: a reply cut by the cap is returned as written, not asked again; `cut` collects it. Not prompt values.
+        """
+        system = self.prompts.render(self.system_prompt)
+        cap = reply_tokens(self.cfg.effective_note_chars if reply_chars is None else reply_chars)
+        user = self.prompts.render(prompt, **self._values(values))
+        return self.llm.complete(system, user, op=prompt, max_tokens=cap, keep_cut=keep_cut, **({} if cut is None else {"cut": cut}))
+
+    def _values(self, values: dict[str, object]) -> dict[str, object]:
+        """The values of a prompt, with the note length and the length rule that `shared/note_rules` asks for."""
+        chars = values.get("note_chars", self.cfg.effective_note_chars)  # the rule follows a note length the caller passes
+        return {"note_chars": chars, "length_rule": LENGTH_RULE.format(note_chars=chars), **values}
 
     def decide(
         self,
         step: str,
-        decider: Literal["llm", "classifier", "rule"],
+        decider: Literal["llm", "classifier", "rule", "code"],
         choice: str,
         confidence: float | None = None,
         *,
@@ -92,6 +124,14 @@ class StepContext:
 
     def state(self, cand: Candidate) -> str:
         return cand.compact(self.cfg.classifier.state_chars)
+
+    def route_state(self, cand: Candidate) -> str:
+        """What routing reads: the candidate's own state, else one built from the source, else `state`."""
+        if cand.state:
+            return cand.state
+        if self.source is not None:
+            return source_state(self.source.title, self.source.text, self.cfg.classifier.state_chars)
+        return self.state(cand)
 
     def need_classifier(self, step: str) -> Classifier:
         """The classifier, or a StepError for a CROW step run without one."""
@@ -157,6 +197,40 @@ CROW = replace(
 )
 
 
+def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
+    """First 8 hex chars of a sha256 over everything that decides where a note goes, to tell runs apart in provenance.
+
+    The step code (`steps.hash`), the text of every prompt as `prompts` resolves it, the writing model, the classifier
+    model (CROW only), temperature, seed, pinned providers, the CROW thresholds, `max_depth`, `max_links`, `mode`,
+    `summarize`, the size of the state routing reads (`state_chars`, `STATE_VERSION`), how much one
+    call reads and how long a note may be (`effective_read_chars`, `effective_note_chars`, and `note_length` unless fixed)
+    and `SUMMARY_VERSION`. Keys, addresses, timeouts, attempts, other sizes, concurrency and logs do not change the decisions: not in it.
+    """
+    decisive = {
+        "steps": steps.hash,
+        "prompts": prompts.fingerprint(),
+        "model": cfg.llm.model,
+        "classifier": cfg.classifier.model if cfg.mode == "crow" else None,
+        "temperature": cfg.llm.temperature,
+        "seed": cfg.llm.seed,
+        "pin_provider": cfg.llm.pin_provider,
+        "crow": cfg.crow.model_dump(),
+        "fallback_menu_chars": crow.FALLBACK_MENU_CHARS,  # the menu limit is a constant outside the hashed step functions
+        "max_depth": cfg.max_depth,
+        "max_links": cfg.max_links,
+        "mode": cfg.mode,
+        "summarize": cfg.summarize,
+        "state_chars": cfg.classifier.state_chars,
+        "state_version": STATE_VERSION,
+        "read_chars": cfg.effective_read_chars,
+        "note_chars": cfg.effective_note_chars,
+        "summary_version": classic.SUMMARY_VERSION,
+    }
+    if cfg.note_length != "fixed":
+        decisive["note_length"] = cfg.note_length  # only when set: the hash of a fixed length stays what it was
+    return hashlib.sha256(json.dumps(decisive, sort_keys=True).encode("utf-8")).hexdigest()[:8]
+
+
 # -- output checks: StepError naming the step, before anything is written ---------------
 
 
@@ -184,6 +258,8 @@ def _check_note_data(step: str, out: object, kind: type[Candidate] | type[NoteDr
 def check_summarize(cand: object) -> Candidate:
     _check_note_data("summarize", cand, Candidate)
     assert isinstance(cand, Candidate)
+    if not isinstance(cand.state, str):
+        raise StepError("summarize", "state must be a str")
     return cand
 
 

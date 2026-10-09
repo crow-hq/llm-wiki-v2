@@ -222,6 +222,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .th { display: grid; gap: 4px; align-content: start; font: 12px var(--mono); color: #c7cfe2; }
 .th .num { display: flex; align-items: center; gap: 6px; }
 .field .th input { width: 96px; height: 36px; }
+.field .th select { height: 36px; }
 .th .num i { font-style: normal; color: var(--muted); }
 .th small { font: 11px/1.45 var(--mono); color: var(--muted); }
 .suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

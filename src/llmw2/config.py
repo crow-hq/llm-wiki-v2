@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from llmw2 import __version__
 from llmw2.errors import ConfigError
@@ -25,6 +26,8 @@ class Provider(NamedTuple):
     models: tuple[str, ...]  # suggestions; the first is the default
     reasoning_off: Mapping[str, Any] | None = None  # request fields that turn thinking off; None: no one switch
     reasoning_least: Mapping[str, Any] | None = None  # for models that must think and refuse the off switch with a 400
+    read_chars: int = 16_000  # characters one prompt may hold, when the user does not say (a context window of ~4k tokens, safe anywhere)
+    max_tokens_field: str = "max_tokens"  # the request field that caps the output; OpenAI's reasoning models reject "max_tokens"
 
 
 PROVIDERS: dict[str, Provider] = {
@@ -35,15 +38,26 @@ PROVIDERS: dict[str, Provider] = {
         ("google/gemini-3.8-flash", "anthropic/claude-sonnet-5", "openai/gpt-6-luna", "deepseek/deepseek-v4.1-flash"),
         {"reasoning": {"enabled": False}},  # deepseek-v4.1-flash: 35 output tokens to name a folder, 2722 with effort minimal
         {"reasoning": {"effort": "minimal"}},  # gemini-3.8-flash must think: 400 to the off switch, this one it takes
+        read_chars=100_000,
     ),
-    "openai": Provider("https://api.openai.com/v1", "OPENAI_API_KEY", ("gpt-6-luna", "gpt-6-sol")),
+    "openai": Provider(
+        "https://api.openai.com/v1", "OPENAI_API_KEY", ("gpt-6-luna", "gpt-6-sol"),
+        read_chars=100_000, max_tokens_field="max_completion_tokens",
+    ),
     "gemini": Provider(
         "https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY",
         ("gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"),
+        read_chars=100_000,
     ),
     "ollama": Provider("http://localhost:11434/v1", "", ("gemma4", "qwen3.8")),
     "custom": Provider("", "", ()),  # vLLM, LM Studio, llama.cpp, a gateway: set base_url (and api_key if it wants one)
 }
+
+# Characters a prompt takes beyond the text it carries (rules, instructions, titles), and the usual longest note body.
+PROMPT_ROOM = 6_000
+NOTE_CAP = 10_000
+NOTE_RATIO = 4  # a proportional note is about this many times shorter than its source
+NOTE_MAX = 45_000  # the longest note a proportional length asks for, when a call holds that much
 
 JEV = "typesafe/jev-1.13"  # pinned: thresholds are calibrated per model version
 
@@ -71,12 +85,24 @@ class LLMConfig(BaseModel):
     model: str = ""  # empty: the provider's first suggestion
     api_key: str = ""
     temperature: float = Field(0.1, ge=0, le=2)
+    seed: int | None = None  # sent with every request when set; providers that support it answer the same prompt the same way
+    # OpenRouter only: providers allowed to answer, in order, with no fallback to any other (a down one fails the call).
+    # Sent as {"provider": {"order": ..., "allow_fallbacks": false, "require_parameters": true}}; extra_body["provider"] wins.
+    pin_provider: list[str] = Field(default_factory=list)
     timeout: float = Field(120.0, gt=0)
+    # Characters one prompt may hold, text and rules together; None: the provider's (PROVIDERS). Longer sources are read in parts.
+    read_chars: int | None = Field(None, ge=8_000)
     # Thinking before answering made filing 5-40x slower in our runs (hidden tokens) and no better: off where the provider can.
     reasoning: bool = False
     # Extra JSON fields for every request. OpenRouter example:
     # {"provider": {"order": ["together", "coreweave"]}} to pin faster providers.
     extra_body: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("pin_provider", mode="before")
+    @classmethod
+    def _split_providers(cls, value: Any) -> Any:
+        """A comma-separated string (environment, settings file) is a list."""
+        return [p.strip() for p in value.split(",") if p.strip()] if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def _fill_from_provider(self) -> LLMConfig:
@@ -138,6 +164,10 @@ class CrowConfig(BaseModel):
     tau_fold: float = Field(0.08, ge=0, le=1)  # retrieval: folder probability to explore it (paper default 0.5)
     tau_ret: float = Field(0.1, ge=0, le=1)  # retrieval: note probability to read it (paper default 0.5)
     tau_link: float = Field(0.6, ge=0, le=1)  # extension: relatedness probability for a See-also link
+    votes: int = Field(1, ge=1, le=9)  # classifier calls averaged per borderline routing decision (1: one call, no averaging)
+    vote_band: float = Field(0.05, ge=0, le=1)  # how close to tau_route, tau_path or a tie counts as borderline
+    # extension: the folders the routing fallback shows the LLM: those the classifier visited, or those and the rest of the tree
+    fallback_menu: Literal["visited", "tree"] = "visited"
     beam: int = Field(2, gt=0)  # b at ingestion: paths kept per uncertain routing step
     # b at retrieval: folders explored per level; with low thresholds the beam, not tau_fold, bounds exploration
     retrieval_beam: int = Field(6, gt=0)
@@ -165,7 +195,7 @@ def crow_preset(classifier_provider: str) -> str:
 # WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).
 _TOP_LEVEL_ENV = (
     "bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency", "usage_log",
-    "prompts_dir",
+    "prompts_dir", "note_chars", "note_length", "revisions",
 )
 
 
@@ -177,7 +207,13 @@ class WikiConfig(BaseModel):
     max_steps: int = Field(12, gt=0)  # classic researcher: folders it may open per question
     max_links: int = Field(5, ge=0)  # See-also links added per ingest
     max_notes: int = Field(8, gt=0)  # classic researcher and CROW's fallback: notes read per question (CROW uses crow.k)
-    source_chars: int = Field(100_000, gt=0)  # longest source text sent to the LLM
+    # Deprecated: the characters one prompt may hold, when `llm.read_chars` is not set (see `effective_read_chars`).
+    source_chars: int = Field(100_000, gt=0)
+    note_chars: int | None = Field(None, ge=1_000)  # about how long a note body may be; None: automatic (see `effective_note_chars`)
+    note_length: Literal["fixed", "proportional"] = "proportional"  # in proportion to its source (default), or about `note_chars` long
+    # A source that revises the one document a note cites: the note replaced by the new version with the old body archived
+    # ("replace", the default; OKF_REVISIONS), or merged into the note ("merge"). See `agents.revisions`.
+    revisions: Literal["merge", "replace"] = "replace"
     upload_mb: int = Field(25, gt=0)  # largest request body the server reads: a big PDF fits, a runaway upload does not fill memory
     concurrency: int = Field(4, ge=1, le=16)  # documents prepared (extracted, summarized) at once by a batch or the server
     actor: str = f"llmw2/{__version__}"  # OKF `generated.by`
@@ -186,6 +222,12 @@ class WikiConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
     crow: CrowConfig = Field(default_factory=CrowConfig)
+
+    @model_validator(mode="after")
+    def _warn_source_chars(self) -> WikiConfig:
+        if "source_chars" in self.model_fields_set:
+            warnings.warn("source_chars is deprecated: use llm.read_chars (OKF_LLM_READ_CHARS)", DeprecationWarning, stacklevel=2)
+        return self
 
     @model_validator(mode="after")
     def _crow_preset(self) -> WikiConfig:
@@ -204,6 +246,34 @@ class WikiConfig(BaseModel):
         if not self.classifier.api_key and on_openrouter:
             self.classifier.api_key = self.llm.api_key
         return self
+
+    @property
+    def effective_read_chars(self) -> int:
+        """Characters one prompt may hold: `llm.read_chars`, else an explicit `source_chars`, else the provider's."""
+        if self.llm.read_chars is not None:
+            return self.llm.read_chars
+        if "source_chars" in self.model_fields_set:
+            return self.source_chars
+        return PROVIDERS[self.llm.provider].read_chars
+
+    @property
+    def effective_note_chars(self) -> int:
+        """About how long a note body may be: `note_chars` or NOTE_CAP, and never more than half the text of a prompt."""
+        return max(1_000, min(self.note_chars or NOTE_CAP, (self.effective_read_chars - PROMPT_ROOM) // 2))
+
+    @property
+    def note_ceiling(self) -> int:
+        """The longest note a call can hold: `effective_note_chars` when `note_length` is fixed, else up to NOTE_MAX."""
+        if self.note_length == "fixed":
+            return self.effective_note_chars
+        return max(self.effective_note_chars, min(NOTE_MAX, (self.effective_read_chars - PROMPT_ROOM) // 2))
+
+    def target_note_chars(self, source_chars: int, existing_chars: int = 0) -> int:
+        """About how long the note being written should be: for a merge, the existing note and the share the source adds."""
+        if self.note_length == "fixed":
+            return self.effective_note_chars
+        own = min(self.note_ceiling, max(self.effective_note_chars, source_chars // NOTE_RATIO))
+        return min(self.note_ceiling, existing_chars + own)
 
     @classmethod
     def from_env(

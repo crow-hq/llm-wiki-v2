@@ -20,6 +20,12 @@ from llmw2.errors import InputError
 from llmw2.models.llm import live_models
 from llmw2.settings import Settings, mask, settings_path
 
+
+def owner_only(path: Path) -> bool:
+    """Mode 0600 where modes exist; Windows has none (a file is private by the ACL of the user's profile)."""
+    return os.name == "nt" or stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
 KEY = "sk-or-v1-0123456789abcdef"
 LAYA = {"classifier_provider": "custom", "classifier_base_url": "http://127.0.0.1:8001/v1"}  # the custom classifier is Laya
 
@@ -47,7 +53,7 @@ def test_save_writes_only_what_changed_readable_by_the_owner_only() -> None:
     cfg = settings.save({"provider": "openrouter", "api_key": KEY, "model": "", "base_url": "", "mode": "crow"})
 
     assert written(settings) == {"llm": {"provider": "openrouter", "api_key": KEY}, "mode": "crow"}
-    assert stat.S_IMODE(settings.path.stat().st_mode) == 0o600
+    assert owner_only(settings.path)
     assert (cfg.mode, cfg.llm.api_key, cfg.classifier.api_key) == ("crow", KEY, KEY)  # one OpenRouter key for both
 
 
@@ -87,7 +93,7 @@ def test_save_when_the_llm_switches_provider_and_back_then_its_key_and_model_com
     # ASSERT
     assert (cfg.llm.provider, cfg.llm.model, cfg.llm.api_key) == ("openrouter", "deepseek/deepseek-v4.1-flash", KEY)
     memory = settings.view()["memory"]["llm"]
-    params = {"temperature": 0.1, "timeout": 120.0}  # the defaults: none was changed
+    params = {"temperature": 0.1, "timeout": 120.0, "seed": "", "pin_provider": "", "read_chars": ""}  # the defaults: none was changed
     assert memory["custom"] == {"model": "bonsai", "base_url": "http://127.0.0.1:8080/v1", "api_key": "", **params}
     assert memory["openrouter"] == {"model": "deepseek/deepseek-v4.1-flash", "base_url": "", "api_key": "…cdef", **params}
     assert KEY not in json.dumps(settings.view())
@@ -142,7 +148,7 @@ def test_save_when_a_wide_temp_file_is_left_over_then_the_file_is_still_owner_on
 
     # ASSERT
     assert not leftover.exists()  # the save went through the leftover file
-    assert stat.S_IMODE(settings.path.stat().st_mode) == 0o600
+    assert owner_only(settings.path)
 
 
 def test_the_environment_and_flags_win_and_their_fields_are_not_saved(tmp_path: Path) -> None:

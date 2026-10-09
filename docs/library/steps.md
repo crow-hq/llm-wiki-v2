@@ -69,12 +69,12 @@ output raises `StepError` naming the step.
 What each one is for:
 
 - `extract`: the text of a file. The default reads `.txt`, `.md` and `.pdf`.
-- `summarize`: the note an ingest would write. The default asks the LLM (or, with `summarize=False` in the config, keeps the source as it is).
+- `summarize`: the note an ingest would write. The default asks the LLM once, or, for a source longer than `read_chars` less 6000 characters, takes notes on each block of it and writes the note from them (a call that fails fails the step, and the calls already made are lost). With `summarize=False` in the config it keeps the source as it is.
 - `route`: where the note goes, and which folders to look in for a note to merge with.
 - `name_folder`: the name and one-line description of a new folder.
 - `match`: an existing note on the same subject, if any.
 - `consolidate`: `True` to merge into the matched note, `False` to write a new one beside it.
-- `merge`: the rewritten note, given the matched note and the incoming source.
+- `merge`: the rewritten note, given the matched note and the incoming source. The default merges note into note: it reads `ctx.candidate` as the incoming note and cuts it to what is left of `read_chars` after the existing one; without a candidate (a step of yours calling it on its own) it reads the source cut the same way. If the draft is unchanged, or keeps fewer than half of the new codes, numbers and names (`incoming_values`) of the incoming text, it asks once more with `librarian/merge_source`, which reads the source.
 - `relate`: the notes the new one should link to. The core keeps at most `max_links` of them.
 - `select`: the notes to read for a question.
 - `answer`: the answer text. To be listed in `Answer.citations`, cite a selected note as `[path.md]`.
@@ -94,7 +94,7 @@ class Source:      # what is being ingested
 
 @dataclass
 class Candidate:   # the note an ingest would write
-    title: str; summary: str; tags: list[str]; body: str; fields: dict[str, Any]
+    title: str; summary: str; tags: list[str]; body: str; fields: dict[str, Any]; state: str = ""
 
 @dataclass
 class Route:       # where it goes
@@ -104,21 +104,42 @@ class NoteDraft(BaseModel):   # a merged note
     title: str; summary: str; tags: list[str]; body: str; fields: dict[str, Any]
 ```
 
+### Candidate.state
+
+The text the routing decisions read. The classic `summarize` fills it with a deterministic
+digest of the source (`Source.title` and `Source.text`): the text whole if it fits in
+`OKF_CLASSIFIER_STATE_CHARS`, else its own summary or introduction, the list of its
+sections and the opening of each (or passages at even offsets when it has no headings).
+Headings are the Markdown `#` lines; a text without any is read as flat text, as a PDF
+gives it, where numbered lines (`1.2`, `Art. 3`), lines in capitals and short isolated lines
+are headings. A summary's subsections belong to it.
+Unlike `title`, `summary` and `body`, which the LLM writes anew on every run, it does not
+change between runs, so the summary's wording no longer moves the routing.
+
+`ctx.route_state(cand)` returns `cand.state` when it is not empty; else the same digest
+built from `ctx.source`; else the compact title, summary and body. CROW `route` reads it.
+`match`, `consolidate` and `relate` still read the compact state.
+
+A custom `summarize` may fill it with what it knows better than the core, for example a
+patent step with the abstract and the first claim taken from `Source.fields`. The core
+never interprets `fields`: it only passes them on. It must be a `str`.
+
 ### StepContext
 
 The first argument of every step. It holds `llm`, `classifier` (`None` in classic
 mode), `prompts`, `cfg` (the `WikiConfig`), `source` (the source being ingested; `None` while asking and
-inside `extract`) and `decisions` (the trace that ends up in `IngestResult.decisions`
+inside `extract`), `candidate` (the note `summarize` wrote from it, set before `route`; `None` while asking, inside `extract` and `summarize`, and when a step is called outside an ingest) and `decisions` (the trace that ends up in `IngestResult.decisions`
 and `Answer.decisions`). It has no access to the store: a step reads the tree it
 is given.
 
 | Member | Use |
 |---|---|
-| `ask_json(prompt, schema, **values)` | render a packaged prompt (`"librarian/route"`) and get the LLM's JSON as a pydantic `schema` |
-| `ask_text(prompt, **values)` | the same, for a plain-text reply |
-| `llm.complete(system, user, op=...)` · `llm.json(...)` | a model call with your own text |
+| `ask_json(prompt, schema, *, reply_chars=None, **values)` | render a packaged prompt (`"librarian/route"`) and get the LLM's JSON as a pydantic `schema`; `note_chars` is filled in for you, so a prompt that embeds `shared/note_rules` works. `reply_chars` is about how long the reply should be (default `note_chars`): it sets the output cap (3 times that, in tokens at 3.5 characters each, at least 1024), a reply cut by it is asked once more, shorter, and a second cut raises `ModelError`. It is not a prompt value |
+| `ask_text(prompt, *, reply_chars=None, keep_cut=False, **values)` | the same, for a plain-text reply; with `keep_cut`, a reply cut by the cap is returned as written, not asked again |
+| `llm.complete(system, user, op=...)` · `llm.json(...)` | a model call with your own text; uncapped unless you pass `max_tokens` (see `reply_tokens` in `llmw2.models.llm`) |
 | `decide(step, decider, choice, confidence=None, ...)` | add an entry to the trace |
 | `can_create(folder)` · `children(folder)` | respect `max_depth` |
+| `route_state(cand)` | the text a routing decision reads (see [Candidate.state](#candidatestate)) |
 | `need_classifier(step)` | the classifier, or `StepError` if there is none |
 
 Model calls made through `ctx.llm` and `ctx.classifier` are counted in the
@@ -245,13 +266,21 @@ Other things worth knowing:
 
 Every note written or merged records which step set did it, under its
 `sources:` entry: `steps: {name, hash}`. The log line of the ingest says it too
-(`from /raw/… (patents-v2 3f9a1c0e)`).
+(`from /raw/… (patents-v2 3f9a1c0e, deepseek/deepseek-v4-flash)`, and
+`, via DeepInfra,Novita` when providers are pinned).
 
-The hash is 8 hex characters of a sha256 over the **source code of the ten
-functions**, so two sets with different code differ. It is best effort. It does
-not see:
+The hash (`decision_hash(steps, cfg, prompts)`) is 8 hex characters of a sha256
+over what decides where a note goes:
 
-- what a step calls: helper functions, prompts, thresholds, the config;
+- the **source code of the ten functions** (`steps.hash`, which on its own is still the hash of the code);
+- the text of every prompt, as the prompts folder in use resolves it (`OKF_PROMPTS_DIR` over the packaged ones);
+- the writing model, the classifier model (CROW mode only), `temperature`, `seed` and `pin_provider`;
+- the CROW thresholds, beams and `k`, `max_depth`, `max_links`, `mode` and `summarize`.
+
+Keys, addresses, timeouts, attempts, sizes, concurrency and the usage log do not
+change it. It is best effort: it does not see
+
+- what a step calls apart from prompts: helper functions;
 - values closed over by a closure or bound by `functools.partial` (`partial(summarize_n, 150)` and `partial(summarize_n, 300)` hash the same: a `partial` counts as the function it wraps);
 - a function whose source Python cannot read (built in a shell, or compiled): it counts by module and name.
 

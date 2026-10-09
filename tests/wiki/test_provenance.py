@@ -382,10 +382,10 @@ def test_a_model_error_during_the_merge_leaves_no_new_raw_copy(
     llm.add("librarian/consolidate", {"decision": "modify"})
     real_chat = llm.chat
 
-    def chat(messages: list[dict[str, str]], *, op: str = "") -> str:
+    def chat(messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
         if op == "librarian/merge":
             raise ModelError("llm 500")
-        return real_chat(messages, op=op)
+        return real_chat(messages, op=op, json_mode=json_mode, max_tokens=max_tokens)
 
     monkeypatch.setattr(llm, "chat", chat)
     before = raws(bundle)

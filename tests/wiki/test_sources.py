@@ -141,10 +141,10 @@ def test_sync_stops_on_a_model_error_and_keeps_the_previous_cursor(wiki: Wiki, l
     )
     real_chat = llm.chat
 
-    def chat(messages: list[dict[str, str]], *, op: str = "") -> str:
+    def chat(messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
         if source.fetched == ["a", "b"]:
             raise ModelError("llm 401")
-        return real_chat(messages, op=op)
+        return real_chat(messages, op=op, json_mode=json_mode, max_tokens=max_tokens)
 
     monkeypatch.setattr(llm, "chat", chat)
 

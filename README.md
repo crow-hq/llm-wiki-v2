@@ -280,6 +280,10 @@ list is in [.env.example](https://github.com/crow-hq/llm-wiki-v2/blob/main/.env.
 | `OKF_PROMPTS_DIR` | — | folder whose prompt files replace the packaged ones |
 | `OKF_UPLOAD_MB` | `25` | largest file or text the server accepts (413 above it) |
 | `OKF_CONCURRENCY` | `4` | documents read and summarized at once by `sync`, the web page and `Wiki.ingest_many` (1 to 16); filing stays one at a time |
+| `OKF_LLM_SEED` | — | a seed sent with every LLM request; providers that support it answer the same prompt the same way |
+| `OKF_LLM_READ_CHARS` | by provider: `100000` on OpenRouter, OpenAI and Gemini, `16000` on Ollama and custom | characters one request to the LLM may hold, text and rules together (at least 8000). A source that does not fit is summarized in parts, and a merge cuts the incoming note to what is left of it after the existing one |
+| `OKF_NOTE_CHARS` | `10000`, and at most half of what one request holds | about how many characters a note body may have (at least 1000): asked of the model, not enforced; a body over 1.2 times that is logged |
+| `OKF_LLM_PIN_PROVIDER` | — | OpenRouter only: comma-separated providers that may answer, in order, with no fallback (e.g. `DeepInfra,Novita`); a call fails when none is up. Ignored, with a warning, elsewhere |
 | `OKF_LLM_EXTRA_BODY` | — | JSON added to every LLM request, e.g. `'{"provider":{"order":["together"]}}'` to pin fast OpenRouter providers |
 
 Providers, the settings file and the classifier route: [docs/wiki/providers.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/providers.md).

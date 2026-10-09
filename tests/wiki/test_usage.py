@@ -114,9 +114,11 @@ def test_log_path_gets_one_json_line_per_call(tmp_path: Path) -> None:
     lines = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
     assert [{k: v for k, v in line.items() if k != "ts"} for line in lines] == [
         {"kind": "llm", "model": "gemini", "op": "librarian/summarize", "input_tokens": 100, "output_tokens": 10,
-         "seconds": 1.235, "cost_usd": 0.002, "cached_tokens": None},
+         "seconds": 1.235, "cost_usd": 0.002, "cached_tokens": None,
+         "provider": None, "temperature": None, "seed": None, "finish_reason": None},
         {"kind": "classifier", "model": "jev", "op": "route", "input_tokens": None, "output_tokens": None,
-         "seconds": 0.0, "cost_usd": None, "cached_tokens": None},
+         "seconds": 0.0, "cost_usd": None, "cached_tokens": None,
+         "provider": None, "temperature": None, "seed": None, "finish_reason": None},
     ]
     assert all(line["ts"] for line in lines)
 

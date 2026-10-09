@@ -39,7 +39,7 @@ from llmw2.bundle.tree import graph
 from llmw2.config import WikiConfig
 from llmw2.errors import ConfigError, InputError, ModelError
 from llmw2.models.classifier import probe as probe_classifier
-from llmw2.models.llm import live_models, probe
+from llmw2.models.llm import context_warning, live_models, probe
 from llmw2.settings import Settings
 from llmw2.wiki import Wiki
 
@@ -100,12 +100,19 @@ class SettingsChanges(BaseModel):
     crow_tau_fold: str | None = None
     crow_tau_ret: str | None = None
     crow_tau_link: str | None = None
+    crow_votes: str | None = None
+    crow_vote_band: str | None = None
+    crow_fallback_menu: str | None = None  # "visited" or "tree"
     crow_beam: str | None = None
     crow_retrieval_beam: str | None = None
     crow_k: str | None = None
     # How each model is called (a number as text, "" for the default)
     temperature: str | None = None
+    seed: str | None = None
+    pin_provider: str | None = None  # comma-separated; OpenRouter only
     timeout: str | None = None
+    read_chars: str | None = None  # characters one prompt may hold; "" for the provider's
+    note_chars: str | None = None  # about how long a note may be; "" for automatic
     classifier_timeout: str | None = None
     classifier_attempts: str | None = None
     classifier_state_chars: str | None = None
@@ -322,6 +329,8 @@ def create_app(
                 result: dict[str, Any] = {"ok": True, "model": cfg.llm.model, "reply": probe(trial.llm)}
             except ModelError as e:
                 result = {"ok": False, "model": cfg.llm.model, "error": str(e)}
+            if warning := context_warning(cfg):
+                result["warning"] = warning
             if trial.classifier is not None:
                 try:
                     probe_classifier(trial.classifier)

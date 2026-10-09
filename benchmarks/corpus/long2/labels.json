@@ -1,0 +1,2422 @@
+{
+  "about": "Fifteen hard long documents (10-55 pages) for the Lumen demo wiki: sections planned in code, facts planted and found by offset, native summaries, copies and a flat mailbox. Written by benchmarks/make_long2_corpus.py.",
+  "docs": {
+    "01-wholesale-programme-review-2026.md": {
+      "kind": "existing",
+      "folders": [
+        "/customers"
+      ],
+      "merge_into": [],
+      "merge_ok": [
+        "customers/cafe-portello.md",
+        "customers/wholesale-cafe-onboarding.md",
+        "products/price-list-from-july-2026.md"
+      ],
+      "merge_with_doc": null,
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/customers",
+        "/products"
+      ],
+      "sections": [
+        {
+          "heading": "Active wholesale accounts",
+          "folder": "/customers",
+          "chars": 8990
+        },
+        {
+          "heading": "Volumes by account and month",
+          "folder": "/customers",
+          "chars": 11239
+        },
+        {
+          "heading": "Complaints and credit notes",
+          "folder": "/customers",
+          "chars": 8266
+        },
+        {
+          "heading": "Credit terms and payment behaviour",
+          "folder": "/customers",
+          "chars": 7008
+        },
+        {
+          "heading": "Account health and churn risk",
+          "folder": "/customers",
+          "chars": 7618
+        },
+        {
+          "heading": "Product mix sold to wholesale",
+          "folder": "/products",
+          "chars": 14041
+        },
+        {
+          "heading": "Wholesale price list",
+          "folder": "/products",
+          "chars": 13460
+        },
+        {
+          "heading": "Delivery to wholesale accounts",
+          "folder": "/operations/shipping",
+          "chars": 6625
+        }
+      ],
+      "facts": [
+        {
+          "fact": "AJP-5870",
+          "kind": "headline",
+          "section": "Active wholesale accounts",
+          "offset": 3179,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "14.6%",
+          "kind": "marginal",
+          "section": "Active wholesale accounts",
+          "offset": 7180,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tobias Okafor",
+          "kind": "headline",
+          "section": "Volumes by account and month",
+          "offset": 12066,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tobias Harrow",
+          "kind": "marginal",
+          "section": "Volumes by account and month",
+          "offset": 19265,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€87,567.57",
+          "kind": "headline",
+          "section": "Complaints and credit notes",
+          "offset": 23115,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "HNL-3808",
+          "kind": "marginal",
+          "section": "Complaints and credit notes",
+          "offset": 24119,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ravi Pemberton",
+          "kind": "headline",
+          "section": "Credit terms and payment behaviour",
+          "offset": 31415,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "82.4%",
+          "kind": "marginal",
+          "section": "Credit terms and payment behaviour",
+          "offset": 34480,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "XGF-2009",
+          "kind": "headline",
+          "section": "Account health and churn risk",
+          "offset": 38486,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "92.1%",
+          "kind": "marginal",
+          "section": "Account health and churn risk",
+          "offset": 41275,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "XWE-5557",
+          "kind": "headline",
+          "section": "Product mix sold to wholesale",
+          "offset": 46298,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ingrid Pemberton",
+          "kind": "marginal",
+          "section": "Product mix sold to wholesale",
+          "offset": 48971,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "NCF-4801",
+          "kind": "headline",
+          "section": "Wholesale price list",
+          "offset": 60387,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "11 November 2028",
+          "kind": "marginal",
+          "section": "Wholesale price list",
+          "offset": 64846,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "25.2%",
+          "kind": "headline",
+          "section": "Delivery to wholesale accounts",
+          "offset": 73986,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€63,557.61",
+          "kind": "marginal",
+          "section": "Delivery to wholesale accounts",
+          "offset": 75394,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "02-second-roaster-feasibility-study.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/operations/roasting",
+        "/ideas",
+        "/operations"
+      ],
+      "merge_into": [],
+      "merge_ok": [
+        "operations/roasting/roaster-maintenance.md",
+        "meetings/board-meeting-june-2026.md"
+      ],
+      "merge_with_doc": null,
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/operations/roasting",
+        "/ideas",
+        "/sourcing"
+      ],
+      "sections": [
+        {
+          "heading": "Current roaster capacity and utilisation",
+          "folder": "/operations/roasting",
+          "chars": 9906
+        },
+        {
+          "heading": "Candidate roasters compared",
+          "folder": "/operations/roasting",
+          "chars": 10084
+        },
+        {
+          "heading": "Installation, space and utilities",
+          "folder": "/operations/roasting",
+          "chars": 7822
+        },
+        {
+          "heading": "Operating cost and staffing",
+          "folder": "/operations/roasting",
+          "chars": 8407
+        },
+        {
+          "heading": "Revenue scenarios from added capacity",
+          "folder": "/ideas",
+          "chars": 6393
+        },
+        {
+          "heading": "Product ideas the second roaster would enable",
+          "folder": "/ideas",
+          "chars": 8602
+        },
+        {
+          "heading": "Risks and alternatives to buying",
+          "folder": "/ideas",
+          "chars": 9082
+        },
+        {
+          "heading": "Green coffee needs at higher volume",
+          "folder": "/sourcing",
+          "chars": 9165
+        },
+        {
+          "heading": "Importer capacity and lead times",
+          "folder": "/sourcing",
+          "chars": 7653
+        }
+      ],
+      "facts": [
+        {
+          "fact": "WNV-4833",
+          "kind": "headline",
+          "section": "Current roaster capacity and utilisation",
+          "offset": 2196,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "FBM-2457",
+          "kind": "marginal",
+          "section": "Current roaster capacity and utilisation",
+          "offset": 10056,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ravi Vasquez",
+          "kind": "headline",
+          "section": "Candidate roasters compared",
+          "offset": 12074,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "SNT-7891",
+          "kind": "marginal",
+          "section": "Candidate roasters compared",
+          "offset": 19669,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€49,391.92",
+          "kind": "headline",
+          "section": "Installation, space and utilities",
+          "offset": 28774,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "21 August 2028",
+          "kind": "marginal",
+          "section": "Installation, space and utilities",
+          "offset": 22845,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Marisol Delacroix",
+          "kind": "headline",
+          "section": "Operating cost and staffing",
+          "offset": 30084,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Marisol Calloway",
+          "kind": "marginal",
+          "section": "Operating cost and staffing",
+          "offset": 30989,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "68.2%",
+          "kind": "headline",
+          "section": "Revenue scenarios from added capacity",
+          "offset": 38531,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "65.7%",
+          "kind": "marginal",
+          "section": "Revenue scenarios from added capacity",
+          "offset": 39727,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "KBA-9516",
+          "kind": "headline",
+          "section": "Product ideas the second roaster would enable",
+          "offset": 45046,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "MVH-8341",
+          "kind": "marginal",
+          "section": "Product ideas the second roaster would enable",
+          "offset": 51480,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "67.9%",
+          "kind": "headline",
+          "section": "Risks and alternatives to buying",
+          "offset": 53641,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "AKA-3792",
+          "kind": "marginal",
+          "section": "Risks and alternatives to buying",
+          "offset": 60340,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "11 June 2027",
+          "kind": "headline",
+          "section": "Green coffee needs at higher volume",
+          "offset": 62740,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€20,310.98",
+          "kind": "marginal",
+          "section": "Green coffee needs at higher volume",
+          "offset": 69987,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "3 June 2027",
+          "kind": "headline",
+          "section": "Importer capacity and lead times",
+          "offset": 73338,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€39.32",
+          "kind": "marginal",
+          "section": "Importer capacity and lead times",
+          "offset": 76168,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "03-relazione-semestrale-acquisti-prezzi-2026.md": {
+      "kind": "existing",
+      "folders": [
+        "/sourcing"
+      ],
+      "merge_into": [],
+      "merge_ok": [
+        "sourcing/green-coffee-price-hedging.md",
+        "products/price-list-from-july-2026.md",
+        "sourcing/andes-direct-importer.md"
+      ],
+      "merge_with_doc": null,
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/sourcing",
+        "/products"
+      ],
+      "sections": [
+        {
+          "heading": "Acquisti di caffè verde per origine",
+          "folder": "/sourcing",
+          "chars": 10381
+        },
+        {
+          "heading": "Andamento dei prezzi del mercato C e coperture",
+          "folder": "/sourcing",
+          "chars": 12466
+        },
+        {
+          "heading": "Condizioni con gli importatori",
+          "folder": "/sourcing",
+          "chars": 7311
+        },
+        {
+          "heading": "Qualità dei lotti e reclami ai fornitori",
+          "folder": "/sourcing",
+          "chars": 11152
+        },
+        {
+          "heading": "Costo del caffè verde per miscela",
+          "folder": "/products",
+          "chars": 13526
+        },
+        {
+          "heading": "Effetto dei prezzi sul listino",
+          "folder": "/products",
+          "chars": 12968
+        },
+        {
+          "heading": "Impatto sui clienti wholesale",
+          "folder": "/customers",
+          "chars": 9761
+        }
+      ],
+      "facts": [
+        {
+          "fact": "UTN-4027",
+          "kind": "headline",
+          "section": "Acquisti di caffè verde per origine",
+          "offset": 312,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Gaetano Ghiberti",
+          "kind": "marginal",
+          "section": "Acquisti di caffè verde per origine",
+          "offset": 2935,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "4 febbraio 2027",
+          "kind": "headline",
+          "section": "Andamento dei prezzi del mercato C e coperture",
+          "offset": 11811,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "NBG-9222",
+          "kind": "marginal",
+          "section": "Andamento dei prezzi del mercato C e coperture",
+          "offset": 12149,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "15 settembre 2027",
+          "kind": "headline",
+          "section": "Condizioni con gli importatori",
+          "offset": 23018,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "27 maggio 2028",
+          "kind": "marginal",
+          "section": "Condizioni con gli importatori",
+          "offset": 25104,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ottavia Orsolini",
+          "kind": "headline",
+          "section": "Qualità dei lotti e reclami ai fornitori",
+          "offset": 30847,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "ZCM-1151",
+          "kind": "marginal",
+          "section": "Qualità dei lotti e reclami ai fornitori",
+          "offset": 31884,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "KTX-1057",
+          "kind": "headline",
+          "section": "Costo del caffè verde per miscela",
+          "offset": 41788,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tullio Casadei",
+          "kind": "marginal",
+          "section": "Costo del caffè verde per miscela",
+          "offset": 42580,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "41,90 €",
+          "kind": "headline",
+          "section": "Effetto dei prezzi sul listino",
+          "offset": 55607,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "66,4%",
+          "kind": "marginal",
+          "section": "Effetto dei prezzi sul listino",
+          "offset": 56625,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tullio Orsolini",
+          "kind": "headline",
+          "section": "Impatto sui clienti wholesale",
+          "offset": 68200,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "3 agosto 2028",
+          "kind": "marginal",
+          "section": "Impatto sui clienti wholesale",
+          "offset": 68316,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "04-decaf-training-programme-wholesale-cafes.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/customers",
+        "/products"
+      ],
+      "merge_into": [],
+      "merge_ok": [
+        "customers/cafe-portello.md",
+        "products/night-shift-decaf.md"
+      ],
+      "merge_with_doc": null,
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/products",
+        "/customers"
+      ],
+      "sections": [
+        {
+          "heading": "Why wholesale cafés need decaf training",
+          "folder": "/customers",
+          "chars": 7373
+        },
+        {
+          "heading": "Training sessions for café staff",
+          "folder": "/customers",
+          "chars": 7406
+        },
+        {
+          "heading": "Café feedback and follow-up",
+          "folder": "/customers",
+          "chars": 7979
+        },
+        {
+          "heading": "Night Shift decaf: process and flavour",
+          "folder": "/products",
+          "chars": 10332
+        },
+        {
+          "heading": "Brewing Night Shift decaf: recipes and dial-in",
+          "folder": "/products",
+          "chars": 7930
+        },
+        {
+          "heading": "Decaf ordering and pricing for cafés",
+          "folder": "/products",
+          "chars": 10181
+        }
+      ],
+      "facts": [
+        {
+          "fact": "58.5%",
+          "kind": "headline",
+          "section": "Why wholesale cafés need decaf training",
+          "offset": 203,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tobias Lindqvist",
+          "kind": "marginal",
+          "section": "Why wholesale cafés need decaf training",
+          "offset": 2918,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€27,536.33",
+          "kind": "headline",
+          "section": "Training sessions for café staff",
+          "offset": 7957,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "25 September 2027",
+          "kind": "marginal",
+          "section": "Training sessions for café staff",
+          "offset": 12805,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "65.4%",
+          "kind": "headline",
+          "section": "Café feedback and follow-up",
+          "offset": 14995,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "3 August 2026",
+          "kind": "marginal",
+          "section": "Café feedback and follow-up",
+          "offset": 18658,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "NWU-1862",
+          "kind": "headline",
+          "section": "Night Shift decaf: process and flavour",
+          "offset": 23204,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "6 December 2028",
+          "kind": "marginal",
+          "section": "Night Shift decaf: process and flavour",
+          "offset": 23895,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€56,521.16",
+          "kind": "headline",
+          "section": "Brewing Night Shift decaf: recipes and dial-in",
+          "offset": 34821,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "36.2%",
+          "kind": "marginal",
+          "section": "Brewing Night Shift decaf: recipes and dial-in",
+          "offset": 35237,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "77.9%",
+          "kind": "headline",
+          "section": "Decaf ordering and pricing for cafés",
+          "offset": 41606,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "RHK-3975",
+          "kind": "marginal",
+          "section": "Decaf ordering and pricing for cafés",
+          "offset": 42465,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "05-subscription-box-redesign-proposal.md": {
+      "kind": "ambiguous",
+      "folders": [
+        "/ideas",
+        "/operations/shipping"
+      ],
+      "merge_into": [],
+      "merge_ok": [
+        "operations/shipping/subscription-packing-day.md",
+        "ideas/pause-instead-of-cancel.md"
+      ],
+      "merge_with_doc": null,
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/operations/shipping",
+        "/ideas"
+      ],
+      "sections": [
+        {
+          "heading": "Why redesign the subscription box",
+          "folder": "/ideas",
+          "chars": 7961
+        },
+        {
+          "heading": "New box formats and tiers",
+          "folder": "/ideas",
+          "chars": 7876
+        },
+        {
+          "heading": "Pause instead of cancel in the new design",
+          "folder": "/ideas",
+          "chars": 7759
+        },
+        {
+          "heading": "Packing the new boxes",
+          "folder": "/operations/shipping",
+          "chars": 8018
+        },
+        {
+          "heading": "Carriers and costs of the new formats",
+          "folder": "/operations/shipping",
+          "chars": 11470
+        },
+        {
+          "heading": "Packing day schedule and staffing",
+          "folder": "/operations/shipping",
+          "chars": 7871
+        },
+        {
+          "heading": "Subscriber research and feedback",
+          "folder": "/customers",
+          "chars": 5414
+        }
+      ],
+      "facts": [
+        {
+          "fact": "4 July 2028",
+          "kind": "headline",
+          "section": "Why redesign the subscription box",
+          "offset": 4471,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "THM-6723",
+          "kind": "marginal",
+          "section": "Why redesign the subscription box",
+          "offset": 9930,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€6,390.81",
+          "kind": "headline",
+          "section": "New box formats and tiers",
+          "offset": 12378,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "20 January 2026",
+          "kind": "marginal",
+          "section": "New box formats and tiers",
+          "offset": 12839,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€78.05",
+          "kind": "headline",
+          "section": "Pause instead of cancel in the new design",
+          "offset": 20385,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "4 August 2027",
+          "kind": "marginal",
+          "section": "Pause instead of cancel in the new design",
+          "offset": 22101,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€75.24",
+          "kind": "headline",
+          "section": "Packing the new boxes",
+          "offset": 28605,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "36.4%",
+          "kind": "marginal",
+          "section": "Packing the new boxes",
+          "offset": 33098,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "GVE-2440",
+          "kind": "headline",
+          "section": "Carriers and costs of the new formats",
+          "offset": 36212,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Callum Harrow",
+          "kind": "marginal",
+          "section": "Carriers and costs of the new formats",
+          "offset": 36550,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "56.2%",
+          "kind": "headline",
+          "section": "Packing day schedule and staffing",
+          "offset": 47750,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "70.2%",
+          "kind": "marginal",
+          "section": "Packing day schedule and staffing",
+          "offset": 54201,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Marisol Harrow",
+          "kind": "headline",
+          "section": "Subscriber research and feedback",
+          "offset": 55697,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Marisol Pemberton",
+          "kind": "marginal",
+          "section": "Subscriber research and feedback",
+          "offset": 60187,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "06-carbon-footprint-assessment-2026.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": [],
+      "merge_ok": [],
+      "merge_with_doc": null,
+      "group": "sust",
+      "alt_folders": [
+        "/operations"
+      ],
+      "secondary": [
+        "/sustainability"
+      ],
+      "sections": [
+        {
+          "heading": "Scope and method",
+          "folder": "/sustainability",
+          "chars": 9953
+        },
+        {
+          "heading": "Emissions from green coffee farming and transport",
+          "folder": "/sustainability",
+          "chars": 10527
+        },
+        {
+          "heading": "Emissions from roasting and energy",
+          "folder": "/sustainability",
+          "chars": 8755
+        },
+        {
+          "heading": "Emissions from packaging and shipping",
+          "folder": "/sustainability",
+          "chars": 12175
+        },
+        {
+          "heading": "Reduction targets 2027-2030",
+          "folder": "/sustainability",
+          "chars": 14732
+        },
+        {
+          "heading": "Data quality and limits",
+          "folder": "/sustainability",
+          "chars": 9431
+        }
+      ],
+      "facts": [
+        {
+          "fact": "€2,898.67",
+          "kind": "headline",
+          "section": "Scope and method",
+          "offset": 7334,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€63,301.34",
+          "kind": "marginal",
+          "section": "Scope and method",
+          "offset": 8108,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€43,086.30",
+          "kind": "headline",
+          "section": "Emissions from green coffee farming and transport",
+          "offset": 16593,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "1 September 2028",
+          "kind": "marginal",
+          "section": "Emissions from green coffee farming and transport",
+          "offset": 23952,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "WDL-8322",
+          "kind": "headline",
+          "section": "Emissions from roasting and energy",
+          "offset": 25998,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Odette Delacroix",
+          "kind": "marginal",
+          "section": "Emissions from roasting and energy",
+          "offset": 29021,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "21 June 2026",
+          "kind": "headline",
+          "section": "Emissions from packaging and shipping",
+          "offset": 34307,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€24.57",
+          "kind": "marginal",
+          "section": "Emissions from packaging and shipping",
+          "offset": 39424,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tobias Vasquez",
+          "kind": "headline",
+          "section": "Reduction targets 2027-2030",
+          "offset": 46528,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "MXU-1244",
+          "kind": "marginal",
+          "section": "Reduction targets 2027-2030",
+          "offset": 51969,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "90.6%",
+          "kind": "headline",
+          "section": "Data quality and limits",
+          "offset": 61406,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "WCW-3071",
+          "kind": "marginal",
+          "section": "Data quality and limits",
+          "offset": 68182,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "07-esg-report-banca-sella-credit-line.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": [],
+      "merge_ok": [],
+      "merge_with_doc": null,
+      "group": "sust",
+      "alt_folders": [],
+      "secondary": [
+        "/sustainability"
+      ],
+      "sections": [
+        {
+          "heading": "Environmental indicators",
+          "folder": "/sustainability",
+          "chars": 12863
+        },
+        {
+          "heading": "Social indicators",
+          "folder": "/sustainability",
+          "chars": 13326
+        },
+        {
+          "heading": "Governance and risk management",
+          "folder": "/sustainability",
+          "chars": 13895
+        },
+        {
+          "heading": "Commitments tied to the credit line",
+          "folder": "/sustainability",
+          "chars": 17569
+        }
+      ],
+      "facts": [
+        {
+          "fact": "ZZE-3001",
+          "kind": "headline",
+          "section": "Environmental indicators",
+          "offset": 3495,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "41.7%",
+          "kind": "marginal",
+          "section": "Environmental indicators",
+          "offset": 6254,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€65.46",
+          "kind": "marginal",
+          "section": "Environmental indicators",
+          "offset": 11902,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ravi Delacroix",
+          "kind": "headline",
+          "section": "Social indicators",
+          "offset": 28405,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "74.2%",
+          "kind": "marginal",
+          "section": "Social indicators",
+          "offset": 17405,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "41.4%",
+          "kind": "marginal",
+          "section": "Social indicators",
+          "offset": 29243,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Marisol Calloway",
+          "kind": "headline",
+          "section": "Governance and risk management",
+          "offset": 36613,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Callum Calloway",
+          "kind": "marginal",
+          "section": "Governance and risk management",
+          "offset": 35366,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "CWC-5253",
+          "kind": "marginal",
+          "section": "Governance and risk management",
+          "offset": 40126,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Marisol Thorne",
+          "kind": "headline",
+          "section": "Commitments tied to the credit line",
+          "offset": 54066,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "32.2%",
+          "kind": "marginal",
+          "section": "Commitments tied to the credit line",
+          "offset": 48396,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "RVW-3577",
+          "kind": "marginal",
+          "section": "Commitments tied to the credit line",
+          "offset": 56691,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "08-politica-sostenibilita-codice-condotta-fornitori.md": {
+      "kind": "new",
+      "folders": [],
+      "merge_into": [],
+      "merge_ok": [],
+      "merge_with_doc": null,
+      "group": "sust",
+      "alt_folders": [
+        "/sourcing"
+      ],
+      "secondary": [
+        "/sustainability"
+      ],
+      "sections": [
+        {
+          "heading": "Principi della politica di sostenibilità",
+          "folder": "/sustainability",
+          "chars": 13443
+        },
+        {
+          "heading": "Requisiti per i fornitori",
+          "folder": "/sustainability",
+          "chars": 11003
+        },
+        {
+          "heading": "Verifiche e audit",
+          "folder": "/sustainability",
+          "chars": 9955
+        },
+        {
+          "heading": "Violazioni e miglioramento continuo",
+          "folder": "/sustainability",
+          "chars": 10285
+        }
+      ],
+      "facts": [
+        {
+          "fact": "20,2%",
+          "kind": "headline",
+          "section": "Principi della politica di sostenibilità",
+          "offset": 4882,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "SBX-8711",
+          "kind": "marginal",
+          "section": "Principi della politica di sostenibilità",
+          "offset": 6373,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "12 gennaio 2026",
+          "kind": "headline",
+          "section": "Requisiti per i fornitori",
+          "offset": 18074,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "44,3%",
+          "kind": "marginal",
+          "section": "Requisiti per i fornitori",
+          "offset": 18988,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "60,05 €",
+          "kind": "headline",
+          "section": "Verifiche e audit",
+          "offset": 32623,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "77,42 €",
+          "kind": "marginal",
+          "section": "Verifiche e audit",
+          "offset": 33422,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Gaetano Scarpellini",
+          "kind": "headline",
+          "section": "Violazioni e miglioramento continuo",
+          "offset": 39204,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Brando Morandotti",
+          "kind": "marginal",
+          "section": "Violazioni e miglioramento continuo",
+          "offset": 39849,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "09-aurora-espresso-blend-2027-recipe-change.md": {
+      "kind": "update",
+      "folders": [
+        "/products"
+      ],
+      "merge_into": [
+        "products/aurora-espresso-blend.md"
+      ],
+      "merge_ok": [],
+      "merge_with_doc": null,
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/products"
+      ],
+      "sections": [
+        {
+          "heading": "Why the recipe changes",
+          "folder": "/products",
+          "chars": 7140
+        },
+        {
+          "heading": "The new three-origin recipe",
+          "folder": "/products",
+          "chars": 11322
+        },
+        {
+          "heading": "Sensory results of the trials",
+          "folder": "/products",
+          "chars": 7647
+        },
+        {
+          "heading": "Rollout to cafés and subscribers",
+          "folder": "/products",
+          "chars": 8450
+        }
+      ],
+      "facts": [
+        {
+          "fact": "9 February 2026",
+          "kind": "headline",
+          "section": "Why the recipe changes",
+          "offset": 140,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ravi Lindqvist",
+          "kind": "marginal",
+          "section": "Why the recipe changes",
+          "offset": 3168,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€76,222.07",
+          "kind": "headline",
+          "section": "The new three-origin recipe",
+          "offset": 7572,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "64.3%",
+          "kind": "marginal",
+          "section": "The new three-origin recipe",
+          "offset": 16866,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Odette Vasquez",
+          "kind": "headline",
+          "section": "Sensory results of the trials",
+          "offset": 18786,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "20 February 2028",
+          "kind": "marginal",
+          "section": "Sensory results of the trials",
+          "offset": 24785,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "4 June 2027",
+          "kind": "headline",
+          "section": "Rollout to cafés and subscribers",
+          "offset": 26352,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "88.1%",
+          "kind": "marginal",
+          "section": "Rollout to cafés and subscribers",
+          "offset": 31989,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "10-shipping-terms-revision-2027.md": {
+      "kind": "update",
+      "folders": [
+        "/operations/shipping"
+      ],
+      "merge_into": [
+        "operations/shipping/carriers-and-delivery-times.md",
+        "operations/shipping/subscription-packing-day.md"
+      ],
+      "merge_ok": [],
+      "merge_with_doc": null,
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/operations/shipping"
+      ],
+      "sections": [
+        {
+          "heading": "New carrier selection",
+          "folder": "/operations/shipping",
+          "chars": 9767
+        },
+        {
+          "heading": "Free shipping threshold",
+          "folder": "/operations/shipping",
+          "chars": 10637
+        },
+        {
+          "heading": "Delivery times by zone",
+          "folder": "/operations/shipping",
+          "chars": 12985
+        },
+        {
+          "heading": "Wednesday packing day",
+          "folder": "/operations/shipping",
+          "chars": 11343
+        },
+        {
+          "heading": "Subscription box handling",
+          "folder": "/operations/shipping",
+          "chars": 17631
+        },
+        {
+          "heading": "Returns and damaged parcels",
+          "folder": "/operations/shipping",
+          "chars": 16491
+        }
+      ],
+      "facts": [
+        {
+          "fact": "WPC-4440",
+          "kind": "headline",
+          "section": "New carrier selection",
+          "offset": 3790,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tobias Lindqvist",
+          "kind": "marginal",
+          "section": "New carrier selection",
+          "offset": 8699,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Marisol Delacroix",
+          "kind": "headline",
+          "section": "Free shipping threshold",
+          "offset": 13707,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tobias Vasquez",
+          "kind": "marginal",
+          "section": "Free shipping threshold",
+          "offset": 20510,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "4 October 2027",
+          "kind": "headline",
+          "section": "Delivery times by zone",
+          "offset": 24127,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "16 May 2028",
+          "kind": "marginal",
+          "section": "Delivery times by zone",
+          "offset": 27810,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ingrid Okafor",
+          "kind": "headline",
+          "section": "Wednesday packing day",
+          "offset": 37199,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "45.2%",
+          "kind": "marginal",
+          "section": "Wednesday packing day",
+          "offset": 38861,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "TNF-3311",
+          "kind": "headline",
+          "section": "Subscription box handling",
+          "offset": 48740,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€3,591.60",
+          "kind": "marginal",
+          "section": "Subscription box handling",
+          "offset": 55623,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€70.36",
+          "kind": "headline",
+          "section": "Returns and damaged parcels",
+          "offset": 66232,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "27 April 2028",
+          "kind": "marginal",
+          "section": "Returns and damaged parcels",
+          "offset": 82266,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "11-green-coffee-purchasing-archive-2020-2026-and-2027-terms.md": {
+      "kind": "existing",
+      "folders": [
+        "/sourcing"
+      ],
+      "merge_into": [],
+      "merge_ok": [
+        "sourcing/green-coffee-price-hedging.md"
+      ],
+      "merge_with_doc": null,
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/sourcing"
+      ],
+      "sections": [
+        {
+          "heading": "Purchasing archive 2020-2026",
+          "folder": "/sourcing",
+          "chars": 120032
+        },
+        {
+          "heading": "2027 terms: the new hedging rule",
+          "folder": "/sourcing",
+          "chars": 13657
+        },
+        {
+          "heading": "2027 terms: volumes and importers",
+          "folder": "/sourcing",
+          "chars": 15665
+        },
+        {
+          "heading": "2027 terms: payment and credit",
+          "folder": "/sourcing",
+          "chars": 10292
+        },
+        {
+          "heading": "2027 terms: quality and claims",
+          "folder": "/sourcing",
+          "chars": 16263
+        },
+        {
+          "heading": "2027 terms: implementation timeline",
+          "folder": "/sourcing",
+          "chars": 10130
+        }
+      ],
+      "facts": [
+        {
+          "fact": "8 July 2027",
+          "kind": "headline",
+          "section": "Purchasing archive 2020-2026",
+          "offset": 76799,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€71.19",
+          "kind": "marginal",
+          "section": "Purchasing archive 2020-2026",
+          "offset": 13173,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "ERD-8340",
+          "kind": "marginal",
+          "section": "Purchasing archive 2020-2026",
+          "offset": 13551,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ravi Vasquez",
+          "kind": "marginal",
+          "section": "Purchasing archive 2020-2026",
+          "offset": 36987,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "4 March 2028",
+          "kind": "marginal",
+          "section": "Purchasing archive 2020-2026",
+          "offset": 46030,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tobias Delacroix",
+          "kind": "marginal",
+          "section": "Purchasing archive 2020-2026",
+          "offset": 57178,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€28.87",
+          "kind": "marginal",
+          "section": "Purchasing archive 2020-2026",
+          "offset": 77302,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "BUN-3043",
+          "kind": "marginal",
+          "section": "Purchasing archive 2020-2026",
+          "offset": 88372,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "1 August 2026",
+          "kind": "marginal",
+          "section": "Purchasing archive 2020-2026",
+          "offset": 93196,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€21,192.19",
+          "kind": "marginal",
+          "section": "Purchasing archive 2020-2026",
+          "offset": 114169,
+          "position": "middle",
+          "beyond_100k": true
+        },
+        {
+          "fact": "Callum Pemberton",
+          "kind": "headline",
+          "section": "2027 terms: the new hedging rule",
+          "offset": 120459,
+          "position": "middle",
+          "beyond_100k": true
+        },
+        {
+          "fact": "SCX-8936",
+          "kind": "marginal",
+          "section": "2027 terms: the new hedging rule",
+          "offset": 126643,
+          "position": "tail",
+          "beyond_100k": true
+        },
+        {
+          "fact": "EKU-5560",
+          "kind": "headline",
+          "section": "2027 terms: volumes and importers",
+          "offset": 134088,
+          "position": "tail",
+          "beyond_100k": true
+        },
+        {
+          "fact": "21 November 2028",
+          "kind": "marginal",
+          "section": "2027 terms: volumes and importers",
+          "offset": 149386,
+          "position": "tail",
+          "beyond_100k": true
+        },
+        {
+          "fact": "FSG-6377",
+          "kind": "headline",
+          "section": "2027 terms: payment and credit",
+          "offset": 149551,
+          "position": "tail",
+          "beyond_100k": true
+        },
+        {
+          "fact": "22.6%",
+          "kind": "marginal",
+          "section": "2027 terms: payment and credit",
+          "offset": 150758,
+          "position": "tail",
+          "beyond_100k": true
+        },
+        {
+          "fact": "69.9%",
+          "kind": "headline",
+          "section": "2027 terms: quality and claims",
+          "offset": 160431,
+          "position": "tail",
+          "beyond_100k": true
+        },
+        {
+          "fact": "€76,769.58",
+          "kind": "marginal",
+          "section": "2027 terms: quality and claims",
+          "offset": 165394,
+          "position": "tail",
+          "beyond_100k": true
+        },
+        {
+          "fact": "19 September 2028",
+          "kind": "headline",
+          "section": "2027 terms: implementation timeline",
+          "offset": 176304,
+          "position": "tail",
+          "beyond_100k": true
+        },
+        {
+          "fact": "SVZ-5067",
+          "kind": "marginal",
+          "section": "2027 terms: implementation timeline",
+          "offset": 177716,
+          "position": "tail",
+          "beyond_100k": true
+        }
+      ]
+    },
+    "12-quality-control-laboratory-manual.md": {
+      "kind": "existing",
+      "folders": [
+        "/operations/roasting"
+      ],
+      "merge_into": [],
+      "merge_ok": [
+        "operations/roasting/quality-control-and-cupping.md"
+      ],
+      "merge_with_doc": null,
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/operations/roasting"
+      ],
+      "sections": [
+        {
+          "heading": "Laboratory organisation and responsibilities",
+          "folder": "/operations/roasting",
+          "chars": 10184
+        },
+        {
+          "heading": "Sample taking and preparation",
+          "folder": "/operations/roasting",
+          "chars": 7927
+        },
+        {
+          "heading": "Moisture and density measurement",
+          "folder": "/operations/roasting",
+          "chars": 7779
+        },
+        {
+          "heading": "Colour measurement",
+          "folder": "/operations/roasting",
+          "chars": 13139
+        },
+        {
+          "heading": "Cupping protocol and scoring",
+          "folder": "/operations/roasting",
+          "chars": 7806
+        },
+        {
+          "heading": "Calibration and records",
+          "folder": "/operations/roasting",
+          "chars": 10961
+        },
+        {
+          "heading": "Handling non-conforming lots",
+          "folder": "/operations/roasting",
+          "chars": 9084
+        }
+      ],
+      "facts": [
+        {
+          "fact": "Verena Thorne",
+          "kind": "headline",
+          "section": "Laboratory organisation and responsibilities",
+          "offset": 2898,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Callum Delacroix",
+          "kind": "marginal",
+          "section": "Laboratory organisation and responsibilities",
+          "offset": 11719,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "HSZ-4348",
+          "kind": "headline",
+          "section": "Sample taking and preparation",
+          "offset": 13515,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€9.10",
+          "kind": "marginal",
+          "section": "Sample taking and preparation",
+          "offset": 19114,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "NCL-4483",
+          "kind": "headline",
+          "section": "Moisture and density measurement",
+          "offset": 25601,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€44.72",
+          "kind": "marginal",
+          "section": "Moisture and density measurement",
+          "offset": 26297,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "ZDD-2453",
+          "kind": "headline",
+          "section": "Colour measurement",
+          "offset": 30194,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ravi Okafor",
+          "kind": "marginal",
+          "section": "Colour measurement",
+          "offset": 32092,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Callum Harrow",
+          "kind": "headline",
+          "section": "Cupping protocol and scoring",
+          "offset": 41962,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€73,547.44",
+          "kind": "marginal",
+          "section": "Cupping protocol and scoring",
+          "offset": 43610,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Marisol Harrow",
+          "kind": "headline",
+          "section": "Calibration and records",
+          "offset": 49746,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ingrid Calloway",
+          "kind": "marginal",
+          "section": "Calibration and records",
+          "offset": 55195,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "CLR-8738",
+          "kind": "headline",
+          "section": "Handling non-conforming lots",
+          "offset": 61056,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "13 June 2026",
+          "kind": "marginal",
+          "section": "Handling non-conforming lots",
+          "offset": 66469,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "13-wholesale-programme-review-2026-rev2.md": {
+      "kind": "update",
+      "folders": [
+        "/customers"
+      ],
+      "merge_into": [],
+      "merge_ok": [],
+      "merge_with_doc": "01-wholesale-programme-review-2026.md",
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/customers",
+        "/products"
+      ],
+      "sections": [
+        {
+          "heading": "Active wholesale accounts",
+          "folder": "/customers",
+          "chars": 8990
+        },
+        {
+          "heading": "Volumes by account and month",
+          "folder": "/customers",
+          "chars": 11241
+        },
+        {
+          "heading": "Complaints and credit notes",
+          "folder": "/customers",
+          "chars": 8265
+        },
+        {
+          "heading": "Credit terms and payment behaviour",
+          "folder": "/customers",
+          "chars": 7009
+        },
+        {
+          "heading": "Account health and churn risk",
+          "folder": "/customers",
+          "chars": 7618
+        },
+        {
+          "heading": "Product mix sold to wholesale",
+          "folder": "/products",
+          "chars": 14041
+        },
+        {
+          "heading": "Wholesale price list",
+          "folder": "/products",
+          "chars": 13459
+        },
+        {
+          "heading": "Delivery to wholesale accounts",
+          "folder": "/operations/shipping",
+          "chars": 6625
+        }
+      ],
+      "facts": [
+        {
+          "fact": "TTV-5477",
+          "kind": "headline",
+          "section": "Active wholesale accounts",
+          "offset": 3376,
+          "position": "begin",
+          "beyond_100k": false,
+          "supersedes": "AJP-5870"
+        },
+        {
+          "fact": "14.6%",
+          "kind": "marginal",
+          "section": "Active wholesale accounts",
+          "offset": 7377,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tobias Calloway",
+          "kind": "headline",
+          "section": "Volumes by account and month",
+          "offset": 12263,
+          "position": "begin",
+          "beyond_100k": false,
+          "supersedes": "Tobias Okafor"
+        },
+        {
+          "fact": "Tobias Harrow",
+          "kind": "marginal",
+          "section": "Volumes by account and month",
+          "offset": 19464,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€62,974.94",
+          "kind": "headline",
+          "section": "Complaints and credit notes",
+          "offset": 23314,
+          "position": "begin",
+          "beyond_100k": false,
+          "supersedes": "€87,567.57"
+        },
+        {
+          "fact": "HNL-3808",
+          "kind": "marginal",
+          "section": "Complaints and credit notes",
+          "offset": 24318,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Verena Calloway",
+          "kind": "headline",
+          "section": "Credit terms and payment behaviour",
+          "offset": 31613,
+          "position": "middle",
+          "beyond_100k": false,
+          "supersedes": "Ravi Pemberton"
+        },
+        {
+          "fact": "82.4%",
+          "kind": "marginal",
+          "section": "Credit terms and payment behaviour",
+          "offset": 34679,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "XGF-2009",
+          "kind": "headline",
+          "section": "Account health and churn risk",
+          "offset": 38685,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "92.1%",
+          "kind": "marginal",
+          "section": "Account health and churn risk",
+          "offset": 41474,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "XWE-5557",
+          "kind": "headline",
+          "section": "Product mix sold to wholesale",
+          "offset": 46497,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ingrid Pemberton",
+          "kind": "marginal",
+          "section": "Product mix sold to wholesale",
+          "offset": 49170,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "NCF-4801",
+          "kind": "headline",
+          "section": "Wholesale price list",
+          "offset": 60586,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "11 November 2028",
+          "kind": "marginal",
+          "section": "Wholesale price list",
+          "offset": 65045,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "25.2%",
+          "kind": "headline",
+          "section": "Delivery to wholesale accounts",
+          "offset": 74184,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€63,557.61",
+          "kind": "marginal",
+          "section": "Delivery to wholesale accounts",
+          "offset": 75592,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "14-wholesale-programme-review-2026-rev3.md": {
+      "kind": "update",
+      "folders": [
+        "/customers"
+      ],
+      "merge_into": [],
+      "merge_ok": [],
+      "merge_with_doc": "13-wholesale-programme-review-2026-rev2.md",
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/customers",
+        "/products"
+      ],
+      "sections": [
+        {
+          "heading": "Active wholesale accounts",
+          "folder": "/customers",
+          "chars": 8990
+        },
+        {
+          "heading": "Volumes by account and month",
+          "folder": "/customers",
+          "chars": 11241
+        },
+        {
+          "heading": "Complaints and credit notes",
+          "folder": "/customers",
+          "chars": 8266
+        },
+        {
+          "heading": "Credit terms and payment behaviour",
+          "folder": "/customers",
+          "chars": 7009
+        },
+        {
+          "heading": "Account health and churn risk",
+          "folder": "/customers",
+          "chars": 7618
+        },
+        {
+          "heading": "Product mix sold to wholesale",
+          "folder": "/products",
+          "chars": 14041
+        },
+        {
+          "heading": "Wholesale price list",
+          "folder": "/products",
+          "chars": 13461
+        },
+        {
+          "heading": "Delivery to wholesale accounts",
+          "folder": "/operations/shipping",
+          "chars": 6626
+        },
+        {
+          "heading": "Addendum: new accounts and renegotiated terms",
+          "folder": "/customers",
+          "chars": 19130
+        }
+      ],
+      "facts": [
+        {
+          "fact": "TTV-5477",
+          "kind": "headline",
+          "section": "Active wholesale accounts",
+          "offset": 3594,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "14.6%",
+          "kind": "marginal",
+          "section": "Active wholesale accounts",
+          "offset": 7595,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tobias Calloway",
+          "kind": "headline",
+          "section": "Volumes by account and month",
+          "offset": 12481,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Tobias Harrow",
+          "kind": "marginal",
+          "section": "Volumes by account and month",
+          "offset": 19682,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€62,974.94",
+          "kind": "headline",
+          "section": "Complaints and credit notes",
+          "offset": 23532,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "HNL-3808",
+          "kind": "marginal",
+          "section": "Complaints and credit notes",
+          "offset": 24536,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Verena Calloway",
+          "kind": "headline",
+          "section": "Credit terms and payment behaviour",
+          "offset": 31832,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "82.4%",
+          "kind": "marginal",
+          "section": "Credit terms and payment behaviour",
+          "offset": 34898,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "DVE-3853",
+          "kind": "headline",
+          "section": "Account health and churn risk",
+          "offset": 38904,
+          "position": "middle",
+          "beyond_100k": false,
+          "supersedes": "XGF-2009"
+        },
+        {
+          "fact": "92.1%",
+          "kind": "marginal",
+          "section": "Account health and churn risk",
+          "offset": 41693,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "AMS-2045",
+          "kind": "headline",
+          "section": "Product mix sold to wholesale",
+          "offset": 46716,
+          "position": "middle",
+          "beyond_100k": false,
+          "supersedes": "XWE-5557"
+        },
+        {
+          "fact": "Ingrid Pemberton",
+          "kind": "marginal",
+          "section": "Product mix sold to wholesale",
+          "offset": 49389,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "JAH-4401",
+          "kind": "headline",
+          "section": "Wholesale price list",
+          "offset": 60805,
+          "position": "middle",
+          "beyond_100k": false,
+          "supersedes": "NCF-4801"
+        },
+        {
+          "fact": "11 November 2028",
+          "kind": "marginal",
+          "section": "Wholesale price list",
+          "offset": 65264,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "43.4%",
+          "kind": "headline",
+          "section": "Delivery to wholesale accounts",
+          "offset": 74405,
+          "position": "tail",
+          "beyond_100k": false,
+          "supersedes": "25.2%"
+        },
+        {
+          "fact": "€63,557.61",
+          "kind": "marginal",
+          "section": "Delivery to wholesale accounts",
+          "offset": 75813,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "TDB-2401",
+          "kind": "headline",
+          "section": "Addendum: new accounts and renegotiated terms",
+          "offset": 86532,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "16 July 2027",
+          "kind": "marginal",
+          "section": "Addendum: new accounts and renegotiated terms",
+          "offset": 88426,
+          "position": "tail",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€57.00",
+          "kind": "marginal",
+          "section": "Addendum: new accounts and renegotiated terms",
+          "offset": 90813,
+          "position": "tail",
+          "beyond_100k": false
+        }
+      ]
+    },
+    "15-cafe-complaints-mailbox-2025-2026.md": {
+      "kind": "existing",
+      "folders": [
+        "/customers"
+      ],
+      "merge_into": [],
+      "merge_ok": [
+        "customers/refund-policy.md",
+        "customers/cafe-portello.md"
+      ],
+      "merge_with_doc": null,
+      "group": null,
+      "alt_folders": [],
+      "secondary": [
+        "/customers"
+      ],
+      "sections": [
+        {
+          "heading": "Complaints mailbox",
+          "folder": "/customers",
+          "chars": 193748
+        }
+      ],
+      "facts": [
+        {
+          "fact": "€5.08",
+          "kind": "headline",
+          "section": "Complaints mailbox",
+          "offset": 170334,
+          "position": "tail",
+          "beyond_100k": true
+        },
+        {
+          "fact": "79.4%",
+          "kind": "marginal",
+          "section": "Complaints mailbox",
+          "offset": 13589,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "Ingrid Delacroix",
+          "kind": "marginal",
+          "section": "Complaints mailbox",
+          "offset": 23895,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€936.47",
+          "kind": "marginal",
+          "section": "Complaints mailbox",
+          "offset": 37715,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "71.7%",
+          "kind": "marginal",
+          "section": "Complaints mailbox",
+          "offset": 54643,
+          "position": "begin",
+          "beyond_100k": false
+        },
+        {
+          "fact": "MVX-1536",
+          "kind": "marginal",
+          "section": "Complaints mailbox",
+          "offset": 80174,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€88.29",
+          "kind": "marginal",
+          "section": "Complaints mailbox",
+          "offset": 87855,
+          "position": "middle",
+          "beyond_100k": false
+        },
+        {
+          "fact": "€73,667.74",
+          "kind": "marginal",
+          "section": "Complaints mailbox",
+          "offset": 141329,
+          "position": "tail",
+          "beyond_100k": true
+        },
+        {
+          "fact": "Verena Thorne",
+          "kind": "marginal",
+          "section": "Complaints mailbox",
+          "offset": 157686,
+          "position": "tail",
+          "beyond_100k": true
+        },
+        {
+          "fact": "14 October 2028",
+          "kind": "marginal",
+          "section": "Complaints mailbox",
+          "offset": 182866,
+          "position": "tail",
+          "beyond_100k": true
+        }
+      ]
+    }
+  }
+}

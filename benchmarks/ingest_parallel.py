@@ -114,9 +114,11 @@ class DryLLM(LLM):
         super().__init__(LLMConfig(model="fake/llm"), usage)
         self.delay = delay
 
-    def chat(self, messages: list[dict[str, str]], *, op: str = "") -> str:
+    def chat(self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
         time.sleep(self.delay)
-        self.usage.record("llm", self.model, 100, 10, op=op, seconds=self.delay)
+        self.usage.record(
+            "llm", self.model, 100, 10, op=op, seconds=self.delay, provider="dry", temperature=self.temperature, seed=self.seed
+        )
         return json.dumps(getattr(self, "_" + op.rpartition("/")[2])(messages[1]["content"]))
 
     @staticmethod
@@ -152,7 +154,16 @@ class DryLLM(LLM):
         title = self._between(user, "Existing note\nTitle: ", "\n")
         summary = self._between(user, "\nSummary: ", "\n")
         body = self._between(user, "<existing>\n", "\n</existing>")
-        return {"title": title, "summary": summary, "tags": [], "body": body + "\n\n" + self._between(user, "<source>\n", "\n</source>")}
+        return {"title": title, "summary": summary, "tags": [], "body": body + "\n\n" + self._between(user, "<note>\n", "\n</note>")}
+
+    def _summarize_part(self, user: str) -> dict[str, Any]:
+        cap = int(re.search(r"At most (\d+) characters", user).group(1))  # type: ignore[union-attr]
+        return {"notes": self._between(user, "<source>\n", "\n</source>")[:cap]}
+
+    def _summarize_combine(self, user: str) -> dict[str, Any]:
+        notes = self._between(user, "<notes>\n", "\n</notes>")
+        name = re.search(r"topic: (\S+)", notes).group(1)  # type: ignore[union-attr]
+        return {"title": f"About {name}", "summary": f"All on {name}.", "tags": [name.split("-")[0]], "body": notes}
 
     def _relate(self, user: str) -> dict[str, Any]:
         notes = self._between(user, "<notes>\n", "\n</notes>").splitlines()

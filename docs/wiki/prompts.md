@@ -27,13 +27,16 @@ passage). `notes` lists notes as `- path: Title — summary`, and
 | File | Used by | Inputs | Output |
 |---|---|---|---|
 | `librarian/system` | every ingest step LLM call (`StepContext.ask_json`) | embeds `shared/untrusted` | system message |
-| `librarian/summarize` | `steps_classic.summarize` | `source_title`, `source_resource`, `source_text`; embeds `shared/note_rules` | JSON `title`, `summary`, `tags`, `body` |
+| `librarian/summarize` | `steps_classic.summarize`, a source that fits in one call | `source_title`, `source_resource`, `source_text`; embeds `shared/note_rules` | JSON `title`, `summary`, `tags`, `body` |
+| `librarian/summarize_part` | `steps_classic.summarize`, a longer source: one call per block | `source_title`, `part`, `parts`, `heading`, `block_text`, `cap` | plain-text notes |
+| `librarian/summarize_combine` | `steps_classic.summarize`, a longer source: one call after the parts | `source_title`, `source_resource`, `part_notes`; embeds `shared/note_rules` | JSON `title`, `summary`, `tags`, `body` |
 | `librarian/route` | `steps_classic.route` (CROW: only on classifier error) | `folder`, `description`, `subfolders`, `can_create`, `note`; embeds `shared/folder_rules` | JSON `reasoning`, `action` (`descend`/`here`/`new`), `subfolder` |
 | `librarian/route_fallback` | `steps_crow.route`, when unsure | `folders`, `note`; embeds `shared/folder_rules` | JSON `reasoning`, `action` (`select`/`create`), `folder` |
 | `librarian/name_folder` | `steps_classic.name_folder` | `parent`, `parent_description`, `siblings`, `note`; embeds `shared/folder_rules` | JSON `name`, `description` |
 | `librarian/find_match` | `steps_classic.match` | `note`, `notes` | JSON `reasoning`, `match` (path or null) |
+| `librarian/merge_source` | `steps_classic.merge`, once, when its draft fails the guard (unchanged, or fewer than half of the new values kept) | `title`, `summary`, `tags`, `body` (the existing note), `source_text`; embeds `shared/note_rules` | JSON `title`, `summary`, `tags`, `body` |
 | `librarian/consolidate` | `steps_classic.consolidate` | `note`, `existing` | JSON `reasoning`, `decision` (`modify`/`new`) |
-| `librarian/merge` | `steps_classic.merge` | `title`, `summary`, `tags`, `body`, `source_text`; embeds `shared/note_rules` | JSON `title`, `summary`, `tags`, `body` |
+| `librarian/merge` | `steps_classic.merge` | `title`, `summary`, `tags`, `body` (the existing note), `incoming_title`, `incoming_summary`, `incoming_tags`, `incoming_body`, `incoming_from`, `source_text` (empty when the incoming note is the candidate); embeds `shared/note_rules` | JSON `title`, `summary`, `tags`, `body` |
 | `librarian/relate` | `steps_classic.relate` | `note`, `notes`, `max_links` | JSON `reasoning`, `related` (paths) |
 | `researcher/system` | every ask step LLM call | embeds `shared/untrusted` | system message |
 | `researcher/navigate` | `steps_classic.select` | `question`, `visited`, `folder`, `description`, `subfolders`, `notes`, `selected`, `k` | JSON `reasoning`, `select`, `open`, `done` |
@@ -50,8 +53,17 @@ passage). `notes` lists notes as `- path: Title — summary`, and
 - `{{var}}` is replaced by the value the code passes. A placeholder without a
   value raises `KeyError`, so an override may leave out placeholders but cannot
   add new ones.
-- `{{shared/name}}` inserts `shared/name.md`, trimmed, as-is: placeholders
-  inside a shared fragment are not filled.
+- `{{shared/name}}` inserts `shared/name.md`, trimmed. Placeholders inside a
+  shared fragment are filled with the values of the prompt that embeds it:
+  `shared/note_rules` uses `{{note_chars}}` and `{{length_rule}}`, which
+  `StepContext.ask_json` and `ask_text` pass to every prompt (the note length,
+  `effective_note_chars`, and the "Length" bullet that states it; `summarize_combine` and `merge` pass the
+  length they want instead when `note_length` is `proportional`), so a prompt of
+  your own that embeds `note_rules` needs no extra value. `{{length_rule}}` is
+  the bullet with its `- ` and its newline, and the placeholder stands at the
+  start of a line with no newline after it, so an empty value leaves no bullet
+  and no blank line. `librarian/summarize` and `librarian/merge_source` pass it empty;
+  `summarize_combine` and `merge` always have it.
 - **Choice files** (`classifier/route`, `classifier/consolidate`) start with
   `## instructions`, then have one `## <Option>` section per option.
   `Prompts.render_sections` splits the file on `## ` headings. The code looks

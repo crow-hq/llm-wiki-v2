@@ -23,6 +23,7 @@ def home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPat
     """A fresh home and no model settings from the shell: no test sees ~/.config/llm-wiki or a real key."""
     home = tmp_path_factory.mktemp("home")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() on Windows reads USERPROFILE, not HOME
     for key in [k for k in os.environ if k.startswith("OKF_") or k.endswith("_API_KEY") or k == "XDG_CONFIG_HOME"]:
         monkeypatch.delenv(key)
     return home
