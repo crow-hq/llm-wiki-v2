@@ -1,0 +1,33 @@
+---
+type: Note
+title: Board meeting July 2026
+description: Notes from the summer board meeting covering the agenda, investment decisions,
+  and agreed follow-up actions.
+tags:
+- meetings
+generated:
+  by: benchmarks/make_dup_corpus.py
+  at: '2026-10-09T16:07:42+00:00'
+  body_hash: sha256:c96a6e972bfe18a607d6470c588c0bb70a700ca837bd420b469b77b5f30cb0d1
+sources:
+- id: s1
+  resource: /raw/20261009-160742-board-meeting-july-2026.md
+  title: Board meeting July 2026
+---
+
+The board met at the roastery to review the half-year results and plan the next investments. Agenda: financial review, green coffee sourcing, equipment, subscription growth, and staffing.
+
+Key points and decisions:
+
+- The financial review was broadly positive. Wholesale revenue is steady, and subscription churn improved slightly, now sitting at 5.1%, which the board considered acceptable for our size.
+- The board approved the budget for the new grinder for the packing area. The approved amount is €11.52 per the revised quote from the supplier, covering the remaining balance after the deposit already paid.
+- On sourcing, Andes Direct confirmed the next container of Ethiopia Guji. The current lot should last us roughly 48 days at planned roasting volumes, so no emergency purchase is needed.
+- The board reviewed the proposal for a second decaf blend (VSF-6316 in the ideas area) and asked for a small trial batch before committing to a launch.
+- No new hires this half-year; instead, we will cross-train one roasting team member on packing days.
+
+Next steps:
+
+- Marta to confirm the grinder delivery window with the supplier and update the operations page once installed.
+- Tomás to prepare the trial roast plan for the decaf blend and bring results to the next meeting.
+- Café Portello and other wholesale accounts to be surveyed about interest in the new decaf before launch.
+- Finance to circulate the updated cash-flow forecast by the end of the month.

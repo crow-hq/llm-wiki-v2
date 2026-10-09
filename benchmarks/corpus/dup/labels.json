@@ -1,0 +1,1406 @@
+{
+  "about": "Duplicate and contradicting notes for the Lumen demo wiki: a base of the demo plus generated notes, forty documents (15 dup, 10 contr, 10 trap, 5 distractor). Written by benchmarks/make_dup_corpus.py.",
+  "docs": {
+    "01-it-helpdesk-reply-printer-queue.md": {
+      "kind": "trap",
+      "pair_note": "operations/roasting/cooling-tray-replacement.md",
+      "slot": "the serial number of the cooling tray",
+      "value_a": "BWD-6122",
+      "value_b": "BWD-6122",
+      "shared_values": [
+        "BWD-6122"
+      ],
+      "question": null,
+      "expect": null,
+      "doc_area": "/meetings",
+      "genre": "an e-mail from the IT contractor",
+      "values": [
+        "BWD-6122",
+        "23 August 2026",
+        "392 kg"
+      ]
+    },
+    "02-team-meeting-minutes-accounts-review.md": {
+      "kind": "contr",
+      "pair_note": "customers/pasticceria-moretti-contact.md",
+      "slot": "the purchasing contact of Pasticceria Moretti",
+      "value_a": "Perla Kovacs",
+      "value_b": "Noemi Orsolini",
+      "shared_values": [],
+      "question": "Who is the purchasing contact of Pasticceria Moretti?",
+      "expect": [
+        "Perla Kovacs",
+        "Noemi Orsolini"
+      ],
+      "doc_area": "/meetings",
+      "genre": "the minutes of a team meeting",
+      "values": [
+        "Noemi Orsolini",
+        "MBW-2539",
+        "80 days"
+      ]
+    },
+    "03-bike-to-work-scheme.md": {
+      "kind": "distractor",
+      "pair_note": null,
+      "slot": null,
+      "value_a": null,
+      "value_b": null,
+      "shared_values": [],
+      "question": null,
+      "expect": null,
+      "doc_area": null,
+      "genre": "an internal memo from the head of administration",
+      "values": [
+        "14.7%",
+        "€3,806.16",
+        "9 December 2027"
+      ]
+    },
+    "04-weekly-sync-minutes-receivables.md": {
+      "kind": "dup",
+      "pair_note": "customers/bar-centrale-credit-terms.md",
+      "slot": "the credit limit granted to Bar Centrale",
+      "value_a": "€337.84",
+      "value_b": "€337.84",
+      "shared_values": [],
+      "question": "What credit limit has Bar Centrale been granted?",
+      "expect": [
+        "€337.84"
+      ],
+      "doc_area": "/meetings",
+      "genre": "the minutes of a weekly team meeting",
+      "values": [
+        "€337.84",
+        "€32.78",
+        "298 kg"
+      ]
+    },
+    "05-chat-export-label-printer-trouble.md": {
+      "kind": "dup",
+      "pair_note": "products/kenya-aa-seasonal-coffee.md",
+      "slot": "the SKU code of the 250 g bag of Kenya AA",
+      "value_a": "DKH-9495",
+      "value_b": "DKH-9495",
+      "shared_values": [],
+      "question": "What is the SKU code of the 250 g bag of Kenya AA?",
+      "expect": [
+        "DKH-9495"
+      ],
+      "doc_area": "/operations/shipping",
+      "genre": "a chat export between a packing operator and a colleague about labels",
+      "values": [
+        "DKH-9495",
+        "UNK-1069",
+        "77 days"
+      ]
+    },
+    "06-e-mail-when-do-i-have-to-order-by.md": {
+      "kind": "contr",
+      "pair_note": "operations/shipping/order-cut-off-for-next-day-dispatch.md",
+      "slot": "the order cut-off time in hours before dispatch",
+      "value_a": "34 hours",
+      "value_b": "46 hours",
+      "shared_values": [],
+      "question": "How many hours before dispatch is the order cut-off?",
+      "expect": [
+        "34 hours",
+        "46 hours"
+      ],
+      "doc_area": "/customers",
+      "genre": "an e-mail from a subscriber to Lumen's support",
+      "values": [
+        "46 hours",
+        "€5.40",
+        "36 days"
+      ]
+    },
+    "07-memo-autumn-launch-planning.md": {
+      "kind": "contr",
+      "pair_note": "sourcing/cooperative-harvest-calendar.md",
+      "slot": "the start date of the main harvest at the Colombian cooperative",
+      "value_a": "24 August 2027",
+      "value_b": "26 May 2026",
+      "shared_values": [],
+      "question": "When does the main harvest start at the Colombian cooperative?",
+      "expect": [
+        "24 August 2027",
+        "26 May 2026"
+      ],
+      "doc_area": "/products",
+      "genre": "a memo on product planning",
+      "values": [
+        "26 May 2026",
+        "€4,862.24",
+        "20 October 2027"
+      ]
+    },
+    "08-e-mail-from-a-gift-shop-about-stocking-kits.md": {
+      "kind": "dup",
+      "pair_note": "ideas/tasting-kit-idea.md",
+      "slot": "the target retail price of the tasting kit",
+      "value_a": "€38.00",
+      "value_b": "€38.00",
+      "shared_values": [],
+      "question": "What is the target retail price of the tasting kit?",
+      "expect": [
+        "€38.00"
+      ],
+      "doc_area": "/customers",
+      "genre": "an e-mail from a gift shop owner to Lumen",
+      "values": [
+        "€38.00",
+        "265 kg",
+        "WDK-3082"
+      ]
+    },
+    "09-facilities-memo-energy-costs.md": {
+      "kind": "trap",
+      "pair_note": "products/ethiopia-guji-one-kilo-pricing.md",
+      "slot": "the retail price of a 1 kg bag of Ethiopia Guji",
+      "value_a": "€32,142.14",
+      "value_b": "€32,142.14",
+      "shared_values": [
+        "€32,142.14"
+      ],
+      "question": null,
+      "expect": null,
+      "doc_area": "/operations",
+      "genre": "an internal facilities memo",
+      "values": [
+        "€32,142.14",
+        "18.8%",
+        "159 kg"
+      ]
+    },
+    "10-chat-export-marketing-channel-event-posts.md": {
+      "kind": "dup",
+      "pair_note": "meetings/weekly-sync-september-2026.md",
+      "slot": "the date of the autumn tasting event",
+      "value_a": "27 August 2026",
+      "value_b": "27 August 2026",
+      "shared_values": [],
+      "question": "On what date is the autumn tasting event?",
+      "expect": [
+        "27 August 2026"
+      ],
+      "doc_area": "/ideas",
+      "genre": "a chat export of the marketing channel",
+      "values": [
+        "27 August 2026",
+        "10 days",
+        "8 July 2027"
+      ]
+    },
+    "11-letter-to-an-importer-damp-lot.md": {
+      "kind": "dup",
+      "pair_note": "operations/roasting/green-coffee-moisture-limit.md",
+      "slot": "the maximum moisture content accepted for incoming green coffee",
+      "value_a": "11.7%",
+      "value_b": "11.7%",
+      "shared_values": [],
+      "question": "What is the maximum moisture content accepted for incoming green coffee?",
+      "expect": [
+        "11.7%"
+      ],
+      "doc_area": "/sourcing",
+      "genre": "a letter from Lumen to an importer about a lot that arrived damp",
+      "values": [
+        "11.7%",
+        "€18,455.98",
+        "CHX-4573"
+      ]
+    },
+    "12-chat-export-customs-paperwork-for-the-lot.md": {
+      "kind": "dup",
+      "pair_note": "products/yirgacheffe-microlot.md",
+      "slot": "the lot code of the Yirgacheffe microlot",
+      "value_a": "HSN-8295",
+      "value_b": "HSN-8295",
+      "shared_values": [],
+      "question": "What is the lot code of the Yirgacheffe microlot?",
+      "expect": [
+        "HSN-8295"
+      ],
+      "doc_area": "/operations/shipping",
+      "genre": "a chat export between the shipping coordinator and the customs agent",
+      "values": [
+        "HSN-8295",
+        "ZSW-2270",
+        "15.5%"
+      ]
+    },
+    "13-order-confirmation-from-bar-tramonto.md": {
+      "kind": "dup",
+      "pair_note": "products/hearth-blend-wholesale-pricing.md",
+      "slot": "the wholesale price of a 250 g bag of Hearth Blend",
+      "value_a": "€27.68",
+      "value_b": "€27.68",
+      "shared_values": [],
+      "question": "What is the wholesale price of a 250 g bag of Hearth Blend?",
+      "expect": [
+        "€27.68"
+      ],
+      "doc_area": "/customers",
+      "genre": "an e-mail from the owner of a wholesale café to Lumen's account manager",
+      "values": [
+        "€27.68",
+        "2.9%",
+        "61 days"
+      ]
+    },
+    "14-thank-you-letter-from-a-primary-school.md": {
+      "kind": "trap",
+      "pair_note": "customers/pasticceria-alba-account-review.md",
+      "slot": "the credit limit of Pasticceria Alba",
+      "value_a": "€86.05",
+      "value_b": "€86.05",
+      "shared_values": [
+        "€86.05",
+        "Livia Marchetti"
+      ],
+      "question": null,
+      "expect": null,
+      "doc_area": "/ideas",
+      "genre": "a thank-you letter from a school",
+      "values": [
+        "€86.05",
+        "Livia Marchetti",
+        "€4,292.05",
+        "175 kg"
+      ]
+    },
+    "15-packaging-supplier-letter-autumn-capacity.md": {
+      "kind": "dup",
+      "pair_note": "customers/cafe-gelsomino-account.md",
+      "slot": "the weekly Aurora volume ordered by Café Gelsomino",
+      "value_a": "29 kg",
+      "value_b": "29 kg",
+      "shared_values": [],
+      "question": "How much Aurora does Café Gelsomino order each week?",
+      "expect": [
+        "29 kg"
+      ],
+      "doc_area": "/sourcing",
+      "genre": "a letter from a packaging supplier to Lumen",
+      "values": [
+        "29 kg",
+        "3 July 2027",
+        "KHM-4362"
+      ]
+    },
+    "16-cookie-banner-wording.md": {
+      "kind": "distractor",
+      "pair_note": null,
+      "slot": null,
+      "value_a": null,
+      "value_b": null,
+      "shared_values": [],
+      "question": null,
+      "expect": null,
+      "doc_area": null,
+      "genre": "a chat export between a developer and a designer",
+      "values": [
+        "26 days",
+        "€11.55",
+        "34 kg"
+      ]
+    },
+    "17-memo-dispatch-plan-around-the-service-stop.md": {
+      "kind": "dup",
+      "pair_note": "operations/roasting/roaster-burner-servicing.md",
+      "slot": "the date of the next burner service of the roaster",
+      "value_a": "14 September 2027",
+      "value_b": "14 September 2027",
+      "shared_values": [],
+      "question": "When is the next burner service of the roaster?",
+      "expect": [
+        "14 September 2027"
+      ],
+      "doc_area": "/operations/shipping",
+      "genre": "an internal memo from the production manager to the packing and dispatch team",
+      "values": [
+        "14 September 2027",
+        "105 kg",
+        "5 days"
+      ]
+    },
+    "18-equipment-supplier-letter-grinder-offer.md": {
+      "kind": "dup",
+      "pair_note": "meetings/board-meeting-july-2026.md",
+      "slot": "the budget approved by the board for the new grinder",
+      "value_a": "€11.52",
+      "value_b": "€11.52",
+      "shared_values": [],
+      "question": "What budget did the board approve for the new grinder?",
+      "expect": [
+        "€11.52"
+      ],
+      "doc_area": "/operations/roasting",
+      "genre": "a letter from an equipment supplier to Lumen",
+      "values": [
+        "€11.52",
+        "9 days",
+        "80 kg"
+      ]
+    },
+    "19-office-supplies-quote.md": {
+      "kind": "trap",
+      "pair_note": "sourcing/washing-station-premium.md",
+      "slot": "the premium percentage paid to the washing station",
+      "value_a": "13.2%",
+      "value_b": "13.2%",
+      "shared_values": [
+        "13.2%"
+      ],
+      "question": null,
+      "expect": null,
+      "doc_area": "/meetings",
+      "genre": "a quote from an office supplier",
+      "values": [
+        "13.2%",
+        "47 days",
+        "€7.86"
+      ]
+    },
+    "20-e-mail-damaged-parcel-am-i-still-in-time.md": {
+      "kind": "contr",
+      "pair_note": "operations/shipping/returns-window-for-damaged-parcels.md",
+      "slot": "the number of days a customer has to report a damaged parcel",
+      "value_a": "13 days",
+      "value_b": "12 days",
+      "shared_values": [],
+      "question": "How many days does a customer have to report a damaged parcel?",
+      "expect": [
+        "13 days",
+        "12 days"
+      ],
+      "doc_area": "/customers",
+      "genre": "an e-mail from a wholesale customer to Lumen",
+      "values": [
+        "12 days",
+        "AEG-6093",
+        "23 days"
+      ]
+    },
+    "21-office-cleaning-rota.md": {
+      "kind": "distractor",
+      "pair_note": null,
+      "slot": null,
+      "value_a": null,
+      "value_b": null,
+      "shared_values": [],
+      "question": null,
+      "expect": null,
+      "doc_area": null,
+      "genre": "a notice from the office manager",
+      "values": [
+        "€229.67",
+        "25 June 2027",
+        "ZDV-8774"
+      ]
+    },
+    "22-memo-gift-box-packing-instructions.md": {
+      "kind": "contr",
+      "pair_note": "products/gift-box-contents.md",
+      "slot": "the number of coffee bags in the standard gift box",
+      "value_a": "4 bags",
+      "value_b": "8 bags",
+      "shared_values": [],
+      "question": "How many coffee bags are in the standard gift box?",
+      "expect": [
+        "4 bags",
+        "8 bags"
+      ],
+      "doc_area": "/operations/shipping",
+      "genre": "an internal memo to the packing team",
+      "values": [
+        "8 bags",
+        "13 September 2026",
+        "WDT-5799"
+      ]
+    },
+    "23-train-booking-for-the-milan-trade-fair.md": {
+      "kind": "trap",
+      "pair_note": "products/night-shift-batch-tracking.md",
+      "slot": "the batch code of the current Night Shift lot",
+      "value_a": "KMV-3090",
+      "value_b": "KMV-3090",
+      "shared_values": [
+        "KMV-3090"
+      ],
+      "question": null,
+      "expect": null,
+      "doc_area": "/meetings",
+      "genre": "a travel confirmation e-mail forwarded to the team",
+      "values": [
+        "KMV-3090",
+        "62 days",
+        "€626.55"
+      ]
+    },
+    "24-welcome-e-mail-for-the-new-trainee.md": {
+      "kind": "trap",
+      "pair_note": "meetings/board-meeting-september-2026.md",
+      "slot": "the name of the chair of the board meeting",
+      "value_a": "Elio Brambilla",
+      "value_b": "Elio Brambilla",
+      "shared_values": [
+        "Elio Brambilla"
+      ],
+      "question": null,
+      "expect": null,
+      "doc_area": "/operations/roasting",
+      "genre": "a welcome e-mail to a new trainee",
+      "values": [
+        "Elio Brambilla",
+        "308 kg",
+        "23 November 2027"
+      ]
+    },
+    "25-memo-reporting-damage-at-the-dock.md": {
+      "kind": "dup",
+      "pair_note": "sourcing/transit-insurance-for-green-coffee.md",
+      "slot": "the policy number of the transit insurance",
+      "value_a": "UHE-5457",
+      "value_b": "UHE-5457",
+      "shared_values": [],
+      "question": "What is the policy number of the green coffee transit insurance?",
+      "expect": [
+        "UHE-5457"
+      ],
+      "doc_area": "/operations/roasting",
+      "genre": "a memo to the roasting team",
+      "values": [
+        "UHE-5457",
+        "114 kg",
+        "€35,409.11"
+      ]
+    },
+    "26-e-mail-from-a-subscriber-about-a-late-box.md": {
+      "kind": "dup",
+      "pair_note": "operations/shipping/packing-day-coordination.md",
+      "slot": "the name of the packing day coordinator",
+      "value_a": "Tobias Ghiberti",
+      "value_b": "Tobias Ghiberti",
+      "shared_values": [],
+      "question": "Who is the packing day coordinator?",
+      "expect": [
+        "Tobias Ghiberti"
+      ],
+      "doc_area": "/customers",
+      "genre": "an e-mail from a subscriber to Lumen's support",
+      "values": [
+        "Tobias Ghiberti",
+        "€9,149.37",
+        "4.9%"
+      ]
+    },
+    "27-tourist-office-letter-local-experiences-guide.md": {
+      "kind": "contr",
+      "pair_note": "ideas/roastery-tour-tickets.md",
+      "slot": "the ticket price of a roastery tour",
+      "value_a": "€7,985.49",
+      "value_b": "€17.20",
+      "shared_values": [],
+      "question": "How much does a roastery tour ticket cost?",
+      "expect": [
+        "€7,985.49",
+        "€17.20"
+      ],
+      "doc_area": "/customers",
+      "genre": "a letter from the city tourist office to Lumen",
+      "values": [
+        "€17.20",
+        "25 July 2027",
+        "8.7%"
+      ]
+    },
+    "28-chat-export-gift-hamper-brainstorm.md": {
+      "kind": "dup",
+      "pair_note": "operations/shipping/corriere-sabaudo-parcel-limits.md",
+      "slot": "the maximum parcel weight the carrier Corriere Sabaudo accepts",
+      "value_a": "44 kg",
+      "value_b": "44 kg",
+      "shared_values": [],
+      "question": "What is the maximum parcel weight that Corriere Sabaudo accepts?",
+      "expect": [
+        "44 kg"
+      ],
+      "doc_area": "/ideas",
+      "genre": "a chat export between two members of the team brainstorming a product",
+      "values": [
+        "44 kg",
+        "NLT-2683",
+        "27 days"
+      ]
+    },
+    "29-e-mail-from-a-customer-decaf-price-question.md": {
+      "kind": "contr",
+      "pair_note": "products/night-shift-one-kilo-bag-pricing.md",
+      "slot": "the retail price of a 1 kg bag of Night Shift decaf",
+      "value_a": "€27,176.57",
+      "value_b": "€19.30",
+      "shared_values": [],
+      "question": "What is the retail price of a 1 kg bag of Night Shift decaf?",
+      "expect": [
+        "€27,176.57",
+        "€19.30"
+      ],
+      "doc_area": "/customers",
+      "genre": "an e-mail from a customer to Lumen's support",
+      "values": [
+        "€19.30",
+        "58 kg",
+        "14.8%"
+      ]
+    },
+    "30-weekly-sync-notes-cash-planning.md": {
+      "kind": "dup",
+      "pair_note": "sourcing/cafes-del-sur-payment-terms.md",
+      "slot": "the payment deadline of the invoice for the March shipment from Cafés del Sur",
+      "value_a": "7 June 2026",
+      "value_b": "7 June 2026",
+      "shared_values": [],
+      "question": "By what date must the March shipment invoice from Cafés del Sur be paid?",
+      "expect": [
+        "7 June 2026"
+      ],
+      "doc_area": "/meetings",
+      "genre": "the notes of a weekly team meeting",
+      "values": [
+        "7 June 2026",
+        "307 kg",
+        "€15,513.57"
+      ]
+    },
+    "31-importer-letter-volume-planning.md": {
+      "kind": "contr",
+      "pair_note": "operations/roasting/aurora-batch-size.md",
+      "slot": "the green coffee weight loaded for one batch of Aurora",
+      "value_a": "11 kg",
+      "value_b": "10 kg",
+      "shared_values": [],
+      "question": "How much green coffee is loaded for one batch of Aurora?",
+      "expect": [
+        "11 kg",
+        "10 kg"
+      ],
+      "doc_area": "/sourcing",
+      "genre": "a letter from an importer to Lumen",
+      "values": [
+        "10 kg",
+        "23 July 2026",
+        "NJK-6108"
+      ]
+    },
+    "32-staff-dinner-invitation.md": {
+      "kind": "trap",
+      "pair_note": "sourcing/brazil-cerrado-contract-signing.md",
+      "slot": "the date the Brazil Cerrado contract was signed",
+      "value_a": "3 December 2027",
+      "value_b": "3 December 2027",
+      "shared_values": [
+        "3 December 2027"
+      ],
+      "question": null,
+      "expect": null,
+      "doc_area": "/meetings",
+      "genre": "an e-mail from the office manager to the staff",
+      "values": [
+        "3 December 2027",
+        "60 kg",
+        "ZPT-8121"
+      ]
+    },
+    "33-finance-review-minutes-september.md": {
+      "kind": "dup",
+      "pair_note": "sourcing/kisumu-cooperative-purchase-contract.md",
+      "slot": "the contract number of the purchase contract with the Kisumu cooperative",
+      "value_a": "NGR-8062",
+      "value_b": "NGR-8062",
+      "shared_values": [],
+      "question": "What is the contract number of the purchase contract with the Kisumu cooperative?",
+      "expect": [
+        "NGR-8062"
+      ],
+      "doc_area": "/meetings",
+      "genre": "the minutes of a finance review meeting",
+      "values": [
+        "NGR-8062",
+        "7.8%",
+        "UVZ-6815"
+      ]
+    },
+    "34-memo-planning-the-winter-blend.md": {
+      "kind": "contr",
+      "pair_note": "sourcing/importer-sample-shipments.md",
+      "slot": "the lead time for green coffee samples from the importer",
+      "value_a": "7 working days",
+      "value_b": "12 working days",
+      "shared_values": [],
+      "question": "What is the lead time for green coffee samples from the importer?",
+      "expect": [
+        "7 working days",
+        "12 working days"
+      ],
+      "doc_area": "/operations/roasting",
+      "genre": "an internal memo from the production manager",
+      "values": [
+        "12 working days",
+        "€192.91",
+        "167 kg"
+      ]
+    },
+    "35-chat-export-sink-repair.md": {
+      "kind": "trap",
+      "pair_note": "customers/cafe-bellavista-owner.md",
+      "slot": "the name of the owner of Café Bellavista",
+      "value_a": "Dario Calloway",
+      "value_b": "Dario Calloway",
+      "shared_values": [
+        "Dario Calloway"
+      ],
+      "question": null,
+      "expect": null,
+      "doc_area": "/operations",
+      "genre": "a chat export of the facilities channel",
+      "values": [
+        "Dario Calloway",
+        "€35,804.30",
+        "11.6%"
+      ]
+    },
+    "36-christmas-market-stall-confirmation.md": {
+      "kind": "trap",
+      "pair_note": "operations/shipping/carrier-monthly-invoice.md",
+      "slot": "the total of the carrier's monthly invoice",
+      "value_a": "€4.30",
+      "value_b": "€4.30",
+      "shared_values": [
+        "€4.30",
+        "4 June 2026"
+      ],
+      "question": null,
+      "expect": null,
+      "doc_area": "/ideas",
+      "genre": "a letter from a market organiser",
+      "values": [
+        "€4.30",
+        "4 June 2026",
+        "66 days",
+        "193 kg"
+      ]
+    },
+    "37-parking-permit-renewal.md": {
+      "kind": "distractor",
+      "pair_note": null,
+      "slot": null,
+      "value_a": null,
+      "value_b": null,
+      "shared_values": [],
+      "question": null,
+      "expect": null,
+      "doc_area": null,
+      "genre": "a letter from the city council to Lumen",
+      "values": [
+        "4.3%",
+        "11 days",
+        "28 June 2026"
+      ]
+    },
+    "38-staff-handbook-translation.md": {
+      "kind": "distractor",
+      "pair_note": null,
+      "slot": null,
+      "value_a": null,
+      "value_b": null,
+      "shared_values": [],
+      "question": null,
+      "expect": null,
+      "doc_area": null,
+      "genre": "an e-mail from a translation agency to the office manager",
+      "values": [
+        "10.5%",
+        "7 February 2026",
+        "SZJ-1121"
+      ]
+    },
+    "39-e-mail-from-a-cafe-new-price-list.md": {
+      "kind": "contr",
+      "pair_note": "meetings/pricing-follow-up-meeting.md",
+      "slot": "the launch date of the new wholesale price list",
+      "value_a": "22 October 2027",
+      "value_b": "28 December 2026",
+      "shared_values": [],
+      "question": "On what date does the new wholesale price list launch?",
+      "expect": [
+        "22 October 2027",
+        "28 December 2026"
+      ],
+      "doc_area": "/customers",
+      "genre": "an e-mail from a wholesale café owner to Lumen",
+      "values": [
+        "28 December 2026",
+        "17 July 2026",
+        "44 days"
+      ]
+    },
+    "40-memo-meeting-room-refit.md": {
+      "kind": "trap",
+      "pair_note": "ideas/roastery-open-evening.md",
+      "slot": "the maximum number of guests at the open evening",
+      "value_a": "33 people",
+      "value_b": "33 people",
+      "shared_values": [
+        "33 people"
+      ],
+      "question": null,
+      "expect": null,
+      "doc_area": "/meetings",
+      "genre": "an internal memo about the office",
+      "values": [
+        "33 people",
+        "20 December 2027",
+        "€39,272.66"
+      ]
+    }
+  },
+  "notes": {
+    "products/hearth-blend-wholesale-pricing.md": {
+      "planted_for": [
+        "13-order-confirmation-from-bar-tramonto.md"
+      ],
+      "values": [
+        "€27.68",
+        "22 November 2027",
+        "HDR-5225",
+        "€298.78"
+      ]
+    },
+    "sourcing/kisumu-cooperative-purchase-contract.md": {
+      "planted_for": [
+        "33-finance-review-minutes-september.md"
+      ],
+      "values": [
+        "NGR-8062",
+        "€683.70",
+        "188 kg",
+        "11 April 2027"
+      ]
+    },
+    "operations/roasting/roaster-burner-servicing.md": {
+      "planted_for": [
+        "17-memo-dispatch-plan-around-the-service-stop.md"
+      ],
+      "values": [
+        "14 September 2027",
+        "17 days",
+        "DPW-1240",
+        "13.7%"
+      ]
+    },
+    "operations/shipping/corriere-sabaudo-parcel-limits.md": {
+      "planted_for": [
+        "28-chat-export-gift-hamper-brainstorm.md"
+      ],
+      "values": [
+        "44 kg",
+        "3 May 2026",
+        "166 kg",
+        "71 days"
+      ]
+    },
+    "customers/cafe-gelsomino-account.md": {
+      "planted_for": [
+        "15-packaging-supplier-letter-autumn-capacity.md"
+      ],
+      "values": [
+        "29 kg",
+        "63 kg",
+        "83 days",
+        "EVN-4866"
+      ]
+    },
+    "meetings/board-meeting-july-2026.md": {
+      "planted_for": [
+        "18-equipment-supplier-letter-grinder-offer.md"
+      ],
+      "values": [
+        "€11.52",
+        "5.1%",
+        "48 days",
+        "VSF-6316"
+      ]
+    },
+    "ideas/tasting-kit-idea.md": {
+      "planted_for": [
+        "08-e-mail-from-a-gift-shop-about-stocking-kits.md"
+      ],
+      "values": [
+        "€38.00",
+        "19 August 2026",
+        "262 kg",
+        "17.5%"
+      ]
+    },
+    "products/yirgacheffe-microlot.md": {
+      "planted_for": [
+        "12-chat-export-customs-paperwork-for-the-lot.md"
+      ],
+      "values": [
+        "HSN-8295",
+        "206 kg",
+        "2.8%",
+        "RHU-1550"
+      ]
+    },
+    "sourcing/cafes-del-sur-payment-terms.md": {
+      "planted_for": [
+        "30-weekly-sync-notes-cash-planning.md"
+      ],
+      "values": [
+        "7 June 2026",
+        "73 days",
+        "€433.04",
+        "347 kg"
+      ]
+    },
+    "operations/roasting/green-coffee-moisture-limit.md": {
+      "planted_for": [
+        "11-letter-to-an-importer-damp-lot.md"
+      ],
+      "values": [
+        "11.7%",
+        "€671.03",
+        "UNK-5258",
+        "8.1%"
+      ]
+    },
+    "operations/shipping/packing-day-coordination.md": {
+      "planted_for": [
+        "26-e-mail-from-a-subscriber-about-a-late-box.md"
+      ],
+      "values": [
+        "Tobias Ghiberti",
+        "€13.79",
+        "17 April 2026",
+        "14.4%"
+      ]
+    },
+    "customers/bar-centrale-credit-terms.md": {
+      "planted_for": [
+        "04-weekly-sync-minutes-receivables.md"
+      ],
+      "values": [
+        "€337.84",
+        "318 kg",
+        "€681.94",
+        "14.5%"
+      ]
+    },
+    "meetings/weekly-sync-september-2026.md": {
+      "planted_for": [
+        "10-chat-export-marketing-channel-event-posts.md"
+      ],
+      "values": [
+        "27 August 2026",
+        "314 kg",
+        "ALT-6546",
+        "20 March 2026"
+      ]
+    },
+    "products/kenya-aa-seasonal-coffee.md": {
+      "planted_for": [
+        "05-chat-export-label-printer-trouble.md"
+      ],
+      "values": [
+        "DKH-9495",
+        "EXM-5195",
+        "366 kg",
+        "€33,214.38"
+      ]
+    },
+    "sourcing/transit-insurance-for-green-coffee.md": {
+      "planted_for": [
+        "25-memo-reporting-damage-at-the-dock.md"
+      ],
+      "values": [
+        "UHE-5457",
+        "226 kg",
+        "13.9%",
+        "NPL-1836"
+      ]
+    },
+    "products/night-shift-one-kilo-bag-pricing.md": {
+      "planted_for": [
+        "29-e-mail-from-a-customer-decaf-price-question.md"
+      ],
+      "values": [
+        "€27,176.57",
+        "MMJ-5649",
+        "84 days",
+        "176 kg"
+      ]
+    },
+    "sourcing/importer-sample-shipments.md": {
+      "planted_for": [
+        "34-memo-planning-the-winter-blend.md"
+      ],
+      "values": [
+        "7 working days",
+        "€4.74",
+        "9.2%",
+        "21 June 2027"
+      ]
+    },
+    "operations/shipping/order-cut-off-for-next-day-dispatch.md": {
+      "planted_for": [
+        "06-e-mail-when-do-i-have-to-order-by.md"
+      ],
+      "values": [
+        "34 hours",
+        "57 kg",
+        "€209.69",
+        "7 January 2027"
+      ]
+    },
+    "customers/pasticceria-moretti-contact.md": {
+      "planted_for": [
+        "02-team-meeting-minutes-accounts-review.md"
+      ],
+      "values": [
+        "Perla Kovacs",
+        "212 kg",
+        "CEN-9108",
+        "€30,986.86"
+      ]
+    },
+    "operations/roasting/aurora-batch-size.md": {
+      "planted_for": [
+        "31-importer-letter-volume-planning.md"
+      ],
+      "values": [
+        "11 kg",
+        "41 days",
+        "104 kg",
+        "RPE-4167"
+      ]
+    },
+    "meetings/pricing-follow-up-meeting.md": {
+      "planted_for": [
+        "39-e-mail-from-a-cafe-new-price-list.md"
+      ],
+      "values": [
+        "22 October 2027",
+        "102 kg",
+        "5 October 2027",
+        "67 days"
+      ]
+    },
+    "ideas/roastery-tour-tickets.md": {
+      "planted_for": [
+        "27-tourist-office-letter-local-experiences-guide.md"
+      ],
+      "values": [
+        "€7,985.49",
+        "3 August 2027",
+        "355 kg",
+        "€25,361.66"
+      ]
+    },
+    "products/gift-box-contents.md": {
+      "planted_for": [
+        "22-memo-gift-box-packing-instructions.md"
+      ],
+      "values": [
+        "4 bags",
+        "17.1%",
+        "27 November 2027",
+        "€26,123.67"
+      ]
+    },
+    "sourcing/cooperative-harvest-calendar.md": {
+      "planted_for": [
+        "07-memo-autumn-launch-planning.md"
+      ],
+      "values": [
+        "24 August 2027",
+        "WDG-3518",
+        "17 September 2026",
+        "22 days"
+      ]
+    },
+    "operations/shipping/returns-window-for-damaged-parcels.md": {
+      "planted_for": [
+        "20-e-mail-damaged-parcel-am-i-still-in-time.md"
+      ],
+      "values": [
+        "13 days",
+        "JZL-6395",
+        "€23.13",
+        "16 days"
+      ]
+    },
+    "products/ethiopia-guji-one-kilo-pricing.md": {
+      "planted_for": [
+        "09-facilities-memo-energy-costs.md"
+      ],
+      "values": [
+        "€32,142.14",
+        "278 kg",
+        "9.9%",
+        "58 days"
+      ]
+    },
+    "sourcing/brazil-cerrado-contract-signing.md": {
+      "planted_for": [
+        "32-staff-dinner-invitation.md"
+      ],
+      "values": [
+        "3 December 2027",
+        "NTV-4431",
+        "€15,217.74",
+        "20 days"
+      ]
+    },
+    "customers/cafe-bellavista-owner.md": {
+      "planted_for": [
+        "35-chat-export-sink-repair.md"
+      ],
+      "values": [
+        "Dario Calloway",
+        "€33.76",
+        "BXE-2713",
+        "34 days"
+      ]
+    },
+    "operations/roasting/cooling-tray-replacement.md": {
+      "planted_for": [
+        "01-it-helpdesk-reply-printer-queue.md"
+      ],
+      "values": [
+        "BWD-6122",
+        "246 kg",
+        "4 April 2027",
+        "33 days"
+      ]
+    },
+    "operations/shipping/carrier-monthly-invoice.md": {
+      "planted_for": [
+        "36-christmas-market-stall-confirmation.md"
+      ],
+      "values": [
+        "€4.30",
+        "4 June 2026",
+        "115 kg",
+        "BZJ-9547",
+        "9 January 2026"
+      ]
+    },
+    "meetings/board-meeting-september-2026.md": {
+      "planted_for": [
+        "24-welcome-e-mail-for-the-new-trainee.md"
+      ],
+      "values": [
+        "Elio Brambilla",
+        "18.9%",
+        "KMS-7931",
+        "56 days"
+      ]
+    },
+    "ideas/roastery-open-evening.md": {
+      "planted_for": [
+        "40-memo-meeting-room-refit.md"
+      ],
+      "values": [
+        "33 people",
+        "5.4%",
+        "85 kg",
+        "ZXA-2619"
+      ]
+    },
+    "products/night-shift-batch-tracking.md": {
+      "planted_for": [
+        "23-train-booking-for-the-milan-trade-fair.md"
+      ],
+      "values": [
+        "KMV-3090",
+        "15 March 2026",
+        "EVX-9444",
+        "131 kg"
+      ]
+    },
+    "sourcing/washing-station-premium.md": {
+      "planted_for": [
+        "19-office-supplies-quote.md"
+      ],
+      "values": [
+        "13.2%",
+        "RFE-7887",
+        "138 kg",
+        "2.7%"
+      ]
+    },
+    "customers/pasticceria-alba-account-review.md": {
+      "planted_for": [
+        "14-thank-you-letter-from-a-primary-school.md"
+      ],
+      "values": [
+        "€86.05",
+        "Livia Marchetti",
+        "8 August 2027",
+        "63 days",
+        "340 kg"
+      ]
+    },
+    "products/aurora-gift-tin.md": {
+      "planted_for": [],
+      "values": [
+        "16.1%",
+        "VSX-3565",
+        "72 days"
+      ]
+    },
+    "products/cold-brew-concentrate-trial.md": {
+      "planted_for": [],
+      "values": [
+        "NEB-2917",
+        "51 days",
+        "20 November 2026"
+      ]
+    },
+    "products/packaging-redesign-for-retail-bags.md": {
+      "planted_for": [],
+      "values": [
+        "€152.30",
+        "GKJ-5225",
+        "18.2%"
+      ]
+    },
+    "products/seasonal-blend-calendar.md": {
+      "planted_for": [],
+      "values": [
+        "16.9%",
+        "218 kg",
+        "81 days"
+      ]
+    },
+    "products/home-brewing-guides.md": {
+      "planted_for": [],
+      "values": [
+        "53 days",
+        "VDZ-2948",
+        "248 kg"
+      ]
+    },
+    "sourcing/sumatra-mandheling-trial-lot.md": {
+      "planted_for": [],
+      "values": [
+        "ZGB-7050",
+        "4.1%",
+        "86 days"
+      ]
+    },
+    "sourcing/importer-scorecard.md": {
+      "planted_for": [],
+      "values": [
+        "24 days",
+        "16.4%",
+        "EEK-7575"
+      ]
+    },
+    "sourcing/sample-evaluation-procedure.md": {
+      "planted_for": [],
+      "values": [
+        "€523.92",
+        "11 July 2026",
+        "96 kg"
+      ]
+    },
+    "sourcing/freight-forwarder-comparison.md": {
+      "planted_for": [],
+      "values": [
+        "€14,938.06",
+        "15.9%",
+        "143 kg"
+      ]
+    },
+    "sourcing/organic-certification-renewal.md": {
+      "planted_for": [],
+      "values": [
+        "1 October 2026",
+        "UKZ-8418",
+        "16.2%"
+      ]
+    },
+    "operations/roasting/roast-log-and-batch-records.md": {
+      "planted_for": [],
+      "values": [
+        "€11.19",
+        "70 days",
+        "12 February 2026"
+      ]
+    },
+    "operations/roasting/afterburner-cleaning-schedule.md": {
+      "planted_for": [],
+      "values": [
+        "140 kg",
+        "€58.27",
+        "46 days"
+      ]
+    },
+    "operations/roasting/cupping-calibration-session.md": {
+      "planted_for": [],
+      "values": [
+        "26 June 2026",
+        "37 days",
+        "€404.49"
+      ]
+    },
+    "operations/roasting/training-a-new-roaster.md": {
+      "planted_for": [],
+      "values": [
+        "€10,025.50",
+        "42 days",
+        "7.9%"
+      ]
+    },
+    "operations/roasting/gas-safety-inspection.md": {
+      "planted_for": [],
+      "values": [
+        "13.5%",
+        "32 kg",
+        "NZC-3743"
+      ]
+    },
+    "operations/shipping/international-shipping-to-switzerland.md": {
+      "planted_for": [],
+      "values": [
+        "€12,180.23",
+        "ZNM-6305",
+        "21 days"
+      ]
+    },
+    "operations/shipping/box-and-filler-materials.md": {
+      "planted_for": [],
+      "values": [
+        "153 kg",
+        "76 days",
+        "SBH-4982"
+      ]
+    },
+    "operations/shipping/peak-season-staffing.md": {
+      "planted_for": [],
+      "values": [
+        "12 December 2026",
+        "5.8%",
+        "FWR-6818"
+      ]
+    },
+    "operations/shipping/shipping-label-printer-setup.md": {
+      "planted_for": [],
+      "values": [
+        "16.7%",
+        "€349.28",
+        "28 days"
+      ]
+    },
+    "customers/subscriber-survey-summer-2026.md": {
+      "planted_for": [],
+      "values": [
+        "64 days",
+        "€34.79",
+        "27 September 2027"
+      ]
+    },
+    "customers/loyalty-points-idea-review.md": {
+      "planted_for": [],
+      "values": [
+        "€445.13",
+        "97 kg",
+        "ZGG-3725"
+      ]
+    },
+    "customers/wholesale-visit-schedule.md": {
+      "planted_for": [],
+      "values": [
+        "121 kg",
+        "2 March 2026",
+        "14 days"
+      ]
+    },
+    "customers/newsletter-calendar.md": {
+      "planted_for": [],
+      "values": [
+        "€548.09",
+        "38 days",
+        "6.6%"
+      ]
+    },
+    "meetings/weekly-sync-august-2026.md": {
+      "planted_for": [],
+      "values": [
+        "1 October 2027",
+        "220 kg",
+        "MSA-8508"
+      ]
+    },
+    "meetings/supplier-day-notes.md": {
+      "planted_for": [],
+      "values": [
+        "€848.19",
+        "SHC-5146",
+        "16 January 2026"
+      ]
+    },
+    "meetings/quarterly-review-q3-2026.md": {
+      "planted_for": [],
+      "values": [
+        "21 April 2026",
+        "8.4%",
+        "PDF-9024"
+      ]
+    },
+    "meetings/health-and-safety-meeting.md": {
+      "planted_for": [],
+      "values": [
+        "274 kg",
+        "CRA-7957",
+        "€306.35"
+      ]
+    },
+    "ideas/coffee-subscription-for-offices.md": {
+      "planted_for": [],
+      "values": [
+        "288 kg",
+        "17.4%",
+        "57 days"
+      ]
+    },
+    "ideas/latte-art-workshop.md": {
+      "planted_for": [],
+      "values": [
+        "€15.31",
+        "12.6%",
+        "49 kg"
+      ]
+    },
+    "ideas/recycled-bag-programme.md": {
+      "planted_for": [],
+      "values": [
+        "317 kg",
+        "€17,292.12",
+        "52 days"
+      ]
+    },
+    "ideas/podcast-about-coffee-origins.md": {
+      "planted_for": [],
+      "values": [
+        "€405.71",
+        "4 January 2026",
+        "17.3%"
+      ]
+    }
+  }
+}

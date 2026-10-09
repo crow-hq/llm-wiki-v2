@@ -25,3 +25,6 @@ open_ruoter_key.txt
 
 # Raw results of the benchmarks, when run without --out
 /ingest_parallel.json
+
+# Usage log of the real generation of the duplicates corpus
+benchmarks/corpus/dup/usage.jsonl
