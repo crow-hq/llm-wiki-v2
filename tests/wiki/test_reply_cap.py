@@ -628,7 +628,7 @@ def test_summarize_part_and_the_combine_are_capped_by_a_note(tracker: UsageTrack
     filler = "The parties agree on the terms that follow and on nothing else at all, as the text says here."
     text = "\n\n".join([filler] * 1_600)  # ~150k characters: two parts of the 94k text room
     llm = PartRecorder(tracker)
-    ctx = context(llm, tmp_path, llm={"read_chars": 100_000})
+    ctx = context(llm, tmp_path, llm={"read_chars": 100_000}, note_length="fixed")
     source = Source(text, title="Memo")
 
     classic.summarize(ctx, source)

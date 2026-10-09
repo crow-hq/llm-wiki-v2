@@ -136,8 +136,10 @@ class Merged:
 Step = Callable[[StepContext, Note, Source], NoteDraft]
 
 
-def ingest(bundle: Path, llm: FakeLLM, new: str, old: str, step: Step, *, mode: str = "located", body: str = STD_BODY) -> None:
-    cfg = WikiConfig(bundle=bundle, mode="classic", llm=LLMConfig(read_chars=READ), note_chars=1_000, merge_mode=mode)
+def ingest(
+    bundle: Path, llm: FakeLLM, new: str, old: str, step: Step, *, mode: str = "located", body: str = STD_BODY, **fields: Any
+) -> None:
+    cfg = WikiConfig(bundle=bundle, mode="classic", llm=LLMConfig(read_chars=READ), note_chars=1_000, merge_mode=mode, **fields)
     wiki = Wiki(cfg, llm=llm, steps=replace(MERGING, merge=step))
     wiki.init()
     folder, _ = wiki.store.create_folder(wiki.store.load().find("/"), "finance", "Money in and out.")
@@ -157,6 +159,7 @@ def run(
     *,
     body: str = STD_BODY,
     classifier: Any = None,
+    **fields: Any,
 ) -> Merged:
     """Merge `new`, a revision of `old` (the raw copy the note cites), into a note of `body`; `replies` are the writer's."""
     seen: list[Merged] = []
@@ -170,7 +173,7 @@ def run(
 
     if replies:
         llm.add(LOCATED, *replies)
-    ingest(bundle, llm, new, old, step, body=body)
+    ingest(bundle, llm, new, old, step, body=body, **fields)
     return seen[0]
 
 
@@ -327,7 +330,15 @@ def test_a_body_far_over_the_length_asked_warns_after_merge_located(bundle: Path
     big = "# Overview\n\nThe limit is 30 units. Owner: Anna Rossi.\n\n" + ("Some filler words in the note. " * 120) + "\n"
 
     with caplog.at_level(logging.WARNING):
-        run(bundle, llm, doc(S_NEW), doc(S_OLD), [reply_l({"u2": "The limit is 40 units. Owner: Anna Rossi."})], body=big)
+        run(
+            bundle,
+            llm,
+            doc(S_NEW),
+            doc(S_OLD),
+            [reply_l({"u2": "The limit is 40 units. Owner: Anna Rossi."})],
+            body=big,
+            note_length="fixed",
+        )
 
     assert [r for r in caplog.records if r.levelno == logging.WARNING and "characters, over" in r.getMessage()]
 

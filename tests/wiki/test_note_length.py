@@ -64,8 +64,8 @@ def expected(cfg: WikiConfig, source: int, existing: int = 0) -> int:
 # -- config ----------------------------------------------------------------------------------------
 
 
-def test_note_length_defaults_to_fixed() -> None:
-    assert cfg_of(None).note_length == "fixed"
+def test_note_length_defaults_to_proportional() -> None:
+    assert cfg_of(None).note_length == "proportional"
 
 
 @pytest.mark.parametrize("value", ["fixed", "proportional"])
@@ -75,12 +75,12 @@ def test_note_length_from_the_environment(tmp_path: Path, value: str) -> None:
     assert config.note_length == value
 
 
-def test_note_length_without_the_variable_is_fixed(tmp_path: Path) -> None:
-    assert WikiConfig.from_env({"OKF_BUNDLE": str(tmp_path)}).note_length == "fixed"
+def test_note_length_without_the_variable_is_proportional(tmp_path: Path) -> None:
+    assert WikiConfig.from_env({"OKF_BUNDLE": str(tmp_path)}).note_length == "proportional"
 
 
-def test_note_length_when_the_variable_is_empty_then_it_is_fixed(tmp_path: Path) -> None:
-    assert WikiConfig.from_env({"OKF_BUNDLE": str(tmp_path), "OKF_NOTE_LENGTH": ""}).note_length == "fixed"
+def test_note_length_when_the_variable_is_empty_then_it_is_proportional(tmp_path: Path) -> None:
+    assert WikiConfig.from_env({"OKF_BUNDLE": str(tmp_path), "OKF_NOTE_LENGTH": ""}).note_length == "proportional"
 
 
 def test_note_length_rejects_other_values(tmp_path: Path) -> None:
@@ -194,8 +194,8 @@ def hash_of(cfg: WikiConfig) -> str:
     return decision_hash(CLASSIC, cfg, Prompts())
 
 
-def test_hash_with_fixed_equals_the_hash_of_a_config_that_does_not_set_the_field() -> None:
-    assert hash_of(cfg_of("fixed")) == hash_of(cfg_of(None))
+def test_hash_with_proportional_equals_the_hash_of_a_config_that_does_not_set_the_field() -> None:
+    assert hash_of(cfg_of("proportional")) == hash_of(cfg_of(None))
 
 
 def test_hash_is_different_with_proportional() -> None:
@@ -229,7 +229,7 @@ def combine_call(llm: CapLLM) -> tuple[int | None, str]:
     return cap, prompt
 
 
-@pytest.mark.parametrize("note_length", ["fixed", None])
+@pytest.mark.parametrize("note_length", ["fixed"])
 def test_combine_with_fixed_states_the_effective_note_chars_and_the_default_cap(tracker: UsageTracker, note_length: str | None) -> None:
     llm, _ = combine_run(tracker, note_length)
 
@@ -309,7 +309,7 @@ def plain_merge(tracker: UsageTracker, bundle: Path, note_length: str | None, ex
     return llm, seen[0], messages[1]["content"]
 
 
-@pytest.mark.parametrize("note_length", ["fixed", None])
+@pytest.mark.parametrize("note_length", ["fixed"])
 def test_merge_with_fixed_states_the_effective_note_chars_and_caps_at_existing_plus_note(
     tracker: UsageTracker, bundle: Path, note_length: str | None
 ) -> None:

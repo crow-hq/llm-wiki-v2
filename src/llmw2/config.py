@@ -210,7 +210,7 @@ class WikiConfig(BaseModel):
     # Deprecated: the characters one prompt may hold, when `llm.read_chars` is not set (see `effective_read_chars`).
     source_chars: int = Field(100_000, gt=0)
     note_chars: int | None = Field(None, ge=1_000)  # about how long a note body may be; None: automatic (see `effective_note_chars`)
-    note_length: Literal["fixed", "proportional"] = "fixed"  # a note about `note_chars` long, or in proportion to its source
+    note_length: Literal["fixed", "proportional"] = "proportional"  # in proportion to its source (default), or about `note_chars` long
     merge_mode: Literal["rewrite", "edits", "located"] = "rewrite"  # a long source: rewritten into the note, or merged by edits or units
     # A source that revises the one document a note cites: the note replaced by the new version with the old body archived
     # ("replace", the default; OKF_REVISIONS), or merged into the note ("merge"). See `agents.revisions`.

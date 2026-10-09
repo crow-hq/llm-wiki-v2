@@ -82,7 +82,7 @@ def test_one_call_summarize_when_the_source_equals_the_note_cap_uses_that_cap(tr
 
 def test_map_reduce_parts_and_combine_keep_their_caps(tracker: UsageTracker, tmp_path: Path) -> None:
     llm = CapRecorder(tracker).add(PART, "- a note.", "- a note.").add(COMBINE, BODY)
-    ctx = context(llm, tmp_path, llm={"read_chars": 100_000})
+    ctx = context(llm, tmp_path, llm={"read_chars": 100_000}, note_length="fixed")
     filler = "The parties agree on the terms that follow and on nothing else at all, as the text says here."
     text = "\n\n".join([filler] * 1_600)  # ~150k characters: two parts
 

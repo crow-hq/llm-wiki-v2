@@ -248,7 +248,7 @@ def test_the_merge_prompt_no_longer_says_never_to_shorten(bundle: Path, llm: Fak
 
 
 def test_the_merge_prompt_keeps_the_rules_that_matter_and_the_length_rule(bundle: Path, llm: FakeLLM) -> None:
-    wiki = wiki_with(bundle, llm, LLM_MERGING, note_chars=2_500)
+    wiki = wiki_with(bundle, llm, LLM_MERGING, note_chars=2_500, note_length="fixed")
     llm.add(SUMMARIZE, INCOMING).add(MERGE, MERGED)
 
     wiki.ingest(RAW, title="Memo")

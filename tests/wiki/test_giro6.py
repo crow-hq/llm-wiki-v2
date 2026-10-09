@@ -207,6 +207,7 @@ def part_context(llm: LLM, source: Source) -> StepContext:
         llm=LLMConfig(read_chars=READ),
         classifier=ClassifierConfig(model="fake/jev", api_key="fake-key"),
         note_chars=BIG,
+        note_length="fixed",
     )
     return StepContext(llm, None, Prompts(), cfg, "librarian/system", source)
 

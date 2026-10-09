@@ -120,6 +120,7 @@ def run_merge(
     body: str = BODY,
     copies: tuple[str, ...] = (OLD_COPY,),
     others: dict[str, list[Any]] | None = None,
+    **fields: Any,
 ) -> NoteDraft:
     """Ingest `raw` into a note /finance/seed.md of `body` that cites a raw copy of each text in `copies`; the merge's draft."""
     seen: list[NoteDraft] = []
@@ -128,7 +129,7 @@ def run_merge(
         seen.append(classic.merge(ctx, note, source))
         return seen[-1]
 
-    cfg = WikiConfig(bundle=bundle, mode="classic", llm=LLMConfig(read_chars=READ), note_chars=1_000, merge_mode=mode)
+    cfg = WikiConfig(bundle=bundle, mode="classic", llm=LLMConfig(read_chars=READ), note_chars=1_000, merge_mode=mode, **fields)
     wiki = Wiki(cfg, llm=llm, steps=replace(MERGING, merge=merge))
     wiki.init()
     folder, _ = wiki.store.create_folder(wiki.store.load().find("/"), "finance", "Money in and out.")
@@ -384,7 +385,11 @@ def test_an_addition_with_an_invented_value_is_rejected(bundle: Path, llm: FakeL
 
 def test_a_source_that_fits_is_read_in_one_call(bundle: Path, llm: FakeLLM) -> None:
     run_merge(
-        bundle, llm, long_raw("The limit is now 40 units. ", size=5_000), [reply(edit("The limit is 30 units.", "The limit is 40 units."))]
+        bundle,
+        llm,
+        long_raw("The limit is now 40 units. ", size=5_000),
+        [reply(edit("The limit is 30 units.", "The limit is 40 units."))],
+        note_length="fixed",
     )
 
     assert len(calls_of(llm, EDITS)) == 1
@@ -398,7 +403,7 @@ def test_a_source_longer_than_the_room_is_read_in_several_chunks_each_seeing_the
         reply(additions=[{"section": "# Pricing", "text": "Setup fee is 250."}]),
     ]
 
-    draft = run_merge(bundle, llm, raw, replies)
+    draft = run_merge(bundle, llm, raw, replies, note_length="fixed")
 
     prompts = calls_of(llm, EDITS)
     assert len(prompts) == math.ceil(len(raw) / CHUNK) == 3
@@ -632,6 +637,6 @@ def test_a_body_far_over_the_length_asked_warns_as_the_other_paths_do(bundle: Pa
     raw = long_raw("The limit is now 40 units. ")
 
     with caplog.at_level(logging.WARNING):
-        run_merge(bundle, llm, raw, [reply(edit("The limit is 30 units.", "The limit is 40 units."))], body=big)
+        run_merge(bundle, llm, raw, [reply(edit("The limit is 30 units.", "The limit is 40 units."))], body=big, note_length="fixed")
 
     assert [r for r in caplog.records if r.levelno == logging.WARNING and "characters, over" in r.getMessage()]
