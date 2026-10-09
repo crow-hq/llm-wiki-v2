@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (revisions replaced in place)
+
+- `revisions` (`OKF_REVISIONS`): `replace` (the default) or `merge` (the merge as before). A source that revises the one document a note cites replaces the note (summary, "Changes from the previous version", kept sentences) and the old body goes to `.archive/` (`WikiStore.archive_note`, `previous_version`); the researcher reads it for historical questions and asks for the earlier value (CROW). Always on: `generated.body_hash` in every note written.
+
 ### Added (round 7, proportional note length)
 
 - `note_length` (`OKF_NOTE_LENGTH`): `fixed` (the default, nothing changes) or `proportional`. A proportional note is about a quarter of its source (`NOTE_RATIO`), never below `note_chars`, up to what a call holds and `NOTE_MAX` (45000); a merge asks for the existing note plus that share (`WikiConfig.target_note_chars`). It sets the length rule of `summarize_combine` and `merge`, their reply caps, the length warning and the Ollama context check. The decision hash includes it only when it is not `fixed`. Under `proportional` a part of a long source keeps all it writes, within its share of what the combine call reads (`min(room // parts, half its block)`), not just `note_chars // 2`.

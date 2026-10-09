@@ -19,6 +19,7 @@ tree is fully described by standard OKF index files. Links are relative.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import os
 import shutil
@@ -57,7 +58,13 @@ from llmw2.errors import InputError
 
 log = logging.getLogger(__name__)
 
+ARCHIVE_DIR = ".archive"  # superseded versions of notes; hidden from the tree
 REPLACE_ATTEMPTS = 6  # about 0.3 s in all: long enough for a reader to close the file it was reading
+
+
+def body_hash(body: str) -> str:
+    """The hash of a note's main body: it tells whether code alone wrote it."""
+    return "sha256:" + hashlib.sha256(body.strip().encode("utf-8")).hexdigest()
 
 
 def now_iso() -> str:
@@ -206,12 +213,13 @@ class WikiStore:
         slug = self.unique_slug(folder, slugify(title))
         path = folder.path / f"{slug}.md"
         rel = f"{folder.rel}/{slug}.md" if folder.rel else f"{slug}.md"
+        note_body = body.rstrip() + "\n"
         frontmatter: dict[str, Any] = {
             "type": NOTE_TYPE,
             "title": title.strip(),
             "description": summary.strip(),
             "tags": tags,
-            "generated": {"by": self.actor, "at": now_iso()},
+            "generated": {"by": self.actor, "at": now_iso(), "body_hash": body_hash(split_see_also(note_body)[0])},
             "sources": [{"id": "s1", **source}],
         }
         if fields:
@@ -232,15 +240,17 @@ class WikiStore:
         tags: list[str],
         source: dict[str, Any],
         fields: dict[str, Any] | None = None,
+        previous_version: str | None = None,
     ) -> Note:
         """Rewrite a note in place, keeping unknown frontmatter keys and its See-also links.
 
-        `fields` are added to the note's own (new keys win).
+        `fields` are added to the note's own (new keys win). `previous_version`: the archived copy of the body it replaces.
         """
         fm = note.frontmatter
         fm["title"], fm["description"] = title.strip(), summary.strip()
         fm["tags"] = list(dict.fromkeys([*note.tags, *tags]))
-        fm["generated"] = {"by": self.actor, "at": now_iso()}
+        if previous_version:
+            fm["previous_version"] = previous_version
         sources: list[Any] = fm["sources"] if isinstance(fm.get("sources"), list) else []
         used = {str(s.get("id")) for s in sources if isinstance(s, dict)}
         new_id = next(f"s{n}" for n in range(1, len(sources) + 2) if f"s{n}" not in used)
@@ -249,10 +259,25 @@ class WikiStore:
             old = fm.get("fields")
             fm["fields"] = {**(old if isinstance(old, dict) else {}), **fields}
         note.body = join_see_also(body, split_see_also(note.body)[1])
+        fm["generated"] = {"by": self.actor, "at": now_iso(), "body_hash": body_hash(split_see_also(note.body)[0])}
         self._save(note)
         if note.folder is not None:
             self.write_index(note.folder)
         return note
+
+    def archive_note(self, note: Note) -> str:
+        """Keep a copy of a note as it is, in the hidden archive; returns its bundle path ("/.archive/…").
+
+        `load()` skips the folder, so no step sees the copy. No index or log entry is written.
+        """
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        base = f"{ARCHIVE_DIR}/{note.rel.removesuffix('.md')}--{stamp}"
+        rel = next(r for n in range(1, 1000) if not (self.root / (r := f"{base}{f'-{n}' if n > 1 else ''}.md")).exists())
+        fm = {**note.frontmatter, "status": "archived", "archived_from": f"/{note.rel}", "archived_at": now_iso()}
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_atomic(path, OKFDocument(fm, note.body).serialize())
+        return f"/{rel}"
 
     def link(self, a: Note, b: Note) -> bool:
         """Add a See-also entry in both notes; False if they were already linked."""

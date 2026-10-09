@@ -113,6 +113,19 @@ changes or the wiki grows.
 
 ## Good to know
 
+- **Revisions replaced in place (the default; extends the preprint's flow).** With `revisions = "replace"`
+  (`OKF_REVISIONS`, the default; `merge` keeps the preprint's merge), a step is inserted between consolidate and merge
+  (`agents/revisions.py`). Code checks that the source revises the one document the note cites: the body was written
+  by code alone (`generated.body_hash`, which every note now carries), every cited source is a raw copy of the same
+  document (same normalized title and file name), and the source contains the latest copy (8-word shingles). In
+  CROW one typed question (`revise/identity`) asks whether the changes replace the subject of the document; a
+  failure or a `ModelError` means the usual merge. If the guard passes, the note is not merged: its body goes to
+  `.archive/` (hidden from the tree), the frontmatter gets `previous_version`, and the new body is the summary of the
+  source, a "Changes from the previous version" section (each changed value with "previously ...") and a "From the
+  previous version" section with the sentences that still hold (CROW asks `revise/still_holds` for each). The
+  researcher, when a selected note has `previous_version` and the question asks about the past (`ask/historical`),
+  reads the archived copy after the note, may cite it, and is told to answer with the earlier value
+  (`HISTORY_HINT`, added to the question). In classic the `jev` checks are absent: code decides alone.
 - **`relate` extends the preprint.** See-also links were outside the preprint;
   the paper's v1.0 describes them (§5.4).
 - **Folders are created lazily.** A `New subfolder` route creates the folder,

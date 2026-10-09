@@ -104,7 +104,7 @@ class StepContext:
     def decide(
         self,
         step: str,
-        decider: Literal["llm", "classifier", "rule"],
+        decider: Literal["llm", "classifier", "rule", "code"],
         choice: str,
         confidence: float | None = None,
         *,

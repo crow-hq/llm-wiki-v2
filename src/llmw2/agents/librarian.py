@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass, field
 from functools import cached_property
 from typing import Any, Literal
 
+from llmw2.agents import revisions
 from llmw2.agents.base import Decision, clean_tags, unique_objects
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.prompts import Prompts
@@ -105,8 +106,14 @@ class Librarian:
             match = check_match(steps.match(ctx, pool, cand), pool)
             created: list[str] = []
             merging = match is not None and check_consolidate(steps.consolidate(ctx, match, cand))
+            revised, archived = False, ""
             if match is not None and merging:
-                draft = check_merge(steps.merge(ctx, match, source))
+                draft = revisions.revise(ctx, match, source) if self.cfg.revisions == "replace" else None
+                if draft is not None:
+                    archived = self.store.archive_note(match)
+                    revised = True
+                else:
+                    draft = check_merge(steps.merge(ctx, match, source))
                 raw, ref = self.save_source(source, cand)
                 note = self.store.update_note(
                     match,
@@ -116,6 +123,7 @@ class Librarian:
                     tags=clean_tags(draft.tags),
                     source=ref,
                     fields=draft.fields,
+                    previous_version=archived or None,
                 )
                 action: Literal["created", "merged"] = "merged"
             else:
@@ -144,9 +152,10 @@ class Librarian:
             related = related[: self.cfg.max_links]
             for other in related:
                 self.store.link(note, other)
-            verb = "Merged" if action == "merged" else "Created"
+            verb = ("Revised" if revised else "Merged") if action == "merged" else "Created"
             via = f", via {','.join(self.cfg.llm.pin_provider)}" if self.cfg.llm.pin_provider else ""
-            self.store.append_log(verb, f"from {raw} ({steps.name} {self.hash}, {self.cfg.llm.model}{via})", note.rel, note.title)
+            kept = f", previous version archived at {archived}" if revised else ""
+            self.store.append_log(verb, f"from {raw} ({steps.name} {self.hash}, {self.cfg.llm.model}{via}){kept}", note.rel, note.title)
         total = prepared.usage.copy()
         total.merge(used)
         return IngestResult(

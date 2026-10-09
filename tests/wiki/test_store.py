@@ -15,7 +15,7 @@ import pytest
 
 from llmw2.bundle import store as store_module
 from llmw2.bundle.document import OKFDocument
-from llmw2.bundle.store import WikiStore
+from llmw2.bundle.store import WikiStore, body_hash
 from llmw2.bundle.tree import Folder, Note, graph, join_see_also, parse_index, slugify, split_see_also
 
 ACTOR = "llmw2/test"
@@ -229,7 +229,7 @@ def test_write_note_writes_an_okf_note(store: WikiStore, clock: type[_Clock]) ->
         "title": "Revenue recognition",
         "description": "When revenue is booked.",
         "tags": ["gaap"],
-        "generated": {"by": ACTOR, "at": "2026-09-24T12:00:00+00:00"},
+        "generated": {"by": ACTOR, "at": "2026-09-24T12:00:00+00:00", "body_hash": body_hash(doc.body)},
         "sources": [{"id": "s1", **SOURCE}],
     }
     assert datetime.fromisoformat(doc.frontmatter["generated"]["at"]).utcoffset() == timedelta(0)
@@ -289,7 +289,8 @@ def test_update_note_refreshes_generated_at(store: WikiStore, clock: type[_Clock
     note = _existing_note(store)
     clock.at = NOW + timedelta(days=1)
     doc = _update(store, note)
-    assert doc.frontmatter["generated"] == {"by": ACTOR, "at": "2026-09-25T12:00:00+00:00"}
+    expected = {"by": ACTOR, "at": "2026-09-25T12:00:00+00:00", "body_hash": body_hash("# Overview\n\nNew body.")}
+    assert doc.frontmatter["generated"] == expected
 
 
 def test_update_note_rewrites_the_folder_index(store: WikiStore, bundle: Path) -> None:

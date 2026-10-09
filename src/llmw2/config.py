@@ -195,7 +195,7 @@ def crow_preset(classifier_provider: str) -> str:
 # WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).
 _TOP_LEVEL_ENV = (
     "bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency", "usage_log",
-    "prompts_dir", "note_chars", "note_length", "merge_mode",
+    "prompts_dir", "note_chars", "note_length", "merge_mode", "revisions",
 )
 
 
@@ -212,6 +212,9 @@ class WikiConfig(BaseModel):
     note_chars: int | None = Field(None, ge=1_000)  # about how long a note body may be; None: automatic (see `effective_note_chars`)
     note_length: Literal["fixed", "proportional"] = "fixed"  # a note about `note_chars` long, or in proportion to its source
     merge_mode: Literal["rewrite", "edits", "located"] = "rewrite"  # a long source: rewritten into the note, or merged by edits or units
+    # A source that revises the one document a note cites: the note replaced by the new version with the old body archived
+    # ("replace", the default; OKF_REVISIONS), or merged into the note ("merge"). See `agents.revisions`.
+    revisions: Literal["merge", "replace"] = "replace"
     upload_mb: int = Field(25, gt=0)  # largest request body the server reads: a big PDF fits, a runaway upload does not fill memory
     concurrency: int = Field(4, ge=1, le=16)  # documents prepared (extracted, summarized) at once by a batch or the server
     actor: str = f"llmw2/{__version__}"  # OKF `generated.by`
