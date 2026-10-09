@@ -948,7 +948,8 @@ def test_ask_selects_on_frontmatter_fields_and_answers_without_a_model(patents: 
     assert sorted(answer.citations) == chemistry  # "made-up.md" was not read: the core drops it
     assert all(f"{n} " in answer.text or f"[{n}]" in answer.text for n in chemistry)
     assert "EP100" in answer.text and "EP200" not in answer.text
-    assert llm.calls == [] and classifier.calls == [] and answer.usage == UsageReport()
+    assert llm.calls == [] and list(answer.usage.by_op) == ["classifier:ask/conflict"]
+    assert [c[0] for c in classifier.calls] == ["ask/conflict"]  # the only model call: do the three notes disagree?
 
 
 def test_ask_on_a_narrower_category_returns_only_that_one(patents: Wiki) -> None:

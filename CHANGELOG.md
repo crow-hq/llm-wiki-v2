@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `source_chars` is deprecated (a `DeprecationWarning` when it is set) and is no longer a cut: when `llm.read_chars` is not set, an explicit `source_chars` is the length above which `summarize` reads in parts.
 - `LLM.json` retries once when a reply is not valid JSON or fails the schema. The retry repeats the request with a note on what was wrong and asks for `response_format` `json_object` (on OpenRouter with `require_parameters`); a provider that refuses `response_format` is asked again without it, and the model remembers that.
 - **Behaviour change:** CROW `relate` also reads, as candidates, up to 40 notes anywhere in the wiki that share rare values (codes, amounts, dates, names held by few notes) with the new or updated note, skipping notes that already have 12 See-also links. This changes the links CROW adds; classic is unchanged.
+- **Behaviour change:** CROW `ask` asks one more typed question (`ask/conflict`) when two or more notes go to the answer: if the notes seem to disagree on the answer, the question gets a hint to report every value, which note gives which and which source is more recent. This changes the CROW answer; classic is unchanged.
 
 ### Fixed
 
