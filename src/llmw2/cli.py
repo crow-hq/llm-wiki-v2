@@ -1,7 +1,7 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""`llmwiki2` command line: setup, init, ingest, sync, ask, check, serve.
+"""`llmwiki2` command line: setup, init, ingest, sync, ask, move, describe, check, serve.
 
 `llmwiki2` alone serves the wiki and opens it in the browser, where the settings
 page asks for what is missing; `llmwiki2 setup` asks the same in the terminal.
@@ -76,6 +76,12 @@ def main(argv: list[str] | None = None) -> int:
     ask = sub.add_parser("ask", help="answer a question from the wiki")
     ask.add_argument("question")
     ask.add_argument("--json", action="store_true", help="print the full answer as JSON")
+    move = sub.add_parser("move", help="move a note into another folder; its links follow")
+    move.add_argument("note", help="the note's path, e.g. finance/pricing.md")
+    move.add_argument("folder", help='the folder to file it in, e.g. /sourcing ("/" is the top level)')
+    describe = sub.add_parser("describe", help="change a folder's one-line description, the line notes are routed by")
+    describe.add_argument("folder", help="the folder, e.g. /finance")
+    describe.add_argument("description")
     sub.add_parser("check", help="lint the wiki (exit 1 on problems)")
     serve = sub.add_parser("serve", help="run the HTTP API (needs the [server] extra)")
     serve.add_argument("--host", default="127.0.0.1")
@@ -213,6 +219,11 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
     elif args.command == "ask":
         answer = wiki.ask(args.question)
         print(json.dumps(answer.to_dict(), indent=2) if args.json else answer.text)
+    elif args.command == "move":
+        print(f"moved: /{wiki.move_note(args.note, args.folder).rel}")
+    elif args.command == "describe":
+        folder = wiki.describe_folder(args.folder, args.description)
+        print(f"{folder.label}: {folder.description}")
     elif args.command == "check":
         problems = wiki.check()
         for problem in problems:

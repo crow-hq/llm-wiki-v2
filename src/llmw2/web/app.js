@@ -42,7 +42,7 @@ function renderFolder(f, isRoot) {
     box.classList.contains("open") ? open.add(f.path) : open.delete(f.path);
     localStorage.setItem("okf-open", JSON.stringify([...open]));
   };
-  box.append(withButtons(row, [[`New folder in ${f.path}`, "plus", () => newFolder(f.path)], [`Delete the folder ${f.path}`, "trash", () => deleteFolder(f)]]));
+  box.append(withButtons(row, [[`New folder in ${f.path}`, "plus", () => newFolder(f.path)], [`Edit the description of ${f.path}`, "edit", () => describeFolder(f)], [`Delete the folder ${f.path}`, "trash", () => deleteFolder(f)]]));
   if (f.description) { const d = document.createElement("div"); d.className = "desc"; d.textContent = f.description; box.append(d); }
   box.append(kids);
   return box;
@@ -87,6 +87,7 @@ const ICONS = {
   note: '<svg viewBox="0 0 24 24" fill="none" stroke="#ff4d2e" stroke-width="1.6"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="#7aa2ff" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/></svg>',
 };
 
@@ -135,7 +136,7 @@ async function showNote(path) {
       <div class="md" id="body">${md(n.body)}</div>
       ${sources ? `<div class="sources"><div class="label" style="padding:0">Sources</div>${sources}</div>` : ""}
       ${versions ? `<div class="sources"><div class="label" style="padding:0">Versions</div>${versions}</div>` : ""}
-      ${kind ? "" : '<div class="note-actions"><button class="btn danger small" type="button" data-delete-note>Delete note</button></div>'}`);
+      ${kind ? "" : '<div class="note-actions"><button class="btn ghost small" type="button" data-move-note>Move</button> <button class="btn danger small" type="button" data-delete-note>Delete note</button></div>'}`);
     wireLinks($("#body"), n.path);
   } catch (e) { show(`<p class="lead">${esc(e.message)}</p>`); }
 }
@@ -210,6 +211,7 @@ $("#add").onclick = newNote;
 $("#view").addEventListener("click", (e) => {
   if (e.target.closest("[data-new-note]")) newNote();
   else if (e.target.closest("[data-empty]")) emptyWiki();
+  else if (e.target.closest("[data-move-note]")) moveNote({ path: current, title: $("h2.title")?.textContent || current });
   else if (e.target.closest("[data-delete-note]")) deleteNote({ path: current, title: $("h2.title")?.textContent || current });
 });
 
@@ -236,6 +238,53 @@ $("#folderform").onsubmit = async (e) => {
     reveal(f.path.slice(1)); await loadTree(); refreshGraph();
     if (!location.hash || location.hash === "#/") home();
   } catch (err) { $("#folder-error").textContent = err.message; $("#folder-error").hidden = false; }
+  finally { ok.disabled = false; }
+};
+
+// -- moving a note to another folder, and editing a folder's description ----------
+function moveNote(n) {
+  const here = "/" + n.path.split("/").slice(0, -1).join("/");
+  const folders = [];
+  (function walk(f) { folders.push(f.path); f.subfolders.forEach(walk); })(tree);
+  $("#move-title").textContent = n.title; $("#move-error").hidden = true;
+  $("#move-folder").replaceChildren(...folders.filter((p) => p !== here).map((p) => new Option(p, p)));
+  $("#move-ok").disabled = !$("#move-folder").options.length;
+  $("#movedlg").dataset.path = n.path;
+  $("#movedlg").showModal(); $("#move-folder").focus();
+}
+$("#moveform").onsubmit = async (e) => {
+  if (e.submitter?.value !== "ok") return; // Cancel closes it
+  e.preventDefault(); // open until the note has moved, so a refusal is read here
+  const ok = $("#move-ok");
+  ok.disabled = true;
+  try {
+    const n = await post("/note/move", { path: $("#movedlg").dataset.path, folder: $("#move-folder").value });
+    $("#movedlg").close();
+    tell(`Moved to /${n.path}`, "ok");
+    reveal(n.path); await loadTree(); refreshGraph();
+    if (location.hash === "#/note/" + n.path) showNote(n.path); else location.hash = "#/note/" + n.path;
+  } catch (err) { $("#move-error").textContent = err.message; $("#move-error").hidden = false; }
+  finally { ok.disabled = false; }
+};
+function describeFolder(f) {
+  $("#describedlg").dataset.path = f.path;
+  $("#describe-where").textContent = f.path; $("#describe-desc").value = f.description || ""; $("#describe-error").hidden = true;
+  $("#describedlg").showModal(); $("#describe-desc").focus();
+}
+$("#describeform").onkeydown = (e) => { // Enter in the field saves: the form's first button is Cancel
+  if (e.key === "Enter" && e.target.matches("input")) { e.preventDefault(); $("#describeform").requestSubmit($("#describe-ok")); }
+};
+$("#describeform").onsubmit = async (e) => {
+  if (e.submitter?.value !== "ok") return;
+  e.preventDefault();
+  const ok = $("#describe-ok");
+  ok.disabled = true;
+  try {
+    const f = await post("/folder/describe", { path: $("#describedlg").dataset.path, description: $("#describe-desc").value });
+    $("#describedlg").close();
+    tell(`Described ${f.path}`, "ok");
+    await loadTree(); refreshGraph();
+  } catch (err) { $("#describe-error").textContent = err.message; $("#describe-error").hidden = false; }
   finally { ok.disabled = false; }
 };
 

@@ -68,6 +68,26 @@
     <div class="actions"><button class="btn ghost" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok" id="folder-ok">Create folder</button></div>
   </form>
 </dialog>
+<dialog id="movedlg">
+  <form method="dialog" id="moveform">
+    <h3>Move note</h3>
+    <p class="dlg-lead">File <b id="move-title"></b> in another folder. Links to it and from it keep working.</p>
+    <label for="move-folder">Folder</label>
+    <select id="move-folder"></select>
+    <p class="dlg-error" id="move-error" hidden></p>
+    <div class="actions"><button class="btn ghost" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok" id="move-ok">Move note</button></div>
+  </form>
+</dialog>
+<dialog id="describedlg">
+  <form method="dialog" id="describeform">
+    <h3>Edit description</h3>
+    <p class="dlg-lead">One line saying what belongs in <b id="describe-where"></b>. The librarian reads it to decide what to file here.</p>
+    <label for="describe-desc">Description <small>(one line: what belongs here)</small></label>
+    <input id="describe-desc" maxlength="150" required autocomplete="off" placeholder="e.g. Who we buy from: contracts, prices and contacts.">
+    <p class="dlg-error" id="describe-error" hidden></p>
+    <div class="actions"><button class="btn ghost" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok" id="describe-ok">Save description</button></div>
+  </form>
+</dialog>
 <dialog id="confirm">
   <form method="dialog" id="confirmform">
     <h3 id="confirm-title"></h3>

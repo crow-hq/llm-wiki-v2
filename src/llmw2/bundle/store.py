@@ -25,7 +25,7 @@ import os
 import shutil
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,6 +50,7 @@ from llmw2.bundle.tree import (
     note_dir,
     parse_index,
     rel_link,
+    rewrite_links,
     slugify,
     split_see_also,
     subfolder_of,
@@ -385,6 +386,83 @@ class WikiStore:
             if at > 0 and lines[at - 1] != "":
                 lines.insert(at, "")
         write_atomic(path, "\n".join(lines).rstrip() + "\n")
+
+    # -- moving and describing ------------------------------------------------
+
+    def move_note(self, rel: str, folder_rel: str) -> Note:
+        """File a note in another folder, keeping every link to and from it valid; InputError when it cannot be.
+
+        The new file is written first, then the links of the other notes and the archived copies are pointed at it,
+        and the old file goes last, so a failure half way never loses the note.
+        """
+        root = self.load()
+        old = rel.strip().lstrip("/")
+        note = next((n for n in root.all_notes() if n.rel == old), None)
+        if note is None or note.folder is None:
+            raise InputError(f"no note at /{old}: only notes of the tree can be moved, not the index, log, sources or archive")
+        target = root.find(folder_rel)
+        if target is None:
+            raise InputError(f"no folder at /{folder_rel.strip().strip('/')}")
+        if target is note.folder:
+            raise InputError(f"/{old} is already in {target.label}")
+        slug = self.unique_slug(target, note.slug)
+        new = f"{target.rel}/{slug}.md" if target.rel else f"{slug}.md"
+
+        def remap(path: str) -> str:
+            return new if path == old else path
+
+        moved = Note(target.path / f"{slug}.md", new, dict(note.frontmatter), note.body, target)
+        self._relink(moved, old, new, remap)
+        self._save(moved)  # the new file first
+        for other in root.all_notes():
+            if other is not note:
+                self._relink(other, other.rel, other.rel, remap)
+        self._rehome_archive(old, new)
+        note.path.unlink()
+        note.folder.notes.remove(note)
+        target.notes.append(moved)
+        self.write_index(note.folder)
+        self.write_index(target)
+        self.append_log("Moved", f"from /{old} to /{new}", new, moved.title)
+        return moved
+
+    def _relink(self, note: Note, from_rel: str, to_rel: str, remap: Callable[[str], str]) -> None:
+        """Point the links in a note's body through `remap` (it is written at `to_rel`); saved if they changed."""
+        body = rewrite_links(note.body, from_rel, to_rel, remap)
+        if body == note.body:
+            return
+        gen = note.frontmatter.get("generated")
+        if isinstance(gen, dict) and gen.get("body_hash") == body_hash(split_see_also(note.body)[0]):
+            gen["body_hash"] = body_hash(split_see_also(body)[0])  # still written by code alone: keep it provable
+        note.body = body
+        if note.path.exists():
+            self._save(note)
+
+    def _rehome_archive(self, old: str, new: str) -> None:
+        """Archived copies of the note at `old` now say they come from `new`."""
+        for path in sorted((self.root / ARCHIVE_DIR).rglob("*.md")):
+            try:
+                doc = OKFDocument.parse(path.read_text(encoding="utf-8"))
+            except OKFDocumentError:
+                continue
+            if doc.frontmatter.get("archived_from") == f"/{old}":
+                doc.frontmatter["archived_from"] = f"/{new}"
+                write_atomic(path, doc.serialize())
+
+    def describe_folder(self, rel: str, description: str) -> Folder:
+        """Change the one-line description of a folder, kept in its parent's index; InputError for the root or none."""
+        folder = self.load().find(rel)
+        if folder is None:
+            raise InputError(f"no folder at /{rel.strip().strip('/')}")
+        if folder.parent is None:
+            raise InputError("the root folder has no description")
+        text = " ".join(description.split())
+        if not text:
+            raise InputError("a folder needs a description: one line saying what belongs in it")
+        folder.description = text
+        self.write_index(folder.parent)
+        self.append_log("Described folder", text, f"{folder.rel}/{INDEX}", folder.label)
+        return folder
 
     # -- deleting -------------------------------------------------------------
 

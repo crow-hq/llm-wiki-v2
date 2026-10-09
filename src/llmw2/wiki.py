@@ -14,6 +14,7 @@
     sync(wiki, LocalFolderSource(Path("~/OneDrive")))   # keep the wiki in step with a source
     wiki.ask("…").text
     wiki.create_folder("/", "finance", "Money in and out: budgets, invoices, pricing.")
+    wiki.move_note("finance/pricing.md", "/sourcing"); wiki.describe_folder("/finance", "Money in and out.")
     wiki.delete_note("finance/pricing.md"); wiki.delete_folder("/finance"); wiki.clear()
     wiki.usage.to_dict()                      # {"llm": …, "classifier": …, "by_model": …}
 """
@@ -36,7 +37,7 @@ from llmw2.bundle.check import Problem, check
 from llmw2.bundle.files import title_of
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.store import Deleted, WikiStore
-from llmw2.bundle.tree import Folder, slugify
+from llmw2.bundle.tree import Folder, Note, slugify
 from llmw2.config import WikiConfig
 from llmw2.errors import InputError
 from llmw2.models.classifier import Classifier
@@ -314,6 +315,20 @@ class Wiki:
             if not created:
                 raise InputError(f"{folder.label} already exists")
             return folder
+
+    def move_note(self, path: str, folder: str) -> Note:
+        """Move a note ("finance/pricing.md") into a folder ("/sourcing" or "sourcing"; "/" is the root).
+
+        Every link to and from it follows, and so do its archived copies. InputError for no such note or folder, a
+        path that is not a note, or a note already in that folder.
+        """
+        with self.store.lock():
+            return self.store.move_note(path, folder)
+
+    def describe_folder(self, path: str, description: str) -> Folder:
+        """Change the one-line description of a folder ("/finance"), the line the librarian routes by."""
+        with self.store.lock():
+            return self.store.describe_folder(path, description)
 
     def delete_note(self, path: str) -> Deleted:
         """Delete a note ("finance/pricing.md"); links to it go from the other notes, and raw copies only it cites."""

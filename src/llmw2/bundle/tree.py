@@ -187,6 +187,37 @@ def drop_links(body: str, from_rel: str, gone: Callable[[str], bool]) -> str:
     return body if kept == entries and text == main else join_see_also(text, kept)
 
 
+def rewrite_links(body: str, from_rel: str, to_rel: str, remap: Callable[[str], str]) -> str:
+    """`body` of the document at `from_rel`, which will live at `to_rel`, with its links kept pointing where they did.
+
+    A link to a path that `remap` changes follows it; every relative link is rewritten from the new directory.
+    See-also entries and inline links alike; anchors stay. Off-bundle links and anchors alone are left as they are.
+    """
+
+    def fix(link: str) -> str:
+        target = link_target(from_rel, link)
+        if target is None or target.startswith(".."):
+            return link
+        new = remap(target)
+        if new == target and note_dir(from_rel) == note_dir(to_rel):
+            return link
+        path, sep, anchor = link.partition("#")
+        return ("/" + new if path.startswith("/") else rel_link(note_dir(to_rel), new)) + sep + anchor
+
+    main, entries = split_see_also(body)
+
+    def fix_entry(entry: str) -> str:
+        m = _ENTRY.match(entry.strip())
+        if not m:
+            return entry
+        line, link = entry.strip(), fix(m["link"])
+        return entry if link == m["link"] else line[: m.start("link")] + link + line[m.end("link") :]
+
+    kept = [fix_entry(e) for e in entries]
+    text = _LINK.sub(lambda m: m[0][: m.start("link") - m.start()] + fix(m["link"]) + ")", main)
+    return body if kept == entries and text == main else join_see_also(text, kept)
+
+
 def graph(root: Folder) -> dict[str, list[dict[str, Any]]]:
     """The wiki as a graph: folders and notes as nodes; containment and See-also links as edges."""
     notes = {n.rel for n in root.all_notes()}

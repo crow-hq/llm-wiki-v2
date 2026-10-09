@@ -61,6 +61,7 @@ so you can add to it or delete it.
 | **Ask questions** | Type a question. The answer cites the notes it used: click one to read it. |
 | **See the brain** | A live map of your folders, notes and links. |
 | **Delete** | Hover a note or folder in the sidebar and press the bin, or **Delete note** at the foot of a note. Links to it go from the other notes. **Empty the wiki** on the home page starts over. |
+| **Move and describe** | **Move** at the foot of a note files it in another folder; every link to and from it follows. The pencil beside a folder in the sidebar edits its description, the line the librarian routes by. |
 | **Keep your files** | Plain Markdown in `~/llm-wiki`: open it in any editor, keep it in git. |
 
 ## Something wrong?
@@ -107,6 +108,7 @@ curl -X POST localhost:8000/ask -H 'content-type: application/json' \
 The wiki is plain Markdown files you can read, edit and keep in git (`./wiki`
 with Docker). The API docs are at http://localhost:8000/docs; with Docker the
 CLI runs in the same image: `docker compose run --rm wiki llmwiki2 check`.
+To file a note elsewhere or reword a folder's description from the terminal: `llmwiki2 move finance/pricing.md /sourcing` and `llmwiki2 describe /finance "Money in and out."`.
 
 | Endpoint | What it does |
 |---|---|
@@ -116,6 +118,7 @@ CLI runs in the same image: `docker compose run --rm wiki llmwiki2 check`.
 | `POST /ask` `{question}` | answer with citations; returns the notes read and token usage |
 | `GET /tree` · `GET /note?path=…` | folder tree · one note (frontmatter and Markdown body) |
 | `GET /check` · `GET /graph` | lint problems · the wiki as nodes and links (JSON) |
+| `POST /note/move` `{path, folder}` · `POST /folder/describe` `{path, description}` | move a note to another folder, links following (returns the note as `GET /note`) · change a folder's description |
 | `DELETE /note?path=…` · `DELETE /folder?path=/…` · `DELETE /wiki` | delete a note · a folder with all it holds · everything; links to them go, and raw copies no remaining note cites |
 | `GET /usage` · `GET /health` | token totals per ledger and model · status |
 | `GET /settings` · `POST /settings` · `POST /settings/test` | provider, model and key (masked) · save them · try them; changes from this machine only |

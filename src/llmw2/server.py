@@ -3,7 +3,8 @@
 
 """HTTP API (extra `server`) and the local web UI at GET /.
 
-POST /ingest, POST /upload (a .txt/.md/.pdf file), POST /ask, POST /folder (one made by hand), GET /tree, GET /note,
+POST /ingest, POST /upload (a .txt/.md/.pdf file), POST /ask, POST /folder (one made by hand), POST /note/move, POST /folder/describe,
+GET /tree, GET /note,
 GET /graph, GET /usage, GET /check, GET /health; DELETE /note, DELETE /folder and
 DELETE /wiki (empty it); GET /settings, POST /settings,
 POST /settings/test and POST /settings/models when the app is given the settings file.
@@ -72,6 +73,16 @@ class AskRequest(BaseModel):
 class FolderRequest(BaseModel):
     parent: str = "/"
     name: str
+    description: str
+
+
+class MoveRequest(BaseModel):
+    path: str
+    folder: str
+
+
+class DescribeRequest(BaseModel):
+    path: str
     description: str
 
 
@@ -258,6 +269,35 @@ def create_app(
                 return current().delete_note(path).to_dict()
             except FileNotFoundError as e:
                 raise HTTPException(404, f"no note at {path}") from e
+
+    @app.post("/note/move")
+    def move_note(req: MoveRequest) -> dict[str, Any]:
+        with write_lock:
+            wiki = current()
+            try:
+                wiki.store.read(req.path)
+            except FileNotFoundError as e:
+                raise HTTPException(404, f"no note at {req.path}") from e
+            except InputError as e:
+                raise HTTPException(400, str(e)) from e
+            if wiki.tree().find(req.folder) is None:
+                raise HTTPException(404, f"no folder at {req.folder}")
+            try:
+                moved = wiki.move_note(req.path, req.folder)
+            except InputError as e:
+                raise HTTPException(400, str(e)) from e
+        return note(moved.rel)
+
+    @app.post("/folder/describe")
+    def describe_folder(req: DescribeRequest) -> dict[str, Any]:
+        with write_lock:
+            try:
+                folder = current().describe_folder(req.path, req.description)
+            except InputError as e:
+                if current().tree().find(req.path) is None:
+                    raise HTTPException(404, f"no folder at {req.path}") from e
+                raise
+        return {"path": folder.label, "description": folder.description}
 
     @app.post("/folder")
     def create_folder(req: FolderRequest) -> dict[str, Any]:

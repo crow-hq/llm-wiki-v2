@@ -53,7 +53,7 @@ nav { flex: 1; overflow: auto; padding: 14px 12px 20px; }
 .acts { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; visibility: hidden; }
 .acts button { width: 26px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: var(--raised); color: var(--faint); cursor: pointer; }
 .acts svg { width: 14px; height: 14px; }
-.acts .trash:hover { color: var(--ember); } .acts .plus:hover { color: var(--cream); }
+.acts .trash:hover { color: var(--ember); } .acts .plus:hover, .acts .edit:hover { color: var(--cream); }
 .line:hover > .acts, .acts:focus-within { visibility: visible; }
 .folder .desc { font: 12px/1.4 var(--text); color: var(--faint); padding: 0 8px 4px 26px; }
 .folder > .kids { display: none; margin-left: 13px; border-left: 1px dashed var(--edge); }
@@ -165,7 +165,8 @@ dialog label { display: block; font: 13px var(--mono); color: #c7cfe2; margin-bo
 dialog label small { color: var(--faint); }
 .dlg-hint { margin-right: auto; align-self: center; font: 11px var(--mono); color: var(--faint); }
 .dlg-error { font: 13px var(--mono); color: var(--ember-soft); margin: -4px 0 16px; }
-dialog input, dialog textarea { width: 100%; font: 15px var(--text); padding: 10px 12px; border: 1px solid var(--edge); border-radius: 8px; background: var(--field); color: var(--ink); margin-bottom: 10px; }
+dialog input, dialog textarea, dialog select { width: 100%; font: 15px var(--text); padding: 10px 12px; border: 1px solid var(--edge); border-radius: 8px; background: var(--field); color: var(--ink); margin-bottom: 10px; }
+dialog select { margin-bottom: 16px; }
 dialog textarea { height: 260px; resize: vertical; margin-bottom: 16px; }
 dialog input { margin-bottom: 16px; }
 dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
