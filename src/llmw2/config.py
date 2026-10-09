@@ -195,7 +195,7 @@ def crow_preset(classifier_provider: str) -> str:
 # WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).
 _TOP_LEVEL_ENV = (
     "bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency", "usage_log",
-    "prompts_dir", "note_chars", "note_length", "merge_mode", "revisions",
+    "prompts_dir", "note_chars", "note_length", "revisions",
 )
 
 
@@ -211,7 +211,6 @@ class WikiConfig(BaseModel):
     source_chars: int = Field(100_000, gt=0)
     note_chars: int | None = Field(None, ge=1_000)  # about how long a note body may be; None: automatic (see `effective_note_chars`)
     note_length: Literal["fixed", "proportional"] = "proportional"  # in proportion to its source (default), or about `note_chars` long
-    merge_mode: Literal["rewrite", "edits", "located"] = "rewrite"  # a long source: rewritten into the note, or merged by edits or units
     # A source that revises the one document a note cites: the note replaced by the new version with the old body archived
     # ("replace", the default; OKF_REVISIONS), or merged into the note ("merge"). See `agents.revisions`.
     revisions: Literal["merge", "replace"] = "replace"
