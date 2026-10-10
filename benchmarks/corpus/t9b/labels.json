@@ -1,0 +1,795 @@
+{
+  "about": "Task 9 synthetic half B: blind writer, labels merged from two blind annotators (t9_labels.py).",
+  "docs": {
+    "b01-subscription-relaunch-plan.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "subscriptions",
+      "primary": true
+    },
+    "b02-weekly-sync-june-08.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "b03-brazil-samples-note.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "green-coffee-sourcing-other",
+      "primary": true
+    },
+    "b04-carrier-pickup-change.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/shipping"
+      ],
+      "kind": "ambiguous",
+      "topic": "shipping-other",
+      "primary": true
+    },
+    "b05-burner-inspection.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/roasting"
+      ],
+      "kind": "ambiguous",
+      "topic": "roasting",
+      "primary": true
+    },
+    "b06-brazil-cupping-scores.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/roasting",
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "green-coffee-sourcing-other",
+      "primary": true
+    },
+    "b07-landing-page-copy-draft.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "subscriptions",
+      "primary": true
+    },
+    "b08-packaging-quote-v1.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/shipping"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "b09-weekly-sync-june-15.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "b10-ceo-update-june.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "ambiguous",
+      "topic": "other",
+      "primary": false
+    },
+    "b11-cold-brew-sold-out-email.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations"
+      ],
+      "kind": "ambiguous",
+      "topic": "cold-brew",
+      "primary": true
+    },
+    "b12-copacker-call-notes.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings",
+        "/operations"
+      ],
+      "kind": "ambiguous",
+      "topic": "cold-brew",
+      "primary": true
+    },
+    "b13-packaging-quote-v2.md": {
+      "merge_into": null,
+      "merge_with_doc": "b08-packaging-quote-v1.md",
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/shipping"
+      ],
+      "kind": "update",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "b14-cold-brew-shelf-life-note.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-b14",
+      "alt_folders": [
+        "/ideas",
+        "/operations",
+        "/products"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "cold-brew",
+      "primary": true
+    },
+    "b15-web-shop-outage-report.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations"
+      ],
+      "kind": "ambiguous",
+      "topic": "other",
+      "primary": true
+    },
+    "b16-weekly-sync-july-20.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "b17-cold-brew-price-notice.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers",
+        "/products"
+      ],
+      "kind": "ambiguous",
+      "topic": "cold-brew",
+      "primary": true
+    },
+    "b18-subscription-one-month-numbers.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "subscriptions",
+      "primary": true
+    },
+    "b19-half-year-accounts-notes.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-b19",
+      "alt_folders": [],
+      "folders": [],
+      "kind": "new",
+      "topic": "finance",
+      "primary": true
+    },
+    "b20-ceo-update-july.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-b20",
+      "alt_folders": [
+        "/meetings"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "b21-huila-visit-report.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b22-direct-trade-contract-v1.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b23-premium-calc-note.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b24-import-logistics-plan.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b25-weekly-sync-august-17.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "b26-summer-holiday-rota.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations"
+      ],
+      "kind": "ambiguous",
+      "topic": "people-hr",
+      "primary": true
+    },
+    "b27-decaf-survey-summary.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers",
+        "/products"
+      ],
+      "kind": "existing",
+      "topic": "products-prices",
+      "primary": true
+    },
+    "b28-cold-brew-stock-note.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-b14",
+      "alt_folders": [
+        "/ideas",
+        "/operations",
+        "/products"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "cold-brew",
+      "primary": true
+    },
+    "b29-portello-order-chain.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "ambiguous",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "b30-ceo-update-august.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-b20",
+      "alt_folders": [
+        "/meetings"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "b31-guji-third-farm-email.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b32-guji-traceability-sheet.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b33-prefinancing-agreement-draft.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b34-guji-moisture-dispute.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b35-office-coffee-enquiry.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "ambiguous",
+      "topic": "office-coffee-corporate",
+      "primary": true
+    },
+    "b36-office-machine-rental-terms.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-b36",
+      "alt_folders": [
+        "/customers",
+        "/products"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "office-coffee-corporate",
+      "primary": true
+    },
+    "b37-weekly-sync-september-14.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "b38-board-minutes-september.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "other",
+      "primary": false
+    },
+    "b39-farm-premium-policy.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b40-transparency-report-draft.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b41-direct-lots-arrival.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b42-direct-lots-cupping-scores.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/roasting",
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b43-rojas-roasting-profile.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/roasting"
+      ],
+      "kind": "existing",
+      "topic": "roasting",
+      "primary": true
+    },
+    "b44-office-first-corporate-quote.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "ambiguous",
+      "topic": "office-coffee-corporate",
+      "primary": true
+    },
+    "b45-office-service-contract-template.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "ambiguous",
+      "topic": "office-coffee-corporate",
+      "primary": true
+    },
+    "b46-machine-breakdown-client.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-b36",
+      "alt_folders": [
+        "/customers"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "office-coffee-corporate",
+      "primary": true
+    },
+    "b47-corporate-gift-catalogue.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-b36",
+      "alt_folders": [
+        "/products"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "office-coffee-corporate",
+      "primary": true
+    },
+    "b48-subscription-q3-review.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "subscriptions",
+      "primary": true
+    },
+    "b49-rojas-contract-2027-v2.md": {
+      "merge_into": null,
+      "merge_with_doc": "b22-direct-trade-contract-v1.md",
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "update",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b50-shipping-insurance-renewal.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/shipping"
+      ],
+      "kind": "existing",
+      "topic": "shipping-other",
+      "primary": true
+    },
+    "b51-weekly-sync-november-02.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "b52-gift-order-tracker.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-b36",
+      "alt_folders": [
+        "/customers",
+        "/operations"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "office-coffee-corporate",
+      "primary": true
+    },
+    "b53-custom-label-request.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-b36",
+      "alt_folders": [
+        "/customers"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "office-coffee-corporate",
+      "primary": true
+    },
+    "b54-corporate-invoice-chain.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-b36",
+      "alt_folders": [
+        "/customers"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "office-coffee-corporate",
+      "primary": true
+    },
+    "b55-cooperative-premium-request.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b56-direct-trade-season-review.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b57-farm-visit-plan-2027.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "direct-trade-farms",
+      "primary": true
+    },
+    "b58-holiday-pause-note.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers",
+        "/ideas"
+      ],
+      "kind": "ambiguous",
+      "topic": "subscriptions",
+      "primary": true
+    },
+    "b59-rojas-product-page.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/products"
+      ],
+      "kind": "existing",
+      "topic": "products-prices",
+      "primary": true
+    },
+    "b60-board-pre-read-november.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "other",
+      "primary": false
+    }
+  }
+}

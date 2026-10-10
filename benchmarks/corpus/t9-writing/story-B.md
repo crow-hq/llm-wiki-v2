@@ -1,0 +1,12 @@
+# What happened at Lumen, June to November 2026 (story B)
+
+Many things happen at once every month; most documents are about ordinary work. These threads run through the six months:
+
+- June: Lumen relaunches its home subscriptions with a new box, flexible frequency and a referral code (launch plan, landing page copy, first-week numbers). A cupping of new Brazilian samples from Andes Direct. Roaster burner inspection. A carrier changes its pickup time. Weekly syncs.
+- July: a heatwave: cold brew bottles and iced espresso kits sell out; an emergency extra production run, a co-packer call, a shelf-life note, a cold brew price change. Subscription relaunch numbers at one month. A web shop outage. Accountant's half-year notes.
+- August: Giulia Ferrero visits two farms in Huila, Colombia, and agrees to buy directly from the Rojas family farm and a women's cooperative (visit report, a first direct-trade contract, the quality premium paid above market, an import logistics plan via a freight forwarder). The cold brew spike fades. Summer staff holidays. Customer survey on decaf.
+- September: direct trade expands: a third farm in Ethiopia (Guji) through an exporter, traceability sheets per lot, a pre-financing agreement, a transparency report draft for customers, a dispute about moisture levels in a lot, a farm price-premium policy. A company in Turin asks Lumen to supply coffee for its offices; Lumen starts an "office coffee" offer for businesses (machine rental terms, first corporate quote, gift boxes for corporate clients' Christmas). Board meeting.
+- October: direct-trade lots arrive (cupping scores, a roasting profile for the Rojas lot, a contract for 2027 volumes, farm visit photos summary, premium payments made). Office coffee: four companies signed, a service contract template, a machine breakdown at a client, corporate gifting catalogue. Subscription relaunch quarterly review. Roaster maintenance. Shipping insurance renewal.
+- November: corporate Christmas gift orders peak (order tracker, a custom-label request, invoicing problems). Direct trade: end-of-season review, 2027 farm visit plan, a premium increase request from the cooperative. Subscription holiday pause option. Regular shipping cut-offs, a product page for the Rojas single origin, board pre-read.
+
+Some documents revise or repeat an earlier one (a corrected contract, a second version of a quote, a forwarded email chain).

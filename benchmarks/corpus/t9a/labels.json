@@ -1,0 +1,789 @@
+{
+  "about": "Task 9 synthetic half A: blind writer, labels merged from two blind annotators (t9_labels.py).",
+  "docs": {
+    "a01-bar-licence-update.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a01",
+      "alt_folders": [
+        "/operations"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "tasting-bar",
+      "primary": true
+    },
+    "a02-weekly-sync-0603.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "a03-guji-test-roast-note.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/roasting"
+      ],
+      "kind": "existing",
+      "topic": "roasting",
+      "primary": true
+    },
+    "a04-tasting-bar-first-menu.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a01",
+      "alt_folders": [
+        "/operations",
+        "/products"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "tasting-bar",
+      "primary": true
+    },
+    "a05-bar-stazione-trial.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a06-carrier-delays-report.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/shipping"
+      ],
+      "kind": "existing",
+      "topic": "shipping-other",
+      "primary": true
+    },
+    "a07-board-minutes-june.md": {
+      "merge_into": "meetings/board-meeting-june-2026.md",
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "update",
+      "topic": "other",
+      "primary": false
+    },
+    "a08-roaster-cleaning-checklist.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/roasting"
+      ],
+      "kind": "existing",
+      "topic": "roasting",
+      "primary": true
+    },
+    "a09-bar-opening-weekend-rota.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a01",
+      "alt_folders": [
+        "/operations"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "tasting-bar",
+      "primary": true
+    },
+    "a10-opening-weekend-takings.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a01",
+      "alt_folders": [
+        "/operations"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "tasting-bar",
+      "primary": true
+    },
+    "a11-price-list-subscriber-faq.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "a12-bar-saturday-note.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a01",
+      "alt_folders": [
+        "/operations"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "tasting-bar",
+      "primary": true
+    },
+    "a13-weekly-sync-0707.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "a14-churn-check-in-july.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "subscriptions",
+      "primary": true
+    },
+    "a15-portello-credit-chain.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "ambiguous",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a16-andes-direct-call-notes.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "green-coffee-sourcing-other",
+      "primary": true
+    },
+    "a17-aurora-product-page-rewrite.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/products"
+      ],
+      "kind": "existing",
+      "topic": "products-prices",
+      "primary": true
+    },
+    "a18-cupping-evening-checklist.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a01",
+      "alt_folders": [
+        "/operations"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "tasting-bar",
+      "primary": true
+    },
+    "a19-portello-credit-decision.md": {
+      "merge_into": null,
+      "merge_with_doc": "a15-portello-credit-chain.md",
+      "merge_ok": [
+        "customers/cafe-portello.md"
+      ],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "update",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a20-ceo-update-july.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "ambiguous",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "a21-caffe-lagrange-trial-notes.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a22-bar-vanchiglia-agreement.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a23-august-roasting-schedule.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations",
+        "/operations/roasting"
+      ],
+      "kind": "existing",
+      "topic": "roasting",
+      "primary": true
+    },
+    "a24-pasticceria-monti-agreement.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a25-summer-opening-hours-and-holiday-reminders.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations"
+      ],
+      "kind": "ambiguous",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "a26-wholesale-orders-summary-august.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a27-stazione-late-payment-emails.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a28-weekly-sync-0826.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "a29-packaging-quote-cafe-bags.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations",
+        "/operations/shipping"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "a30-ceo-update-august.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a30",
+      "alt_folders": [
+        "/meetings"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "a31-lumen-academy-proposal.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/ideas"
+      ],
+      "kind": "ambiguous",
+      "topic": "barista-school",
+      "primary": true
+    },
+    "a32-trainer-contract-excerpt.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a32",
+      "alt_folders": [
+        "/operations"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "barista-school",
+      "primary": true
+    },
+    "a33-two-new-cafes.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a34-dora-grinder-loan.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a35-vanchiglia-damaged-delivery.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a36-room-rental-quote.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a32",
+      "alt_folders": [
+        "/ideas",
+        "/operations"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "barista-school",
+      "primary": true
+    },
+    "a37-cafe-credit-limit-policy.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a38-academy-first-course-feedback.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a32",
+      "alt_folders": [],
+      "folders": [],
+      "kind": "new",
+      "topic": "barista-school",
+      "primary": true
+    },
+    "a39-quarterly-wholesale-review-q3.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a40-board-minutes-september.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "other",
+      "primary": false
+    },
+    "a41-academy-calendar-v2-corrected.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/ideas"
+      ],
+      "kind": "ambiguous",
+      "topic": "barista-school",
+      "primary": true
+    },
+    "a42-account-manager-hired.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a42",
+      "alt_folders": [
+        "/customers",
+        "/operations"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "people-hr",
+      "primary": true
+    },
+    "a43-weekly-sync-1007.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": false
+    },
+    "a44-pasticceria-monti-agreement-v2.md": {
+      "merge_into": null,
+      "merge_with_doc": "a24-pasticceria-monti-agreement.md",
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "update",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a45-loyalty-discount-note.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a46-gioberti-closure-checklist.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a47-roaster-service-report.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/roasting"
+      ],
+      "kind": "existing",
+      "topic": "roasting",
+      "primary": true
+    },
+    "a48-trainer-room-complaint.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a32",
+      "alt_folders": [
+        "/operations"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "barista-school",
+      "primary": true
+    },
+    "a49-academy-booking-cancellation-policy.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a49",
+      "alt_folders": [
+        "/customers"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "barista-school",
+      "primary": true
+    },
+    "a50-harvest-event-plan.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a01",
+      "alt_folders": [
+        "/operations"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "tasting-bar",
+      "primary": true
+    },
+    "a51-green-coffee-hedging-h1-2027.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/sourcing"
+      ],
+      "kind": "existing",
+      "topic": "green-coffee-sourcing-other",
+      "primary": true
+    },
+    "a52-christmas-shipping-cutoffs-and-shifts.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/shipping"
+      ],
+      "kind": "existing",
+      "topic": "christmas-shipping",
+      "primary": true
+    },
+    "a53-carrier-peak-surcharge.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/shipping"
+      ],
+      "kind": "existing",
+      "topic": "christmas-shipping",
+      "primary": true
+    },
+    "a54-gift-box-quote.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/products"
+      ],
+      "kind": "existing",
+      "topic": "products-prices",
+      "primary": false
+    },
+    "a55-weekly-sync-1111.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "a56-christmas-blend-and-renewals.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/customers"
+      ],
+      "kind": "existing",
+      "topic": "wholesale-cafes",
+      "primary": true
+    },
+    "a57-academy-vouchers-and-2027-dates.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a49",
+      "alt_folders": [],
+      "folders": [],
+      "kind": "new",
+      "topic": "barista-school",
+      "primary": true
+    },
+    "a58-bar-christmas-menu-note.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": "g-a01",
+      "alt_folders": [
+        "/operations",
+        "/products"
+      ],
+      "folders": [],
+      "kind": "new",
+      "topic": "tasting-bar",
+      "primary": true
+    },
+    "a59-parcel-backlog-incident-report.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/operations/shipping"
+      ],
+      "kind": "existing",
+      "topic": "ambiguous",
+      "primary": false
+    },
+    "a60-board-pre-read-december.md": {
+      "merge_into": null,
+      "merge_with_doc": null,
+      "merge_ok": [],
+      "group": null,
+      "alt_folders": [],
+      "folders": [
+        "/meetings"
+      ],
+      "kind": "existing",
+      "topic": "other",
+      "primary": false
+    }
+  }
+}
