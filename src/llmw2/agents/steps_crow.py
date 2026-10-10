@@ -53,20 +53,9 @@ def route(ctx: StepContext, root: Folder, cand: Candidate) -> Route:
     """Step 1: a Choice per level (subfolders, Here, New subfolder, None of these) with a beam."""
     ctx.need_classifier("route")
     crow = ctx.cfg.crow
-    state, mark = routing_state(ctx, cand), len(ctx.decisions)
-    asked: dict[str, list[ChoiceAnswer]] = {}  # the answers obtained per folder, kept across passes
+    state = routing_state(ctx, cand)
     try:
-        finished, visited = _beam(ctx, root, state, asked, force=False)
-        best = max(finished, key=lambda p: p.score, default=None)
-        # A path score near tau_path decides between the classifier and the LLM: average every level of it, once.
-        if (
-            crow.votes > 1
-            and best
-            and abs(best.score - crow.tau_path) < crow.vote_band
-            and any(len(asked.get(f.label, ())) == 1 for f in best.folders)
-        ):
-            del ctx.decisions[mark:]  # the trace keeps the final pass only
-            finished, visited = _beam(ctx, root, state, asked, force=True)
+        finished, visited = _decide_paths(ctx, root, state)
     except ModelError as e:
         log.warning("classifier failed while routing, the LLM decides: %s", e)
         ctx.decide("route", "classifier", "error", fallback=True)
@@ -77,6 +66,47 @@ def route(ctx: StepContext, root: Folder, cand: Candidate) -> Route:
     candidates = unique_objects(f for p in finished for f in p.folders)
     ctx.decide("route", "classifier", f"{best.folders[-1].label} ({best.end})", best.score)
     return Route(best.folders[-1], best.end == NEW, candidates)
+
+
+def _decide_paths(ctx: StepContext, root: Folder, state: str) -> tuple[list[_Path], list[Folder]]:
+    """The classifier's part of `route`: the finished paths (with the votes' second pass when it applies), the folders visited.
+
+    Raises ModelError when the classifier fails. Shared by `route` and `audit_route`.
+    """
+    crow = ctx.cfg.crow
+    mark = len(ctx.decisions)
+    asked: dict[str, list[ChoiceAnswer]] = {}  # the answers obtained per folder, kept across passes
+    finished, visited = _beam(ctx, root, state, asked, force=False)
+    best = max(finished, key=lambda p: p.score, default=None)
+    # A path score near tau_path decides between the classifier and the LLM: average every level of it, once.
+    if (
+        crow.votes > 1
+        and best
+        and abs(best.score - crow.tau_path) < crow.vote_band
+        and any(len(asked.get(f.label, ())) == 1 for f in best.folders)
+    ):
+        del ctx.decisions[mark:]  # the trace keeps the final pass only
+        finished, visited = _beam(ctx, root, state, asked, force=True)
+    return finished, visited
+
+
+def audit_route(ctx: StepContext, root: Folder, cand: Candidate) -> tuple[Folder, float] | None:
+    """The folder `route` would file `cand` in and the route's confidence, by the classifier alone.
+
+    None where `route` would not settle on a folder by itself: it would ask the LLM (a path score under `tau_path`, no
+    path, a classifier error) or open a new subfolder ("New subfolder", "None of these"). Makes no LLM call.
+    """
+    ctx.need_classifier("route")
+    try:
+        finished, _ = _decide_paths(ctx, root, routing_state(ctx, cand))
+    except ModelError as e:
+        log.warning("classifier failed while auditing a route: %s", e)
+        return None
+    best = max(finished, key=lambda p: p.score, default=None)
+    if best is None or best.score < ctx.cfg.crow.tau_path or best.end == NEW:
+        return None
+    ctx.decide("route", "classifier", f"{best.folders[-1].label} ({best.end})", best.score)
+    return best.folders[-1], best.score
 
 
 def _beam(

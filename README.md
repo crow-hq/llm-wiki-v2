@@ -109,6 +109,7 @@ The wiki is plain Markdown files you can read, edit and keep in git (`./wiki`
 with Docker). The API docs are at http://localhost:8000/docs; with Docker the
 CLI runs in the same image: `docker compose run --rm wiki llmwiki2 check`.
 To file a note elsewhere or reword a folder's description from the terminal: `llmwiki2 move finance/pricing.md /sourcing` and `llmwiki2 describe /finance "Money in and out."`.
+In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes the classifier would file in another folder today (no LLM call; it moves them only with `--apply`), and `llmwiki2 health [--min-filed 5] [--max-share 0.3]` shows, from `log.md`, the folders that keep needing new subfolders or the LLM fallback. Every new note carries a stable `id` in its frontmatter (`wiki.find_note(id)`).
 
 | Endpoint | What it does |
 |---|---|
@@ -119,6 +120,7 @@ To file a note elsewhere or reword a folder's description from the terminal: `ll
 | `GET /tree` · `GET /note?path=…` | folder tree · one note (frontmatter and Markdown body) |
 | `GET /check` · `GET /graph` | lint problems · the wiki as nodes and links (JSON) |
 | `POST /note/move` `{path, folder}` · `POST /folder/describe` `{path, description}` | move a note to another folder, links following (returns the note as `GET /note`) · change a folder's description |
+| `POST /audit` `{min_confidence?, apply?}` · `GET /taxonomy` | CROW: notes the classifier would file in another folder (moved if `apply`) · per folder and month, new subfolders and fallbacks (from the log) |
 | `DELETE /note?path=…` · `DELETE /folder?path=/…` · `DELETE /wiki` | delete a note · a folder with all it holds · everything; links to them go, and raw copies no remaining note cites |
 | `GET /usage` · `GET /health` | token totals per ledger and model · status |
 | `GET /settings` · `POST /settings` · `POST /settings/test` | provider, model and key (masked) · save them · try them; changes from this machine only |

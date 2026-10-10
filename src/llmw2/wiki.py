@@ -16,6 +16,9 @@
     wiki.create_folder("/", "finance", "Money in and out: budgets, invoices, pricing.")
     wiki.move_note("finance/pricing.md", "/sourcing"); wiki.describe_folder("/finance", "Money in and out.")
     wiki.delete_note("finance/pricing.md"); wiki.delete_folder("/finance"); wiki.clear()
+    wiki.audit_routes(0.7, apply=False)       # CROW: notes the classifier would file elsewhere today (no LLM call)
+    wiki.taxonomy_health()                    # per folder and month, from log.md: new subfolders and fallbacks per note filed
+    wiki.find_note(note_id)                   # a note by its stable `id`
     wiki.usage.to_dict()                      # {"llm": …, "classifier": …, "by_model": …}
 """
 
@@ -27,19 +30,21 @@ import threading
 from collections.abc import Callable, Iterable
 from typing import Any, Self
 
-from llmw2.agents.data import Source
+from llmw2.agents import steps_crow
+from llmw2.agents.data import Candidate, Source
 from llmw2.agents.librarian import IngestResult, Librarian, Prepared
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.researcher import Answer, Researcher
 from llmw2.agents.steps import CLASSIC, CROW, StepContext, Steps, check_extract
+from llmw2.audit import AUDIT_MIN, HEALTH_MAX_SHARE, HEALTH_MIN_FILED, FolderHealth, RouteProposal, taxonomy_health
 from llmw2.batch import BatchReport, Item
 from llmw2.bundle.check import Problem, check
 from llmw2.bundle.files import title_of
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.store import Deleted, WikiStore
-from llmw2.bundle.tree import Folder, Note, slugify
+from llmw2.bundle.tree import LOG, Folder, Note, slugify
 from llmw2.config import WikiConfig
-from llmw2.errors import InputError
+from llmw2.errors import ConfigError, InputError
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport, UsageTracker
@@ -344,6 +349,56 @@ class Wiki:
         """Empty the wiki: every note, folder and raw copy. Cannot be undone."""
         with self.store.lock():
             return self.store.clear()
+
+    def find_note(self, note_id: str) -> Note | None:
+        """The note of the tree with this stable `id` (archived copies are not searched), or None."""
+        return next((n for n in self.store.load().all_notes() if n.id == note_id), None)
+
+    def audit_routes(self, min_confidence: float = AUDIT_MIN, apply: bool = False) -> list[RouteProposal]:
+        """The notes the CROW classifier would file in another folder today, with the confidence of the route.
+
+        Each note of the tree is routed as `route` routes a candidate (the same per-level choices and beam), but never by
+        the LLM: a note whose route would fall back, or end in "New subfolder" or "None of these", gets no proposal, and
+        no LLM call is made. A proposal needs a folder other than the note's own, not below it (moving a note deeper
+        into its own branch was most of the wrong proposals measured), and `confidence >= min_confidence`.
+        With `apply`, each proposal is carried out with `move_note`, one at a time under the lock; `applied` says which moved.
+        ConfigError in classic mode or without a classifier.
+        """
+        if self.cfg.mode != "crow" or self.classifier is None:
+            raise ConfigError("the routing audit needs CROW mode and its classifier")
+        self._require_classifier()
+        ctx = StepContext(self.llm, self.classifier, self.prompts, self.cfg, system_prompt="librarian/system")
+        root = self.store.load()
+        proposals: list[RouteProposal] = []
+        for note in root.all_notes():
+            ctx.decisions = []
+            cand = Candidate(note.title, note.summary, note.tags, note.main_body())
+            routed = steps_crow.audit_route(ctx, root, cand)
+            current = note.folder.label if note.folder else "/"
+            if routed is None or routed[0].label == current or routed[1] < min_confidence:
+                continue
+            if current != "/" and routed[0].label.startswith(current + "/"):  # deeper in its own branch: a tidy-up, not a misroute
+                continue
+            proposals.append(RouteProposal(note.rel, note.id, note.title, current, routed[0].label, routed[1]))
+        if apply:
+            for proposal in proposals:
+                try:
+                    with self.store.lock():
+                        self.store.move_note(proposal.path, proposal.proposed)
+                    proposal.applied = True
+                except InputError:  # the note went meanwhile, or is already there: the others go on
+                    continue
+        return proposals
+
+    def taxonomy_health(self, min_filed: int = HEALTH_MIN_FILED, max_share: float = HEALTH_MAX_SHARE) -> list[FolderHealth]:
+        """Per folder and month of `log.md`: notes filed, new subfolders opened and fallbacks, flagged when they are too many.
+
+        Reads the log alone, no model. A row is flagged when `filed >= min_filed` and
+        `(new_subfolders + fallbacks) / filed > max_share`: a folder that keeps needing subfolders or the LLM's help.
+        """
+        path = self.store.root / LOG
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        return taxonomy_health(text, min_filed, max_share)
 
     def check(self) -> list[Problem]:
         return check(self.cfg.bundle)

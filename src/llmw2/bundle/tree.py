@@ -68,6 +68,12 @@ class Note:
         return str(self.frontmatter.get("title") or self.slug)
 
     @property
+    def id(self) -> str | None:
+        """The stable id a note gets when it is created (never in a link); None for a note written before ids."""
+        value = self.frontmatter.get("id")
+        return str(value) if value else None
+
+    @property
     def summary(self) -> str:
         return str(self.frontmatter.get("description") or "")
 

@@ -14,6 +14,7 @@ __version__ = "0.4.0"
 
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.steps import CLASSIC, CROW, StepContext, Steps
+from llmw2.audit import AUDIT_MIN, FolderHealth, RouteProposal
 from llmw2.batch import BatchReport, Item
 from llmw2.bundle.origin import Origin
 from llmw2.config import WikiConfig
@@ -22,6 +23,7 @@ from llmw2.sources import Change, ChangeBatch, LocalFolderSource, SourceConnecto
 from llmw2.wiki import Wiki
 
 __all__ = [
+    "AUDIT_MIN",
     "CLASSIC",
     "CROW",
     "BatchReport",
@@ -29,6 +31,7 @@ __all__ = [
     "Change",
     "ChangeBatch",
     "ConfigError",
+    "FolderHealth",
     "InputError",
     "Item",
     "LocalFolderSource",
@@ -36,6 +39,7 @@ __all__ = [
     "NoteDraft",
     "Origin",
     "Route",
+    "RouteProposal",
     "Source",
     "SourceConnector",
     "StepContext",

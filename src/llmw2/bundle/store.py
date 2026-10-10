@@ -25,6 +25,7 @@ import os
 import shutil
 import threading
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -217,6 +218,7 @@ class WikiStore:
         note_body = body.rstrip() + "\n"
         frontmatter: dict[str, Any] = {
             "type": NOTE_TYPE,
+            "id": uuid.uuid4().hex[:12],  # stable: no update, move or revision changes it, and no link or index uses it
             "title": title.strip(),
             "description": summary.strip(),
             "tags": tags,

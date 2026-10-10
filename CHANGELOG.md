@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every line of the usage log records the `provider` that served the call (when the response says), the `temperature`, the `seed` and the `finish_reason`.
 - `Prompts.fingerprint()` and `decision_hash(steps, cfg, prompts)` in `llmw2.agents.steps`.
 - The settings page warns, when testing an Ollama model, if its `num_ctx` is smaller than a call can need.
+- A stable `id` in the frontmatter of every new note (12 hex characters). Updates, moves and archived copies keep it; older notes get none; it is never used in links or indexes. `Wiki.find_note(id)`; `check` reports two notes with the same `id`.
+- Routing audit (CROW): `wiki.audit_routes(min_confidence=0.7, apply=False)`, `llmwiki2 audit [--min-confidence X] [--apply]` and `POST /audit`. Routes each note of the tree again with `route`'s classifier decisions and never its LLM fallback, and proposes the notes whose folder differs, not deeper in the note's own branch, with a confidence of at least `min_confidence`; `apply` moves them. No LLM call, never automatic.
+- Taxonomy health: the CROW ingest log line ends `, routed by fallback` when the LLM fallback chose the folder, and `wiki.taxonomy_health(min_filed=5, max_share=0.3)`, `llmwiki2 health` and `GET /taxonomy` read `log.md` (no model) for the new subfolders and fallbacks per folder and month, flagging the folders with too many.
 - Benchmarks in `benchmarks/` (stability of the filing decisions, facts that survive into long notes, replay of model answers) and the corpora they use, with a README.
 
 ### Changed

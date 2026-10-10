@@ -4,6 +4,7 @@
 """HTTP API (extra `server`) and the local web UI at GET /.
 
 POST /ingest, POST /upload (a .txt/.md/.pdf file), POST /ask, POST /folder (one made by hand), POST /note/move, POST /folder/describe,
+POST /audit (CROW: notes the classifier would file elsewhere), GET /taxonomy (new subfolders and fallbacks, from the log),
 GET /tree, GET /note,
 GET /graph, GET /usage, GET /check, GET /health; DELETE /note, DELETE /folder and
 DELETE /wiki (empty it); GET /settings, POST /settings,
@@ -34,6 +35,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
 from llmw2 import __version__
+from llmw2.audit import AUDIT_MIN, HEALTH_MAX_SHARE, HEALTH_MIN_FILED
 from llmw2.bundle.files import SUFFIXES
 from llmw2.bundle.origin import Origin
 from llmw2.bundle.tree import graph
@@ -84,6 +86,11 @@ class MoveRequest(BaseModel):
 class DescribeRequest(BaseModel):
     path: str
     description: str
+
+
+class AuditRequest(BaseModel):
+    min_confidence: float = AUDIT_MIN
+    apply: bool = False
 
 
 class SettingsChanges(BaseModel):
@@ -287,6 +294,18 @@ def create_app(
             except InputError as e:
                 raise HTTPException(400, str(e)) from e
         return note(moved.rel)
+
+    @app.post("/audit")
+    def audit(req: AuditRequest | None = None) -> list[dict[str, Any]]:
+        req = req or AuditRequest()
+        if not req.apply:
+            return [p.to_dict() for p in current().audit_routes(req.min_confidence)]
+        with write_lock:
+            return [p.to_dict() for p in current().audit_routes(req.min_confidence, apply=True)]
+
+    @app.get("/taxonomy")
+    def taxonomy(min_filed: int = HEALTH_MIN_FILED, max_share: float = HEALTH_MAX_SHARE) -> list[dict[str, Any]]:
+        return [r.to_dict() for r in current().taxonomy_health(min_filed, max_share)]
 
     @app.post("/folder/describe")
     def describe_folder(req: DescribeRequest) -> dict[str, Any]:

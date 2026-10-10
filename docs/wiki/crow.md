@@ -135,6 +135,17 @@ changes or the wiki grows.
   that share rare values (codes, amounts, dates, names held by few notes) with the note, skipping notes that
   already have 12 See-also links; that is an extension of the paper. `relate_rare_values = false`
   (`OKF_RELATE_RARE_VALUES`) leaves them out (0.3.0's `relate`).
+- **Routing audit and taxonomy health (extensions, never automatic).** `wiki.audit_routes(min_confidence=0.7, apply=False)`
+  (`llmwiki2 audit`, `POST /audit`) routes every note of the tree again, with `route`'s own per-level choices and beam on
+  the same state (`route_state`) but never its LLM fallback, and lists the notes whose route is a folder other than their
+  own with a confidence of at least `min_confidence`. A route into a subfolder of the note's own folder is not a
+  proposal (a tidy-up, not a misroute: it was most of the wrong proposals measured). A route that would fall back, or end in "New subfolder" or "None of
+  these", gives no proposal. It makes no LLM call, only classifier calls, and moves notes (with `move_note`) only with
+  `apply`. `wiki.taxonomy_health()` (`llmwiki2 health`, `GET /taxonomy`) reads `log.md` alone, no model: per folder and
+  month, the notes filed (Created, Merged, Revised lines), the "Created folder" lines under the folder and the lines
+  ending `, routed by fallback` (the librarian writes that when the LLM fallback chose the folder). A row is flagged when
+  at least `min_filed` (5) notes were filed and (new subfolders + fallbacks) / filed is over `max_share` (0.3): a folder
+  that keeps needing subfolders or the LLM, so its description or the thresholds deserve a look.
 - **Folders are created lazily.** A `New subfolder` route creates the folder,
   named by the LLM with `librarian/name_folder`, only when a new note is written
   into it. If step 3 merges instead, no folder is created, so a merge never

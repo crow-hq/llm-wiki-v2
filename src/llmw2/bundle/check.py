@@ -28,6 +28,7 @@ class Problem:
 def check(root: Path) -> list[Problem]:
     root = Path(root)
     problems: list[Problem] = []
+    ids: dict[str, str] = {}  # note id -> the first note of the tree that has it
     for path in sorted(root.rglob("*.md")):
         rel = path.relative_to(root).as_posix()
         if any(part.startswith(".") for part in path.relative_to(root).parts):
@@ -37,7 +38,7 @@ def check(root: Path) -> list[Problem]:
         elif path.name == LOG:
             problems += _check_log(path, rel)
         else:
-            problems += _check_doc(root, path, rel, links=not rel.startswith(f"{RAW}/"))
+            problems += _check_doc(root, path, rel, ids, links=not rel.startswith(f"{RAW}/"))
     for folder in [root, *sorted(p for p in root.rglob("*") if p.is_dir())]:
         rel_parts = folder.relative_to(root).parts
         if any(p.startswith(".") for p in rel_parts) or (rel_parts and rel_parts[0] == RAW):
@@ -47,8 +48,11 @@ def check(root: Path) -> list[Problem]:
     return problems
 
 
-def _check_doc(root: Path, path: Path, rel: str, *, links: bool = True) -> list[Problem]:
-    """Frontmatter and `type`; relative links too, except in raw/ copies, which are never edited."""
+def _check_doc(root: Path, path: Path, rel: str, ids: dict[str, str], *, links: bool = True) -> list[Problem]:
+    """Frontmatter and `type`; relative links too, except in raw/ copies, which are never edited.
+
+    A note's `id` is optional (older wikis have none), but two notes of the tree may not share one.
+    """
     try:
         doc = OKFDocument.parse(path.read_text(encoding="utf-8"))
         doc.validate()
@@ -56,11 +60,16 @@ def _check_doc(root: Path, path: Path, rel: str, *, links: bool = True) -> list[
         return [Problem(rel, str(e))]
     if not links:
         return []
-    return [
+    problems = [
         Problem(rel, f"broken link to {link}")
         for link in _LINK.findall(doc.body)
         if "://" not in link and not _resolve(root, path, link).exists()
     ]
+    if (note_id := doc.frontmatter.get("id")) is not None:
+        first = ids.setdefault(str(note_id), rel)
+        if first != rel:
+            problems.append(Problem(rel, f"duplicate id {note_id} (also in {first})"))
+    return problems
 
 
 def _check_index(root: Path, path: Path, rel: str) -> list[Problem]:

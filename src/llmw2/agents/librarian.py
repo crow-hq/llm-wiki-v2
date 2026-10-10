@@ -160,7 +160,12 @@ class Librarian:
             verb = ("Revised" if revised else "Merged") if action == "merged" else "Created"
             via = f", via {','.join(self.cfg.llm.pin_provider)}" if self.cfg.llm.pin_provider else ""
             kept = f", previous version archived at {archived}" if revised else ""
-            self.store.append_log(verb, f"from {raw} ({steps.name} {self.hash}, {self.cfg.llm.model}{via}){kept}", note.rel, note.title)
+            # CROW: the classifier did not settle the route and the LLM chose the folder (read by `Wiki.taxonomy_health`)
+            llm_decides = self.cfg.mode == "crow"  # in classic the LLM routes every note: that is no fallback
+            fallback = any(d.step == "route" and (d.fallback or (llm_decides and d.decider == "llm")) for d in ctx.decisions)
+            routed = ", routed by fallback" if fallback else ""
+            text = f"from {raw} ({steps.name} {self.hash}, {self.cfg.llm.model}{via}){kept}{routed}"
+            self.store.append_log(verb, text, note.rel, note.title)
         total = prepared.usage.copy()
         total.merge(used)
         return IngestResult(

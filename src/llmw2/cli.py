@@ -1,7 +1,7 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""`llmwiki2` command line: setup, init, ingest, sync, ask, move, describe, check, serve.
+"""`llmwiki2` command line: setup, init, ingest, sync, ask, move, describe, audit, health, check, serve.
 
 `llmwiki2` alone serves the wiki and opens it in the browser, where the settings
 page asks for what is missing; `llmwiki2 setup` asks the same in the terminal.
@@ -23,6 +23,7 @@ from collections.abc import Callable
 from importlib import resources
 from pathlib import Path
 
+from llmw2.audit import AUDIT_MIN, HEALTH_MAX_SHARE, HEALTH_MIN_FILED
 from llmw2.bundle.files import extract_text
 from llmw2.config import PROVIDERS, WikiConfig
 from llmw2.errors import ModelError
@@ -82,6 +83,12 @@ def main(argv: list[str] | None = None) -> int:
     describe = sub.add_parser("describe", help="change a folder's one-line description, the line notes are routed by")
     describe.add_argument("folder", help="the folder, e.g. /finance")
     describe.add_argument("description")
+    audit = sub.add_parser("audit", help="CROW: list the notes the classifier would file in another folder today (no LLM call)")
+    audit.add_argument("--min-confidence", type=float, default=AUDIT_MIN, help=f"least confidence to move a note (default {AUDIT_MIN})")
+    audit.add_argument("--apply", action="store_true", help="move the notes (otherwise only list them)")
+    health = sub.add_parser("health", help="per folder and month: new subfolders and fallbacks per note filed (from log.md)")
+    health.add_argument("--min-filed", type=int, default=HEALTH_MIN_FILED, help="fewest notes filed to flag a row")
+    health.add_argument("--max-share", type=float, default=HEALTH_MAX_SHARE, help="largest share of new subfolders and fallbacks")
     sub.add_parser("check", help="lint the wiki (exit 1 on problems)")
     serve = sub.add_parser("serve", help="run the HTTP API (needs the [server] extra)")
     serve.add_argument("--host", default="127.0.0.1")
@@ -224,6 +231,21 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
     elif args.command == "describe":
         folder = wiki.describe_folder(args.folder, args.description)
         print(f"{folder.label}: {folder.description}")
+    elif args.command == "audit":
+        proposals = wiki.audit_routes(args.min_confidence, apply=args.apply)
+        for p in proposals:
+            print(f"{p.id or '-'}  /{p.path}  {p.current} → {p.proposed}  {p.confidence:.2f}" + ("  moved" if p.applied else ""))
+        moved = f", {sum(p.applied for p in proposals)} moved" if args.apply else ""
+        print(f"{len(proposals)} proposal(s){moved}; classifier {wiki.usage.classifier.calls} calls")
+    elif args.command == "health":
+        rows = wiki.taxonomy_health(args.min_filed, args.max_share)
+        if rows:
+            width = max(len(r.folder) for r in rows)
+            print(f"  {'month':7}  {'folder':{width}}  filed  new  fallback  share")
+        for r in rows:
+            cells = f"{r.month:7}  {r.folder:{width}}  {r.filed:5}  {r.new_subfolders:3}  {r.fallbacks:8}  {r.share:.2f}"
+            print(f"{'!' if r.flag else ' '} {cells}")
+        print(f"{sum(r.flag for r in rows)} flagged of {len(rows)} row(s)")
     elif args.command == "check":
         problems = wiki.check()
         for problem in problems:
@@ -239,6 +261,6 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
         serve(wiki, host=args.host, port=args.port, settings=Settings(bundle=args.bundle, mode=args.mode),
               make_wiki=build_wiki, open_browser=args.open)
 
-    if args.command in ("ingest", "sync", "ask"):
+    if args.command in ("ingest", "sync", "ask", "audit"):
         print(wiki.usage.summary(), file=sys.stderr)
     return 0

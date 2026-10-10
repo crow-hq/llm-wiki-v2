@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -224,8 +225,10 @@ def test_write_note_writes_an_okf_note(store: WikiStore, clock: type[_Clock]) ->
     note = _note(store, folder, " Revenue recognition ", " When revenue is booked. ", tags=["gaap"])
     assert note.rel == "finance/revenue-recognition.md"
     doc = _read(note.path)
+    assert re.fullmatch(r"[0-9a-f]{12}", doc.frontmatter["id"])
     assert doc.frontmatter == {
         "type": "Note",
+        "id": doc.frontmatter["id"],
         "title": "Revenue recognition",
         "description": "When revenue is booked.",
         "tags": ["gaap"],
