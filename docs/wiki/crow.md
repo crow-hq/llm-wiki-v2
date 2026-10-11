@@ -182,3 +182,22 @@ Known classifier weaknesses:
   by the LLM and why an unsure consolidation becomes a new note.
 - **Long, irrelevant state.** Extra text lowers accuracy. That is why decisions
   read the compact state instead of the whole source.
+
+## Measured against 0.3.0
+
+Preliminary results of 2026-10-10 (CROW 0.4.0 against CROW and classic 0.3.0, the same documents through OpenRouter,
+two or three writing models; `benchmarks/` holds the corpora and scripts):
+
+- **Filing.** On 150 short documents, with the same writing model on every flow, 25.5 filing errors against 30 for
+  CROW 0.3.0 and 41 for classic. An error is a document in the wrong part of the wiki, in a folder too general when a
+  better one existed, a new topic pushed into an unrelated folder, a folder holding a single stray document, or a
+  wrong merge; where a flow and the labels disagreed on every run, a reviewer judged both placements blind and kept
+  each one a reader would accept. Documents in the right branch: 0.89, against 0.86 for classic.
+- **Revisions.** After a document is revised twice, answers give the current value 24 times out of 24 (18 with 0.3.0).
+- **Long documents.** Facts past the first 100k characters of a source reach the note 0.60 to 0.73 of the time
+  (0.3.0 does not read that far).
+- **Duplicates and contradictions.** 11 of 15 restatements in distant folders are linked (4 with 0.3.0); answers report
+  both values for 7 of 10 contradictions (3 with 0.3.0).
+- **Updates.** 0.88 to 0.92 of the updates are merged into the note they update (0.77 to 0.81 with 0.3.0).
+- **Cost as the wiki grows.** The same documents filed into a wiki of 150 notes instead of 23 cost about 1.2 times
+  as much each, with the same number of model calls, as in 0.3.0.

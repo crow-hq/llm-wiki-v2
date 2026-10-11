@@ -43,9 +43,36 @@ The fields you will touch most:
 | `concurrency` | `4` | documents prepared at once by `ingest_many`, `sync` and the server (1 to 16; `OKF_CONCURRENCY`) |
 | `llm.seed` | none | a seed sent with every request (`OKF_LLM_SEED`); providers that support it answer the same prompt the same way |
 | `llm.pin_provider` | none | OpenRouter only (`OKF_LLM_PIN_PROVIDER`, comma-separated): the providers that may answer, in order, with no fallback to others. Another provider logs a warning and ignores it. `llm.extra_body["provider"]` wins |
+| `note_length` | `proportional` | how long a note grows (`OKF_NOTE_LENGTH`): `proportional` about a quarter of its source, `fixed` about `note_chars` (0.3.0's length); see [Note length](#note-length-proportional-or-fixed) |
 | `relate_rare_values` | `True` | CROW: `relate` also weighs notes that share rare values (`OKF_RELATE_RARE_VALUES`); `False` keeps 0.3.0's `relate` |
 | `answer_conflicts` | `True` | CROW: the answer is asked with a hint when the notes read disagree (`OKF_ANSWER_CONFLICTS`); `False` keeps 0.3.0's answer input |
 | `llm`, `classifier`, `crow` | | the models and the CROW thresholds |
+
+### Note length: proportional or fixed
+
+Both read a long source to the end, in parts when it does not fit one call; they differ only in
+how long the note they write may be. On a source shorter than about four times `note_chars`
+(40000 characters by default) the two are the same note at the same cost.
+
+- `proportional` (the default): a note of about a quarter of its source, at least `note_chars`,
+  at most 45000. More of a long document reaches the note, the part past the first 100k
+  characters above all. It costs more on long sources.
+- `fixed`: a note of about `note_chars`, whatever the source. Cheaper on long sources, and the
+  note stays short to read; much of what sits deep in a long document is lost.
+
+Measured on 15 documents of 10 to 55 pages (up to 198k characters), CROW, three writing models
+(2026-10-10; preliminary), going from `fixed` to `proportional`:
+
+| | change, across the three models |
+|---|---|
+| facts of the source found in the note | +0.07 to +0.12 (on a 0 to 1 scale) |
+| facts found past the first 100k characters | +0.20 to +0.86 |
+| cost of filing the long documents | +6% to +43% |
+
+The spread comes from the models, which write notes of different lengths; the price itself depends
+on the model and the provider you choose. The cost of a short document does not change with `note_length`, and the cost per document
+grows little with the wiki: the same documents filed into a wiki of 150 notes instead of 23
+cost about 1.2 times as much each, with the same number of model calls.
 
 ## Wiki
 
