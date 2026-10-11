@@ -34,7 +34,9 @@ ALPHA_CLEAR = {HERE: 0.9, NEW: 0.05, NONE: 0.05}
 
 def make_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, **crow: Any) -> Wiki:
     """/alpha and /beta; beam 1 unless said otherwise."""
-    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", crow=CrowConfig(**{"beam": 1, **crow})), llm=llm, classifier=classifier)
+    # these tests pin 0.3.0's routing arithmetic (votes, averages): strict_new_folders off
+    cfg = WikiConfig(bundle=bundle, mode="crow", crow=CrowConfig(**{"beam": 1, **crow}), strict_new_folders=False)
+    wiki = Wiki(cfg, llm=llm, classifier=classifier)
     wiki.init()
     root = wiki.store.load()
     wiki.store.create_folder(root, "alpha", "Alpha things.")

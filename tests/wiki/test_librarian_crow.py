@@ -33,7 +33,14 @@ def draft(title: str, body: str = "# Overview\n\nThe facts.") -> dict[str, Any]:
     return {"title": title, "summary": f"What {title} says.", "tags": [], "body": body}
 
 
+@pytest.fixture
+def crow_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> Wiki:
+    """The shared CROW wiki with strict_new_folders off: these tests pin 0.3.0's routing arithmetic."""
+    return make_wiki(bundle, llm, classifier)
+
+
 def make_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, **cfg: Any) -> Wiki:
+    cfg = {"strict_new_folders": False, **cfg}  # these tests pin 0.3.0's routing arithmetic (beam, scores, fallback)
     wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", **cfg), llm=llm, classifier=classifier)
     wiki.init()
     return wiki

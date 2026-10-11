@@ -60,8 +60,8 @@ def context(llm: Any, source: Source | None = None, **fields: Any) -> StepContex
 
 
 def test_route_prompt_is_main_s_text_byte_for_byte() -> None:
-    # "route.md becomes byte-identical to origin/main"
-    assert Prompts().load("classifier/route") == main_file("src/llmw2/agents/prompts/classifier/route.md")
+    # "route.md becomes byte-identical to origin/main"; since strict_new_folders that text is route_open.md (the switch off)
+    assert Prompts().load("classifier/route_open") == main_file("src/llmw2/agents/prompts/classifier/route.md")
 
 
 # -- 2. summarize without the length rule ------------------------------------------------------------

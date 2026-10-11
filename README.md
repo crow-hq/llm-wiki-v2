@@ -290,6 +290,7 @@ list is in [.env.example](https://github.com/crow-hq/llm-wiki-v2/blob/main/.env.
 | `OKF_NOTE_CHARS` | `10000`, and at most half of what one request holds | about how many characters a note body may have (at least 1000): asked of the model, not enforced; a body over 1.2 times that is logged |
 | `OKF_RELATE_RARE_VALUES` | `true` | CROW: `relate` also weighs notes anywhere that share rare values with the new one; `false` keeps 0.3.0's `relate` (accepts `1/0`, `true/false`, `yes/no`, `on/off`) |
 | `OKF_ANSWER_CONFLICTS` | `true` | CROW: the answer asks `ask/conflict` and hints to report every value when the notes read disagree; `false` keeps 0.3.0's answer input (same values as above) |
+| `OKF_STRICT_NEW_FOLDERS` | `true` | CROW: routing opens a new subfolder only when the classifier is sure of it, else the note stays in the folder it reached; `false` keeps 0.3.0's routing (same values as above) |
 | `OKF_LLM_PIN_PROVIDER` | — | OpenRouter only: comma-separated providers that may answer, in order, with no fallback (e.g. `DeepInfra,Novita`); a call fails when none is up. Ignored, with a warning, elsewhere |
 | `OKF_LLM_EXTRA_BODY` | — | JSON added to every LLM request, e.g. `'{"provider":{"order":["together"]}}'` to pin fast OpenRouter providers |
 

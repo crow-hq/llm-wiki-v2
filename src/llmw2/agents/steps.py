@@ -204,7 +204,7 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
     model (CROW only), temperature, seed, pinned providers, the CROW thresholds, `max_depth`, `max_links`, `mode`,
     `summarize`, the size of the state routing reads (`state_chars`, `STATE_VERSION`), how much one
     call reads and how long a note may be (`effective_read_chars`, `effective_note_chars`, and `note_length` unless fixed),
-    `SUMMARY_VERSION`, and `relate_rare_values` and `answer_conflicts` when switched off. Keys, addresses, timeouts,
+    `SUMMARY_VERSION`, and `relate_rare_values`, `answer_conflicts` and `strict_new_folders` when switched off. Keys, addresses, timeouts,
     attempts, other sizes, concurrency and logs do not change the decisions: not in it.
     """
     decisive = {
@@ -233,6 +233,8 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
         decisive["relate_rare_values"] = False  # only when off: the hash of the default stays what it was
     if not cfg.answer_conflicts:
         decisive["answer_conflicts"] = False
+    if not cfg.strict_new_folders:
+        decisive["strict_new_folders"] = False
     return hashlib.sha256(json.dumps(decisive, sort_keys=True).encode("utf-8")).hexdigest()[:8]
 
 

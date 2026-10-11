@@ -42,7 +42,8 @@ def run(bundle: Path, fallback_menu: str | None, extra: int = 0, pad: int = 0) -
     tracker = UsageTracker()
     llm, classifier = FakeLLM(tracker), FakeClassifier(tracker)
     crow = CrowConfig(beam=1) if fallback_menu is None else CrowConfig(beam=1, fallback_menu=fallback_menu)  # type: ignore[arg-type]
-    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", crow=crow), llm=llm, classifier=classifier)
+    # these tests pin 0.3.0's routing arithmetic (a weak route that falls back): strict_new_folders off
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", crow=crow, strict_new_folders=False), llm=llm, classifier=classifier)
     wiki.init()
     root = wiki.store.load()
     alpha, _ = wiki.store.create_folder(root, "alpha", f"{tag('alpha')} things.")

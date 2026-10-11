@@ -30,6 +30,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 FALLBACK_MENU_CHARS = 8000  # most characters of the folder menu the routing fallback shows the LLM
+ROUTE_PROMPT = "classifier/route"  # the routing Choice; with `strict_new_folders` off, 0.3.0's text:
+ROUTE_PROMPT_OPEN = "classifier/route_open"
 
 
 @dataclass(frozen=True)
@@ -161,8 +163,9 @@ def _expand(
     With `votes` above 1 a borderline Choice (or any, when `force`) is asked `votes` times in all and the average decides.
     """
     crow = ctx.cfg.crow
+    strict = ctx.cfg.strict_new_folders
     folder = path.folders[-1]
-    text = ctx.prompts.render_sections("classifier/route", folder=folder.label)
+    text = ctx.prompts.render_sections(ROUTE_PROMPT if strict else ROUTE_PROMPT_OPEN, folder=folder.label)
     options = {f.name: f.description or f.name for f in ctx.children(folder)}
     if not (folder.is_root and ctx.can_create(folder)):  # the root holds no notes, unless no folder can be made
         options[HERE] = text[HERE]
@@ -185,18 +188,40 @@ def _expand(
     else:
         answer = answers[0]
     votes = f" ({len(answers)} votes)" if len(answers) > 1 else ""
-    ranked = sorted(options, key=lambda o: answer.probabilities.get(o, 0.0), reverse=True)
-    kept = ranked[:1] if answer.confidence >= crow.tau_route else ranked[: crow.beam]
+    if strict:
+        probs, confidence = _without_weak_new(answer, options, crow.tau_route)
+    else:
+        probs, confidence = {o: answer.probabilities.get(o, 0.0) for o in options}, answer.confidence
+    ranked = sorted(probs, key=lambda o: probs[o], reverse=True)
+    kept = ranked[:1] if confidence >= crow.tau_route else ranked[: crow.beam]
     ctx.decide("route_step", "classifier", f"{folder.label}: {' | '.join(kept)}{votes}", answer.confidence, scores=answer.probabilities)
     finished = []
     for option in kept:
-        p = answer.probabilities.get(option, 0.0)
+        p = probs[option]
         if option in (HERE, NEW):
             finished.append(_Path(path.folders, (*path.probs, p), option))
         elif option != NONE and (sub := folder.subfolder(option)) is not None:
             expanded.append(_Path((*path.folders, sub), (*path.probs, p)))
             visited.append(sub)
     return finished
+
+
+def _without_weak_new(answer: ChoiceAnswer, options: dict[str, str], tau: float) -> tuple[dict[str, float], float]:
+    """`strict_new_folders`: the probabilities that decide a level, and the confidence that picks one or `beam` options.
+
+    "New subfolder" under `tau` cannot end a path: it is dropped and its probability goes to Here (at the root, which has
+    no Here, the rest is renormalised); the confidence is then the larger of the answer's and the top probability left.
+    NEW at or over `tau`, or NEW as the only option: the answer as it is. The trace keeps the answer's own scores.
+    """
+    probs = {o: answer.probabilities.get(o, 0.0) for o in options}
+    if NEW not in probs or len(options) == 1 or probs[NEW] >= tau:
+        return probs, answer.confidence
+    weak = probs.pop(NEW)
+    if HERE in probs:
+        probs[HERE] += weak
+    elif (total := sum(probs.values())) > 0:
+        probs = {o: p / total for o, p in probs.items()}
+    return probs, max(answer.confidence, max(probs.values(), default=0.0))
 
 
 def _route_fallback(

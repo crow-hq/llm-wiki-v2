@@ -195,7 +195,7 @@ def crow_preset(classifier_provider: str) -> str:
 # WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).
 _TOP_LEVEL_ENV = (
     "bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency", "usage_log",
-    "prompts_dir", "note_chars", "note_length", "revisions", "relate_rare_values", "answer_conflicts",
+    "prompts_dir", "note_chars", "note_length", "revisions", "relate_rare_values", "answer_conflicts", "strict_new_folders",
 )
 _BOOL_ENV = {"1": True, "true": True, "yes": True, "on": True, "0": False, "false": False, "no": False, "off": False}
 
@@ -219,6 +219,9 @@ class WikiConfig(BaseModel):
     relate_rare_values: bool = True
     # CROW: `ask` asks the typed `ask/conflict` question and hints at disagreeing notes (OKF_ANSWER_CONFLICTS; false: 0.3.0's answer input).
     answer_conflicts: bool = True
+    # CROW: routing opens a new subfolder only when the classifier is sure of it, and asks whether a folder's description
+    # covers the note (OKF_STRICT_NEW_FOLDERS; false: 0.3.0's routing). See `steps_crow._expand`.
+    strict_new_folders: bool = True
     upload_mb: int = Field(25, gt=0)  # largest request body the server reads: a big PDF fits, a runaway upload does not fill memory
     concurrency: int = Field(4, ge=1, le=16)  # documents prepared (extracted, summarized) at once by a batch or the server
     actor: str = f"llmw2/{__version__}"  # OKF `generated.by`
@@ -289,7 +292,7 @@ class WikiConfig(BaseModel):
         top: dict[str, Any] = {}
         for key in _TOP_LEVEL_ENV:
             if value := env.get(f"OKF_{key.upper()}"):
-                if key in ("relate_rare_values", "answer_conflicts"):
+                if key in ("relate_rare_values", "answer_conflicts", "strict_new_folders"):
                     if value.strip().lower() not in _BOOL_ENV:
                         raise ConfigError(f"OKF_{key.upper()} must be one of 1/0, true/false, yes/no, on/off, not {value!r}")
                     top[key] = _BOOL_ENV[value.strip().lower()]
