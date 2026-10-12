@@ -1,0 +1,71 @@
+{
+ "17-sample-roasting-new-lots.md": {
+  "extra_folders": [
+   "/sourcing"
+  ]
+ },
+ "29-pause-option-pilot-results.md": {
+  "extra_folders": [
+   "/customers"
+  ]
+ },
+ "a08-roaster-cleaning-checklist.md": {
+  "extra_merge": "operations/roasting/roaster-maintenance.md"
+ },
+ "a37-cafe-credit-limit-policy.md": {
+  "extra_merge": "01-wholesale-credit-limits.md"
+ },
+ "a41-academy-calendar-v2-corrected.md": {
+  "extra_folders": [
+   "/operations"
+  ]
+ },
+ "a47-roaster-service-report.md": {
+  "extra_merge": "operations/roasting/roaster-maintenance.md"
+ },
+ "a51-green-coffee-hedging-h1-2027.md": {
+  "extra_merge": "sourcing/green-coffee-price-hedging.md"
+ },
+ "a52-christmas-shipping-cutoffs-and-shifts.md": {
+  "extra_merge": "09-christmas-shipping-cutoffs.md"
+ },
+ "a54-gift-box-quote.md": {
+  "extra_folders": [
+   "/packaging"
+  ]
+ },
+ "b06-brazil-cupping-scores.md": {
+  "extra_merge": "b03-brazil-samples-note.md"
+ },
+ "b08-packaging-quote-v1.md": {
+  "extra_folders": [
+   "/packaging"
+  ]
+ },
+ "b12-copacker-call-notes.md": {
+  "extra_merge": "b11-cold-brew-sold-out-email.md"
+ },
+ "b13-packaging-quote-v2.md": {
+  "extra_folders": [
+   "/packaging"
+  ]
+ },
+ "b26-summer-holiday-rota.md": {
+  "extra_folders": [
+   "/hr"
+  ]
+ },
+ "b41-direct-lots-arrival.md": {
+  "extra_folders": [
+   "/operations"
+  ]
+ },
+ "b44-office-first-corporate-quote.md": {
+  "extra_merge": "b35-office-coffee-enquiry.md"
+ },
+ "b50-shipping-insurance-renewal.md": {
+  "extra_folders": [
+   "/finance"
+  ]
+ }
+}
