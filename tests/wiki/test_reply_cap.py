@@ -144,7 +144,6 @@ def test_complete_when_reasoning_is_off_then_the_cap_is_exactly_max_tokens(track
     body = sent(requests[0])
     assert body["max_tokens"] == N
     assert "max_completion_tokens" not in body
-    assert llm.may_think is False
 
 
 def test_complete_when_reasoning_is_on_then_the_room_is_added(tracker: UsageTracker) -> None:
@@ -154,7 +153,6 @@ def test_complete_when_reasoning_is_on_then_the_room_is_added(tracker: UsageTrac
     llm.complete("sys", "user", max_tokens=N)
 
     assert sent(requests[0])["max_tokens"] == N + REASONING_ROOM
-    assert llm.may_think is True
 
 
 def test_complete_when_the_caller_sets_reasoning_then_the_room_is_added(tracker: UsageTracker) -> None:
@@ -164,7 +162,6 @@ def test_complete_when_the_caller_sets_reasoning_then_the_room_is_added(tracker:
     llm.complete("sys", "user", max_tokens=N)
 
     assert sent(requests[0])["max_tokens"] == N + REASONING_ROOM
-    assert llm.may_think is True
 
 
 @pytest.mark.parametrize("provider", ["gemini", "ollama", "custom"])
@@ -177,7 +174,6 @@ def test_complete_when_the_preset_has_no_off_switch_then_the_room_is_added(track
     body = sent(requests[0])
     assert body["max_tokens"] == N + REASONING_ROOM
     assert "max_completion_tokens" not in body
-    assert llm.may_think is True
 
 
 def test_complete_when_the_provider_is_openai_then_the_field_is_max_completion_tokens(tracker: UsageTracker) -> None:
@@ -226,7 +222,6 @@ def test_complete_when_the_model_refuses_to_stop_thinking_then_the_repost_carrie
     first, second = (sent(r) for r in requests)
     assert first["reasoning"] == {"enabled": False} and first["max_tokens"] == N
     assert second["reasoning"] == {"effort": "minimal"} and second["max_tokens"] == N + REASONING_ROOM
-    assert llm.may_think is True
 
 
 def test_complete_when_the_least_effort_was_learnt_then_next_calls_send_the_room(tracker: UsageTracker) -> None:

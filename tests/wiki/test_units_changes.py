@@ -27,46 +27,33 @@ T_OLD = "| Item | Price |\n| --- | --- |\n| Basic plan | 1,200 |\n| Pro plan | 3
 T_NEW = "| Item | Price |\n| --- | --- |\n| Basic plan | 1,200 |\n| Pro plan | 3,900 |"
 
 
-def changes(old: str, new: str) -> list[tuple[str, str, str]]:
-    return [(c.before, c.after, c.context) for c in classic._sentence_changes(old, new)]
+def changes(old: str, new: str) -> list[tuple[str, str]]:
+    return [(c.before, c.after) for c in classic._sentence_changes(old, new)]
 
 
 def test_a_changed_sentence_inside_a_replaced_paragraph_is_the_only_change() -> None:
     old = "First paragraph.\n\nAlpha stays. The limit is 30 units. Omega stays.\n\nLast paragraph."
     new = "First paragraph.\n\nAlpha stays. The limit is 40 units. Omega stays.\n\nLast paragraph."
 
-    assert changes(old, new) == [("The limit is 30 units.", "The limit is 40 units.", "Alpha stays. The limit is 40 units. Omega stays.")]
+    assert changes(old, new) == [("The limit is 30 units.", "The limit is 40 units.")]
 
 
-def test_the_context_is_empty_when_the_paragraph_is_the_change() -> None:
+def test_a_paragraph_that_is_one_changed_sentence_is_that_change() -> None:
     assert changes("Keep.\n\nThe limit is 30 units.\n\nEnd.", "Keep.\n\nThe limit is 40 units.\n\nEnd.") == [
-        ("The limit is 30 units.", "The limit is 40 units.", "")
+        ("The limit is 30 units.", "The limit is 40 units.")
     ]
 
 
-def test_the_context_is_cut_at_600_characters() -> None:
-    tail = ("word " * 200).strip()
-    old = f"Keep.\n\nOpening stays. The limit is 30 units. {tail}\n\nEnd."
-    new = f"Keep.\n\nOpening stays. The limit is 40 units. {tail}\n\nEnd."
-    paragraph_ = f"Opening stays. The limit is 40 units. {tail}"
-    assert len(paragraph_) > 600
-
-    [(_, _, context)] = changes(old, new)
-
-    assert len(context) == 600
-    assert context == paragraph_[:600]
-
-
-def test_an_inserted_paragraph_is_a_change_with_nothing_before_and_no_context() -> None:
+def test_an_inserted_paragraph_is_a_change_with_nothing_before() -> None:
     assert changes("One.\n\nTwo.", "One.\n\nBrand new paragraph. With two sentences.\n\nTwo.") == [
-        ("", "Brand new paragraph. With two sentences.", "")
+        ("", "Brand new paragraph. With two sentences.")
     ]
 
 
 def test_each_inserted_paragraph_is_a_change_in_order() -> None:
     got = changes("One.\n\nTwo.", "One.\n\nNew first.\n\nNew second.\n\nTwo.")
 
-    assert got == [("", "New first.", ""), ("", "New second.", "")]
+    assert got == [("", "New first."), ("", "New second.")]
 
 
 def test_a_deleted_paragraph_gives_nothing() -> None:
@@ -87,43 +74,42 @@ def test_separate_changes_of_one_paragraph_are_separate_and_in_the_order_of_the_
 
     got = changes(old, new)
 
-    assert [(b, a) for b, a, _ in got] == [("B 11 here.", "B 33 here."), ("D 22 here.", "D 44 here.")]
-    assert all(c == "A one. B 33 here. C two. D 44 here." for _, _, c in got)
+    assert got == [("B 11 here.", "B 33 here."), ("D 22 here.", "D 44 here.")]
 
 
 def test_adjacent_changed_sentences_are_one_change_joined_by_a_space() -> None:
     old = "Keep.\n\nA one. B 11 here. C 22 here. D end.\n\nEnd."
     new = "Keep.\n\nA one. B 33 here. C 44 here. D end.\n\nEnd."
 
-    assert [(b, a) for b, a, _ in changes(old, new)] == [("B 11 here. C 22 here.", "B 33 here. C 44 here.")]
+    assert changes(old, new) == [("B 11 here. C 22 here.", "B 33 here. C 44 here.")]
 
 
 def test_a_sentence_ends_at_a_question_or_exclamation_mark_followed_by_a_space() -> None:
     old = "Keep.\n\nIs it? Yes it is 10! Done now."
     new = "Keep.\n\nIs it? Yes it is 20! Done now."
 
-    assert [(b, a) for b, a, _ in changes(old, new)] == [("Yes it is 10!", "Yes it is 20!")]
+    assert changes(old, new) == [("Yes it is 10!", "Yes it is 20!")]
 
 
 def test_a_dot_not_followed_by_whitespace_does_not_end_a_sentence() -> None:
     old = "Keep.\n\nThe ratio is 3.5 now. Next one."
     new = "Keep.\n\nThe ratio is 4.5 now. Next one."
 
-    assert [(b, a) for b, a, _ in changes(old, new)] == [("The ratio is 3.5 now.", "The ratio is 4.5 now.")]
+    assert changes(old, new) == [("The ratio is 3.5 now.", "The ratio is 4.5 now.")]
 
 
 def test_a_changed_table_row_is_a_change_of_its_own() -> None:
     old = "Keep.\n\n" + T_OLD + "\n\nEnd."
     new = "Keep.\n\n" + T_NEW + "\n\nEnd."
 
-    assert changes(old, new) == [("| Pro plan | 3,400 |", "| Pro plan | 3,900 |", T_NEW)]
+    assert changes(old, new) == [("| Pro plan | 3,400 |", "| Pro plan | 3,900 |")]
 
 
 def test_adjacent_changed_table_rows_are_joined_by_a_newline() -> None:
     old = "Keep.\n\n| a | b |\n| --- | --- |\n| x | 11 |\n| y | 22 |\n\nEnd."
     new = "Keep.\n\n| a | b |\n| --- | --- |\n| x | 33 |\n| y | 44 |\n\nEnd."
 
-    [(before, after, _)] = changes(old, new)
+    [(before, after)] = changes(old, new)
 
     assert before == "| x | 11 |\n| y | 22 |"
     assert after == "| x | 33 |\n| y | 44 |"
@@ -133,7 +119,7 @@ def test_list_lines_are_sentences_each() -> None:
     old = "Keep.\n\nItems:\n- apple 10\n- pear 20\n- fig 30\n\nEnd."
     new = "Keep.\n\nItems:\n- apple 10\n- pear 25\n- fig 30\n\nEnd."
 
-    assert changes(old, new) == [("- pear 20", "- pear 25", "Items:\n- apple 10\n- pear 25\n- fig 30")]
+    assert changes(old, new) == [("- pear 20", "- pear 25")]
 
 
 def test_a_sentence_added_to_a_replaced_paragraph_is_a_change_with_nothing_before() -> None:
@@ -141,8 +127,8 @@ def test_a_sentence_added_to_a_replaced_paragraph_is_a_change_with_nothing_befor
     new = "Keep one.\n\nNew fact A. Old fact B.\n\nExtra paragraph here. Another sentence.\n\nKeep two."
 
     assert changes(old, new) == [
-        ("Old fact A.", "New fact A.", "New fact A. Old fact B."),
-        ("", "Extra paragraph here. Another sentence.", ""),
+        ("Old fact A.", "New fact A."),
+        ("", "Extra paragraph here. Another sentence."),
     ]
 
 

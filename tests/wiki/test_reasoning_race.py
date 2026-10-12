@@ -107,7 +107,6 @@ def test_chat_when_threads_race_on_the_off_switch_then_all_succeed_and_the_switc
     assert [b.get("reasoning") for b in bodies].count(LEAST) == n
     assert len(bodies) == 2 * n
     assert llm.extra_body == {**original, "reasoning": LEAST}
-    assert llm.may_think is True
 
 
 def test_chat_when_the_provider_refuses_both_bodies_then_raises_after_one_resend() -> None:

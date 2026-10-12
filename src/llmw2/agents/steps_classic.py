@@ -47,7 +47,6 @@ MERGE_UNCHANGED_NOTE = (
     "\n\nThe previous reply returned the note unchanged, but the source has these values the note lacks; "
     'update the note with each of them, stating the value it replaces ("previously …") where it replaces one:\n'
 )
-CONTEXT_CHARS = 600  # the paragraph a change is in goes with it, cut to this
 SOFT_CAP = 1.2 # a note body longer than the length asked for, times this, is logged, not cut
 
 # Routing options of the paper (§5.1 step 1) and consolidation options (step 3).
@@ -365,7 +364,6 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
 class Change:
     before: str  # the old sentences ("" for a new paragraph)
     after: str  # the new ones
-    context: str  # the new paragraph they are in ("" if it is `after`)
 
 
 _LIST_ITEM = re.compile(r"\s*([-*+] |\d+[.)] )")
@@ -392,15 +390,13 @@ def _sentence_changes(old: str, new: str) -> list[Change]:
     changes: list[Change] = []
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes():
         if tag == "insert":
-            changes += [Change("", par, "") for par in after[j1:j2]]
+            changes += [Change("", par) for par in after[j1:j2]]
         elif tag == "replace":
             old_s, new_s = _sentences(before[i1:i2]), _sentences(after[j1:j2])
             for t, a1, a2, b1, b2 in difflib.SequenceMatcher(None, old_s, new_s, autojunk=False).get_opcodes():
                 if t == "equal" or b1 == b2:  # a deleted sentence gives nothing
                     continue
-                text = _joined(new_s[b1:b2])
-                par = next((p.strip() for p in after[j1:j2] if new_s[b1] in p), "")
-                changes.append(Change(_joined(old_s[a1:a2]), text, "" if par == text else par[:CONTEXT_CHARS]))
+                changes.append(Change(_joined(old_s[a1:a2]), _joined(new_s[b1:b2])))
     return changes
 
 

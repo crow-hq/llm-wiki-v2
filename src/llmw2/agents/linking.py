@@ -56,8 +56,3 @@ def rare_scores(root: Folder, note: Note, exclude: set[str]) -> list[tuple[Note,
         scored.append((other, score))
     scored.sort(key=lambda item: (-item[1], item[0].rel))
     return scored[:RARE_TOP]
-
-
-def rare_candidates(root: Folder, note: Note, exclude: set[str]) -> list[Note]:
-    """`rare_scores` without the scores."""
-    return [n for n, _ in rare_scores(root, note, exclude)]

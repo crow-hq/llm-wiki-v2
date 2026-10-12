@@ -1,7 +1,7 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""See-also candidates by rare shared values: `linking.rare_candidates`, and CROW's `relate` reading them."""
+"""See-also candidates by rare shared values: `linking.rare_scores`, and CROW's `relate` reading them."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from llmw2 import Wiki, WikiConfig
-from llmw2.agents.linking import RARE_TOP, note_values, rare_candidates
+from llmw2.agents.linking import RARE_TOP, note_values, rare_scores
 from llmw2.agents.steps_classic import incoming_values
 from llmw2.bundle.tree import Folder, Note
 from tests.wiki.fakes import FakeClassifier, FakeLLM
@@ -58,6 +58,11 @@ def see_also(count: int) -> str:
 
 def rels(notes: list[Note]) -> list[str]:
     return [n.rel for n in notes]
+
+
+def rare_candidates(root: Folder, note: Note, exclude: set[str]) -> list[Note]:
+    """The notes `rare_scores` proposes, best first."""
+    return [n for n, _ in rare_scores(root, note, exclude)]
 
 
 # -- note_values -----------------------------------------------------------------------------

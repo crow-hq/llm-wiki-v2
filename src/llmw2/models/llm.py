@@ -80,11 +80,6 @@ class LLM(HttpModel):
         self._least_applied = False  # True once the switch to the least reasoning happened
         self._switch_lock = threading.Lock()
 
-    @property
-    def may_think(self) -> bool:
-        """Whether thinking tokens can eat into the output cap (they do, on OpenRouter, OpenAI and Ollama)."""
-        return self._thinks
-
     def chat(self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
         start = time.perf_counter()
         reasoning_resent = False  # each request resends at most once for reasoning
