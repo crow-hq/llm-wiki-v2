@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
-import subprocess
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
@@ -27,7 +27,9 @@ from tests.wiki.test_note_facts import load_script
 from tests.wiki.test_steps import MERGING
 from tests.wiki.test_summarize_long import COMBINE, DRAFT, SUMMARIZE, RecordingLLM, document, notes_for
 
-ROOT = Path(__file__).resolve().parents[2]
+# sha256 of 0.3.0's prompts (main at 46f2421), the texts the switches off must keep byte for byte
+ROUTE_030 = "8834c0f3c2ff8f32f23c96fb875d76ec9a2ef971a46671a317f37d7e81df3257"
+MERGE_030 = "13f3d62b0695688c90f109e6d6cc552de670946c0ac1b0794321c55b0933ba50"
 MERGE, MERGE_SOURCE = "librarian/merge", "librarian/merge_source"
 NOTE = 1_000
 LLM_MERGING = replace(MERGING, summarize=CLASSIC.summarize, merge=CLASSIC.merge)
@@ -35,9 +37,8 @@ CODES = ["AB-1001", "AB-1002", "AB-1003", "AB-1004"]
 INCOMING = {"title": "In", "summary": "In.", "tags": [], "body": "# Overview\n\nCodes " + " ".join(CODES) + "."}
 
 
-def main_file(path: str) -> str:
-    out = subprocess.run(["git", "show", f"origin/main:{path}"], cwd=ROOT, capture_output=True, check=True)
-    return out.stdout.decode("utf-8")
+def sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def draft(body: str) -> dict[str, Any]:
@@ -60,8 +61,8 @@ def context(llm: Any, source: Source | None = None, **fields: Any) -> StepContex
 
 
 def test_route_prompt_is_main_s_text_byte_for_byte() -> None:
-    # "route.md becomes byte-identical to origin/main"; since strict_new_folders that text is route_open.md (the switch off)
-    assert Prompts().load("classifier/route_open") == main_file("src/llmw2/agents/prompts/classifier/route.md")
+    # "route.md becomes byte-identical to origin/main" (0.3.0); since strict_new_folders that text is route_open.md (the switch off)
+    assert sha256(Prompts().load("classifier/route_open")) == ROUTE_030
 
 
 # -- 2. summarize without the length rule ------------------------------------------------------------
@@ -288,7 +289,7 @@ def test_merge_source_is_main_s_merge_prompt() -> None:
     prompts = Prompts()
     text = prompts.load("librarian/merge_source")
 
-    assert text == main_file("src/llmw2/agents/prompts/librarian/merge.md")
+    assert sha256(text) == MERGE_030  # 0.3.0's merge.md
     assert "Never shorten the note" in text
     assert "librarian/merge_source" in Prompts.names()
     values = {key: f"[[{key}]]" for key in prompts.placeholders("librarian/merge_source")}
