@@ -151,8 +151,8 @@ def test_descend_offers_none_of_these_below_the_root(
 def test_confident_choice_follows_a_single_path(crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
     two_folders(crow_wiki)
     llm.add(SUMMARIZE, draft("Q3 revenue"))
-    classifier.add_choice("route", "alpha", {"alpha": 0.7, "beta": 0.3}, 0.8)
-    classifier.add_choice("route", HERE, {HERE: 0.9}, 0.9)
+    classifier.add_choice("route", "alpha", {"alpha": 0.8, "beta": 0.15, NEW: 0.05}, 0.0)  # confidence 0.7
+    classifier.add_choice("route", HERE, {HERE: 0.9, NEW: 0.05, NONE: 0.05}, 0.0)
 
     result = crow_wiki.ingest("Revenue grew.")
 
@@ -167,15 +167,15 @@ def test_low_confidence_explores_the_top_beam_options(
     two_folders(crow_wiki)
     llm.add(SUMMARIZE, draft("Q3 revenue"))
     split_at_root(classifier)
-    classifier.add_choice("route", HERE, {HERE: 0.9}, 0.9)
-    classifier.add_choice("route", HERE, {HERE: 0.6}, 0.9)
+    classifier.add_choice("route", HERE, {HERE: 0.9, NEW: 0.05, NONE: 0.05}, 0.0)
+    classifier.add_choice("route", HERE, {HERE: 0.6, NEW: 0.2, NONE: 0.2}, 0.0)
 
     result = crow_wiki.ingest("Revenue grew.")
 
     assert classifier.ops == ["route", "route", "route"]
     assert "/alpha" in classifier.calls[1][2]["q"]["instructions"]
     assert "/beta" in classifier.calls[2][2]["q"]["instructions"]
-    assert result.decisions[0].choice == "/: alpha | beta" and result.decisions[0].confidence == 0.3
+    assert result.decisions[0].choice == "/: alpha | beta" and result.decisions[0].confidence == pytest.approx(0.25)
     assert result.folder == "/alpha"
 
 
@@ -451,18 +451,19 @@ def test_no_note_above_tau_ing_creates_a_new_note(crow_wiki: Wiki, llm: FakeLLM,
 
 
 @pytest.mark.parametrize(
-    ("choice", "confidence", "action"),
-    [(MODIFY, 0.9, "merged"), (MODIFY, 0.5, "created"), (NEW_NOTE, 0.9, "created")],
-)
+    ("choice", "top", "confidence", "action"),
+    [(MODIFY, 0.95, 0.9, "merged"), (MODIFY, 0.75, 0.5, "created"), (NEW_NOTE, 0.95, 0.9, "created")],
+)  # between two options the confidence is 2 * top - 1
 def test_consolidation_merges_only_on_a_confident_modify(
-    crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier, bundle: Path, choice: str, confidence: float, action: str
+    crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier, bundle: Path, choice: str, top: float, confidence: float, action: str
 ) -> None:
     add_folder(crow_wiki, "/", "fruit", "Fruit and its prices.")
     add_note(crow_wiki, "/fruit", "Apple")
     llm.add(SUMMARIZE, draft("Apple prices")).add(MERGE, draft("Apple", body="# Overview\n\nMerged."))
     to_fruit(classifier)
     classifier.noul_scores["match"] = {'"Apple"': 0.9}
-    classifier.add_choice("consolidate", choice, {choice: confidence}, confidence)
+    other = NEW_NOTE if choice == MODIFY else MODIFY
+    classifier.add_choice("consolidate", choice, {choice: top, other: 1 - top}, 0.0)
 
     result = crow_wiki.ingest("Apples got dearer.")
 
@@ -470,7 +471,8 @@ def test_consolidation_merges_only_on_a_confident_modify(
     assert result.action == action
     assert result.note == ("fruit/apple.md" if merged else "fruit/apple-prices.md")
     assert llm.ops == ([SUMMARIZE, MERGE] if merged else [SUMMARIZE])
-    expected = Decision("consolidate", "classifier", "modify" if merged else "new", confidence, scores={choice: confidence})
+    scores = {choice: top, other: pytest.approx(1 - top)}
+    expected = Decision("consolidate", "classifier", "modify" if merged else "new", pytest.approx(confidence), scores=scores)
     assert expected in result.decisions
     assert len(read(bundle / "fruit" / "apple.md").frontmatter["sources"]) == (2 if merged else 1)
 

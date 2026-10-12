@@ -33,6 +33,13 @@ class ChoiceAnswer:
     confidence: float  # how concentrated the distribution is, not whether it is right
 
 
+def confidence(probabilities: dict[str, float], n: int) -> float:
+    """The top probability rescaled so a uniform answer over `n` options is 0 and a certain one 1: Jev's own confidence,
+    which the thresholds are calibrated on. Computed here because servers disagree (Ollama sends 1 - normalised entropy,
+    some OpenRouter providers the top probability), and the same answer must take the same decision on every server."""
+    return (max(probabilities.values()) - 1 / n) / (1 - 1 / n)
+
+
 class Classifier(HttpModel):
     kind = "classifier"
 
@@ -86,7 +93,7 @@ class Classifier(HttpModel):
         answer = self.ask(state, {"q": {"type": "choice", "instructions": instructions, "criteria": options}}, op=op)["q"]
         try:
             probabilities = {str(k): float(v) for k, v in answer["probabilities"].items()}
-            return ChoiceAnswer(str(answer["choice"]), probabilities, float(answer["confidence"]))
+            return ChoiceAnswer(str(answer["choice"]), probabilities, confidence(probabilities, len(options)))
         except (KeyError, TypeError, ValueError, AttributeError) as e:
             raise ModelError(f"malformed choice answer: {answer!r}") from e
 

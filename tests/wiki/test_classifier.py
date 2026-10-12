@@ -123,7 +123,7 @@ def test_choice_when_answered_then_sends_one_choice_question_and_parses_the_answ
     assert list(sent(request)["questions"].values()) == [
         {"type": "choice", "instructions": "Where does it belong?", "criteria": ROUTE_OPTIONS}
     ]
-    assert answer == ChoiceAnswer("science", {"science": 0.7, "Here": 0.2, "New subfolder": 0.1}, 0.65)
+    assert answer == ChoiceAnswer("science", {"science": 0.7, "Here": 0.2, "New subfolder": 0.1}, pytest.approx(0.55))
 
 
 @pytest.mark.parametrize("count", [2, MAX_OPTIONS])
@@ -244,24 +244,37 @@ def test_a_malformed_noul_answer_raises(tracker: UsageTracker, answer: Any) -> N
         clf.nouls("state", {"a": "A statement."})
 
 
+@pytest.mark.parametrize("server_confidence", [None, "high", 0.01], ids=["absent", "text", "contradicting"])
+def test_the_server_confidence_is_ignored_and_computed_from_the_probabilities(
+    tracker: UsageTracker, server_confidence: Any
+) -> None:
+    answer: dict[str, Any] = {"choice": "Here", "probabilities": {"Here": 0.9, "science": 0.1}}
+    if server_confidence is not None:
+        answer["confidence"] = server_confidence
+    clf, _ = make_classifier(tracker, always(answer))
+
+    parsed = clf.choice("state", "Where does it belong?", ROUTE_OPTIONS)
+
+    assert parsed.choice == "Here"
+    assert parsed.confidence == pytest.approx((0.9 - 1 / 3) / (1 - 1 / 3))
+
+
 @pytest.mark.parametrize(
     "answer",
     [
         {"choice": "Here", "confidence": 0.9},
         {"probabilities": {"Here": 0.9}, "confidence": 0.9},
-        {"choice": "Here", "probabilities": {"Here": 0.9}},
         {"choice": "Here", "probabilities": [0.9, 0.1], "confidence": 0.9},
         {"choice": "Here", "probabilities": {"Here": "most"}, "confidence": 0.9},
-        {"choice": "Here", "probabilities": {"Here": 0.9}, "confidence": "high"},
+        {"choice": "Here", "probabilities": {}, "confidence": 0.9},
         "Here",
     ],
     ids=[
         "no-probabilities",
         "no-choice",
-        "no-confidence",
         "list-probabilities",
         "text-probability",
-        "text-confidence",
+        "empty-probabilities",
         "string",
     ],
 )

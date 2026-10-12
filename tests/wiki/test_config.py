@@ -126,7 +126,7 @@ def test_config_when_the_classifier_provider_is_unknown_then_it_is_refused(tmp_p
 
 @pytest.mark.parametrize(
     ("provider", "tau_path", "tau_cons", "k"),
-    [("custom", 0.65, 0.05, 5), ("openrouter", 0.5, 0.6, 8), ("typesafe", 0.5, 0.6, 8)],
+    [("custom", 0.65, 0.26, 5), ("openrouter", 0.5, 0.6, 8), ("typesafe", 0.5, 0.6, 8)],
     ids=["custom-is-laya", "openrouter-jev", "typesafe-jev"],
 )
 def test_config_when_the_classifier_is_chosen_then_its_thresholds_preset_applies(
@@ -146,7 +146,7 @@ def test_config_when_a_threshold_is_set_then_it_wins_over_the_laya_preset(tmp_pa
 
     # ASSERT
     assert (config.classifier.base_url, config.classifier.model) == ("http://127.0.0.1:8001/v1", "typed-decisions")
-    assert (config.crow.tau_path, config.crow.tau_cons) == (0.8, 0.05)
+    assert (config.crow.tau_path, config.crow.tau_cons) == (0.8, 0.26)
 
 
 def test_the_provider_fills_base_url_model_and_key(tmp_path: Path) -> None:

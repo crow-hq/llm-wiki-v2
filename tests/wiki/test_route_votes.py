@@ -27,6 +27,9 @@ SUMMARIZE, ROUTE_FALLBACK = "librarian/summarize", "librarian/route_fallback"
 # Defaults the tests lean on: tau_route 0.6, tau_path 0.5, vote_band 0.05.
 ROOT_CLEAR = {"alpha": 0.8, "beta": 0.1, NEW: 0.1}  # a root answer that follows /alpha, sure of it
 ALPHA_CLEAR = {HERE: 0.9, NEW: 0.05, NONE: 0.05}
+ROOT_NEAR = {"alpha": 0.75, "beta": 0.15, NEW: 0.1}  # confidence 0.625, within vote_band of tau_route (0.6)
+
+# The confidence of an answer is (top - 1/n) / (1 - 1/n) over the n options asked, whatever the `confidence` argument below.
 
 
 # -- helpers ----------------------------------------------------------------------
@@ -46,7 +49,7 @@ def make_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, **crow: An
 
 
 def answer(classifier: FakeClassifier, probabilities: dict[str, float], confidence: float, *, times: int = 1) -> None:
-    """Script `times` equal routing answers (the choice is the most probable option)."""
+    """Script `times` equal routing answers (the choice is the most probable option; the confidence argument is ignored)."""
     for _ in range(times):
         classifier.add_choice("route", max(probabilities, key=lambda o: probabilities[o]), probabilities, confidence)
 
@@ -151,21 +154,21 @@ def test_route_when_votes_is_3_and_the_level_is_clear_then_it_is_asked_once(bund
 def test_route_when_confidence_is_near_tau_route_then_the_average_decides(bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> None:
     # ARRANGE
     wiki = make_wiki(bundle, llm, classifier, votes=3)
-    answer(classifier, {"alpha": 0.7, "beta": 0.2, NEW: 0.1}, 0.62)  # alone it would pick alpha; the gap is wide
-    answer(classifier, {"alpha": 0.1, "beta": 0.8, NEW: 0.1}, 0.6, times=2)
+    answer(classifier, ROOT_NEAR, 0.625)  # alone it would pick alpha; the gap is wide
+    answer(classifier, {"alpha": 0.1, "beta": 0.8, NEW: 0.1}, 0.7, times=2)
     answer(classifier, ALPHA_CLEAR, 0.9)  # the beta level, asked once
 
     # ACT
     result = wiki.ingest("Revenue grew.")
 
-    # ASSERT: alpha 0.3, beta 0.6, New 0.1; confidence 0.6067 is sure enough to keep beta alone
+    # ASSERT: alpha 0.3167, beta 0.5833, New 0.1; confidence 0.675 is sure enough to keep beta alone
     assert (asked(classifier, "root"), asked(classifier, "alpha")) == (3, 1)
     assert result.folder == "/beta"
     assert steps(result) == ["/: beta (3 votes)", "/beta: Here"]
     scores = next(d.scores for d in result.decisions if d.step == "route_step")
-    assert scores == pytest.approx({"alpha": 0.3, "beta": 0.6, NEW: 0.1})
-    assert next(d.confidence for d in result.decisions if d.step == "route_step") == pytest.approx(0.6067, abs=1e-4)
-    assert final(result).confidence == pytest.approx(math.sqrt(0.6 * 0.9))
+    assert scores == pytest.approx({"alpha": 0.95 / 3, "beta": 1.75 / 3, NEW: 0.1})
+    assert next(d.confidence for d in result.decisions if d.step == "route_step") == pytest.approx((0.625 + 0.7 + 0.7) / 3)
+    assert final(result).confidence == pytest.approx(math.sqrt(1.75 / 3 * 0.9))
 
 
 def test_route_when_the_top_two_are_nearly_tied_then_the_average_decides(bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> None:
@@ -183,9 +186,9 @@ def test_route_when_the_top_two_are_nearly_tied_then_the_average_decides(bundle:
 def test_route_when_confidence_is_exactly_one_band_from_tau_route_then_it_is_not_borderline(
     bundle: Path, llm: FakeLLM, classifier: FakeClassifier
 ) -> None:
-    # tau_route 0.5 and band 0.25 are exact in binary: 0.75 - 0.5 == 0.25
-    wiki = make_wiki(bundle, llm, classifier, votes=3, tau_route=0.5, vote_band=0.25, tau_path=0.1)
-    answer(classifier, {"alpha": 0.7, "beta": 0.1, NEW: 0.2}, 0.75)
+    # top 0.75 gives confidence 0.625; tau_route 0.375 and band 0.25 are exact in binary: 0.625 - 0.375 == 0.25
+    wiki = make_wiki(bundle, llm, classifier, votes=3, tau_route=0.375, vote_band=0.25, tau_path=0.1)
+    answer(classifier, {"alpha": 0.75, "beta": 0.1, NEW: 0.15}, 0.625)
     answer(classifier, ALPHA_CLEAR, 0.9)
 
     result = wiki.ingest("Revenue grew.")
@@ -198,8 +201,8 @@ def test_route_when_the_top_two_are_exactly_one_band_apart_then_it_is_not_border
     bundle: Path, llm: FakeLLM, classifier: FakeClassifier
 ) -> None:
     wiki = make_wiki(bundle, llm, classifier, votes=3, vote_band=0.25, tau_path=0.1)
-    answer(classifier, {"alpha": 0.5, "beta": 0.25, NEW: 0.25}, 0.9)  # 0.5 - 0.25 == 0.25
-    answer(classifier, ALPHA_CLEAR, 0.9)
+    answer(classifier, {"alpha": 0.5, "beta": 0.25, NEW: 0.25}, 0.25)  # 0.5 - 0.25 == 0.25; confidence 0.25, far from tau_route
+    answer(classifier, {HERE: 0.96, NEW: 0.02, NONE: 0.02}, 0.94)  # clear: 0.85 would sit exactly one band from tau_route
 
     result = wiki.ingest("Revenue grew.")
 
@@ -288,7 +291,7 @@ def test_route_when_a_level_was_already_averaged_then_the_re_run_does_not_ask_it
 ) -> None:
     wiki = make_wiki(bundle, llm, classifier, votes=3)
     llm.add(ROUTE_FALLBACK, {"action": "select", "folder": "/alpha"})
-    answer(classifier, ROOT_CLEAR, 0.62, times=3)  # near tau_route: averaged in the first pass
+    answer(classifier, ROOT_NEAR, 0.625, times=3)  # near tau_route: averaged in the first pass
     alpha_level(classifier, 0.34)  # clear, asked once; the path is close to tau_path
     answer(classifier, {HERE: 0.2, NEW: 0.1, NONE: 0.1}, 0.9, times=2)  # only the alpha level is asked again
 
@@ -316,14 +319,14 @@ def test_route_when_every_level_of_the_best_path_was_averaged_then_there_is_no_r
     bundle: Path, llm: FakeLLM, classifier: FakeClassifier
 ) -> None:
     wiki = make_wiki(bundle, llm, classifier, votes=3)
-    answer(classifier, ROOT_CLEAR, 0.62, times=3)  # near tau_route
-    answer(classifier, {HERE: 0.34, NEW: 0.3, NONE: 0.3}, 0.9, times=3)  # a near tie; Here 0.34: 0.5215, close to tau_path
+    answer(classifier, ROOT_NEAR, 0.625, times=3)  # near tau_route
+    answer(classifier, {HERE: 0.34, NEW: 0.3, NONE: 0.3}, 0.9, times=3)  # a near tie; Here 0.34: 0.505, close to tau_path
 
     result = wiki.ingest("Revenue grew.")
 
     assert (asked(classifier, "root"), asked(classifier, "alpha")) == (3, 3)  # nothing more to ask
     assert steps(result) == ["/: alpha (3 votes)", "/alpha: Here (3 votes)"]
-    assert final(result) == Decision("route", "classifier", "/alpha (Here)", pytest.approx(math.sqrt(0.8 * 0.34)))
+    assert final(result) == Decision("route", "classifier", "/alpha (Here)", pytest.approx(math.sqrt(0.75 * 0.34)))
 
 
 # -- usage ------------------------------------------------------------------------

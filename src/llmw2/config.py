@@ -178,12 +178,14 @@ class CrowConfig(BaseModel):
 # classifier starts from Laya's.
 # Laya's typed-decisions checkpoint answers with flatter probabilities; measured on 25 sample notes (2026-09-28):
 # a routing choice it gets wrong scores at most 0.61 and it never picks "New subfolder", so below 0.65 the LLM routes;
-# its merge confidence is 0.04-0.12 for a real follow-up and at most 0.044 for a related but distinct note; linked
+# its merge confidence is 0.23-0.40 for a real follow-up and at most 0.25 for a related but distinct note (measured as
+# 0.04-0.12 and 0.044 on Laya's own scale, 1 - normalised entropy; the client now computes Jev's, see
+# classifier.confidence, and 0.26 is the old 0.05 on it: the same merges for two options); linked
 # notes score 0.5 or more, unrelated ones at most 0.49; the folder and the note that answer a question score at least
 # 0.17 and 0.21, the others mostly under 0.18 and 0.20.
 CROW_PRESETS: dict[str, dict[str, float | int]] = {
     "jev": {},
-    "laya": {"tau_path": 0.65, "tau_ing": 0.45, "tau_cons": 0.05, "tau_fold": 0.15, "tau_ret": 0.2, "tau_link": 0.5, "k": 5},
+    "laya": {"tau_path": 0.65, "tau_ing": 0.45, "tau_cons": 0.26, "tau_fold": 0.15, "tau_ret": 0.2, "tau_link": 0.5, "k": 5},
 }
 
 

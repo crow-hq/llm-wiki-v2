@@ -271,14 +271,14 @@ def test_the_audit_makes_no_llm_call_and_changes_nothing(filed: Wiki, llm: FakeL
 
 
 def test_a_route_below_min_confidence_gives_no_proposal(filed: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
-    route_to_beta(classifier, root=0.6, here=0.6)  # score 0.6: above tau_path (no fallback), below AUDIT_MIN
+    route_to_beta(classifier, root=0.75, here=0.48)  # score 0.6: above tau_path (no fallback), below AUDIT_MIN
 
     assert filed.audit_routes() == []
     assert llm.calls == []
 
 
 def test_min_confidence_is_a_parameter(filed: Wiki, classifier: FakeClassifier) -> None:
-    route_to_beta(classifier, root=0.6, here=0.6)
+    route_to_beta(classifier, root=0.75, here=0.48)  # score 0.6
 
     proposals = filed.audit_routes(min_confidence=0.55)
 
@@ -301,7 +301,10 @@ def test_a_route_to_the_notes_own_folder_gives_no_proposal(filed: Wiki, llm: Fak
 
 
 def test_a_route_that_would_fall_back_gives_no_proposal_and_no_llm_call(filed: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
-    route_to_beta(classifier, root=0.45, here=0.4)  # path score ~0.42, below tau_path: ingest would ask the LLM
+    # path score ~0.42, below tau_path: ingest would ask the LLM (an unsure root explores both folders)
+    classifier.add_choice("route", "beta", {"beta": 0.45, "alpha": 0.4, NEW: 0.15}, 0.0)
+    classifier.add_choice("route", HERE, {HERE: 0.4, NEW: 0.3, NONE: 0.3}, 0.0)
+    classifier.add_choice("route", HERE, {HERE: 0.4, NEW: 0.3, NONE: 0.3}, 0.0)
 
     assert filed.audit_routes(min_confidence=0.0) == []
     assert llm.calls == []
@@ -365,7 +368,7 @@ def test_without_apply_nothing_moves(filed: Wiki, classifier: FakeClassifier) ->
 
 
 def test_apply_moves_only_the_proposals(filed: Wiki, classifier: FakeClassifier) -> None:
-    route_to_beta(classifier, root=0.6, here=0.6)
+    route_to_beta(classifier, root=0.75, here=0.48)  # score 0.6
 
     assert filed.audit_routes(apply=True) == []
     assert (filed.cfg.bundle / "alpha" / "misfiled.md").is_file()
@@ -415,7 +418,7 @@ def test_cli_audit_min_confidence_and_apply(
     filed: Wiki, classifier: FakeClassifier, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     cli_with(monkeypatch, filed)
-    route_to_beta(classifier, root=0.6, here=0.6)
+    route_to_beta(classifier, root=0.75, here=0.48)  # score 0.6
 
     code = cli.main(["--bundle", str(filed.cfg.bundle), "audit", "--min-confidence", "0.5", "--apply"])
 
@@ -464,7 +467,7 @@ def test_http_audit_with_min_confidence_and_apply(filed: Wiki, classifier: FakeC
 
     from llmw2.server import create_app
 
-    route_to_beta(classifier, root=0.6, here=0.6)
+    route_to_beta(classifier, root=0.75, here=0.48)  # score 0.6
 
     response = TestClient(create_app(filed)).post("/audit", json={"min_confidence": 0.5, "apply": True})
 

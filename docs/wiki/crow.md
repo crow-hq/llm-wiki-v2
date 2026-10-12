@@ -45,7 +45,7 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 | `tau_route` | `OKF_TAU_ROUTE` | 0.6 | 0.6 | If Choice confidence is below this, keep the top `beam` options instead of 1 |
 | `tau_path` | `OKF_TAU_PATH` | 0.5 | 0.65 | If the best path score is below this, the LLM routes |
 | `tau_ing` | `OKF_TAU_ING` | 0.5 | 0.45 | Best note probability must be above this to count as a match |
-| `tau_cons` | `OKF_TAU_CONS` | 0.6 | 0.05 | `Modify` confidence must be at least this to merge |
+| `tau_cons` | `OKF_TAU_CONS` | 0.6 | 0.26 | `Modify` confidence must be at least this to merge |
 | `tau_fold` | `OKF_TAU_FOLD` | 0.08 | 0.15 | Folder probability must be above this to explore the folder |
 | `tau_ret` | `OKF_TAU_RET` | 0.1 | 0.2 | Note probability must be above this to read the note |
 | `tau_link` | `OKF_TAU_LINK` | 0.6 | 0.5 | Relatedness must be above this to add a See-also link |
@@ -65,8 +65,13 @@ Laya's `typed-decisions` checkpoint, its default model, answers with flatter pro
 than Jev. Measured on 25 sample notes, it never picks `New subfolder` and scores the
 routes it gets wrong at 0.61 at most, so with Jev's 0.5 an undecided note goes where
 the classifier leans; at 0.65 the LLM routes it instead. It answers `Modify` to almost every
-consolidation, with a confidence of 0.04–0.12 for a real follow-up and at most 0.044 for a
-related but distinct note, hence 0.05.
+consolidation, with a confidence of 0.23–0.40 for a real follow-up and at most 0.25 for a
+related but distinct note, hence 0.26.
+
+A Choice's confidence is computed by the library from the probabilities, the same way on
+every server, on the scale the thresholds are calibrated on; the confidence a server sends is
+ignored, since servers disagree on what it means. One set of thresholds therefore works on
+a hosted API, a Laya server or Ollama alike.
 
 The ingestion thresholds are the paper's package defaults, never calibrated. The retrieval
 values are the ones the paper calibrated on its corpus (§8.4): with 0.5, most right notes

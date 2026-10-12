@@ -384,7 +384,7 @@ def test_save_when_the_classifier_is_custom_then_laya_s_preset_applies_and_nothi
     cfg = settings.save({"provider": "ollama", **LAYA, "crow_tau_path": "0.65", "crow_k": "5"})
 
     # ASSERT
-    assert (cfg.crow.tau_path, cfg.crow.tau_cons, cfg.crow.k) == (0.65, 0.05, 5)
+    assert (cfg.crow.tau_path, cfg.crow.tau_cons, cfg.crow.k) == (0.65, 0.26, 5)
     assert written(settings)["classifier"] == {"provider": "custom", "base_url": "http://127.0.0.1:8001/v1"}
     assert settings.view()["ready"] is True  # Laya on this computer takes no key
 
@@ -399,7 +399,7 @@ def test_save_when_a_threshold_is_changed_then_it_is_kept_for_that_classifier_on
     laya = settings.save({**LAYA, "crow_tau_path": "0.7"})
 
     # ASSERT
-    assert (jev.crow.tau_path, laya.crow.tau_path, laya.crow.tau_cons) == (0.5, 0.7, 0.05)
+    assert (jev.crow.tau_path, laya.crow.tau_path, laya.crow.tau_cons) == (0.5, 0.7, 0.26)
     assert written(settings)["classifier"] == {"provider": "custom", "base_url": "http://127.0.0.1:8001/v1", "crow": {"tau_path": "0.7"}}
     memory = settings.view()["memory"]["classifier"]
     assert memory["custom"]["crow"]["tau_path"] == 0.7 and memory["openrouter"]["crow"]["tau_path"] == 0.5

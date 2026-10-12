@@ -46,12 +46,14 @@ def make_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, steps: Any
     return wiki
 
 
-def prepare(classifier: FakeClassifier, llm: FakeLLM, choice: str = MODIFY, confidence: float = 0.9) -> None:
+def prepare(classifier: FakeClassifier, llm: FakeLLM, choice: str = MODIFY, top: float = 0.875) -> None:
+    """`top` is the probability of `choice` between Modify and New note: the confidence is 2 * top - 1 (0.75 by default)."""
     llm.add(SUMMARIZE, LLM_REPLY).add(MERGE, LLM_REPLY)
     classifier.add_choice("route", "fruit", {"fruit": 0.9, NEW: 0.1}, 0.9)
     classifier.add_choice("route", HERE, {HERE: 0.9, NEW: 0.05}, 0.9)
     classifier.noul_scores["match"] = {'"Apple"': 0.9}
-    classifier.add_choice("consolidate", choice, {choice: confidence}, confidence)
+    other = NEW_NOTE if choice == MODIFY else MODIFY
+    classifier.add_choice("consolidate", choice, {choice: top, other: 1 - top}, 0.0)
 
 
 def consolidate_states(classifier: FakeClassifier) -> list[str]:
@@ -181,8 +183,12 @@ def test_a_long_note_is_cut_at_request_chars_over_two(
 
 
 @pytest.mark.parametrize(
-    ("choice", "confidence", "action", "decided"),
-    [(MODIFY, 0.9, "merged", "modify"), (MODIFY, 0.5, "created", "new"), (NEW_NOTE, 0.9, "created", "new")],
+    ("choice", "top", "confidence", "action", "decided"),
+    [
+        (MODIFY, 0.875, 0.75, "merged", "modify"),
+        (MODIFY, 0.75, 0.5, "created", "new"),
+        (NEW_NOTE, 0.875, 0.75, "created", "new"),
+    ],
 )
 def test_same_rule_and_record_as_crow(
     stability: ModuleType,
@@ -190,17 +196,19 @@ def test_same_rule_and_record_as_crow(
     llm: FakeLLM,
     classifier: FakeClassifier,
     choice: str,
+    top: float,
     confidence: float,
     action: str,
     decided: str,
 ) -> None:
     wiki = make_wiki(bundle, llm, classifier, stability.steps_for(ns(consolidate_reads="source"), "crow"))
-    prepare(classifier, llm, choice, confidence)
+    prepare(classifier, llm, choice, top)
+    other = NEW_NOTE if choice == MODIFY else MODIFY
 
     result = wiki.ingest(RAW, title="Memo")
 
     assert result.action == action
-    assert Decision("consolidate", "classifier", decided, confidence, scores={choice: confidence}) in result.decisions
+    assert Decision("consolidate", "classifier", decided, confidence, scores={choice: top, other: 1 - top}) in result.decisions
 
 
 def test_tau_cons_is_the_threshold(stability: ModuleType, bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> None:

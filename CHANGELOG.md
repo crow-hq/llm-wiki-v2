@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Behaviour change:** the confidence of a classifier Choice is computed by the library from the probabilities, on the scale the CROW thresholds are calibrated on (`llmw2.models.classifier.confidence`), and the server's `confidence` field is ignored. Servers disagree on what that field means (Ollama and Laya send one measure, some OpenRouter providers another), so the same answer took different decisions on different servers; with a classifier on Ollama, CROW never merged an update. One set of thresholds now works on every server. On Jev nothing changes but a decision exactly at a threshold: 27 of 17,558 stored answers, none a merge. A server answer without `confidence` is no longer malformed.
+- **Behaviour change:** Laya's preset `tau_cons` is 0.26 instead of 0.05: the same merges on the new scale. A custom classifier's `tau_route` (0.6) is now read on Jev's scale too; if you set `OKF_TAU_CONS` or `OKF_TAU_ROUTE` for a custom server, set them again on it.
+
 ## [0.4.0] - 2026-10-12
 
 ### Added
