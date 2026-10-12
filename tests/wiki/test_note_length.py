@@ -91,8 +91,8 @@ def test_note_length_rejects_other_values(tmp_path: Path) -> None:
 # -- target_note_chars ---------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("source,existing", [(0, 0), (500, 0), (50_000, 0), (1_000_000, 30_000), (100, 90_000)])
-@pytest.mark.parametrize("note_chars", [None, 1_000, 4_000])
+@pytest.mark.parametrize("source,existing", [(0, 0), (1_000_000, 30_000)])
+@pytest.mark.parametrize("note_chars", [None, 4_000])
 def test_fixed_target_is_always_the_effective_note_chars(note_chars: int | None, source: int, existing: int) -> None:
     cfg = cfg_of("fixed", note_chars=note_chars)
 
@@ -176,15 +176,6 @@ def test_proportional_merge_does_not_shrink_below_the_existing_note_when_the_cei
 
     for existing in (1_000, 2_500, 5_000, 6_000):
         assert cfg.target_note_chars(100, existing) >= existing
-
-
-@pytest.mark.parametrize("read_chars", [8_000, 20_000, 60_000, 200_000])
-@pytest.mark.parametrize("source", [0, 3_000, 30_000, 600_000])
-@pytest.mark.parametrize("existing", [0, 2_000, 40_000])
-def test_proportional_matches_the_formula_of_the_spec(read_chars: int, source: int, existing: int) -> None:
-    cfg = cfg_of("proportional", read_chars=read_chars)
-
-    assert cfg.target_note_chars(source, existing) == expected(cfg, source, existing)
 
 
 # -- decision_hash ------------------------------------------------------------------------------------

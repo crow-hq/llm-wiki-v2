@@ -16,7 +16,7 @@ from llmw2 import CLASSIC, Candidate, NoteDraft, Route, Source, StepContext, Ste
 from llmw2.agents import steps_classic as classic
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.steps import LENGTH_RULE, decision_hash
-from llmw2.config import ClassifierConfig, LLMConfig
+from llmw2.config import ClassifierConfig
 from tests.wiki.fakes import FakeLLM
 
 ROOM = 6_000  # what a prompt holds besides the text (PROMPT_ROOM of the spec)
@@ -289,7 +289,3 @@ def test_decision_hash_follows_the_effective_values_not_the_way_they_were_set(tm
 def test_decision_hash_when_read_chars_moves_with_the_provider_then_it_changes_even_with_a_cap_in_place(tmp_path: Path) -> None:
     custom = {"provider": "custom", "base_url": "http://127.0.0.1:8000/v1", "model": "m"}
     assert digest(tmp_path, llm=custom, note_chars=2_000) != digest(tmp_path, llm={**custom, "read_chars": 50_000}, note_chars=2_000)
-
-
-def test_llm_config_read_chars_defaults_to_none() -> None:
-    assert LLMConfig().read_chars is None

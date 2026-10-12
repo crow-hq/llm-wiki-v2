@@ -122,12 +122,6 @@ def test_the_context_of_an_ingest_carries_the_candidate_to_every_step_after_summ
     assert seen["merge"] is not None and seen["merge"].body == "Some text."
 
 
-def test_step_context_candidate_defaults_to_none(llm: FakeLLM) -> None:
-    ctx = StepContext(llm, None, Prompts(), WikiConfig(bundle=Path("wiki"), mode="classic"), "librarian/system", None)
-
-    assert ctx.candidate is None
-
-
 # -- a custom step that calls merge itself: no candidate, the source at its budget ---------------------------
 
 

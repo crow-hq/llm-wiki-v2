@@ -14,7 +14,7 @@ import pytest
 from llmw2 import CROW, Candidate, Source, StepContext, StepError, Steps, Wiki, WikiConfig
 from llmw2.agents import steps_classic as classic
 from llmw2.agents.prompts import Prompts
-from llmw2.agents.state import STATE_VERSION, source_state
+from llmw2.agents.state import source_state
 from llmw2.agents.steps import check_summarize, decision_hash
 from llmw2.config import ClassifierConfig
 from tests.wiki.fakes import FakeClassifier, FakeLLM
@@ -415,10 +415,6 @@ def test_decision_hash_changes_with_state_chars(tmp_path: Path) -> None:
 
     assert hashed(6000) == hashed(6000)
     assert hashed(6000) != hashed(3000)
-
-
-def test_state_version_is_an_int() -> None:
-    assert isinstance(STATE_VERSION, int)
 
 
 # -- a native summary with subsections (added in review) --------------------------

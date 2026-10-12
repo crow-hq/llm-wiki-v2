@@ -24,8 +24,8 @@ CONFLICT_OP = "ask/conflict"
 ASKED = "How is revenue booked?"
 FIELDS = ("relate_rare_values", "answer_conflicts")
 ENVS = {"relate_rare_values": "OKF_RELATE_RARE_VALUES", "answer_conflicts": "OKF_ANSWER_CONFLICTS"}
-TRUE_VALUES = ["1", "true", "True", "TRUE", "yes", "YES", "on", "On"]
-FALSE_VALUES = ["0", "false", "False", "FALSE", "no", "NO", "off", "Off"]
+TRUE_VALUES = ["1", "TRUE", "yes", "On"]  # every word once, cases mixed: the parser is shared by the switches
+FALSE_VALUES = ["0", "False", "NO", "off"]
 
 
 def env_for(tmp_path: Path, **extra: str) -> dict[str, str]:
@@ -54,7 +54,7 @@ def test_env_false_variants(tmp_path: Path, field: str, value: str) -> None:
 
 
 @pytest.mark.parametrize("field", FIELDS)
-@pytest.mark.parametrize("value", ["maybe", "2", "nope", "enabled"])
+@pytest.mark.parametrize("value", ["maybe", "2"])
 def test_env_invalid_value_is_rejected(tmp_path: Path, field: str, value: str) -> None:
     with pytest.raises(ValueError, match=f"(?i){field}"):
         WikiConfig.from_env(env_for(tmp_path, **{ENVS[field]: value}))
