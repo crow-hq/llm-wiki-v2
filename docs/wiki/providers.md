@@ -132,6 +132,12 @@ A `custom` classifier starts from the Laya thresholds preset ([crow.md](crow.md#
 and its model from `typed-decisions`, the Laya checkpoint that preset was measured on;
 `auto` lets Laya pick its English or multilingual checkpoint per note.
 
+Ollama (0.35 or later) serves `/systemone` too: use `custom` with `http://localhost:11434/v1`.
+A classifier model may ship with a small context (`tev1:4b` has about 2000 tokens), and Ollama
+refuses a longer request instead of cutting it, so those decisions go to the LLM. Give the model a
+context of at least 8192 tokens with a Modelfile (`FROM tev1:4b` and `PARAMETER num_ctx 8192`, then
+`ollama create tev1-8k -f Modelfile`); the model's own `num_ctx` wins over `OLLAMA_CONTEXT_LENGTH`.
+
 The settings page edits each model's parameters too: the LLM's temperature, timeout and characters per call,
 the classifier's timeout, attempts, note text read and request size (the variables above),
 kept per provider like its key and model.
