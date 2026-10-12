@@ -339,7 +339,7 @@ you change.
   [GoogleCloudPlatform/open-knowledge-format](https://github.com/GoogleCloudPlatform/open-knowledge-format),
   Apache-2.0. The wiki format is derived from OKF v0.2; see [NOTICE](https://github.com/crow-hq/llm-wiki-v2/blob/main/NOTICE).
 - **CROW** — F. Cesarini, M. Sassarini, *CROW: Classifier-Routed Organization of
-  LLM Wikis*, version 1.0, 2026, [doi:10.5281/zenodo.22900601](https://doi.org/10.5281/zenodo.22900601).
+  LLM Wikis*, version 1.0, 2026, [doi:10.5281/zenodo.22900601](https://doi.org/10.5281/zenodo.23260209).
 - **LLM Wiki** — A. Karpathy, [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), 2026.
 - The Librarian / Researcher design follows F. Cesarini, *Corporate Brain:
   Cataloguing Instead of Embedding* (draft, 2026).
