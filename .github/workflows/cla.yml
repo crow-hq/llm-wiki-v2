@@ -1,5 +1,6 @@
 # Asks every outside contributor to accept CLA.md once, by a comment on their pull request,
-# and records the signature in signatures/cla.json on main (so main must allow this bot's commits).
+# and records the signature in signatures/cla.json on the cla-signatures branch, which main's
+# ruleset does not cover, so the bot commits there without a pull request.
 name: cla
 
 on:
@@ -28,5 +29,5 @@ jobs:
         with:
           path-to-signatures: signatures/cla.json
           path-to-document: https://github.com/crow-hq/llm-wiki-v2/blob/main/CLA.md
-          branch: main
+          branch: cla-signatures
           allowlist: fed3c3sa,sassarini-marco,dependabot[bot]  # the owners need no licence from themselves
