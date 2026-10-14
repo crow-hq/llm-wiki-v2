@@ -32,6 +32,10 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv tool install "llmwiki2[server]"
 ```
 
+Or with pip: `pip install "llmwiki2[server]"`. As a Python library, `pip install llmwiki2`
+is enough (the `[server]` extra adds the web page and the HTTP API), then `from llmw2 import Wiki`:
+see the [library guide](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/library/index.md).
+
 **3. Start it:**
 
 ```bash
