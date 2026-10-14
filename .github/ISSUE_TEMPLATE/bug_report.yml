@@ -22,7 +22,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: The llmw2 line of `uv tool list`.
+      description: The llmwiki2 line of `uv tool list`.
       placeholder: llmw2 v0.4.0
     validations:
       required: true

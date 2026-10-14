@@ -21,7 +21,7 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "llmw2"
+name = "llmwiki2"
 dynamic = ["version"]  # one source: llmw2.__version__, also written into every note it generates
 description = "LLM wiki in a Markdown format derived from the Open Knowledge Format: librarian, researcher and CROW classifier routing"
 readme = "README.md"

@@ -13,7 +13,7 @@ writes it and is an independent implementation.
 
 Files carried over from OKF, modified, and keeping their original headers:
 - LICENSES/Apache-2.0.md (was LICENSE.md): the Apache License 2.0 text, unchanged.
-- pyproject.toml: distribution renamed to llmw2, the reference agent
+- pyproject.toml: distribution renamed to llmwiki2, the reference agent
   and its Google dependencies removed, llmw2 package added.
 - .gitignore: entries added.
 

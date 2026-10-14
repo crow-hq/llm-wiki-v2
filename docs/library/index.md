@@ -8,7 +8,7 @@ and ask flows is in [steps.md](steps.md), and runnable programs are in
 ## Install
 
 ```bash
-pip install "llmw2 @ git+https://github.com/crow-hq/llm-wiki-v2"
+pip install llmwiki2
 ```
 
 Add the `[server]` extra only for the HTTP API and the web page.

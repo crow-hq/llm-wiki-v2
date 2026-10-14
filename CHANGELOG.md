@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-14
+
+### Changed
+
+- Published on PyPI as `llmwiki2`, the same name as the command: `uv tool install "llmwiki2[server]"`, or `uvx "llmwiki2[server]" demo` to try it. The module is still imported as `llmw2`.
+
+### Fixed
+
+- NOTICE: the OKF files are licensed by Google LLC under the Apache License 2.0, not AGPL-3.0.
+
 ## [0.4.0] - 2026-10-12
 
 ### Added
@@ -119,5 +129,6 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[0.4.1]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.1
 [0.4.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.0
 [0.3.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.3.0

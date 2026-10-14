@@ -44,7 +44,7 @@ jobs:
 
   publish:
     needs: build
-    # Off until the PyPI organization exists: set the repository variable PYPI_READY to true to publish tagged releases.
+    # Tagged releases go to PyPI only when the repository variable PYPI_READY is true, set once trusted publishing works there.
     if: github.ref_type == 'tag' && vars.PYPI_READY == 'true'
     runs-on: ubuntu-latest
     environment: pypi

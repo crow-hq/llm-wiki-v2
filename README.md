@@ -25,7 +25,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 **2. Install the wiki:**
 
 ```bash
-uv tool install "llmw2[server] @ git+https://github.com/crow-hq/llm-wiki-v2"
+uv tool install "llmwiki2[server]"
 ```
 
 **3. Start it:**
@@ -39,7 +39,8 @@ then **Save and start**. That's it.
 
 **Just looking?** `llmwiki2 demo` opens an example wiki, the notes of a fictional coffee
 roastery, with no key needed to browse it and its brain. It is copied to `~/llm-wiki-demo`,
-so you can add to it or delete it.
+so you can add to it or delete it. To try it without installing anything but uv:
+`uvx "llmwiki2[server]" demo`.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/screenshot-settings.png" alt="The first-run page: pick a provider, paste its key, choose a model" width="90%">
@@ -48,9 +49,9 @@ so you can add to it or delete it.
 > [!TIP]
 > **No key?** Pick **Ollama**: free, runs on your computer, no account
 > ([download it](https://ollama.com/download), then `ollama pull gemma4`).
-> CROW's classifier has its own provider (Settings → Advanced): OpenRouter,
-> TypeSafe or a local server. Without one the wiki uses classic mode, where the
-> model decides by itself.
+> Ollama runs the model locally; CROW's classifier is separate and remote by default.
+> It has its own provider (Settings → Advanced): OpenRouter, TypeSafe or a local
+> server. Without one the wiki uses classic mode, where the model decides by itself.
 > One [OpenRouter key](https://openrouter.ai/keys) works for every model, and for CROW too.
 
 ## What you can do
@@ -131,7 +132,7 @@ In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes 
 <summary><b>Use it as a Python library and from the command line</b></summary>
 
 ```bash
-pip install "llmw2[server] @ git+https://github.com/crow-hq/llm-wiki-v2"
+pip install "llmwiki2[server]"
 ```
 
 ```python
