@@ -3,7 +3,8 @@ Copyright 2026 Federico Cesarini, Marco Sassarini
 
 This project started as a fork of the Open Knowledge Format (OKF) project by
 Google LLC: https://github.com/GoogleCloudPlatform/open-knowledge-format
-Copyright 2026 Google LLC. SPDX-License-Identifier: AGPL-3.0-or-later
+Copyright 2026 Google LLC, licensed under the Apache License 2.0
+(SPDX-License-Identifier: Apache-2.0), whose text is in LICENSES/Apache-2.0.md.
 
 The OKF specification, reference agent, viewer, sample bundles and their
 tests have been removed. The wiki's on-disk format is derived from OKF v0.2
