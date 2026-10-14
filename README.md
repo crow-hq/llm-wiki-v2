@@ -6,6 +6,10 @@
   <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/crow-stats.svg" alt="An LLM wiki with no scaling limit. CROW vs classic: 89% right note read vs 62%; 2.1× faster per ingest (18.4s vs 38.6s); 68% fewer LLM tokens (5,508 vs 17,324)." width="100%">
 </p>
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/demo.gif" alt="A PDF dropped on the page is merged into the note it updates; a typed question gets an answer citing that note; a second document dropped on the brain appears as a new note in its folder" width="100%">
+</p>
+
 # LLM Wiki v2
 
 Give it your documents. It files them into a tidy wiki of Markdown notes and
@@ -64,6 +68,51 @@ so you can add to it or delete it. To try it without installing anything but uv:
 | **Delete** | Hover a note or folder in the sidebar and press the bin, or **Delete note** at the foot of a note. Links to it go from the other notes. **Empty the wiki** on the home page starts over. |
 | **Move and describe** | **Move** at the foot of a note files it in another folder; every link to and from it follows. The pencil beside a folder in the sidebar edits its description, the line the librarian routes by. |
 | **Keep your files** | Plain Markdown in `~/llm-wiki`: open it in any editor, keep it in git. |
+
+## Why not RAG?
+
+Because a wiki stays readable. RAG keeps your documents as embeddings, an opaque
+vector index no one can read or fix. Here every document becomes a Markdown note,
+filed in a folder that says what it holds and linked to related notes: you can open
+it, correct it and keep it in git, and every answer cites the notes it used. And
+knowledge accumulates: a new source updates the note on its subject instead of
+being rediscovered at every question.
+
+CROW keeps it that way as the wiki grows. In [Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
+the model finds pages by reading an index, which works at moderate scale (about a
+hundred sources); beyond that the gist suggests adding search, hybrid lexical and
+vector. In CROW a small classifier walks the folders instead, for filing and for
+answering, so the wiki can grow without vectors and stay something a person can
+read. In the [paper](https://doi.org/10.5281/zenodo.22898752), retrieval kept its
+accuracy across a twentyfold growth of the wiki. A separate test on a private wiki
+of about 500 notes pointed the same way: with CROW the right note was found nearly
+as often at the end as early on, while with the LLM taking the decisions it was
+found markedly less often as the wiki grew.
+
+## FAQ
+
+**Does everything run on my computer?** The LLM can, with Ollama or any
+OpenAI-compatible server. CROW's classifier is remote by default: Jev, through
+OpenRouter or TypeSafe. To keep it local too, point it at a System One server on
+your machine, such as Ollama 0.35 or later or Laya (see [providers](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/providers.md)).
+Without a classifier the wiki runs in classic mode, where the LLM takes every
+decision.
+
+**What is Jev?** A typed classifier by TypeSafe AI. Given a text, it answers typed
+questions (pick one of these options; is this statement true?) with probabilities
+instead of prose. CROW asks it every filing and retrieval decision and keeps the
+LLM for writing. CROW does not depend on it: any classifier that returns those
+probabilities can take its place. The authors have no ties to TypeSafe AI.
+
+**Aren't these your own benchmarks?** Yes. The paper measures one corpus of 525
+personal documents, mostly in Italian, with one LLM and one classifier version, and
+says so among its limitations; its rates carry 95% intervals. The corpora and
+scripts behind the 0.4.0 measurements are public in [benchmarks/](https://github.com/crow-hq/llm-wiki-v2/tree/main/benchmarks),
+and every script has a `--dry-run`, so you can run them with your own models.
+
+**Why AGPL, and why a CLA?** The AGPL keeps the code and every change to it open,
+also when it runs as a service. The CLA keeps the rights clear between the two
+authors and everyone who contributes; you keep the copyright in your work.
 
 ## Something wrong?
 
