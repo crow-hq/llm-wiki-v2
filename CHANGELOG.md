@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-14
+
+### Changed
+
+- The README, which PyPI shows: a demo GIF, a "Why not RAG?" section, a FAQ (what runs locally, what Jev is, whose benchmarks these are, why AGPL and a CLA) and the pip install next to uv.
+- Releases: the GitHub release is created by the release workflow after PyPI, with the version's CHANGELOG section as notes and a copy of the CLA signatures attached. To release, push the tag only.
+
 ## [0.4.1] - 2026-10-14
 
 ### Changed
@@ -129,6 +136,7 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[0.4.2]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.2
 [0.4.1]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.1
 [0.4.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.0
 [0.3.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.3.0
