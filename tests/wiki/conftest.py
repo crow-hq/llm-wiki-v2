@@ -78,7 +78,7 @@ def crow_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> Wiki:
 
 @pytest.fixture
 def client(classic_wiki: Wiki) -> TestClient:
-    """The HTTP API over the classic wiki; fastapi is imported here as it is an optional extra."""
+    """The HTTP API over the classic wiki."""
     from fastapi.testclient import TestClient
 
     from llmw2.server import create_app

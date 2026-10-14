@@ -11,7 +11,7 @@ and ask flows is in [steps.md](steps.md), and runnable programs are in
 pip install llmwiki2
 ```
 
-Add the `[server]` extra only for the HTTP API and the web page.
+The HTTP API and the web page come with it.
 
 ## Configuration
 

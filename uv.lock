@@ -438,31 +438,26 @@ wheels = [
 name = "llmwiki2"
 source = { editable = "." }
 dependencies = [
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pypdf" },
     { name = "pyyaml" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
 dev = [
-    { name = "fastapi" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "types-pyyaml" },
-    { name = "uvicorn" },
-]
-server = [
-    { name = "fastapi" },
-    { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.110" },
-    { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.110" },
+    { name = "fastapi", specifier = ">=0.110" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pydantic", specifier = ">=2.0" },
@@ -472,8 +467,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "types-pyyaml", marker = "extra == 'dev'" },
-    { name = "uvicorn", marker = "extra == 'dev'", specifier = ">=0.29" },
-    { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.29" },
+    { name = "uvicorn", specifier = ">=0.29" },
 ]
 provides-extras = ["server", "dev"]
 

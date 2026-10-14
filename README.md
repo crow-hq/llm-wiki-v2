@@ -18,25 +18,19 @@ with any AI provider: OpenRouter, OpenAI, Gemini, Ollama (free and local) or
 any OpenAI-compatible server. It works in **CROW** mode by default: a small
 classifier decides where things go, so the wiki stays fast and cheap as it grows.
 
-## Start in 3 steps
+## Start in 2 steps
 
-**1. Install uv**, the tool that installs Python apps ([other ways](https://docs.astral.sh/uv/getting-started/installation/)):
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-**2. Install the wiki:**
+**1. Install it** with Python 3.11 or later (in a virtual environment, if your system asks for one):
 
 ```bash
-uv tool install "llmwiki2[server]"
+pip install llmwiki2
 ```
 
-Or with pip: `pip install "llmwiki2[server]"`. As a Python library, `pip install llmwiki2`
-is enough (the `[server]` extra adds the web page and the HTTP API), then `from llmw2 import Wiki`:
-see the [library guide](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/library/index.md).
+No Python, or you'd rather keep it apart from your other packages? Use [uv](https://docs.astral.sh/uv/getting-started/installation/),
+which also fetches Python: `uv tool install llmwiki2`. The same install is the Python library too:
+`from llmw2 import Wiki`, see the [library guide](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/library/index.md).
 
-**3. Start it:**
+**2. Start it:**
 
 ```bash
 llmwiki2
@@ -48,7 +42,7 @@ then **Save and start**. That's it.
 **Just looking?** `llmwiki2 demo` opens an example wiki, the notes of a fictional coffee
 roastery, with no key needed to browse it and its brain. It is copied to `~/llm-wiki-demo`,
 so you can add to it or delete it. To try it without installing anything but uv:
-`uvx "llmwiki2[server]" demo`.
+`uvx llmwiki2 demo`.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/screenshot-settings.png" alt="The first-run page: pick a provider, paste its key, choose a model" width="90%">
@@ -185,7 +179,7 @@ In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes 
 <summary><b>Use it as a Python library and from the command line</b></summary>
 
 ```bash
-pip install "llmwiki2[server]"
+pip install llmwiki2
 ```
 
 ```python
@@ -212,7 +206,7 @@ llmwiki2 --bundle ./wiki ingest meeting.md     # or a .txt / .pdf
 llmwiki2 --bundle ./wiki sync ~/OneDrive       # file a folder and keep the wiki in step with it
 llmwiki2 --bundle ./wiki --mode classic ask "What did we decide about pricing?"
 llmwiki2 --bundle ./wiki check        # lint: OKF conformance, index drift, broken links
-llmwiki2 --bundle ./wiki serve        # the HTTP API and page (needs the [server] extra); plain `llmwiki2` also opens the browser
+llmwiki2 --bundle ./wiki serve        # the HTTP API and page; plain `llmwiki2` also opens the browser
 llmwiki2 setup                        # provider, key and model, tested and saved
 llmwiki2 demo                         # an example wiki, copied to ~/llm-wiki-demo and opened
 ```

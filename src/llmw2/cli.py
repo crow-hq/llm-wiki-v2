@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     health.add_argument("--min-filed", type=int, default=HEALTH_MIN_FILED, help="fewest notes filed to flag a row")
     health.add_argument("--max-share", type=float, default=HEALTH_MAX_SHARE, help="largest share of new subfolders and fallbacks")
     sub.add_parser("check", help="lint the wiki (exit 1 on problems)")
-    serve = sub.add_parser("serve", help="run the HTTP API (needs the [server] extra)")
+    serve = sub.add_parser("serve", help="run the HTTP API and the web page")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--open", action="store_true", help="open the wiki in the browser")

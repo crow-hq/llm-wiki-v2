@@ -1,7 +1,7 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""HTTP API (extra `server`) and the local web UI at GET /.
+"""HTTP API and the local web UI at GET /.
 
 POST /ingest, POST /upload (a .txt/.md/.pdf file), POST /ask, POST /folder (one made by hand), POST /note/move, POST /folder/describe,
 POST /audit (CROW: notes the classifier would file elsewhere), GET /taxonomy (new subfolders and fallbacks, from the log),

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-14
+
+### Changed
+
+- `pip install llmwiki2` is the whole install: the web page and the HTTP API (`fastapi`, `uvicorn`) are in the base dependencies, so `llmwiki2` and `llmwiki2 demo` start without an extra. Before, they stopped with `No module named 'fastapi'`. `llmwiki2[server]` still installs, now the same as `llmwiki2`.
+- README: two steps, `pip install llmwiki2` first and uv as the alternative for those without Python or who want it kept apart.
+
 ## [0.4.2] - 2026-10-14
 
 ### Changed
@@ -136,6 +143,7 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[0.4.3]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.3
 [0.4.2]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.2
 [0.4.1]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.1
 [0.4.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.0
