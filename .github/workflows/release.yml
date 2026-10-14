@@ -4,15 +4,12 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:  # a manual run publishes to TestPyPI: the rehearsal before the first real release
-  release:
-    types: [published]  # only backs up the CLA signatures; the tag push already built and published
 
 permissions:
   contents: read
 
 jobs:
   build:
-    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +26,19 @@ jobs:
         run: |
           version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/llmw2/__init__.py)  # what llmw2.__version__ is, read without installing
           [ "$TAG" = "v$version" ] || { echo "tag $TAG does not match version $version"; exit 1; }
+      # The release notes are the version's CHANGELOG section, checked here so a missing one stops the release before PyPI.
+      - name: The CHANGELOG has the release notes
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          awk -v v="${TAG#v}" '/^## \[/ {f = index($0, "## [" v "]") == 1; next} /^\[[^]]*\]: / {f = 0} f' CHANGELOG.md > notes.md
+          grep -q . notes.md || { echo "CHANGELOG.md has no section for ${TAG#v}"; exit 1; }
+      - if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: notes
+          path: notes.md
       - run: uv build
       # The wheel must carry the web page, the prompts and the demo, or `llmwiki2` starts without them.
       - run: |
@@ -73,20 +83,29 @@ jobs:
         with:
           repository-url: https://test.pypi.org/legacy/
 
-  # A copy of the CLA signatures on every release, so they do not live on the cla-signatures branch alone.
-  cla-signatures:
-    if: github.event_name == 'release'
+  # The GitHub release is made here, after PyPI, and never by hand: releases are immutable, so the copy of the CLA
+  # signatures (they must not live on the cla-signatures branch alone) is attached to a draft before it is published.
+  # To release, push the tag only.
+  github-release:
+    needs: publish
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # uploads the release asset
+      contents: write  # creates the release and uploads its asset
     steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: notes
       - uses: actions/checkout@v4
         with:
           ref: cla-signatures
+          path: cla-signatures
           persist-credentials: false
       - env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          GH_REPO: ${{ github.repository }}  # no checkout of this repository here
+          TAG: ${{ github.ref_name }}
         run: |
-          cp signatures/cla.json "cla-signatures-$TAG.json"
-          gh release upload "$TAG" "cla-signatures-$TAG.json" --clobber --repo "$GITHUB_REPOSITORY"
+          cp cla-signatures/signatures/cla.json "cla-signatures-$TAG.json"
+          gh release create "$TAG" --draft --verify-tag --title "${TAG#v}" --notes-file notes.md
+          gh release upload "$TAG" "cla-signatures-$TAG.json"
+          gh release edit "$TAG" --draft=false
