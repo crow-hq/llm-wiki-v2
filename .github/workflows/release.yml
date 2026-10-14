@@ -4,12 +4,15 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:  # a manual run publishes to TestPyPI: the rehearsal before the first real release
+  release:
+    types: [published]  # only backs up the CLA signatures; the tag push already built and published
 
 permissions:
   contents: read
 
 jobs:
   build:
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,3 +72,21 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+
+  # A copy of the CLA signatures on every release, so they do not live on the cla-signatures branch alone.
+  cla-signatures:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # uploads the release asset
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: cla-signatures
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          cp signatures/cla.json "cla-signatures-$TAG.json"
+          gh release upload "$TAG" "cla-signatures-$TAG.json" --clobber --repo "$GITHUB_REPOSITORY"
