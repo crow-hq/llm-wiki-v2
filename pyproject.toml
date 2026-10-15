@@ -54,7 +54,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = []  # kept so that `llmwiki2[server]` still installs: the web page and the API are in the base install since 0.4.3
-dev = ["pytest>=7.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11", "types-PyYAML"]
+dev = ["pytest>=7.0", "pytest-cov>=5.0", "pytest-xdist>=3.0", "ruff>=0.6", "mypy>=1.11", "types-PyYAML"]
 
 [project.urls]
 Homepage = "https://github.com/crow-hq/llm-wiki-v2"

@@ -21,7 +21,7 @@ jobs:
       - run: uv sync --locked --extra dev  # the versions in uv.lock; fails if pyproject changed without `uv lock`
       - run: uv run ruff check src tests
       - run: uv run mypy
-      - run: uv run pytest -q --cov
+      - run: uv run pytest -q -n auto --cov  # one worker per core: the Windows jobs took ~8 min in series
 
   build:
     runs-on: ubuntu-latest
