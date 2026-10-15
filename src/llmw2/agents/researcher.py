@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 from llmw2.agents import conflicts, revisions
@@ -18,9 +18,10 @@ from llmw2.agents.base import Decision
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.steps import StepContext, Steps, check_answer, check_select
 from llmw2.bundle.document import OKFDocumentError
+from llmw2.bundle.sheets import SHEET_CHARS, rows_for
 from llmw2.bundle.store import WikiStore
 from llmw2.bundle.tree import Note
-from llmw2.config import WikiConfig
+from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import InputError, ModelError
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
@@ -64,10 +65,36 @@ class Researcher:
             asked = f"{question}\n\n{revisions.HISTORY_HINT}" if past else question
             if self._conflicting(question, notes):
                 asked = f"{asked}\n\n{conflicts.CONFLICT_HINT}"
-            text = check_answer(self.steps.answer(ctx, asked, notes)) if notes else NO_ANSWER
+            text = check_answer(self.steps.answer(ctx, asked, self._with_rows(question, notes))) if notes else NO_ANSWER
         read = {n.rel for n in notes}
         citations = [c for c in dict.fromkeys(_CITATION.findall(text)) if c in read]
         return Answer(text, citations, [n.rel for n in notes], ctx.decisions, used)
+
+    def _with_rows(self, question: str, notes: list[Note]) -> list[Note]:
+        """The notes as the answer reads them: a spreadsheet sheet's note gets the rows of its sources the question needs.
+
+        A sheet's note catalogues it; its data stays in the raw copy, as CSV (`sheets`). Copies of the notes are
+        given, the files are untouched. The rows fill at most what the prompt has left after the notes;
+        only the latest copy of each origin is read.
+        """
+        room = self.cfg.effective_read_chars - PROMPT_ROOM - sum(len(n.full_text()) for n in notes)  # what the prompt has left
+        out = []
+        for note in notes:
+            blocks = []
+            for rel in _latest_raws(note):
+                if room < 1_000:
+                    break
+                try:
+                    raw = self.store.read(rel)
+                except (FileNotFoundError, InputError, OKFDocumentError):
+                    continue
+                if raw.frontmatter.get("removed"):
+                    continue
+                if block := rows_for(question, raw.body, min(SHEET_CHARS, room)):
+                    blocks.append(block)
+                    room -= len(block)
+            out.append(replace(note, body=note.main_body() + "\n\n" + "\n\n".join(blocks)) if blocks else note)
+        return out
 
     def _conflicting(self, question: str, notes: list[Note]) -> bool:
         """Whether the notes read disagree on the answer to the question (CROW, 2 notes at least)."""
@@ -110,3 +137,18 @@ class Researcher:
             except (FileNotFoundError, InputError, OKFDocumentError):
                 log.warning("the archived version of %s is missing: %s", note.rel, previous)
         return out, True
+
+
+def _latest_raws(note: Note) -> list[str]:
+    """The raw copies a note cites, newest first, only the latest of each origin (older versions of a sheet left out)."""
+    seen: set[object] = set()
+    out = []
+    for source in reversed(note.frontmatter.get("sources") or []):
+        if not isinstance(source, dict) or not str(source.get("resource", "")).startswith("/raw/"):
+            continue
+        origin = source.get("origin")
+        key = (origin.get("source"), origin.get("account"), origin.get("id")) if isinstance(origin, dict) else source["resource"]
+        if key not in seen:
+            seen.add(key)
+            out.append(str(source["resource"]))
+    return out

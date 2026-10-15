@@ -36,7 +36,7 @@ from pydantic import BaseModel, ConfigDict
 
 from llmw2 import __version__
 from llmw2.audit import AUDIT_MIN, HEALTH_MAX_SHARE, HEALTH_MIN_FILED
-from llmw2.bundle.files import SUFFIXES
+from llmw2.bundle.files import READABLE, SUFFIXES
 from llmw2.bundle.origin import Origin
 from llmw2.bundle.tree import graph
 from llmw2.config import WikiConfig
@@ -238,7 +238,7 @@ def create_app(
     async def upload(request: Request, filename: str) -> dict[str, Any]:
         """Catalogue one file sent as the raw request body (?filename=notes.pdf)."""
         if PurePath(filename).suffix.lower() not in SUFFIXES:
-            raise HTTPException(415, f"{filename}: use .txt, .md or .pdf")
+            raise HTTPException(415, f"{filename}: not a file the wiki reads ({READABLE})")
         data = bytearray()
         async for chunk in request.stream():  # a body sent without Content-Length is capped while it arrives
             data += chunk

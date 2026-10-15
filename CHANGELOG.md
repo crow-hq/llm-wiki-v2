@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Word (`.docx`), PowerPoint (`.pptx`), Excel (`.xlsx`), OpenDocument text (`.odt`) and spreadsheets (`.ods`), read with the standard library only (no new dependency): documents become Markdown with their headings, lists, tables, footnotes and speaker notes; the type is read from the content, and a damaged or hostile file (zip or XML bomb, broken XML) is an input error that does not stop a sync.
+- A spreadsheet is filed one note per sheet: the note describes the sheet (written from its first rows), the sheet's rows are kept as CSV in the raw copy, and the researcher adds to a sheet's note the rows a question needs (the whole sheet when it fits, otherwise the closest rows and the totals of its numeric columns). The notes of one workbook link to each other; a sheet deleted from the workbook is marked removed. `IngestResult.parts` holds the other sheets' results.
+- The local folder source skips Office lock files (`~$name.docx`).
+
+### Changed
+
+- `Wiki.ingest_many` (and so `sync`) reads spreadsheets first, on worker threads, and reports one item per sheet (`"plan, Budget.csv"`); sync counts are per sheet. A workbook has no record under its own origin key (`Wiki.origin` returns None for it), so a sync that lists it fetches it again; sheets whose text is unchanged cost no model call.
+
 ### Changed
 
 - CI runs the tests in parallel (`pytest -n auto`, with `pytest-xdist` among the dev dependencies): the Windows jobs had taken the CI from about 3 to about 8.5 minutes.

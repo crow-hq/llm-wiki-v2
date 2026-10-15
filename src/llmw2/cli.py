@@ -206,8 +206,9 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
         if args.json:
             print(json.dumps(result.to_dict(), indent=2))
         else:
-            created = f" (new folders: {', '.join(result.created_folders)})" if result.created_folders else ""
-            print(f"{result.action}: {result.note}{created}")
+            for one in [result, *result.parts]:  # a spreadsheet: one note per sheet
+                created = f" (new folders: {', '.join(one.created_folders)})" if one.created_folders else ""
+                print(f"{one.action}: {one.note}{created}")
     elif args.command == "sync":
         report = sync(wiki, LocalFolderSource(args.folder), concurrency=args.concurrency)
         if args.json:

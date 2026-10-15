@@ -94,7 +94,7 @@ until a model is called, so a wiki whose steps call no model works with none
 |---|---|
 | `init()` | create the bundle (`index.md`, `log.md`, `raw/`) if missing; ingest does it too |
 | `ingest(text, *, title, resource, origin, fields)` | file a text; returns an `IngestResult` |
-| `ingest_file(data, filename, *, resource, origin, fields)` | the same for the bytes of a `.txt`, `.md` or `.pdf` (the `extract` step reads it); the file name gives the title |
+| `ingest_file(data, filename, *, resource, origin, fields)` | the same for the bytes of a text, Markdown, PDF, Word, PowerPoint, Excel or OpenDocument file (the `extract` step reads it); the file name gives the title. A spreadsheet is filed one note per sheet: the first sheet's result, the others in its `parts` |
 | `ingest_many(items, *, concurrency, on_result)` | file a batch, preparing several documents at once; returns a `BatchReport` (see below) |
 | `ask(question)` | answer from the notes; returns an `Answer` |
 | `tree()` | the folder tree, read from disk: `Folder` objects with `.notes` and `.subfolders` |
@@ -182,7 +182,7 @@ report = sync(wiki, LocalFolderSource(Path("~/OneDrive")), concurrency=4)   # de
 print(report.to_dict())   # created, merged, unchanged, removed, skipped, errors, stopped
 ```
 
-`LocalFolderSource` reads every `.txt`, `.md` and `.pdf` under a folder. A
+`LocalFolderSource` reads every file of a type the wiki reads under a folder (Office's `~$` lock files excepted). A
 connector for anything else is any object with:
 
 - `name` and `account` (strings: they identify the source in origin keys and in the cursor file);

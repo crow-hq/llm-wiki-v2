@@ -26,8 +26,11 @@ from __future__ import annotations
 
 import concurrent.futures
 import contextvars
+import itertools
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import replace
+from pathlib import PurePath
 from typing import Any, Self
 
 from llmw2.agents import steps_crow
@@ -39,7 +42,7 @@ from llmw2.agents.steps import CLASSIC, CROW, StepContext, Steps, check_extract
 from llmw2.audit import AUDIT_MIN, HEALTH_MAX_SHARE, HEALTH_MIN_FILED, FolderHealth, RouteProposal, taxonomy_health
 from llmw2.batch import BatchReport, Item
 from llmw2.bundle.check import Problem, check
-from llmw2.bundle.files import title_of
+from llmw2.bundle.files import is_spreadsheet, sheet_sources, title_of
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.store import Deleted, WikiStore
 from llmw2.bundle.tree import LOG, Folder, Note, slugify
@@ -135,9 +138,19 @@ class Wiki:
         origin: Origin | None = None,
         fields: dict[str, Any] | None = None,
     ) -> IngestResult:
-        """Ingest a file (.txt, .md or .pdf with the default `extract` step); its name becomes the source title."""
+        """Ingest a file (see `files.READABLE` for the types the default `extract` step reads); its name is the title.
+
+        A spreadsheet gives one note per sheet: the result is the first sheet's, the others are in its `parts`.
+        """
         item = Item(filename, data=data, resource=resource, origin=origin, fields=dict(fields or {}))
-        return self._ingest(self._source_of(item))
+        items = self._sheet_items(item)
+        if items == [item]:
+            return self._ingest(self._source_of(item))
+        results = [self._ingest(self._source_of(one)) for one in items]
+        self._after_sheets(item, items, results)
+        first = results[0]
+        first.parts = results[1:]
+        return first
 
     def ingest_many(
         self,
@@ -157,11 +170,17 @@ class Wiki:
         (a model that keeps failing, a step that returns what it should not) starts no new item: those in flight finish,
         the documents before the failed one are filed, and everything from it on is in `not_done` with `stopped` saying
         why. A failure while filing stops at once, the same way. `on_result` is called after each item is filed or fails.
+
+        A spreadsheet is read first (on worker threads) and spread into one item per sheet ("plan, Budget.csv"):
+        those are the items the report and `on_result` give, each with its own result.
         """
         workers = self.cfg.concurrency if concurrency is None else concurrency
         if not 1 <= workers <= 16:
             raise InputError("concurrency must be from 1 to 16")
-        ordered = sorted(items, key=batch_order)
+        given = list(items)
+        with concurrent.futures.ThreadPoolExecutor(workers, thread_name_prefix="llmw2-sheets") as readers:
+            groups = list(zip(given, readers.map(self._sheet_items, given), strict=True))
+        ordered = sorted((one for _, many in groups for one in many), key=batch_order)
         report = BatchReport()
         if not ordered:
             return report
@@ -209,6 +228,11 @@ class Wiki:
                         on_result(item, result)
             finally:
                 halt[0] = -1  # whatever ends the loop, items still queued start nothing
+        if report.stopped is None:
+            done = {id(i): r for i, r in report.results}
+            for item, many in groups:
+                if len(many) > 1 or many[0] is not item:
+                    self._after_sheets(item, many, [done.get(id(one)) for one in many])
         return report
 
     def _source_of(self, item: Item) -> Callable[[StepContext], Source]:
@@ -227,6 +251,47 @@ class Wiki:
             return Source(text, title_of(item.filename), link, item.origin, dict(item.fields))
 
         return source
+
+    def _sheet_items(self, item: Item) -> list[Item]:
+        """A spreadsheet as one item per sheet (its text the sheet as CSV, its origin id "<id>#<sheet>"); others as they are.
+
+        The file is read here, on the caller's thread. A failure to fetch or read it is kept for the item's own turn,
+        so that it ends where any other item's failure would.
+        """
+        if item.text is not None or not is_spreadsheet(item.filename):
+            return [item]
+        try:
+            data = item.data if item.data is not None else item.fetch() if item.fetch is not None else b""
+            found = sheet_sources(data, item.filename)
+        except Exception as e:  # raised again when the item is prepared: an InputError is its result, others stop
+            error = e
+
+            def fail() -> bytes:
+                raise error
+
+            return [replace(item, data=None, fetch=fail)]
+        stem = PurePath(item.filename).stem
+        return [
+            Item(
+                f"{stem}, {name}.csv",  # the title is the name less its suffix: a sheet "v1.2" keeps its dot
+                text=text,
+                origin=replace(item.origin, id=f"{item.origin.id}#{name}") if item.origin else None,
+                resource=item.resource or (item.origin.link if item.origin else None) or item.filename,
+                fields=dict(item.fields),
+            )
+            for name, text in found
+        ]
+
+    def _after_sheets(self, item: Item, sheets: list[Item], results: Sequence[IngestResult | Exception | None]) -> None:
+        """After the sheets of a spreadsheet are filed: link their notes, and mark the sheets no longer there removed."""
+        notes = list(dict.fromkeys(r.note for r in results if isinstance(r, IngestResult) and r.note))
+        with self.store.lock():
+            for before, after in itertools.pairwise(notes):  # each sheet to the next: a chain, two links at most
+                self.store.link(self.store.read(before), self.store.read(after))
+            if item.origin is not None and all(isinstance(r, IngestResult) for r in results):
+                present = {one.origin.key for one in sheets if one.origin is not None}
+                for key in sorted(self.store.origin_keys(item.origin.key + "#") - present):
+                    self.store.mark_origin_removed(key)
 
     def _ingest(self, source: Callable[[StepContext], Source]) -> IngestResult:
         with self._preparing:  # at most `cfg.concurrency` calls prepare at once; they wait here, not for the lock
@@ -265,13 +330,23 @@ class Wiki:
             return self.librarian().file(prepared)
 
     def origin(self, key: str) -> OriginRecord | None:
-        """The latest raw copy cited by a note for an origin key (`Origin.key`), or None if no note cites one."""
+        """The latest raw copy cited by a note for an origin key (`Origin.key`), or None if no note cites one.
+
+        A spreadsheet has none under its own key: its sheets are filed as "<key>#<sheet>". So a sync fetches it again
+        whenever it is listed, and each sheet whose text is unchanged costs no model call.
+        """
         return self.store.find_origin(key)
 
     def mark_removed(self, key: str) -> OriginRecord | None:
-        """The original was deleted at its source: its raw copies are marked, its notes stay. None if unknown."""
+        """The original was deleted at its source: its raw copies are marked, its notes stay. None if unknown.
+
+        A spreadsheet's sheets ("<key>#<sheet>") are marked with it.
+        """
         with self.store.lock():
-            return self.store.mark_origin_removed(key)
+            record = self.store.mark_origin_removed(key)
+            for sheet in sorted(self.store.origin_keys(key + "#")) if is_spreadsheet(key) else []:
+                record = self.store.mark_origin_removed(sheet) or record
+            return record
 
     def _unchanged(self, origin: Origin, text: str) -> IngestResult | None:
         """The result to give back when this origin is already filed with the same content or version."""

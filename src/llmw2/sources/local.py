@@ -53,6 +53,7 @@ class LocalFolderSource:
             rel = path.relative_to(self.folder)
             if (
                 any(part.startswith(".") for part in rel.parts)
+                or path.name.startswith("~$")  # Office's lock file of a document open in Word or Excel
                 or path.suffix.lower() not in SUFFIXES
                 or any((self.folder / parent).is_symlink() for parent in [rel, *rel.parents][:-1])
             ):  # hidden, unreadable type, or a link (or inside one): it could lead outside the folder

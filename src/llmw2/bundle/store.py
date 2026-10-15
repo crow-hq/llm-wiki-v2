@@ -340,6 +340,10 @@ class WikiStore:
             notes=sorted(newest, key=lambda rel: (newest[rel], rel)),
         )
 
+    def origin_keys(self, prefix: str) -> set[str]:
+        """The origin keys of raw copies starting with `prefix`."""
+        return self._origins.keys(prefix)
+
     def mark_origin_removed(self, key: str) -> OriginRecord | None:
         """Stamp `removed` on every raw copy of this key that lacks it; the copies' text is untouched.
 

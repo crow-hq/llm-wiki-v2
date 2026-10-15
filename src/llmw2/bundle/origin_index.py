@@ -52,6 +52,12 @@ class OriginIndex:
             found = [c for _, c in self._raws.values() if c is not None and c.key == key]
         return sorted(found, key=lambda c: (c.seq, c.at, Path(c.name).stem))
 
+    def keys(self, prefix: str) -> set[str]:
+        """The origin keys starting with `prefix` (the sheets of one spreadsheet: "<key>#")."""
+        with self._lock:
+            self._refresh()
+            return {c.key for _, c in self._raws.values() if c is not None and c.key.startswith(prefix)}
+
     def citing(self, raws: list[str]) -> dict[str, int]:
         """The notes citing any of `raws` ("/raw/…md"), each with the highest position in `raws` it cites."""
         with self._lock:

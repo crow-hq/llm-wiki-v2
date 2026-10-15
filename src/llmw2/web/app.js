@@ -107,7 +107,7 @@ function home() {
     </div>
     <div class="cards">
       <div class="card">${ICONS.folder}<div><b>${folders} folder${folders === 1 ? "" : "s"}</b><span>New ones appear when nothing fits, or make your own with + Folder in the sidebar.</span></div></div>
-      <div class="card">${ICONS.note}<div><b>Notes and files</b><span>Write a note with + Note, or drop .txt, .md and .pdf files. PDFs need a text layer.</span></div></div>
+      <div class="card">${ICONS.note}<div><b>Notes and files</b><span>Write a note with + Note, or drop text, Markdown, PDF, Word, PowerPoint, Excel or OpenDocument files: a spreadsheet gives a note per sheet. PDFs need a text layer.</span></div></div>
       <div class="card">${ICONS.search}<div><b>Ask anything</b><span>Answers cite the notes they come from: click one to read it.</span></div></div>
     </div>`, true);
 }

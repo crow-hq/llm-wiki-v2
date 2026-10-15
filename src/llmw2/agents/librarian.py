@@ -11,7 +11,7 @@ output of every step is checked before it is used.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from functools import cached_property
 from typing import Any, Literal
 
@@ -32,6 +32,7 @@ from llmw2.agents.steps import (
     decision_hash,
 )
 from llmw2.bundle.origin import content_hash
+from llmw2.bundle.sheets import brief
 from llmw2.bundle.store import WikiStore
 from llmw2.config import WikiConfig
 from llmw2.models.classifier import Classifier
@@ -51,9 +52,10 @@ class IngestResult:
     related: list[str]
     decisions: list[Decision]
     usage: UsageReport = field(default_factory=UsageReport)
+    parts: list[IngestResult] = field(default_factory=list)  # the other sheets of a spreadsheet, filed with this one
 
     def to_dict(self) -> dict[str, Any]:
-        return {**asdict(self), "usage": self.usage.to_dict()}
+        return {**asdict(self), "usage": self.usage.to_dict(), "parts": [p.to_dict() for p in self.parts]}
 
 
 @dataclass
@@ -87,16 +89,18 @@ class Librarian:
 
     def prepare(self, source: Source) -> Prepared:
         """The part of an ingest that does not read the tree: summarize. Needs no lock, and may run in parallel."""
-        self.ctx.source = source
+        read = _read(source)
+        self.ctx.source = read
         with self.ctx.llm.usage.span() as used:
-            cand = check_summarize(self.steps.summarize(self.ctx, source))
+            cand = check_summarize(self.steps.summarize(self.ctx, read))
         return Prepared(source, cand, used, list(self.ctx.decisions))
 
     def file(self, prepared: Prepared) -> IngestResult:
         """The rest: from a fresh `load()` to the log. The caller holds the wiki's lock."""
         steps, ctx = self.steps, self.ctx
         source, cand = prepared.source, prepared.candidate
-        ctx.source = source
+        read = _read(source)  # what the steps read; the raw copy keeps `source` whole
+        ctx.source = read
         ctx.candidate = cand
         ctx.decisions = list(prepared.decisions)
         with ctx.llm.usage.span() as used:
@@ -108,12 +112,12 @@ class Librarian:
             merging = match is not None and check_consolidate(steps.consolidate(ctx, match, cand))
             revised, archived = False, ""
             if match is not None and merging:
-                draft = revisions.revise(ctx, match, source) if self.cfg.revisions == "replace" else None
+                draft = revisions.revise(ctx, match, read) if self.cfg.revisions == "replace" else None
                 if draft is not None:
                     archived = self.store.archive_note(match)
                     revised = True
                 else:
-                    draft = check_merge(steps.merge(ctx, match, source))
+                    draft = check_merge(steps.merge(ctx, match, read))
                 raw, ref = self.save_source(source, cand)
                 note = self.store.update_note(
                     match,
@@ -191,3 +195,9 @@ class Librarian:
             ref["origin"] = source.origin.to_dict()
         ref["steps"] = {"name": self.steps.name, "hash": self.hash}
         return raw, ref
+
+
+def _read(source: Source) -> Source:
+    """The source as the steps read it: a spreadsheet sheet by its first rows, the note catalogues it (`sheets.brief`)."""
+    text = brief(source.text)
+    return source if text is source.text else replace(source, text=text)
