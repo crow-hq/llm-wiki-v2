@@ -269,8 +269,8 @@ class Settings:
         tmp = self.path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
         try:
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            os.fchmod(fd, 0o600)  # O_CREAT's mode applies only to a new file, not to a leftover one
             with os.fdopen(fd, "w", encoding="utf-8") as f:
+                os.chmod(tmp, 0o600)  # O_CREAT's mode applies only to a new file, not to a leftover one
                 json.dump(saved, f, indent=2)
                 f.write("\n")
             tmp.replace(self.path)

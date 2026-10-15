@@ -151,6 +151,16 @@ def test_save_when_a_wide_temp_file_is_left_over_then_the_file_is_still_owner_on
     assert owner_only(settings.path)
 
 
+def test_save_when_os_has_no_fchmod_then_it_still_writes_the_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr(os, "fchmod", raising=False)  # Windows before Python 3.13
+    settings = Settings({})
+
+    settings.save({"api_key": KEY})
+
+    assert written(settings) == {"llm": {"api_key": KEY}}
+    assert owner_only(settings.path)
+
+
 def test_the_environment_and_flags_win_and_their_fields_are_not_saved(tmp_path: Path) -> None:
     settings = Settings({"OKF_LLM_MODEL": "openai/gpt-4.1", "OPENROUTER_API_KEY": "env-key"}, mode="crow", bundle=tmp_path)
 

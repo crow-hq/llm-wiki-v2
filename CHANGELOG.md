@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-10-15
+
+### Fixed
+
+- Saving settings on Windows with Python 3.11 and 3.12: "Save and start" stopped with `module 'os' has no attribute 'fchmod'` (Windows has `os.fchmod` only from Python 3.13). The file is now made owner-only with `os.chmod`, and a failed save no longer leaves a temporary file behind.
+
+### Changed
+
+- CI runs the tests on Windows too, with Python 3.11, 3.12 and 3.13.
+
 ## [0.4.3] - 2026-10-14
 
 ### Changed
@@ -143,6 +153,7 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[0.4.4]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.4
 [0.4.3]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.3
 [0.4.2]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.2
 [0.4.1]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.1
