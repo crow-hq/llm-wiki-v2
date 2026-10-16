@@ -476,7 +476,7 @@ class Wiki:
         `(new_subfolders + fallbacks) / filed > max_share`: a folder that keeps needing subfolders or the LLM's help.
         """
         path = self.store.root / LOG
-        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
         return taxonomy_health(text, min_filed, max_share)
 
     def check(self) -> list[Problem]:

@@ -54,7 +54,7 @@ def _check_doc(root: Path, path: Path, rel: str, ids: dict[str, str], *, links: 
     A note's `id` is optional (older wikis have none), but two notes of the tree may not share one.
     """
     try:
-        doc = OKFDocument.parse(path.read_text(encoding="utf-8"))
+        doc = OKFDocument.read(path)
         doc.validate()
     except OKFDocumentError as e:
         return [Problem(rel, str(e))]
@@ -72,10 +72,18 @@ def _check_doc(root: Path, path: Path, rel: str, ids: dict[str, str], *, links: 
     return problems
 
 
+def _text(path: Path, rel: str) -> tuple[str, list[Problem]]:
+    """The file as text, with a problem when it is not UTF-8 (its bad bytes replaced, so the rest is still checked)."""
+    data = path.read_bytes()
+    try:
+        return data.decode("utf-8"), []
+    except UnicodeDecodeError as e:
+        return data.decode("utf-8", errors="replace"), [Problem(rel, f"not UTF-8 text (byte {e.start}): save it as UTF-8")]
+
+
 def _check_index(root: Path, path: Path, rel: str) -> list[Problem]:
     folder = path.parent
-    text = path.read_text(encoding="utf-8")
-    problems = []
+    text, problems = _text(path, rel)
     if folder != root and text.startswith("---"):
         problems.append(Problem(rel, "only the root index.md may carry frontmatter"))
     else:
@@ -105,10 +113,11 @@ def _check_index(root: Path, path: Path, rel: str) -> list[Problem]:
 
 
 def _check_log(path: Path, rel: str) -> list[Problem]:
-    lines = path.read_text(encoding="utf-8").splitlines()
+    text, problems = _text(path, rel)
+    lines = text.splitlines()
     days = [m[1] for line in lines if (m := _DAY.match(line))]
     bad = [line for line in lines if line.startswith("## ") and not _DAY.match(line)]
-    problems = [Problem(rel, f"log heading is not ## YYYY-MM-DD: {line!r}") for line in bad]
+    problems += [Problem(rel, f"log heading is not ## YYYY-MM-DD: {line!r}") for line in bad]
     if days != sorted(days, reverse=True):
         problems.append(Problem(rel, "log days are not newest first"))
     return problems

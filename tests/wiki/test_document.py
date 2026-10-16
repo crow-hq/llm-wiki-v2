@@ -70,3 +70,25 @@ def test_validate_requires_type_only() -> None:
     OKFDocument({"type": "Note"}).validate()
     with pytest.raises(OKFDocumentError, match="Missing required frontmatter keys: type"):
         OKFDocument({"title": "Untyped"}).validate()
+
+
+def test_a_value_holding_a_delimiter_line_does_not_end_the_frontmatter() -> None:
+    doc = OKFDocument({"type": "Note", "description": "Refund policy.\n---\nSecond line", "fields": {"a": "x\n---\ny"}}, "Body.\n")
+
+    again = OKFDocument.parse(doc.serialize())
+
+    assert again.frontmatter == doc.frontmatter
+    assert again.body == "Body."
+
+
+def test_a_byte_order_mark_before_the_frontmatter_is_ignored() -> None:
+    doc = OKFDocument.parse("﻿" + NOTE)
+
+    assert (doc.frontmatter["title"], doc.body) == ("Refund policy", "# Refund policy\n\nAcme refunds orders within 30 days.")
+
+
+@pytest.mark.parametrize("separator", ["\x0c", "\u2028", "\x1e", "\x85"])
+def test_characters_splitlines_breaks_on_stay_in_the_body(separator: str) -> None:
+    body = f"Page one.{separator}Page two.\n"
+
+    assert OKFDocument.parse(OKFDocument({"type": "Note"}, body).serialize()).body == body.rstrip("\n")

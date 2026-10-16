@@ -65,8 +65,11 @@ REPLACE_ATTEMPTS = 6  # about 0.3 s in all: long enough for a reader to close th
 
 
 def body_hash(body: str) -> str:
-    """The hash of a note's main body: it tells whether code alone wrote it."""
-    return "sha256:" + hashlib.sha256(body.strip().encode("utf-8")).hexdigest()
+    """The hash of a note's main body: it tells whether code alone wrote it.
+
+    Line breaks count as "\n" whatever they were ("\r\n" is read back as "\n"), so a reload does not change the hash.
+    """
+    return "sha256:" + hashlib.sha256("\n".join(body.strip().splitlines()).encode("utf-8")).hexdigest()
 
 
 def now_iso() -> str:
@@ -151,7 +154,7 @@ class WikiStore:
         folder = Folder(path, rel, description, parent=parent)
         descriptions: dict[str, str] = {}
         if (path / INDEX).exists():
-            for _, link, text in parse_index((path / INDEX).read_text(encoding="utf-8")):
+            for _, link, text in parse_index(read_utf8_or_latin1(path / INDEX)):
                 if name := subfolder_of(link):
                     descriptions[name] = text
         for child in sorted(path.iterdir()):
@@ -162,7 +165,7 @@ class WikiStore:
                 folder.subfolders.append(self._load_folder(child, child_rel, descriptions.get(child.name, ""), folder))
             elif child.suffix == ".md" and child.name not in (INDEX, LOG):
                 try:
-                    doc = OKFDocument.parse(child.read_text(encoding="utf-8"))
+                    doc = OKFDocument.read(child)
                 except OKFDocumentError as e:
                     log.warning("skipping %s: %s", child_rel, e)
                     continue
@@ -177,7 +180,7 @@ class WikiStore:
             raise InputError(f"not a wiki document: {rel}")
         if not path.is_file():
             raise FileNotFoundError(rel)
-        doc = OKFDocument.parse(path.read_text(encoding="utf-8"))
+        doc = OKFDocument.read(path)
         return Note(path, path.relative_to(root).as_posix(), doc.frontmatter, doc.body)
 
     # -- writing --------------------------------------------------------------
@@ -380,7 +383,7 @@ class WikiStore:
     def append_log(self, verb: str, text: str, link: str | None = None, link_title: str | None = None) -> None:
         """Newest first under a `## YYYY-MM-DD` heading (OKF §9)."""
         path = self.root / LOG
-        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else ["# Wiki log"]
+        lines = read_utf8_or_latin1(path).splitlines() if path.exists() else ["# Wiki log"]
         entry = f"* **{verb}**: " + " - ".join(p for p in (f"[{link_title or link}]({link})" if link else "", text) if p)
         today = f"## {datetime.now(UTC).date().isoformat()}"
         first = next((i for i, line in enumerate(lines) if line.startswith("## ")), None)
@@ -448,7 +451,7 @@ class WikiStore:
         """Archived copies of the note at `old` now say they come from `new`."""
         for path in sorted((self.root / ARCHIVE_DIR).rglob("*.md")):
             try:
-                doc = OKFDocument.parse(path.read_text(encoding="utf-8"))
+                doc = OKFDocument.read(path)
             except OKFDocumentError:
                 continue
             if doc.frontmatter.get("archived_from") == f"/{old}":
@@ -562,6 +565,19 @@ def _raw_sources(note: Note) -> list[str]:
         for s in (sources if isinstance(sources, list) else [])
         if isinstance(s, dict) and str(s.get("resource", "")).startswith(f"/{RAW}/")
     ]
+
+
+def read_utf8_or_latin1(path: Path) -> str:
+    """An index.md or log.md as text: UTF-8, or Latin-1 when an editor saved it so.
+
+    Latin-1 reads every byte and loses none, so the next write turns the file into UTF-8 with its characters ("Café"
+    stays "Café"); replacing the bad bytes would write "Caf\ufffd" back for good.
+    """
+    data = path.read_bytes()
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("latin-1")
 
 
 def write_atomic(path: Path, text: str) -> None:

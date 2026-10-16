@@ -117,7 +117,7 @@ def _sync(state: dict[str, Any], seen: dict[str, os.DirEntry[str]], parse: Calla
 
 def _parse_copy(name: str, entry: os.DirEntry[str]) -> Copy | None:
     try:
-        fm = OKFDocument.parse(Path(entry.path).read_text(encoding="utf-8")).frontmatter
+        fm = OKFDocument.read(Path(entry.path)).frontmatter
         origin = Origin.from_dict(fm["origin"]) if isinstance(fm.get("origin"), dict) else None
     except (OKFDocumentError, InputError):
         return None
@@ -138,7 +138,7 @@ def _parse_copy(name: str, entry: os.DirEntry[str]) -> Copy | None:
 def _parse_note(rel: str, entry: os.DirEntry[str]) -> list[str]:
     """The raw copies a note cites ("/raw/…md"); none for a malformed note."""
     try:
-        sources = OKFDocument.parse(Path(entry.path).read_text(encoding="utf-8")).frontmatter.get("sources")
+        sources = OKFDocument.read(Path(entry.path)).frontmatter.get("sources")
     except OKFDocumentError:
         return []
     return [

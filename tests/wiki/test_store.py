@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from llmw2.bundle import store as store_module
+from llmw2.bundle.check import check
 from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.store import WikiStore, body_hash
 from llmw2.bundle.tree import Folder, Note, graph, join_see_also, parse_index, slugify, split_see_also
@@ -154,6 +155,50 @@ def test_load_skips_unparseable_notes(store: WikiStore, bundle: Path, caplog: py
         root = store.load()
     assert [n.rel for n in root.notes] == ["good.md"]
     assert "broken.md" in caplog.text
+
+
+def test_a_note_whose_summary_holds_a_delimiter_line_stays_in_the_tree(store: WikiStore) -> None:
+    folder, _ = store.create_folder(store.load(), "finance", "Money.")
+    _note(store, folder, "Refunds", summary="Refund policy.\n---\nSecond line")
+
+    assert [n.rel for n in store.load().all_notes()] == ["finance/refunds.md"]
+
+
+@pytest.mark.parametrize("body", ["Line one.\r\nLine two.", "Page one.\x0cPage two.", "One.\u2028Two."])
+def test_a_written_note_keeps_its_body_hash_when_read_back(store: WikiStore, body: str) -> None:
+    folder, _ = store.create_folder(store.load(), "finance", "Money.")
+    note = _note(store, folder, "Pricing", body=body)
+
+    again = store.read(note.rel)
+
+    assert again.frontmatter["generated"]["body_hash"] == body_hash(again.main_body())
+
+
+def test_a_note_that_is_not_utf8_is_skipped_and_named_not_fatal(store: WikiStore, bundle: Path, caplog: pytest.LogCaptureFixture) -> None:
+    (bundle / "latin1.md").write_bytes("---\ntype: Note\ntitle: Caf\xe9\n---\n\nPrix: 5 \xe9.\n".encode("latin-1"))
+    _put(bundle / "good.md", "---\ntype: Note\n---\n\nBody.\n")
+    (bundle / "index.md").write_bytes(b"# Notes\n\n* [Caf\xe9](good.md) - caf\xe9\n")
+
+    with caplog.at_level(logging.WARNING, logger="llmw2.bundle.store"):
+        root = store.load()
+
+    assert [n.rel for n in root.notes] == ["good.md"]
+    assert "latin1.md" in caplog.text and "UTF-8" in caplog.text
+    assert store.find_origin("any") is None  # the origin index skips it too
+    assert any(p.path == "latin1.md" and "UTF-8" in p.message for p in check(bundle))
+
+
+def test_an_index_and_a_log_saved_as_latin1_keep_their_characters_and_become_utf8(store: WikiStore, bundle: Path) -> None:
+    store.create_folder(store.load(), "cafe", "Caf\u00e9 and bar.")
+    index = bundle / "index.md"
+    index.write_bytes(index.read_text(encoding="utf-8").encode("latin-1"))  # an editor saved them as Latin-1
+    (bundle / "log.md").write_bytes("# Wiki log\n\n## 2026-01-01\n\n* **Note**: Caf\u00e9\n".encode("latin-1"))
+
+    store.create_folder(store.load(), "menu", "What we sell.")  # writes both again
+
+    assert "Caf\u00e9 and bar." in index.read_text(encoding="utf-8")
+    assert "Caf\u00e9" in (bundle / "log.md").read_text(encoding="utf-8")
+    assert store.load().subfolder("cafe").description == "Caf\u00e9 and bar."
 
 
 def test_load_tolerates_an_index_with_malformed_frontmatter(store: WikiStore, bundle: Path) -> None:
@@ -412,6 +457,44 @@ def test_link_is_idempotent(store: WikiStore) -> None:
     assert store.link(a, a) is False
     assert (a.path.read_text(), b.path.read_text()) == before
     assert split_see_also(a.body)[1] == ["* [B](b.md) - A summary."]
+
+
+def test_link_moves_what_was_written_by_hand_after_the_see_also_list_above_it(store: WikiStore) -> None:
+    root = store.load()
+    z = _note(store, root, "Z", "Z.")
+    a = _note(store, root, "A", body="Main.\n\n# See also\n\n* [Z](z.md) - Z.\n\n# Appendix\n\nWritten by hand.")
+    b = _note(store, root, "B")
+
+    assert store.link(a, b) is True
+    store.link(a, z)  # Z is still an entry of the one section: A does not list it twice
+
+    body = _read(a.path).body
+    assert body == "Main.\n\n# Appendix\n\nWritten by hand.\n\n# See also\n\n* [Z](z.md) - Z.\n* [B](b.md) - A summary."
+    assert {(e["source"], e["target"]) for e in graph(store.load())["links"] if e["kind"] == "see_also"} >= {("a.md", "z.md")}
+
+
+def test_delete_drops_an_entry_followed_by_text_written_by_hand(store: WikiStore) -> None:
+    root = store.load()
+    _note(store, root, "Z", "Z.")
+    a = _note(store, root, "A", body="Main.\n\n# See also\n\n* [Z](z.md) - Z.\n\n# Appendix\n\nWritten by hand.")
+
+    store.delete_note("z.md")
+
+    assert _read(a.path).body == "Main.\n\n# Appendix\n\nWritten by hand."
+
+
+def test_move_keeps_what_was_written_by_hand_after_the_see_also_list(store: WikiStore) -> None:
+    root = store.load()
+    store.create_folder(root, "finance", "Money.")
+    a, b = _note(store, root, "A"), _note(store, root, "B")
+    store.link(a, b)
+    a.path.write_text(a.path.read_text(encoding="utf-8") + "\n# Appendix\n\nWritten by hand.\n", encoding="utf-8")
+
+    store.move_note("b.md", "/finance")
+
+    body = _read(a.path).body
+    assert "Written by hand." in body and body.count("# See also") == 1
+    assert body.endswith("# See also\n\n* [B](finance/b.md) - A summary.")
 
 
 def test_split_and_join_see_also_round_trip() -> None:

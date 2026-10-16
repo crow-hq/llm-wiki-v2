@@ -17,6 +17,7 @@ A document without a leading `---` line has no frontmatter and is all body.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -51,11 +52,22 @@ class OKFDocument:
     body: str = ""
 
     @classmethod
+    def read(cls, path: Path) -> OKFDocument:
+        """The document in a file; OKFDocumentError for one that is not UTF-8 text (an editor saved it as Latin-1)."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as e:
+            raise OKFDocumentError(f"not UTF-8 text (byte {e.start}): save it as UTF-8") from e
+        return cls.parse(text)
+
+    @classmethod
     def parse(cls, text: str) -> OKFDocument:
-        lines = text.splitlines()
-        if not lines or lines[0].strip() != DELIMITER:
+        text = text.removeprefix("\ufeff")  # an editor's byte order mark would hide the frontmatter
+        lines = text.split("\n")  # not splitlines(): a form feed or U+2028 in the body is text, not a line break
+        if lines[0].strip() != DELIMITER:
             return cls({}, text)
-        end = next((i for i in range(1, len(lines)) if lines[i].strip() == DELIMITER), None)
+        # The closing line starts at column 0: YAML indents every continuation line, so a value holding "---" never ends the block.
+        end = next((i for i in range(1, len(lines)) if lines[i].rstrip() == DELIMITER), None)
         if end is None:
             raise OKFDocumentError("Unterminated YAML frontmatter block")
         try:
@@ -64,7 +76,7 @@ class OKFDocument:
             raise OKFDocumentError(f"Invalid YAML in frontmatter: {e}") from e
         if not isinstance(frontmatter, dict):
             raise OKFDocumentError("Frontmatter must be a YAML mapping")
-        body = "\n".join(lines[end + 1 :])
+        body = "\n".join(lines[end + 1 :]).removesuffix("\n")  # the file's last line break, as splitlines() drops it
         return cls(frontmatter, body.removeprefix("\n"))  # the blank line after the block is layout
 
     def serialize(self) -> str:
