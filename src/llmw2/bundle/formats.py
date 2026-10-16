@@ -34,6 +34,7 @@ MAX_CHARS = 20_000_000  # characters of Markdown out of one document
 MAX_CELLS = 2_000_000  # cells of one sheet (rows x used columns): past it the sparsest columns are left out
 MAX_REPEAT = 1024  # copies of one repeated ODF cell
 GENERAL_DIGITS = 10  # significant digits of a number under Excel's General format, as Excel shows it
+MIN_DIGITS = 6  # significant digits kept when a number format shows fewer (a total, a rate asked about precisely)
 
 DOCUMENTS = ("docx", "pptx", "odt")
 SPREADSHEETS = ("xlsx", "ods")
@@ -410,17 +411,22 @@ def _date_styles(z: zipfile.ZipFile) -> dict[int, Shown]:
 
 
 def _fixed(x: float, decimals: int) -> str:
-    """`x` rounded half up to `decimals` places, as Excel rounds what it shows (2.675 -> "2.68", not "2.67"), without
-    the zeros the format pads with ("5.00" -> "5", "2.50" -> "2.5"): the same value in fewer characters."""
+    """`x` rounded half up to `decimals` places, as Excel rounds what it shows (2.675 -> "2.68", not "2.67"), but to
+    MIN_DIGITS significant digits when the format shows fewer (24.6143161 -> "24.6143", not "24.61"), so that a value
+    asked for more precisely than shown is still there; without the zeros a format pads with ("5.00" -> "5")."""
     d = decimal.Decimal(f"{x:.15g}").quantize(decimal.Decimal(1).scaleb(-decimals), decimal.ROUND_HALF_UP, _PRECISE)
-    s = f"{d:f}"
+    s = "0" if d == 0 else f"{d:f}"
     s = s.rstrip("0").rstrip(".") if "." in s else s
-    return "0" if d == 0 else s
+    more = f"{x:.{MIN_DIGITS}g}"  # Python rounds this half even, on the binary value: only past the shown decimals
+    if "e" not in more and len(more.partition(".")[2]) > len(s.partition(".")[2]):
+        return more
+    return s
 
 
 def _cell(c: ET.Element, shared: list[str], dates: dict[int, Shown], epoch: datetime.datetime) -> str:
     """A cell's value as Excel shows it, near enough: text, numbers rounded to the decimals of their format ("0.00",
-    "0.0%"), under General whole numbers in full and others to GENERAL_DIGITS digits, dates as ISO dates."""
+    "0.0%") but to MIN_DIGITS digits at least, under General whole numbers in full and others to GENERAL_DIGITS
+    digits, dates as ISO dates."""
     inline = c.find(S + "is")
     if inline is not None:
         return "".join(x.text or "" for x in inline.iter(S + "t"))

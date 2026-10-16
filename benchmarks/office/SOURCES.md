@@ -66,7 +66,7 @@ From the first version of the readers to the current one:
 | sheets with float noise ("5.5100000000000003E-2") | 1,172 / 3,977 | 27 / 3,977, all text cells written so by the file's maker |
 | sheets with a `Caption:` line | 0 | 989 |
 | sheet sources; workbooks whose sheet names changed | 3,977 | 3,977; 0 |
-| characters of the XLSX, ODS sheet sources (numbers as shown, captions) | | −3.2%, −1.3% |
+| characters of the XLSX, ODS sheet sources (numbers as shown, captions) | | −2.9%, −1.3% |
 | PPTX over 6,000 characters whose own summary slide is found | 0 / 249 | 36 / 245 |
 | characters of PPTX, DOCX, ODT (contents, fill-in lines, placeholders) | | −0.9%, −1.5%, −5.7% |
 
@@ -77,8 +77,10 @@ fewer of them have a long outline; one DOCX form loses a "summary" that was its 
 
 24 files of `cc4`-`cc6` and questions on them (cloze, lookups of a row, column totals), answered from wikis filed by
 CROW with more than one model: the current readers answered as many right as the first version on each model, and
-the tree they filed was no worse (`CRITERIA.md`). That check read Excel numbers to 15 significant digits; rounding
-them to the decimals of their format came after it and is covered by the free check only.
+the tree they filed was no worse (`CRITERIA.md`). Rounding Excel numbers to the decimals of their format was checked
+the same way on three models: it lost, on every model, the questions asking for a value more precise than the sheet
+shows, hence the floor of 6 significant digits, checked by the free check only; the other differences were within
+the noise of the files the change does not touch.
 
 The questions quote sentences and cells of the files, so they are not in the repository: `combo_select.py` writes
 them again from the fetched files, with seed 61, using pandoc, openpyxl and pandas (independent of `llmw2`):

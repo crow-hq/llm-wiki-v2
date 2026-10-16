@@ -281,7 +281,7 @@ def test_lowercase_cell_references_are_read() -> None:
     assert rows == [["z"]]
 
 
-def test_xlsx_numbers_show_the_decimals_of_their_format_and_general_ones_ten_digits() -> None:
+def test_xlsx_numbers_show_the_decimals_of_their_format_at_least_six_digits_and_general_ones_ten() -> None:
     # ARRANGE: styles 1 and 3 built-in percentages (9, 10), 2 a custom "0.0%", 4 a quoted "%" that is only text,
     # 5 built-in "#,##0.00", 6 an accounting format with padding, 7 a scientific one (shown as General)
     styles = (
@@ -296,14 +296,16 @@ def test_xlsx_numbers_show_the_decimals_of_their_format_and_general_ones_ten_dig
         '<c r="G1"><v>2026101612345678</v></c><c r="H1"><v>1.5E+22</v></c><c r="I1" s="5"><v>2.675</v></c>'
         '<c r="J1" s="5"><v>-1E-3</v></c><c r="K1" s="6"><v>1234.56789</v></c><c r="L1" s="7"><v>1.0000000000000002</v></c>'
         '<c r="M1" s="5"><v>5</v></c><c r="N1" s="5"><v>2.5</v></c><c r="O1" s="3"><v>0.1</v></c>'
+        '<c r="P1" s="5"><v>1234567.125</v></c><c r="Q1" s="5"><v>24.614316111720201</v></c>'
     )
 
     # ACT
     [(_, rows)] = formats.sheets(_sheet_xml(cells, styles))
 
     # ASSERT
-    shown = ["0.0551", "25%", "5.5%", "33.33%", "7", "0.4379968203", "2026101612345678", "1.5e+22", "2.68", "0", "1234.568", "1"]
-    assert rows == [[*shown, "5", "2.5", "10%"]]  # the zeros a format pads with are left out
+    shown = ["0.0551", "25%", "5.51%", "33.3333%", "7", "0.4379968203", "2026101612345678", "1.5e+22", "2.675", "-0.001", "1234.568", "1"]
+    # no padding zeros; rounded half up to the format ("1234567.13"), but never under 6 significant digits ("24.6143")
+    assert rows == [[*shown, "5", "2.5", "10%", "1234567.13", "24.6143"]]
 
 
 def _slide_shapes(data: bytes, shapes: dict[int, str]) -> bytes:
