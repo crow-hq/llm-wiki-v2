@@ -28,6 +28,7 @@ from llmw2 import (
     Item,
     ModelError,
     Origin,
+    ReplyInvalid,
     Source,
     StepContext,
     StepError,
@@ -483,6 +484,47 @@ def test_a_persistent_429_from_the_model_stops_the_batch_with_the_prefix_filed(b
     assert names(report.not_done) == names(items[4:])
     assert report.stopped and "429" in report.stopped
     assert wiki.check() == []
+
+
+def invalid(n: int) -> dict[str, Exception]:
+    return {f"red-{n}\n": ReplyInvalid("llm librarian/summarize reply invalid after retry: Expecting ',' delimiter")}
+
+
+def test_an_unusable_model_reply_is_that_items_error_and_the_batch_goes_on(bundle: Path) -> None:
+    llm = ContentLLM(UsageTracker(), fail_on=invalid(4))
+    wiki = make_wiki(bundle, concurrency=3, llm=llm)
+    items = [item(n) for n in range(9)]
+
+    report = wiki.ingest_many(items)
+
+    assert report.stopped is None and report.not_done == []
+    assert [i for i, _ in report.results] == items and isinstance(report.results[4][1], ReplyInvalid)
+    assert names(filed(report)) == names(items[:4] + items[5:])
+    assert wiki.check() == []
+
+
+def test_two_unusable_replies_in_a_row_are_the_models_fault_and_stop_the_batch(bundle: Path) -> None:
+    llm = ContentLLM(UsageTracker(), fail_on=invalid(4) | invalid(5))
+    wiki = make_wiki(bundle, concurrency=3, llm=llm)
+    items = [item(n) for n in range(9)]
+
+    report = wiki.ingest_many(items)
+
+    assert names(filed(report)) == names(items[:4])
+    assert isinstance(report.results[4][1], ReplyInvalid)  # the first is still its document's error
+    assert names(report.not_done) == names(items[5:])
+    assert report.stopped and "reply invalid" in report.stopped
+
+
+def test_two_unusable_replies_apart_are_each_their_documents_error(bundle: Path) -> None:
+    llm = ContentLLM(UsageTracker(), fail_on=invalid(2) | invalid(5))
+    wiki = make_wiki(bundle, concurrency=3, llm=llm)
+    items = [item(n) for n in range(8)]
+
+    report = wiki.ingest_many(items)
+
+    assert report.stopped is None and len(report.results) == 8
+    assert [n for n, (_, r) in enumerate(report.results) if isinstance(r, ReplyInvalid)] == [2, 5]
 
 
 def test_the_documents_after_an_input_error_still_count_as_the_prefix_when_a_later_one_fails(bundle: Path) -> None:

@@ -23,7 +23,7 @@ from llmw2.agents.state import source_state, split_blocks
 from llmw2.bundle.files import extract_text
 from llmw2.bundle.tree import Folder, Note
 from llmw2.config import PROMPT_ROOM
-from llmw2.errors import InputError, ModelError
+from llmw2.errors import InputError, ModelError, ReplyInvalid
 
 if TYPE_CHECKING:
     from llmw2.agents.steps import StepContext
@@ -170,8 +170,9 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
             if cut and len(notes) < cap // 2 and reply_chars < cfg.effective_note_chars:
                 # a reply cut that short (reasoning, or a runaway start) lost the notes: once more with the room of a note
                 notes = ctx.ask_text("librarian/summarize_part", reply_chars=cfg.effective_note_chars, **args).strip()
-        except ModelError as e:
-            raise ModelError(f"librarian/summarize_part: part {k} of {n}: {e}", status=e.status) from e
+        except ModelError as e:  # with the part named; still a ReplyInvalid when it was one (that document's failure)
+            kind = ReplyInvalid if isinstance(e, ReplyInvalid) else ModelError
+            raise kind(f"librarian/summarize_part: part {k} of {n}: {e}", status=e.status) from e
         if len(notes) > cap:
             kept = cut_notes(notes, cap)
             log.warning("summarize: part %d of %d: notes cut from %d to %d characters", k, n, len(notes), len(kept))

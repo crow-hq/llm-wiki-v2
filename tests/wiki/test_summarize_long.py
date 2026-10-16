@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from llmw2 import InputError, ModelError, Source, StepContext, WikiConfig
+from llmw2 import InputError, ModelError, ReplyInvalid, Source, StepContext, WikiConfig
 from llmw2.agents import steps_classic as classic
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.state import source_state, split_blocks
@@ -244,6 +244,20 @@ def test_an_error_in_a_part_names_the_part_and_the_op_and_stops_there(tracker: U
 
     assert "summarize_part" in str(raised.value)
     assert llm.ops == [PART, PART]  # the parts after the failing one are not asked, and there is no combine
+    assert not isinstance(raised.value, ReplyInvalid)  # the endpoint's failure stays one: it stops a batch
+
+
+def test_an_unusable_reply_in_a_part_stays_the_documents_failure(tracker: UsageTracker, long_text: str) -> None:
+    def second_part_fails(user: str) -> str:
+        if re.search(r"part 2 of", user, re.IGNORECASE):
+            raise ReplyInvalid("llm reply without content")
+        return notes_for(user)
+
+    llm = RecordingLLM(tracker, summarize_part=second_part_fails, summarize_combine=DRAFT)
+    source = Source(long_text, title="Memo")
+
+    with pytest.raises(ReplyInvalid, match="summarize_part: part 2 of"):
+        classic.summarize(context(llm, source), source)
 
 
 # -- state and verbatim ----------------------------------------------------------------------------------

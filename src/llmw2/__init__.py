@@ -18,7 +18,7 @@ from llmw2.audit import AUDIT_MIN, FolderHealth, RouteProposal
 from llmw2.batch import BatchReport, Item
 from llmw2.bundle.origin import Origin
 from llmw2.config import WikiConfig
-from llmw2.errors import ConfigError, InputError, ModelError, StepError, WikiError
+from llmw2.errors import ConfigError, InputError, ModelError, ReplyInvalid, StepError, WikiError
 from llmw2.sources import Change, ChangeBatch, LocalFolderSource, SourceConnector, SyncReport, sync
 from llmw2.wiki import Wiki
 
@@ -38,6 +38,7 @@ __all__ = [
     "ModelError",
     "NoteDraft",
     "Origin",
+    "ReplyInvalid",
     "Route",
     "RouteProposal",
     "Source",

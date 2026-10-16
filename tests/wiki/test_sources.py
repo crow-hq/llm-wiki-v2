@@ -13,7 +13,20 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from llmw2 import Change, ChangeBatch, InputError, LocalFolderSource, ModelError, Origin, SyncReport, Wiki, WikiConfig, cli, sync
+from llmw2 import (
+    Change,
+    ChangeBatch,
+    InputError,
+    LocalFolderSource,
+    ModelError,
+    Origin,
+    ReplyInvalid,
+    SyncReport,
+    Wiki,
+    WikiConfig,
+    cli,
+    sync,
+)
 from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import ContentLLM, FakeClassifier, FakeLLM
 from tests.wiki.test_ingest_many import Probe, make_wiki
@@ -280,6 +293,28 @@ def test_sync_files_a_page_in_parallel_and_reports_created(par: Wiki) -> None:
     assert report == SyncReport(created=9)
     assert probe.prep_max == 3 and probe.serial_max == 1
     assert saved_cursor(par) == "c1" and par.check() == []
+
+
+def test_sync_files_the_rest_of_a_page_around_an_unusable_reply_and_the_next_run_retries_only_it(bundle: Path) -> None:
+    # ARRANGE: d4's summarize reply is unusable on the first run only
+    unusable = {"red-4\n": ReplyInvalid("llm librarian/summarize reply invalid after retry: Expecting ','")}
+    llm = ContentLLM(UsageTracker(), fail_on=unusable)
+    wiki = make_wiki(bundle, concurrency=3, llm=llm)
+    ids = [f"d{n}" for n in range(8)]
+    page = ChangeBatch([upsert(i) for i in ids], "c1")
+
+    # ACT, ASSERT: the page is filed but d4, and its cursor is not saved
+    first = sync(wiki, Fake(page, files=topic_files(*ids)))
+    assert first.created == 7 and [k for k, _ in first.errors] == [Origin("fake", "Team A", "d4").key]
+    assert first.stopped and "run again" in first.stopped
+    assert not list((bundle / ".llmw2" / "sync").glob("*.json"))
+
+    # ACT, ASSERT: the next run fetches and files d4 alone, and saves the cursor
+    unusable.clear()
+    again = Fake(page, files=topic_files(*ids))
+    second = sync(wiki, again)
+    assert second == SyncReport(created=1, skipped=7) and again.fetched == ["d4"]
+    assert saved_cursor(wiki) == "c1"
 
 
 def test_sync_takes_concurrency_from_its_argument_over_the_config(par: Wiki) -> None:

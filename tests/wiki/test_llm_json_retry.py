@@ -14,7 +14,7 @@ import pytest
 from pydantic import BaseModel
 
 from llmw2.config import LLMConfig
-from llmw2.errors import ModelError
+from llmw2.errors import ModelError, ReplyCut, ReplyInvalid
 from llmw2.models.client import HttpModel
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageTracker
@@ -172,11 +172,11 @@ def test_json_when_retry_is_still_invalid_then_raises_after_two_requests(tracker
     llm, requests = make_llm(tracker, BAD)
 
     # ACT
-    with pytest.raises(ModelError, match="reply invalid after retry"):
+    with pytest.raises(ReplyInvalid, match="reply invalid after retry"):  # the document's failure, still a ModelError
         llm.json("system", "Name it.", Title)
 
     # ASSERT
-    assert len(requests) == 2
+    assert len(requests) == 2 and issubclass(ReplyInvalid, ModelError) and issubclass(ReplyCut, ReplyInvalid)
 
 
 @pytest.mark.parametrize("status", [400, 404])

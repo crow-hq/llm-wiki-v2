@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - CI runs the tests in parallel (`pytest -n auto`, with `pytest-xdist` among the dev dependencies): the Windows jobs had taken the CI from about 3 to about 8.5 minutes.
 
+### Fixed
+
+- One unusable model reply no longer stops a sync: a document whose reply stays invalid after the retry (malformed JSON, no content, cut at the limit) is that document's error, the rest of its page is filed, and the sync stops at the end of the page without saving its cursor, so the next run retries that document alone (`llmwiki2 sync` still exits with 2). Two in a row still stop at once, as a model that cannot answer. New `ReplyInvalid` (a `ModelError`; `ReplyCut` is one).
+
 ## [0.4.4] - 2026-10-15
 
 ### Fixed

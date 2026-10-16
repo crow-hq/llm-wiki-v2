@@ -30,7 +30,15 @@ class ModelError(WikiError, RuntimeError):
         self.status = status  # the provider's HTTP status, when it answered with an error
 
 
-class ReplyCut(ModelError):
+class ReplyInvalid(ModelError):
+    """The model answered, but nothing usable for this request even after a retry (invalid JSON, no content).
+
+    It belongs to the document asked about, not to the endpoint: a batch files the other documents (see
+    `Wiki.ingest_many`), while any other ModelError means the endpoint itself is failing.
+    """
+
+
+class ReplyCut(ReplyInvalid):
     """The model's reply hit the length limit (finish_reason length), so it is unfinished; `text` is what it wrote."""
 
     def __init__(self, message: str, *, text: str = "", status: int | None = None) -> None:

@@ -47,7 +47,7 @@ from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.store import Deleted, WikiStore
 from llmw2.bundle.tree import LOG, Folder, Note, slugify
 from llmw2.config import WikiConfig
-from llmw2.errors import ConfigError, InputError
+from llmw2.errors import ConfigError, InputError, ReplyInvalid
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport, UsageTracker
@@ -166,9 +166,11 @@ class Wiki:
         writes the tree, is one document at a time in that order, under the lock, so the wiki is what `ingest_file`
         called in turn would make of it. At most `concurrency` documents are being prepared or wait to be filed.
 
-        An item that cannot be read (InputError) is a result and the batch goes on. Any other failure to prepare one
-        (a model that keeps failing, a step that returns what it should not) starts no new item: those in flight finish,
-        the documents before the failed one are filed, and everything from it on is in `not_done` with `stopped` saying
+        An item that cannot be read (InputError), or whose model replies stay unusable after the retry (ReplyInvalid:
+        invalid JSON, no content), is a result and the batch goes on; two ReplyInvalid in a row, in filing order, are the
+        model's fault, not the documents', and stop the batch as below. Any other failure to prepare one (an endpoint
+        that keeps failing, a step that returns what it should not) starts no new item: those in flight finish, the
+        documents before the failed one are filed, and everything from it on is in `not_done` with `stopped` saying
         why. A failure while filing stops at once, the same way. `on_result` is called after each item is filed or fails.
 
         A spreadsheet is read first (on worker threads) and spread into one item per sheet ("plan, Budget.csv"):
@@ -194,7 +196,7 @@ class Wiki:
                 return None
             try:
                 return self._prepare(self._source_of(ordered[i]))
-            except InputError:
+            except (InputError, ReplyInvalid):  # the item's own: `settle` gives it as its result
                 raise
             except Exception:
                 with halting:
@@ -203,11 +205,11 @@ class Wiki:
 
         futures: list[concurrent.futures.Future[Prepared | IngestResult | None]] = []
 
-        def settle(i: int) -> IngestResult | InputError:
-            """Wait for item `i` to be prepared, then file it; its own InputError is its result."""
+        def settle(i: int) -> IngestResult | InputError | ReplyInvalid:
+            """Wait for item `i` to be prepared, then file it; its own InputError or ReplyInvalid is its result."""
             try:
                 ready = futures[i].result()
-            except InputError as e:
+            except (InputError, ReplyInvalid) as e:
                 return e
             assert ready is not None  # only items after a failure are skipped, and the loop stops at that one
             return ready if isinstance(ready, IngestResult) else self._file(ready)
@@ -220,6 +222,8 @@ class Wiki:
                         futures.append(pool.submit(contextvars.copy_context().run, prepare, len(futures)))
                     try:
                         result = settle(i)
+                        if isinstance(result, ReplyInvalid) and report.results and isinstance(report.results[-1][1], ReplyInvalid):
+                            raise result  # two documents in a row: the model, not them; stop before paying for the rest
                     except Exception as e:  # a failure that is not the item's: nothing from here on is filed
                         report.not_done, report.stopped = ordered[i:], f"{item.filename}: {e}"
                         break

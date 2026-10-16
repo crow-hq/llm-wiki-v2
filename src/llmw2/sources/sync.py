@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from llmw2.batch import Item
 from llmw2.bundle.store import write_atomic
 from llmw2.bundle.tree import slugify
+from llmw2.errors import ReplyInvalid
 from llmw2.sources.base import Change, SourceConnector
 
 if TYPE_CHECKING:
@@ -41,8 +42,10 @@ def sync(wiki: Wiki, connector: SourceConnector, *, concurrency: int | None = No
     An item that cannot be read (unsupported type, scanned PDF) goes into `errors` and the sync goes on. A page is
     filed with `Wiki.ingest_many`, so `concurrency` (default `cfg.concurrency`) documents are prepared at once.
     A model failure stops the sync: the report comes back with `stopped` set, and the cursor stays at the last page
-    that was finished, so the next run resumes there and does not pay again for what was filed. A missing key
-    raises ConfigError.
+    that was finished, so the next run resumes there and does not pay again for what was filed. A document whose
+    model replies stay unusable (ReplyInvalid) is in `errors` and the rest of its page is filed; the sync then stops
+    at the end of that page, so the next run retries only that document. A document that always fails thus keeps a
+    connector with several pages from going past its page. A missing key raises ConfigError.
     """
     wiki.init()
     state = _state_path(wiki, connector)
@@ -77,12 +80,16 @@ def _apply(wiki: Wiki, connector: SourceConnector, changes: list[Change], report
             continue
         items.append(Item(change.filename, fetch=functools.partial(connector.fetch, change), origin=change.origin))
     done = wiki.ingest_many(items, concurrency=concurrency)
+    retry = 0  # documents whose model replies were unusable: likely to pass on another run
     for item, result in done.results:
         if isinstance(result, Exception):
             report.errors.append((item.origin.key if item.origin else item.filename, str(result)))
+            retry += isinstance(result, ReplyInvalid)
         else:
             setattr(report, result.action, getattr(report, result.action) + 1)
     report.stopped = done.stopped
+    if retry and report.stopped is None:  # the page is done, but its cursor is not saved: the next run retries them
+        report.stopped = f"unusable model replies for {retry} document(s), listed in errors: run again to retry them"
 
 
 def _state_path(wiki: Wiki, connector: SourceConnector) -> Path:

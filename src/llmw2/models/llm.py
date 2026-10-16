@@ -17,7 +17,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from llmw2.config import PROVIDERS, LLMConfig, WikiConfig
-from llmw2.errors import ModelError, ReplyCut
+from llmw2.errors import ModelError, ReplyCut, ReplyInvalid
 from llmw2.models.client import HttpModel, reported_cost
 from llmw2.models.usage import UsageTracker
 
@@ -128,7 +128,7 @@ class LLM(HttpModel):
         try:
             return data["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as e:
-            raise ModelError(f"llm reply without content: {str(data)[:300]}") from e
+            raise ReplyInvalid(f"llm reply without content: {str(data)[:300]}") from e
 
     def _switch_reasoning(self, built_switched: bool) -> bool:
         """Whether to resend after a 400 on reasoning: switches once to the least reasoning (thread-safe).
@@ -200,7 +200,7 @@ class LLM(HttpModel):
                 return schema.model_validate(json.loads(extract_json(reply)))
             except (ValueError, ValidationError) as e:
                 if invalid_retried:
-                    raise ModelError(f"llm {op or 'json'} reply invalid after retry: {_short(e)}") from e
+                    raise ReplyInvalid(f"llm {op or 'json'} reply invalid after retry: {_short(e)}") from e
                 invalid_retried = True
                 notes += f"\n\nA previous reply to this request was not valid: {_short(e)} Reply with only the JSON object."
 
