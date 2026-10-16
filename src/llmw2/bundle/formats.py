@@ -4,8 +4,8 @@
 """Office and OpenDocument files read with the standard library: documents as Markdown, spreadsheets as rows.
 
 DOCX, PPTX and ODT become Markdown with their headings, lists, tables, footnotes and speaker notes; XLSX and ODS
-become their sheets, each a list of rows of the values as shown (dates as dates, numbers and percentages with the
-decimals of their format). Charts, SmartArt, headers and footers, image alt text, tables of contents and slide number
+become their sheets, each a list of rows of the values as shown (dates as dates, percentages as percentages, no
+binary float noise). Charts, SmartArt, headers and footers, image alt text, tables of contents and slide number
 and date placeholders are left out; fill-in lines ("______") become "___". The type is read from the content.
 
 The files come from anywhere, so every read is bounded: an XML part may not inflate past MAX_PART, the text stops
@@ -16,9 +16,7 @@ file never stops a batch. Pure functions of the bytes: this module imports nothi
 from __future__ import annotations
 
 import datetime
-import decimal
 import io
-import math
 import posixpath
 import re
 import xml.etree.ElementTree as ET
@@ -33,8 +31,6 @@ MAX_RATIO = 100  # inflated / compressed, past which a part over 1 MB is taken f
 MAX_CHARS = 20_000_000  # characters of Markdown out of one document
 MAX_CELLS = 2_000_000  # cells of one sheet (rows x used columns): past it the sparsest columns are left out
 MAX_REPEAT = 1024  # copies of one repeated ODF cell
-GENERAL_DIGITS = 10  # significant digits of a number under Excel's General format, as Excel shows it
-MIN_DIGITS = 6  # significant digits kept when a number format shows fewer (a total, a rate asked about precisely)
 
 DOCUMENTS = ("docx", "pptx", "odt")
 SPREADSHEETS = ("xlsx", "ods")
@@ -371,62 +367,28 @@ def _pptx(z: zipfile.ZipFile, out: _Out) -> None:
 # -- XLSX ---------------------------------------------------------------------------------------------------------
 
 
-Shown = tuple[str, int]  # ("date" | "time" | "percent" | "fixed", decimals) of a number format
-
-# The built-in number formats that are not General, dates or times (ECMA-376 18.8.30): id -> format code.
-_NUMBER_FORMATS = {1: "0", 2: "0.00", 3: "#,##0", 4: "#,##0.00", 9: "0%", 10: "0.00%"}
-_NUMBER_FORMATS |= {37: "#,##0", 38: "#,##0", 39: "#,##0.00", 40: "#,##0.00"}  # accounting, red or bracketed negatives
-_PRECISE = decimal.Context(prec=40)  # enough for 15 digits before the point and 15 after
-
-
-def _shown(raw: str) -> Shown | None:
-    """How a number format code shows a number; None for General, text and scientific formats."""
-    code = re.sub(r'"[^"]*"|\[[^\]]*\]|\\.', "", raw).lower()
-    first = re.sub(r"[_*].", "", code.split(";")[0])  # the positive section, without padding and fill characters
-    m = re.search(r"\.([0#?]+)", first)
-    decimals = min(len(m.group(1)), 15) if m else 0
-    if "%" in code:
-        return ("percent", decimals)
-    if "y" in code or "d" in code or ("m" in code and "h" not in code and "s" not in code):
-        return ("date", 0)
-    if "h" in code or "s" in code:
-        return ("time", 0)
-    if "e" in first or not re.search(r"[0#?]", first):
-        return None
-    return ("fixed", decimals)
-
-
-def _date_styles(z: zipfile.ZipFile) -> dict[int, Shown]:
-    """Cell style index -> how the style shows a number, for the styles that are not General."""
+def _date_styles(z: zipfile.ZipFile) -> dict[int, str]:
+    """Cell style index -> "date", "time" or "percent", for the styles that show a number as one."""
     if "xl/styles.xml" not in z.namelist():
         return {}
     st = _xml(z, "xl/styles.xml")
-    kinds: dict[int, Shown | None] = {i: _shown(code) for i, code in _NUMBER_FORMATS.items()}
-    kinds |= {i: ("date", 0) for i in (14, 15, 16, 17, 22)} | {i: ("time", 0) for i in (18, 19, 20, 21, 45, 46, 47)}
+    kinds = {i: "date" for i in (14, 15, 16, 17, 22)} | {i: "time" for i in (18, 19, 20, 21, 45, 46, 47)} | {9: "percent", 10: "percent"}
     for f in st.iter(S + "numFmt"):
-        kinds[_num(f.get("numFmtId"), -1)] = _shown(f.get("formatCode", ""))
+        code = re.sub(r'"[^"]*"|\[[^\]]*\]|\\.', "", f.get("formatCode", "")).lower()
+        if "%" in code:
+            kinds[_num(f.get("numFmtId"), -1)] = "percent"
+        elif "y" in code or "d" in code or ("m" in code and "h" not in code and "s" not in code):
+            kinds[_num(f.get("numFmtId"), -1)] = "date"
+        elif "h" in code or "s" in code:
+            kinds[_num(f.get("numFmtId"), -1)] = "time"
     xfs = st.find(S + "cellXfs")
     styles = xfs.findall(S + "xf") if xfs is not None else []
-    return {i: shown for i, x in enumerate(styles) if (shown := kinds.get(_num(x.get("numFmtId")))) is not None}
+    return {i: kinds[_num(x.get("numFmtId"))] for i, x in enumerate(styles) if _num(x.get("numFmtId")) in kinds}
 
 
-def _fixed(x: float, decimals: int) -> str:
-    """`x` rounded half up to `decimals` places, as Excel rounds what it shows (2.675 -> "2.68", not "2.67"), but to
-    MIN_DIGITS significant digits when the format shows fewer (24.6143161 -> "24.6143", not "24.61"), so that a value
-    asked for more precisely than shown is still there; without the zeros a format pads with ("5.00" -> "5")."""
-    d = decimal.Decimal(f"{x:.15g}").quantize(decimal.Decimal(1).scaleb(-decimals), decimal.ROUND_HALF_UP, _PRECISE)
-    s = "0" if d == 0 else f"{d:f}"
-    s = s.rstrip("0").rstrip(".") if "." in s else s
-    more = f"{x:.{MIN_DIGITS}g}"  # Python rounds this half even, on the binary value: only past the shown decimals
-    if "e" not in more and len(more.partition(".")[2]) > len(s.partition(".")[2]):
-        return more
-    return s
-
-
-def _cell(c: ET.Element, shared: list[str], dates: dict[int, Shown], epoch: datetime.datetime) -> str:
-    """A cell's value as Excel shows it, near enough: text, numbers rounded to the decimals of their format ("0.00",
-    "0.0%") but to MIN_DIGITS digits at least, under General whole numbers in full and others to GENERAL_DIGITS
-    digits, dates as ISO dates."""
+def _cell(c: ET.Element, shared: list[str], dates: dict[int, str], epoch: datetime.datetime) -> str:
+    """A cell's value as Excel shows it, near enough: text, whole numbers in full without ".0", other numbers to 15
+    significant digits (not "5.5100000000000003E-2"), percentages as "5.51%", dates as ISO dates."""
     inline = c.find(S + "is")
     if inline is not None:
         return "".join(x.text or "" for x in inline.iter(S + "t"))
@@ -442,18 +404,18 @@ def _cell(c: ET.Element, shared: list[str], dates: dict[int, Shown], epoch: date
         f = float(v.text)
     except ValueError:
         return v.text
-    kind, decimals = dates.get(_num(c.get("s")), ("general", 0))
-    if kind in ("date", "time"):
+    style = _num(c.get("s"))
+    if dates.get(style) == "percent":
+        return f"{f * 100:.12g}%"  # 12 digits: x100 leaves float noise in the last ones
+    if style in dates:
         try:
             d = epoch + datetime.timedelta(days=f)
         except OverflowError:
             return v.text
-        if kind == "time":
+        if dates[style] == "time":
             return d.strftime("%H:%M")
         return d.strftime("%Y-%m-%d") if d.time() == datetime.time() else d.strftime("%Y-%m-%d %H:%M")
-    if kind in ("percent", "fixed") and math.isfinite(f) and abs(f) < 1e13:
-        return _fixed(f * 100, decimals) + "%" if kind == "percent" else _fixed(f, decimals)
-    return str(int(f)) if f.is_integer() and abs(f) < 1e21 else f"{f:.{GENERAL_DIGITS}g}"  # codes and ids keep every digit
+    return str(int(f)) if f.is_integer() and abs(f) < 1e21 else f"{f:.15g}"  # long codes and ids keep every digit
 
 
 def _column(ref: str | None) -> int:
