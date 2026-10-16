@@ -1,0 +1,5 @@
+archive	url	sha256	bytes
+DOCX-tiny.zip	https://s3.eu-north-1.amazonaws.com/napierone.com/NapierOne/Data/DOCX/DOCX-tiny.zip	9ef39c3b19e003b6ddb0f430bfbfc14e801e01be7f0215274355f7352dfbfdd2	38486756
+ODS-tiny.zip	https://s3.eu-north-1.amazonaws.com/napierone.com/NapierOne/Data/ODS/ODS-tiny.zip	ff7d73de38d23b7f5c1269470a61dfc11a89ab56b751849ef8f90d46224b98f1	28367939
+PPTX-tiny.zip	https://s3.eu-north-1.amazonaws.com/napierone.com/NapierOne/Data/PPTX/PPTX-tiny.zip	43605ec274728aa473461bca483952bbf0fad1a52c5f2cae364cbf15465ccf85	303464402
+XLSX-tiny.zip	https://s3.eu-north-1.amazonaws.com/napierone.com/NapierOne/Data/XLSX/XLSX-tiny.zip	d892537a19a66b5e88c62abb4792e7e7d1028e8dba9bfe5758e43cf4b71295ae	39576803

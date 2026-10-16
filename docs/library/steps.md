@@ -68,7 +68,7 @@ output raises `StepError` naming the step.
 
 What each one is for:
 
-- `extract`: the text of a file. The default reads text, Markdown, PDF, and Word, PowerPoint and OpenDocument text as Markdown (`bundle/formats.py`). Spreadsheets do not reach it: each sheet is a source of its own, a line naming it and its rows as CSV (`bundle/sheets.py`); `summarize`, `merge` and revisions read its first rows only (`sheets.brief`), and the researcher adds the rows a question needs to the sheet's note.
+- `extract`: the text of a file. The default reads text, Markdown, PDF, and Word, PowerPoint and OpenDocument text as Markdown (`bundle/formats.py`): a slide is `## Title (slide N)`, so the summary slide of a long deck can count as its own summary; tables of contents and slide numbers are left out, fill-in lines become `___`. Spreadsheets do not reach it: each sheet is a source of its own, a line naming it, a `Caption:` line for the title rows above its header, and its rows as CSV (`bundle/sheets.py`); `summarize`, `merge` and revisions read its first rows only (`sheets.brief`), and the researcher adds the rows a question needs to the sheet's note.
 - `summarize`: the note an ingest would write. The default asks the LLM once, or, for a source longer than `read_chars` less 6000 characters, takes notes on each block of it and writes the note from them (a call that fails fails the step, and the calls already made are lost). With `summarize=False` in the config it keeps the source as it is.
 - `route`: where the note goes, and which folders to look in for a note to merge with.
 - `name_folder`: the name and one-line description of a new folder.

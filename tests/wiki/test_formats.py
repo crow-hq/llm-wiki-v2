@@ -62,7 +62,7 @@ def test_docx_rows_inside_content_controls_are_read() -> None:
 
 def test_pptx_gives_a_heading_per_slide_with_its_title_levels_and_speaker_notes() -> None:
     data = pptx([("Q3 review", [("Up 12%", 0), ("EU leads", 1)], "The EU number is unaudited.")])
-    assert formats.markdown(data) == "## Slide 1: Q3 review\n\nUp 12%\n\n  - EU leads\n\nNotes: The EU number is unaudited."
+    assert formats.markdown(data) == "## Q3 review (slide 1)\n\nUp 12%\n\n  - EU leads\n\nNotes: The EU number is unaudited."
 
 
 def test_xlsx_sheets_give_values_as_shown_with_dates_and_whole_numbers() -> None:
@@ -250,7 +250,7 @@ def test_odt_sections_tables_of_contents_and_page_breaks() -> None:
         "<text:table-of-content><text:index-body><text:p>Contents line</text:p></text:index-body></text:table-of-content>"
         '<text:p>tab<text:tab/>and<text:line-break/>break<text:bookmark-start text:name="x"/></text:p><text:p/>'
     )
-    assert formats.markdown(odf(body)) == "in a section\n\nContents line\n\ntab\tand\nbreak"
+    assert formats.markdown(odf(body)) == "in a section\n\ntab\tand\nbreak"  # the table of contents is left out
 
 
 def test_a_spreadsheet_read_as_markdown_stops_at_max_chars(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -279,3 +279,96 @@ W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 def test_lowercase_cell_references_are_read() -> None:
     [(_, rows)] = formats.sheets(_sheet_xml('<c r="c1" t="inlineStr"><is><t>z</t></is></c>'))
     assert rows == [["z"]]
+
+
+def test_xlsx_numbers_show_the_decimals_of_their_format_and_general_ones_ten_digits() -> None:
+    # ARRANGE: styles 1 and 3 built-in percentages (9, 10), 2 a custom "0.0%", 4 a quoted "%" that is only text,
+    # 5 built-in "#,##0.00", 6 an accounting format with padding, 7 a scientific one (shown as General)
+    styles = (
+        '<numFmts><numFmt numFmtId="164" formatCode="0.0%"/><numFmt numFmtId="165" formatCode="&quot;%&quot;0"/>'
+        '<numFmt numFmtId="166" formatCode="_(* #,##0.000_);_(* (#,##0.000)"/><numFmt numFmtId="167" formatCode="0.00E+00"/></numFmts>'
+        '<cellXfs><xf numFmtId="0"/><xf numFmtId="9"/><xf numFmtId="164"/><xf numFmtId="10"/><xf numFmtId="165"/>'
+        '<xf numFmtId="4"/><xf numFmtId="166"/><xf numFmtId="167"/></cellXfs>'
+    )
+    cells = (
+        '<c r="A1"><v>5.5100000000000003E-2</v></c><c r="B1" s="1"><v>0.25</v></c><c r="C1" s="2"><v>5.5100000000000003E-2</v></c>'
+        '<c r="D1" s="3"><v>0.33333333333333331</v></c><c r="E1" s="4"><v>7</v></c><c r="F1"><v>0.43799682034976156</v></c>'
+        '<c r="G1"><v>2026101612345678</v></c><c r="H1"><v>1.5E+22</v></c><c r="I1" s="5"><v>2.675</v></c>'
+        '<c r="J1" s="5"><v>-1E-3</v></c><c r="K1" s="6"><v>1234.56789</v></c><c r="L1" s="7"><v>1.0000000000000002</v></c>'
+        '<c r="M1" s="5"><v>5</v></c><c r="N1" s="5"><v>2.5</v></c><c r="O1" s="3"><v>0.1</v></c>'
+    )
+
+    # ACT
+    [(_, rows)] = formats.sheets(_sheet_xml(cells, styles))
+
+    # ASSERT
+    shown = ["0.0551", "25%", "5.5%", "33.33%", "7", "0.4379968203", "2026101612345678", "1.5e+22", "2.68", "0", "1234.568", "1"]
+    assert rows == [[*shown, "5", "2.5", "10%"]]  # the zeros a format pads with are left out
+
+
+def _slide_shapes(data: bytes, shapes: dict[int, str]) -> bytes:
+    """The deck with these placeholder shapes, (type, text) as XML, added to the slides numbered in `shapes`."""
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        parts = {n: z.read(n) for n in z.namelist()}
+    for i, extra in shapes.items():
+        slide = parts[f"ppt/slides/slide{i}.xml"].decode()
+        parts[f"ppt/slides/slide{i}.xml"] = slide.replace("</p:spTree>", extra + "</p:spTree>").encode()
+    return pack(parts)
+
+
+def _ph(kind: str, text: str) -> str:
+    ph = f'<p:nvSpPr><p:nvPr><p:ph type="{kind}"/></p:nvPr></p:nvSpPr>'
+    return f"<p:sp>{ph}<p:txBody><a:p><a:r><a:t>{text}</a:t></a:r></a:p></p:txBody></p:sp>"
+
+
+def test_pptx_titles_lead_the_heading_repeats_are_not_repeated_and_placeholders_are_left_out() -> None:
+    # ARRANGE: the third slide has no title, so the fourth still repeats the first two
+    titles = [("Results", "first"), ("Results", "second"), ("", "untitled"), ("Results", "third"), ("Summary", "done")]
+    deck = pptx([(title, [(text, 0)], "") for title, text in titles])
+    furniture = _ph("sldNum", "7") + _ph("dt", "16/10/2026") + _ph("ftr", "ACME confidential")
+    data = _slide_shapes(deck, {1: furniture, 2: furniture, 5: _ph("ftr", "Draft")})
+
+    # ACT
+    text = formats.markdown(data)
+
+    # ASSERT
+    assert text == (
+        "## Results (slide 1)\n\nfirst\n\n(slide 2)\n\nsecond\n\n## Slide 3\n\nuntitled\n\n(slide 4)\n\nthird\n\n"
+        "## Summary (slide 5)\n\ndone\n\nFooter: ACME confidential / Draft"
+    )
+
+
+def test_docx_tables_of_contents_are_left_out_and_fill_in_lines_become_a_blank() -> None:
+    # ARRANGE: a "toc 1" paragraph, a contents content control, a building block nested in a plain one, a plain one
+    toc = '<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/></w:docPartObj></w:sdtPr><w:sdtContent>'
+    nested = '<w:sdt><w:sdtContent><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Cover Pages"/></w:docPartObj></w:sdtPr>'
+    body = (
+        p("Introduction\t\t3", "TOC1")
+        + toc + p("Scope ........ 4") + "</w:sdtContent></w:sdt>"
+        + nested + "<w:sdtContent>" + p("cover") + "</w:sdtContent></w:sdt></w:sdtContent></w:sdt>"
+        + "<w:sdt><w:sdtContent>" + p("kept") + "</w:sdtContent></w:sdt>"
+        + p("Name: ________ Date: .........")
+        + p("a\t\t\tb")
+        + tbl([["Signature", "----------"]])
+    )
+    data = docx(body)
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        parts = {n: z.read(n) for n in z.namelist()}
+    parts["word/styles.xml"] = f'<w:styles {W_NS}><w:style w:styleId="TOC1"><w:name w:val="toc 1"/></w:style></w:styles>'.encode()
+
+    # ACT
+    text = formats.markdown(pack(parts))
+
+    # ASSERT
+    assert text == "kept\n\nName: ___ Date: ___\n\na\tb\n\n| Signature | ___ |\n| --- | --- |"
+
+
+def test_odt_headings_over_80_characters_or_with_a_blank_are_paragraphs_and_fill_in_lines_become_a_blank() -> None:
+    body = (
+        f'<text:h text:outline-level="1">{"A" * 80}</text:h>'
+        f'<text:h text:outline-level="1">{"B" * 81}</text:h>'
+        '<text:h text:outline-level="2">Nome ________</text:h>'
+        "<text:p>Firma …………</text:p>"
+        + ods_table("T", [["Data", "........"]])
+    )
+    assert formats.markdown(odf(body)) == f"# {'A' * 80}\n\n{'B' * 81}\n\nNome ___\n\nFirma ___\n\n| Data | ___ |\n| --- | --- |"

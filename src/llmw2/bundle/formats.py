@@ -4,8 +4,9 @@
 """Office and OpenDocument files read with the standard library: documents as Markdown, spreadsheets as rows.
 
 DOCX, PPTX and ODT become Markdown with their headings, lists, tables, footnotes and speaker notes; XLSX and ODS
-become their sheets, each a list of rows of the values as shown (dates as dates). Charts, SmartArt, headers and
-footers and image alt text are left out. The type is read from the content, not the file name.
+become their sheets, each a list of rows of the values as shown (dates as dates, numbers and percentages with the
+decimals of their format). Charts, SmartArt, headers and footers, image alt text, tables of contents and slide number
+and date placeholders are left out; fill-in lines ("______") become "___". The type is read from the content.
 
 The files come from anywhere, so every read is bounded: an XML part may not inflate past MAX_PART, the text stops
 at MAX_CHARS and says so, a sheet keeps at most MAX_CELLS cells, and any failure is an InputError, so that one bad
@@ -15,7 +16,9 @@ file never stops a batch. Pure functions of the bytes: this module imports nothi
 from __future__ import annotations
 
 import datetime
+import decimal
 import io
+import math
 import posixpath
 import re
 import xml.etree.ElementTree as ET
@@ -30,6 +33,7 @@ MAX_RATIO = 100  # inflated / compressed, past which a part over 1 MB is taken f
 MAX_CHARS = 20_000_000  # characters of Markdown out of one document
 MAX_CELLS = 2_000_000  # cells of one sheet (rows x used columns): past it the sparsest columns are left out
 MAX_REPEAT = 1024  # copies of one repeated ODF cell
+GENERAL_DIGITS = 10  # significant digits of a number under Excel's General format, as Excel shows it
 
 DOCUMENTS = ("docx", "pptx", "odt")
 SPREADSHEETS = ("xlsx", "ods")
@@ -43,6 +47,8 @@ MC_FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fall
 TEXT = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
 TABLE = "{urn:oasis:names:tc:opendocument:xmlns:table:1.0}"
 OFFICE = "{urn:oasis:names:tc:opendocument:xmlns:office:1.0}"
+_FILL = re.compile(r"_{4,}|\.{5,}|…{3,}|-{6,}")  # a line to fill in, or the dots of a contents line
+MAX_HEADING = 80  # characters of an ODT heading: a longer one is a paragraph styled as a heading
 # Character references XML 1.0 forbids (&#1; …): some generators write them, and expat would refuse the whole part.
 _BAD_REF = re.compile(rb"&#(?:[xX]0*(?:[0-8bBcCeEfF]|1[0-9a-fA-F])|0*(?:[0-8]|1[124-9]|2[0-9]|3[01]));")
 
@@ -178,6 +184,11 @@ def _xml(z: zipfile.ZipFile, name: str) -> ET.Element:
     return root
 
 
+def _clean(text: str) -> str:
+    """Fill-in lines as "___", runs of tabs as one."""
+    return re.sub(r"\t{2,}", "\t", _FILL.sub("___", text))
+
+
 def _num(value: str | None, default: int = 0) -> int:
     try:
         return int(value or "")
@@ -228,6 +239,12 @@ def _kids(el: ET.Element, tag: str) -> Iterator[ET.Element]:
             yield from _kids(content, tag)
 
 
+def _contents(sdt: ET.Element, content: ET.Element) -> bool:
+    """A content control holding a table of contents, or a building block nested in it."""
+    gallery = sdt.find(f"{W}sdtPr/{W}docPartObj/{W}docPartGallery")
+    return content.find(f".//{W}docPartGallery") is not None or (gallery is not None and "Contents" in (gallery.get(W + "val") or ""))
+
+
 def _docx(z: zipfile.ZipFile, out: _Out) -> None:
     names = set(z.namelist())
     styles: dict[str | None, str] = {}
@@ -256,6 +273,9 @@ def _docx(z: zipfile.ZipFile, out: _Out) -> None:
         sid_el = p.find(f"{W}pPr/{W}pStyle")
         sid = sid_el.get(W + "val") if sid_el is not None else None
         style = styles.get(sid, "").lower()
+        if style.startswith("toc") or style == "table of figures":  # the contents, not the content
+            return
+        text = _clean(text)
         if m := re.match(r"heading (\d)", style):
             return out.add("#" * min(_num(m.group(1), 1), 6) + " " + text)
         if style == "title":
@@ -277,8 +297,8 @@ def _docx(z: zipfile.ZipFile, out: _Out) -> None:
                 para(el)
             elif el.tag == W + "tbl":
                 rows = [[" ".join(_wtext(p) for p in tc.iter(W + "p")).strip() for tc in _kids(tr, W + "tc")] for tr in _kids(el, W + "tr")]
-                out.add(table(rows))
-            elif el.tag == W + "sdt" and (content := el.find(W + "sdtContent")) is not None:
+                out.add(table([[_clean(c) for c in r] for r in rows]))
+            elif el.tag == W + "sdt" and (content := el.find(W + "sdtContent")) is not None and not _contents(el, content):
                 block(content)
 
     body = _xml(z, "word/document.xml").find(W + "body")
@@ -299,22 +319,30 @@ def _atext(p: ET.Element) -> str:
 
 
 def _pptx(z: zipfile.ZipFile, out: _Out) -> None:
+    """A heading per slide, "## Title (slide N)", so that a deck's own summary slide reads as one; a title repeated
+    from the slide before as "(slide N)" alone; slide numbers and dates left out, the footers once at the end."""
     names = set(z.namelist())
     order = _rels(z, "ppt/presentation.xml")
     slides = [order.get(s.get(R + "id") or "") for s in _xml(z, "ppt/presentation.xml").iter(P + "sldId")]
+    previous, footers = "", []
     for i, part in enumerate((s for s in slides if s in names), 1):
         assert part is not None
         title, lines = "", []
         for el in _xml(z, part).iter():
             if el.tag == P + "sp":
                 ph = el.find(f"{P}nvSpPr/{P}nvPr/{P}ph")
+                kind = ph.get("type") if ph is not None else None
+                if kind in ("sldNum", "dt"):
+                    continue
                 paras = []
                 for p in el.iter(A + "p"):
                     if t := _atext(p):
                         ppr = p.find(A + "pPr")
                         level = min(_num(ppr.get("lvl")) if ppr is not None else 0, 8)
                         paras.append("  " * level + "- " + t if level else t)
-                if ph is not None and ph.get("type") in ("title", "ctrTitle") and paras and not title:
+                if kind == "ftr":
+                    footers += [x for x in paras if x not in footers]
+                elif kind in ("title", "ctrTitle") and paras and not title:
                     title = " ".join(paras)
                 else:
                     lines += paras
@@ -330,31 +358,69 @@ def _pptx(z: zipfile.ZipFile, out: _Out) -> None:
                         notes += [_atext(p) for p in sp.iter(A + "p")]
                 if text := " ".join(n for n in notes if n):
                     lines.append("Notes: " + text)
-        out.add("\n\n".join([f"## Slide {i}" + (f": {title}" if title else ""), *lines]))
+        head = f"## {title} (slide {i})" if title else f"## Slide {i}"
+        if title and title == previous:
+            head = f"(slide {i})"
+        previous = title or previous
+        out.add("\n\n".join([head, *lines]))
+    if footers:
+        out.add("Footer: " + " / ".join(footers))
 
 
 # -- XLSX ---------------------------------------------------------------------------------------------------------
 
 
-def _date_styles(z: zipfile.ZipFile) -> dict[int, str]:
-    """Cell style index -> "date" or "time", for the styles that show a number as one."""
+Shown = tuple[str, int]  # ("date" | "time" | "percent" | "fixed", decimals) of a number format
+
+# The built-in number formats that are not General, dates or times (ECMA-376 18.8.30): id -> format code.
+_NUMBER_FORMATS = {1: "0", 2: "0.00", 3: "#,##0", 4: "#,##0.00", 9: "0%", 10: "0.00%"}
+_NUMBER_FORMATS |= {37: "#,##0", 38: "#,##0", 39: "#,##0.00", 40: "#,##0.00"}  # accounting, red or bracketed negatives
+_PRECISE = decimal.Context(prec=40)  # enough for 15 digits before the point and 15 after
+
+
+def _shown(raw: str) -> Shown | None:
+    """How a number format code shows a number; None for General, text and scientific formats."""
+    code = re.sub(r'"[^"]*"|\[[^\]]*\]|\\.', "", raw).lower()
+    first = re.sub(r"[_*].", "", code.split(";")[0])  # the positive section, without padding and fill characters
+    m = re.search(r"\.([0#?]+)", first)
+    decimals = min(len(m.group(1)), 15) if m else 0
+    if "%" in code:
+        return ("percent", decimals)
+    if "y" in code or "d" in code or ("m" in code and "h" not in code and "s" not in code):
+        return ("date", 0)
+    if "h" in code or "s" in code:
+        return ("time", 0)
+    if "e" in first or not re.search(r"[0#?]", first):
+        return None
+    return ("fixed", decimals)
+
+
+def _date_styles(z: zipfile.ZipFile) -> dict[int, Shown]:
+    """Cell style index -> how the style shows a number, for the styles that are not General."""
     if "xl/styles.xml" not in z.namelist():
         return {}
     st = _xml(z, "xl/styles.xml")
-    kinds = {i: "date" for i in (14, 15, 16, 17, 22)} | {i: "time" for i in (18, 19, 20, 21, 45, 46, 47)}
+    kinds: dict[int, Shown | None] = {i: _shown(code) for i, code in _NUMBER_FORMATS.items()}
+    kinds |= {i: ("date", 0) for i in (14, 15, 16, 17, 22)} | {i: ("time", 0) for i in (18, 19, 20, 21, 45, 46, 47)}
     for f in st.iter(S + "numFmt"):
-        code = re.sub(r'"[^"]*"|\[[^\]]*\]|\\.', "", f.get("formatCode", "")).lower()
-        if "y" in code or "d" in code or ("m" in code and "h" not in code and "s" not in code):
-            kinds[_num(f.get("numFmtId"), -1)] = "date"
-        elif "h" in code or "s" in code:
-            kinds[_num(f.get("numFmtId"), -1)] = "time"
+        kinds[_num(f.get("numFmtId"), -1)] = _shown(f.get("formatCode", ""))
     xfs = st.find(S + "cellXfs")
     styles = xfs.findall(S + "xf") if xfs is not None else []
-    return {i: kinds[_num(x.get("numFmtId"))] for i, x in enumerate(styles) if _num(x.get("numFmtId")) in kinds}
+    return {i: shown for i, x in enumerate(styles) if (shown := kinds.get(_num(x.get("numFmtId")))) is not None}
 
 
-def _cell(c: ET.Element, shared: list[str], dates: dict[int, str], epoch: datetime.datetime) -> str:
-    """A cell's value as Excel shows it, near enough: text, whole numbers without ".0", dates as ISO dates."""
+def _fixed(x: float, decimals: int) -> str:
+    """`x` rounded half up to `decimals` places, as Excel rounds what it shows (2.675 -> "2.68", not "2.67"), without
+    the zeros the format pads with ("5.00" -> "5", "2.50" -> "2.5"): the same value in fewer characters."""
+    d = decimal.Decimal(f"{x:.15g}").quantize(decimal.Decimal(1).scaleb(-decimals), decimal.ROUND_HALF_UP, _PRECISE)
+    s = f"{d:f}"
+    s = s.rstrip("0").rstrip(".") if "." in s else s
+    return "0" if d == 0 else s
+
+
+def _cell(c: ET.Element, shared: list[str], dates: dict[int, Shown], epoch: datetime.datetime) -> str:
+    """A cell's value as Excel shows it, near enough: text, numbers rounded to the decimals of their format ("0.00",
+    "0.0%"), under General whole numbers in full and others to GENERAL_DIGITS digits, dates as ISO dates."""
     inline = c.find(S + "is")
     if inline is not None:
         return "".join(x.text or "" for x in inline.iter(S + "t"))
@@ -370,16 +436,18 @@ def _cell(c: ET.Element, shared: list[str], dates: dict[int, str], epoch: dateti
         f = float(v.text)
     except ValueError:
         return v.text
-    style = _num(c.get("s"))
-    if style in dates:
+    kind, decimals = dates.get(_num(c.get("s")), ("general", 0))
+    if kind in ("date", "time"):
         try:
             d = epoch + datetime.timedelta(days=f)
         except OverflowError:
             return v.text
-        if dates[style] == "time":
+        if kind == "time":
             return d.strftime("%H:%M")
         return d.strftime("%Y-%m-%d") if d.time() == datetime.time() else d.strftime("%Y-%m-%d %H:%M")
-    return str(int(f)) if f.is_integer() and abs(f) < 1e15 else v.text
+    if kind in ("percent", "fixed") and math.isfinite(f) and abs(f) < 1e13:
+        return _fixed(f * 100, decimals) + "%" if kind == "percent" else _fixed(f, decimals)
+    return str(int(f)) if f.is_integer() and abs(f) < 1e21 else f"{f:.{GENERAL_DIGITS}g}"  # codes and ids keep every digit
 
 
 def _column(ref: str | None) -> int:
@@ -480,12 +548,15 @@ def _odt(z: zipfile.ZipFile, out: _Out) -> None:
     notes: list[str] = []
 
     def text(el: ET.Element) -> str:
-        return _otext(el, notes).strip()
+        return _clean(_otext(el, notes).strip())
 
     def block(parent: ET.Element | list[ET.Element], depth: int = 0) -> None:
         for el in parent:
             if el.tag == TEXT + "h" and (t := text(el)):
-                out.add("#" * min(max(_num(el.get(TEXT + "outline-level"), 1), 1), 6) + " " + t)
+                if len(t) > MAX_HEADING or "___" in t:  # a paragraph, or a form line, styled as a heading
+                    out.add(t)
+                else:
+                    out.add("#" * min(max(_num(el.get(TEXT + "outline-level"), 1), 1), 6) + " " + t)
             elif el.tag == TEXT + "p" and (t := text(el)):
                 out.add(t)
             elif el.tag == TEXT + "list":
@@ -498,8 +569,8 @@ def _odt(z: zipfile.ZipFile, out: _Out) -> None:
                         elif c.tag == TEXT + "list":
                             block([c], depth + 1)
             elif el.tag == TABLE + "table":
-                out.add(table(_orows(el, notes)))
-            elif el.tag in (TEXT + "section", TEXT + "index-body", TEXT + "table-of-content"):
+                out.add(table([[_clean(c) for c in r] for r in _orows(el, notes)]))
+            elif el.tag in (TEXT + "section", TEXT + "index-body"):  # text:table-of-content and the other indexes left out
                 block(el, depth)
 
     if body is not None:

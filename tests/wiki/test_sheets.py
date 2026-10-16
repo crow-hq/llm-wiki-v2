@@ -13,6 +13,7 @@ import pytest
 from llmw2 import CLASSIC, Candidate, InputError, Item, LocalFolderSource, Origin, Source, StepContext, Wiki, WikiConfig, sync
 from llmw2.agents.librarian import IngestResult
 from llmw2.agents.state import source_state
+from llmw2.bundle.files import sheet_sources
 from llmw2.bundle.sheets import BRIEF_ROWS, brief, parse, rows_for, sheet_text
 from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import ContentLLM
@@ -52,6 +53,47 @@ def test_brief_keeps_the_header_and_the_first_rows_of_a_long_sheet() -> None:
     assert f"\n{BRIEF_ROWS - 1}\n" in short and f"\n{BRIEF_ROWS}\n" not in short
     assert short.endswith(f"[… {100 - BRIEF_ROWS} more rows]\n")
     assert brief(sheet_text("a.xlsx", "S", rows[:5])) == sheet_text("a.xlsx", "S", rows[:5])
+
+
+def test_title_rows_above_the_header_become_a_caption_line_and_the_empty_columns_go() -> None:
+    # ARRANGE: two one-cell rows above a header of three, a column empty below them
+    rows = [["Table 4", "", "", ""], ["Sales by region", "", "", ""], ["Region", "Q1", "", "Q2"], ["EU", "4", "", "5"]]
+
+    # ACT
+    text = sheet_text("a.xlsx", "S", rows)
+
+    # ASSERT
+    assert text == 'Sheet "S" of a.xlsx: 2 rows, 3 columns.\nCaption: Table 4 — Sales by region\n\n```csv\nRegion,Q1,Q2\nEU,4,5\n```\n'
+    assert parse(text) == ("S", [["Region", "Q1", "Q2"], ["EU", "4", "5"]])
+
+
+@pytest.mark.parametrize("rows", [[["Note", ""], ["a", "b"]], [["n"], ["1"], ["2"]], [["only"]]], ids=["narrow", "one column", "one cell"])
+def test_rows_are_a_caption_only_above_a_row_of_three_cells(rows: list[list[str]]) -> None:
+    assert "Caption:" not in sheet_text("a.xlsx", "S", rows)
+    assert parse(sheet_text("a.xlsx", "S", rows)) == ("S", rows)
+
+
+def test_at_most_five_rows_make_a_caption() -> None:
+    rows = [[f"t{i}", "", ""] for i in range(6)] + [["a", "b", "c"], ["1", "2", "3"]]
+    text = sheet_text("a.xlsx", "S", rows)
+    assert text.startswith('Sheet "S" of a.xlsx: 3 rows, 3 columns.\nCaption: t0 — t1 — t2 — t3 — t4\n')
+    assert parse(text) == ("S", [["t5", "", ""], ["a", "b", "c"], ["1", "2", "3"]])  # the sixth stays a row
+
+
+def test_a_caption_stays_on_one_line_and_the_brief_keeps_it() -> None:
+    # ARRANGE: a title cell over lines, as a merged title often is, above a long sheet
+    rows = [["Report\n\n2026  final"], ["a", "b", "c"], *([str(i), "x", "y"] for i in range(100))]
+
+    # ACT
+    short = brief(sheet_text("a.xlsx", "S", rows))
+
+    # ASSERT
+    assert short.startswith('Sheet "S" of a.xlsx: 101 rows, 3 columns.\nCaption: Report 2026 final\n\nThe first 20 rows, under the header:')
+
+
+def test_a_sheet_with_a_caption_keeps_its_name() -> None:
+    [(name, text)] = sheet_sources(xlsx({"Sales": [["Table 4"], ["Region", "Q1", "Q2"], ["EU", 4, 5]]}), "r.xlsx")
+    assert name == "Sales" and text.startswith('Sheet "Sales" of r.xlsx: 2 rows, 3 columns.\nCaption: Table 4\n')
 
 
 def test_rows_for_gives_the_whole_sheet_when_it_fits() -> None:

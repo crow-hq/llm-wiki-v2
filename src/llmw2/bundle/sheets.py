@@ -3,7 +3,8 @@
 
 """A spreadsheet sheet as a source: one note per sheet, its data kept as CSV for the researcher.
 
-The text of a sheet source is a line naming it and a CSV block. That text is the raw copy (so its hash says
+The text of a sheet source is a line naming it, a "Caption:" line when a title sits above the sheet's header, and
+a CSV block. That text is the raw copy (so its hash says
 whether the sheet changed); the librarian writes the note from `brief`, the first rows only, because the note
 catalogues the sheet rather than holding its data; the researcher puts back the rows a question needs (`rows_for`).
 """
@@ -24,11 +25,13 @@ _NUMBER = re.compile(r"-?\d+(?:[.,]\d+)*")
 
 
 def sheet_text(filename: str, name: str, rows: list[list[str]]) -> str:
-    """The source text of one sheet: "Sheet "Budget" of plan.xlsx: 40 rows, 6 columns." and the rows as CSV."""
+    """The source text of one sheet: "Sheet "Budget" of plan.xlsx: 40 rows, 6 columns.", its caption, the rows as CSV."""
+    caption, rows = _caption(rows)
     body = _csv(rows)
     fence = _fence(body)
     width = max((len(r) for r in rows), default=0)
-    return f'Sheet "{name}" of {filename}: {len(rows)} rows, {width} columns.\n\n{fence}csv\n{body}{fence}\n'
+    line = f"Caption: {caption}\n" if caption else ""
+    return f'Sheet "{name}" of {filename}: {len(rows)} rows, {width} columns.\n{line}\n{fence}csv\n{body}{fence}\n'
 
 
 def parse(text: str) -> tuple[str, list[list[str]]] | None:
@@ -40,14 +43,14 @@ def parse(text: str) -> tuple[str, list[list[str]]] | None:
 
 
 def brief(text: str) -> str:
-    """What the librarian reads of a sheet source: its first line and first BRIEF_ROWS rows; other texts unchanged."""
+    """What the librarian reads of a sheet source: its first line, caption and first BRIEF_ROWS rows; other texts unchanged."""
     sheet = parse(text)
     if sheet is None:
         return text
     _, rows = sheet
     if len(rows) <= BRIEF_ROWS + 1:
         return text
-    head = text.split("\n", 1)[0]
+    head = text.split("\n\n", 1)[0]  # the first line and the caption line
     shown = _csv(rows[: BRIEF_ROWS + 1])
     fence = _fence(shown)
     more = len(rows) - BRIEF_ROWS - 1
@@ -88,6 +91,20 @@ def rows_for(question: str, text: str, budget: int = SHEET_CHARS) -> str:
         f'Rows of the sheet "{name}": {len(keep)} of {len(body)}, those closest to the question.\n\n'
         f"{_fence(shown)}csv\n{shown}{_fence(shown)}\n\n{stats}"
     ).rstrip()
+
+
+def _caption(rows: list[list[str]]) -> tuple[str, list[list[str]]]:
+    """(caption, rows): up to 5 leading rows with one filled cell, above a row with three or more within the next
+    three, are a caption ("Table 4 — Sales by region"), not data; the columns then empty in every row are dropped."""
+    k = 0
+    while k < min(5, len(rows) - 1) and sum(1 for c in rows[k] if c.strip()) == 1:
+        k += 1
+    if not k or not any(sum(1 for c in r if c.strip()) >= 3 for r in rows[k : k + 3]):
+        return "", rows
+    caption = " — ".join(" ".join(next(c for c in r if c.strip()).split()) for r in rows[:k])  # one line, whatever the cells hold
+    rest = rows[k:]
+    used = [i for i in range(max(map(len, rest))) if any(i < len(r) and r[i] for r in rest)]
+    return caption, [[r[i] if i < len(r) else "" for i in used] for r in rest]
 
 
 def _csv(rows: list[list[str]]) -> str:

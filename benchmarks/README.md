@@ -15,12 +15,13 @@ first, and `--dry-run` tries them for free.
 | `deep/` | a three-level reorganisation of the demo wiki (`deep/base/`, built by `make_deep_demo.py`, no model) and 52 documents (the growth ones remapped plus 22 new, `make_deep_corpus.py`) | the routing fallback on a deep tree |
 | `dup/` | a base wiki (`dup/base/`: the demo plus 66 generated notes) and 40 documents (`dup/docs/`): 15 duplicates, 10 contradictions, 10 traps (a shared value, a different subject) and 5 distractors, each paired with a note of the base; `labels.json` gives the pair, the slot, the values and, for contradictions, a question and the expected answer. Written by `make_dup_corpus.py` | See-also links between duplicates, answers that report both values of a contradiction, no false link on a trap |
 
-Two real corpora are not committed (licence and size): only the script that selects them, the source and a pin.
+The real corpora are not committed (licence and size): only the scripts that select them, the source and a pin.
 
 | corpus | source and pin | selection |
 |---|---|---|
 | GitLab handbook, marketing (CC BY-SA 4.0) | https://gitlab.com/gitlab-com/content-sites/handbook, head `2c77a1f5b8c8a80cb7b5151ff11cfad84f98bfbb` | `t9_handbook_select.py`: pages first added from 2024-01-01, labels from the folder they were added in, renames as events |
 | Enron mail | https://www.cs.cmu.edu/~enron/, `enron_mail_20150507.tar.gz`, sha256 `b3da1b3fe0369ec3140bb4fbce94702c33b7da810ec15d718b3fadf5cd748ca7` | `t9_enron_select.py`: one mailbox, the folders its owner made, labels from the folder |
+| Office and OpenDocument files (2,629: NapierOne and Common Crawl `CC-MAIN-2026-39`) | per file its sha256 and source: `office/SOURCES.md` | `office/fetch.py` fetches them; `office/measure.py` compares two versions of the readers on them, free |
 
 ## Scripts
 
