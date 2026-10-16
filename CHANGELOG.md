@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-16
+
 ### Added
 
 - Word (`.docx`), PowerPoint (`.pptx`), Excel (`.xlsx`), OpenDocument text (`.odt`) and spreadsheets (`.ods`), read with the standard library only (no new dependency): documents become Markdown with their headings, lists, tables, footnotes and speaker notes; the type is read from the content, and a damaged or hostile file (zip or XML bomb, broken XML) is an input error that does not stop a sync. A slide's heading is its title, `## Results (slide 4)`, so the summary slide of a long deck can be used as its summary; a title repeated on the next slides is not repeated, slide numbers and dates are left out and footers come once at the end. Tables of contents are left out, fill-in lines (`______`, `.......`) become `___`, and an ODT "heading" over 80 characters or with a blank to fill is a paragraph. Excel numbers are rounded to the decimals their format shows, but keep at least 6 significant digits (`24.6143` where the sheet shows `24.61`), without padding zeros; under the General format 10 significant digits; never `5.5100000000000003E-2`; whole numbers keep all their digits.
@@ -17,9 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `Wiki.ingest_many` (and so `sync`) reads spreadsheets first, on worker threads, and reports one item per sheet (`"plan, Budget.csv"`); sync counts are per sheet. A workbook has no record under its own origin key (`Wiki.origin` returns None for it), so a sync that lists it fetches it again; sheets whose text is unchanged cost no model call.
-
-### Changed
-
 - CI runs the tests in parallel (`pytest -n auto`, with `pytest-xdist` among the dev dependencies): the Windows jobs had taken the CI from about 3 to about 8.5 minutes.
 
 ### Fixed
@@ -172,6 +171,7 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[0.5.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.5.0
 [0.4.4]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.4
 [0.4.3]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.3
 [0.4.2]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.2
