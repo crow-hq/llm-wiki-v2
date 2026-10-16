@@ -65,8 +65,11 @@ REPLACE_ATTEMPTS = 6  # about 0.3 s in all: long enough for a reader to close th
 
 
 def body_hash(body: str) -> str:
-    """The hash of a note's main body: it tells whether code alone wrote it."""
-    return "sha256:" + hashlib.sha256(body.strip().encode("utf-8")).hexdigest()
+    """The hash of a note's main body: it tells whether code alone wrote it.
+
+    Line breaks count as "\n" whatever they were ("\r\n" is read back as "\n"), so a reload does not change the hash.
+    """
+    return "sha256:" + hashlib.sha256("\n".join(body.strip().splitlines()).encode("utf-8")).hexdigest()
 
 
 def now_iso() -> str:

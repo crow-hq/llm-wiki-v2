@@ -156,6 +156,23 @@ def test_load_skips_unparseable_notes(store: WikiStore, bundle: Path, caplog: py
     assert "broken.md" in caplog.text
 
 
+def test_a_note_whose_summary_holds_a_delimiter_line_stays_in_the_tree(store: WikiStore) -> None:
+    folder, _ = store.create_folder(store.load(), "finance", "Money.")
+    _note(store, folder, "Refunds", summary="Refund policy.\n---\nSecond line")
+
+    assert [n.rel for n in store.load().all_notes()] == ["finance/refunds.md"]
+
+
+@pytest.mark.parametrize("body", ["Line one.\r\nLine two.", "Page one.\x0cPage two.", "One.\u2028Two."])
+def test_a_written_note_keeps_its_body_hash_when_read_back(store: WikiStore, body: str) -> None:
+    folder, _ = store.create_folder(store.load(), "finance", "Money.")
+    note = _note(store, folder, "Pricing", body=body)
+
+    again = store.read(note.rel)
+
+    assert again.frontmatter["generated"]["body_hash"] == body_hash(again.main_body())
+
+
 def test_load_tolerates_an_index_with_malformed_frontmatter(store: WikiStore, bundle: Path) -> None:
     _put(bundle / "finance/index.md", "---\ntitle: unterminated\n")
     assert store.load().subfolder("finance") is not None

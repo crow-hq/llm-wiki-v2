@@ -52,10 +52,12 @@ class OKFDocument:
 
     @classmethod
     def parse(cls, text: str) -> OKFDocument:
-        lines = text.splitlines()
-        if not lines or lines[0].strip() != DELIMITER:
+        text = text.removeprefix("\ufeff")  # an editor's byte order mark would hide the frontmatter
+        lines = text.split("\n")  # not splitlines(): a form feed or U+2028 in the body is text, not a line break
+        if lines[0].strip() != DELIMITER:
             return cls({}, text)
-        end = next((i for i in range(1, len(lines)) if lines[i].strip() == DELIMITER), None)
+        # The closing line starts at column 0: YAML indents every continuation line, so a value holding "---" never ends the block.
+        end = next((i for i in range(1, len(lines)) if lines[i].rstrip() == DELIMITER), None)
         if end is None:
             raise OKFDocumentError("Unterminated YAML frontmatter block")
         try:
@@ -64,7 +66,7 @@ class OKFDocument:
             raise OKFDocumentError(f"Invalid YAML in frontmatter: {e}") from e
         if not isinstance(frontmatter, dict):
             raise OKFDocumentError("Frontmatter must be a YAML mapping")
-        body = "\n".join(lines[end + 1 :])
+        body = "\n".join(lines[end + 1 :]).removesuffix("\n")  # the file's last line break, as splitlines() drops it
         return cls(frontmatter, body.removeprefix("\n"))  # the blank line after the block is layout
 
     def serialize(self) -> str:
