@@ -156,12 +156,26 @@ class Folder:
 
 
 def split_see_also(body: str) -> tuple[str, list[str]]:
-    """(body before "# See also", its list lines)."""
+    """(body before "# See also", its list lines).
+
+    The entries are the list lines right after the last "# See also" heading (blank lines between them allowed).
+    Whatever follows the first other line (a paragraph or section added by hand) goes back into the main part, so
+    rewriting the note keeps it, above the one See-also section.
+    """
     lines = body.rstrip("\n").split("\n")
     for i in range(len(lines) - 1, -1, -1):
         if lines[i].strip() == SEE_ALSO:
-            entries = [line for line in lines[i + 1 :] if _ENTRY.match(line.strip())]
-            return "\n".join(lines[:i]).rstrip(), entries
+            entries: list[str] = []
+            end = len(lines)
+            for k in range(i + 1, len(lines)):
+                if _ENTRY.match(lines[k].strip()):
+                    entries.append(lines[k])
+                elif lines[k].strip():
+                    end = k
+                    break
+            main = "\n".join(lines[:i]).rstrip()
+            tail = "\n".join(lines[end:]).strip()
+            return (f"{main}\n\n{tail}" if main else tail) if tail else main, entries
     return body.rstrip(), []
 
 

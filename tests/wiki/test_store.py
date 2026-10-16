@@ -431,6 +431,44 @@ def test_link_is_idempotent(store: WikiStore) -> None:
     assert split_see_also(a.body)[1] == ["* [B](b.md) - A summary."]
 
 
+def test_link_moves_what_was_written_by_hand_after_the_see_also_list_above_it(store: WikiStore) -> None:
+    root = store.load()
+    z = _note(store, root, "Z", "Z.")
+    a = _note(store, root, "A", body="Main.\n\n# See also\n\n* [Z](z.md) - Z.\n\n# Appendix\n\nWritten by hand.")
+    b = _note(store, root, "B")
+
+    assert store.link(a, b) is True
+    store.link(a, z)  # Z is still an entry of the one section: A does not list it twice
+
+    body = _read(a.path).body
+    assert body == "Main.\n\n# Appendix\n\nWritten by hand.\n\n# See also\n\n* [Z](z.md) - Z.\n* [B](b.md) - A summary."
+    assert {(e["source"], e["target"]) for e in graph(store.load())["links"] if e["kind"] == "see_also"} >= {("a.md", "z.md")}
+
+
+def test_delete_drops_an_entry_followed_by_text_written_by_hand(store: WikiStore) -> None:
+    root = store.load()
+    _note(store, root, "Z", "Z.")
+    a = _note(store, root, "A", body="Main.\n\n# See also\n\n* [Z](z.md) - Z.\n\n# Appendix\n\nWritten by hand.")
+
+    store.delete_note("z.md")
+
+    assert _read(a.path).body == "Main.\n\n# Appendix\n\nWritten by hand."
+
+
+def test_move_keeps_what_was_written_by_hand_after_the_see_also_list(store: WikiStore) -> None:
+    root = store.load()
+    store.create_folder(root, "finance", "Money.")
+    a, b = _note(store, root, "A"), _note(store, root, "B")
+    store.link(a, b)
+    a.path.write_text(a.path.read_text(encoding="utf-8") + "\n# Appendix\n\nWritten by hand.\n", encoding="utf-8")
+
+    store.move_note("b.md", "/finance")
+
+    body = _read(a.path).body
+    assert "Written by hand." in body and body.count("# See also") == 1
+    assert body.endswith("# See also\n\n* [B](finance/b.md) - A summary.")
+
+
 def test_split_and_join_see_also_round_trip() -> None:
     body = "# Overview\n\nText.\n\n# See also\n\n* [A](a.md) - About A.\n* [B](../b.md)\n"
     main, entries = split_see_also(body)
