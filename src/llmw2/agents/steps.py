@@ -5,7 +5,8 @@
 
 The flow itself (order of the steps, locking, writing) belongs to the core. Inside a step anything goes: one
 model call, many, none, an external service. The core only checks that what a step returns fits what the next
-one expects, and stops with `StepError` naming the step before writing anything. Provisional until parallel ingest.
+one expects, and stops with `StepError` naming the step before writing anything, except for `relate`, which runs
+once the note is written: a model failure there costs the links, not the note. Provisional until parallel ingest.
 
     from dataclasses import replace
     steps = replace(CROW, name="patents-v2", summarize=my_summarize, route=my_route)

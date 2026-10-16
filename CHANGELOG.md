@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The Docker image builds again: `.dockerignore` lets in `LICENSE` and `LICENSES/`, which the package build needs; the README and `docker-compose.yml` no longer point to `/docs`, which the server turns off.
+- A model failure in `relate`, which runs once the note is written, no longer fails the ingest: the note is filed and logged without See-also links, with a `relate` / `error` decision in the trace. Before, the note was left on disk with no log line, the sync stopped, and the next sync skipped it, so the links never came. `{"related": null}` reads as no links, and `"/a.md"` and `"a.md"` count as one link.
 
 ## [0.5.0] - 2026-10-16
 

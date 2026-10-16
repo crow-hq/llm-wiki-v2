@@ -11,6 +11,7 @@ output of every step is checked before it is used.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, dataclass, field, replace
 from functools import cached_property
 from typing import Any, Literal
@@ -35,9 +36,12 @@ from llmw2.bundle.origin import content_hash
 from llmw2.bundle.sheets import brief
 from llmw2.bundle.store import WikiStore
 from llmw2.config import WikiConfig
+from llmw2.errors import ModelError
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport
+
+log = logging.getLogger(__name__)
 
 __all__ = ["Candidate", "IngestResult", "Librarian", "NoteDraft", "Prepared", "Route", "Source"]
 
@@ -157,7 +161,12 @@ class Librarian:
                 others = [*others, *(n for n, _ in found)]
                 if found:
                     ctx.decide("relate_candidates", "code", f"{len(found)} by rare values", scores={n.rel: round(s, 3) for n, s in found})
-            related = check_relate(steps.relate(ctx, note, others), note, others) if others else []
+            try:
+                related = check_relate(steps.relate(ctx, note, others), note, others) if others else []
+            except ModelError as e:  # the note is written: a failure here costs its links, not the ingest
+                log.warning("relate failed for %s, no See-also links added: %s", note.rel, e)
+                ctx.decide("relate", "llm", "error")
+                related = []
             related = related[: self.cfg.max_links]
             for other in related:
                 self.store.link(note, other)

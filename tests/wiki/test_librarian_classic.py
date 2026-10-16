@@ -331,6 +331,43 @@ def test_relate_links_both_ways_capped_at_max_links(bundle: Path, llm: FakeLLM) 
     assert "# See also" not in read(fruit / "banana.md").body
 
 
+def test_relate_when_the_llm_says_null_then_no_link_and_the_ingest_is_filed(bundle: Path, llm: FakeLLM) -> None:
+    wiki = make_wiki(bundle, llm)
+    add_folder(wiki, "/", "fruit", "Fruit and its prices.")
+    add_note(wiki, "/fruit", "Apple")
+    llm.add(SUMMARIZE, draft("Fruit prices")).add(ROUTE, {"action": "descend", "subfolder": "fruit"}, {"action": "here"})
+    llm.add(FIND_MATCH, {"match": None}).add(RELATE, {"related": None})
+
+    result = wiki.ingest("Fruit got dearer.")
+
+    assert (result.action, result.related, llm.ops.count(RELATE)) == ("created", [], 1)
+
+
+def test_relate_when_the_llm_keeps_failing_then_the_written_note_is_still_logged_and_returned(bundle: Path, llm: FakeLLM) -> None:
+    wiki = make_wiki(bundle, llm)
+    add_folder(wiki, "/", "fruit", "Fruit and its prices.")
+    add_note(wiki, "/fruit", "Apple")
+    llm.add(SUMMARIZE, draft("Fruit prices")).add(ROUTE, {"action": "descend", "subfolder": "fruit"}, {"action": "here"})
+    llm.add(FIND_MATCH, {"match": None}).add(RELATE, "not JSON", "still not JSON")
+
+    result = wiki.ingest("Fruit got dearer.")
+
+    assert (result.action, result.note, result.related) == ("created", "fruit/fruit-prices.md", [])
+    assert ("relate", "llm", "error") in steps(result)
+    assert "fruit/fruit-prices.md" in (bundle / "log.md").read_text(encoding="utf-8")
+
+
+def test_relate_when_the_llm_names_one_note_twice_then_it_takes_one_link(bundle: Path, llm: FakeLLM) -> None:
+    wiki = make_wiki(bundle, llm, max_links=2)
+    add_folder(wiki, "/", "fruit", "Fruit and its prices.")
+    for title in ("Apple", "Banana"):
+        add_note(wiki, "/fruit", title)
+    llm.add(SUMMARIZE, draft("Fruit prices")).add(ROUTE, {"action": "descend", "subfolder": "fruit"}, {"action": "here"})
+    llm.add(FIND_MATCH, {"match": None}).add(RELATE, {"related": ["fruit/apple.md", "/fruit/apple.md", "fruit/banana.md"]})
+
+    assert wiki.ingest("Fruit got dearer.").related == ["fruit/apple.md", "fruit/banana.md"]
+
+
 # -- options, usage and results ---------------------------------------------------------------
 
 
