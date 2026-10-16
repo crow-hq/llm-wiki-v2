@@ -142,21 +142,20 @@ def test_merge_without_a_candidate_reads_the_source(bundle: Path, llm: FakeLLM) 
     assert "Seed." in prompt
 
 
-def test_merge_without_a_candidate_cuts_the_source_to_the_budget_with_a_warning(
+def test_merge_without_a_candidate_when_the_source_does_not_fit_adds_it_whole_as_a_section(
     bundle: Path, llm: FakeLLM, caplog: pytest.LogCaptureFixture
 ) -> None:
     steps = replace(MERGING, merge=merge_without_candidate)
     wiki = wiki_with(bundle, llm, steps, llm=LLMConfig(read_chars=8_000))  # a text room of 2 000, less the existing note
-    llm.add(MERGE_SOURCE, MERGED)  # round 6: a long source is merged from the text directly
     text = "HEAD " + "~" * 5_000 + " TAIL"
 
     with caplog.at_level(logging.WARNING):
-        wiki.ingest(text, title="Memo")
+        result = wiki.ingest(text, title="Memo")
 
-    prompt = merge_prompt(llm, MERGE_SOURCE)
-    assert "HEAD" in prompt and "TAIL" not in prompt
-    assert 1_500 < prompt.count("~") <= 2_000
-    assert len(prompt) <= 8_000
+    assert result.action == "merged"
+    assert MERGE not in llm.ops and MERGE_SOURCE not in llm.ops  # no model is asked
+    body = wiki.store.read(result.note).main_body()
+    assert body.startswith("Seed.\n\n# Memo\n\nHEAD") and body.endswith("TAIL")
     assert [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
@@ -173,21 +172,25 @@ def test_merge_without_a_candidate_and_a_source_that_fits_does_not_warn(
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
-def test_a_verbatim_incoming_note_over_the_budget_is_cut_with_a_warning(
-    bundle: Path, llm: FakeLLM, caplog: pytest.LogCaptureFixture
-) -> None:
-    wiki = wiki_with(bundle, llm, LLM_MERGING, summarize=False, llm=LLMConfig(read_chars=8_000))
-    llm.add(MERGE_SOURCE, MERGED)  # round 6: a long source is merged from the text directly
-    text = "HEAD " + "~" * 5_000 + " TAIL"
+def test_an_incoming_note_over_the_budget_is_added_whole_as_a_section_with_its_tags(bundle: Path, llm: FakeLLM) -> None:
+    # ARRANGE: a 900-character note and 3 000 incoming at read_chars 8000: 1 100 left, the incoming note does not fit
+    wiki = wiki_with(bundle, llm, LLM_MERGING, llm=LLMConfig(read_chars=8_000))
+    seed = wiki.store.load().find("/finance").notes[0]
+    wiki.store.update_note(seed, title="Seed", summary="Seeded.", body="S" * 900, tags=["old-tag"], source={"resource": "/raw/s2.md"})
+    incoming = {**INCOMING, "body": "# Overview\n\nINCOMING " + "x" * 3_000 + " END"}
+    llm.add(SUMMARIZE, incoming)
 
-    with caplog.at_level(logging.WARNING):
-        wiki.ingest(text, title="Memo")
+    # ACT
+    result = wiki.ingest(RAW, title="Memo")
 
-    prompt = merge_prompt(llm, MERGE_SOURCE)
-    assert "HEAD" in prompt and "TAIL" not in prompt
-    assert 1_500 < prompt.count("~") < 3_000  # the body at its budget, and the summary a verbatim candidate takes from the text
-    assert len(prompt) <= 8_000
-    assert [r for r in caplog.records if r.levelno >= logging.WARNING]
+    # ASSERT
+    assert result.action == "merged"
+    assert MERGE not in llm.ops and MERGE_SOURCE not in llm.ops
+    note = wiki.store.read(result.note)
+    assert note.main_body().startswith("S" * 900 + "\n\n# Incoming title\n\n# Overview\n\nINCOMING")
+    assert note.main_body().endswith(" END")
+    assert set(note.tags) >= {"old-tag", "incoming-tag"}
+    assert (note.title, note.summary) == ("Seed", "Seeded.")
 
 
 # -- prompt overrides --------------------------------------------------------------------------------------

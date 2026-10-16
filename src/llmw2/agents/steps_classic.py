@@ -292,7 +292,8 @@ def consolidate(ctx: StepContext, note: Note, cand: Candidate) -> bool:
 def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
     """CROW step 3, modify branch: rewrite the existing note with the incoming one (the candidate), or else with the source.
 
-    The incoming text is cut to what is left of the call after the existing note; a cut is logged.
+    When the incoming text does not fit what is left of the call after the existing note, no model is asked: the
+    incoming body is added to the note as a section of its own, and the tags are joined, so nothing of it is lost.
     """
     existing = note.main_body()
     budget = max(0, ctx.cfg.effective_read_chars - PROMPT_ROOM - len(existing))
@@ -304,7 +305,8 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
     long_source = len(source.text) > CONSOLIDATE_SOURCE_MAX * ctx.cfg.effective_note_chars
     cut = len(source.text) if long_source else len(body)  # a long source is merged from its text, not from the candidate
     if cut > budget:
-        log.warning("merge: the incoming text is cut from %d to %d characters to fit the call", cut, budget)
+        log.warning("merge: the incoming text would be cut from %d to %d characters: added whole to %s instead", cut, budget, note.rel)
+        return _appended(note, existing, cand, source)
     came = ", ".join(x for x in (source.title or title, source.resource) if x)
     reply_chars = len(existing) + ctx.cfg.target_note_chars(len(source.text))
     prompt, field = "librarian/merge", "incoming_body"
@@ -359,6 +361,15 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
             draft = again
     _warn_if_long("merge", draft.title, draft.body, ctx.cfg.target_note_chars(len(source.text), len(existing)))
     return draft
+
+
+def _appended(note: Note, existing: str, cand: Candidate | None, source: Source) -> NoteDraft:
+    """The existing note with the incoming body after it as a section headed by its title, and the tags of both."""
+    title = (cand.title if cand is not None else source.title) or "Added"
+    body = cand.body if cand is not None else source.text
+    tags = [*note.tags, *(cand.tags if cand is not None else [])]
+    section = f"# {title.strip()}\n\n{body.strip()}"
+    return NoteDraft(title=note.title, summary=note.summary, tags=list(dict.fromkeys(tags)), body=f"{existing.rstrip()}\n\n{section}")
 
 
 @dataclass

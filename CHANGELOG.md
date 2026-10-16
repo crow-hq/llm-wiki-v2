@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The Docker image builds again: `.dockerignore` lets in `LICENSE` and `LICENSES/`, which the package build needs; the README and `docker-compose.yml` no longer point to `/docs`, which the server turns off.
+- A merge no longer loses the incoming note when it does not fit what is left of the call after the existing note: it was cut to that room (to nothing for a note that filled it), the model merged what was left, and the note was logged as merged. Now no model is asked: the incoming body is added to the note as a section headed by its title, and the tags are joined.
 
 ## [0.5.0] - 2026-10-16
 

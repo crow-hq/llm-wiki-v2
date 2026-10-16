@@ -74,7 +74,7 @@ What each one is for:
 - `name_folder`: the name and one-line description of a new folder.
 - `match`: an existing note on the same subject, if any.
 - `consolidate`: `True` to merge into the matched note, `False` to write a new one beside it.
-- `merge`: the rewritten note, given the matched note and the incoming source. The default merges note into note: it reads `ctx.candidate` as the incoming note and cuts it to what is left of `read_chars` after the existing one; without a candidate (a step of yours calling it on its own) it reads the source cut the same way. If the draft is unchanged, or keeps fewer than half of the new codes, numbers and names (`incoming_values`) of the incoming text, it asks once more with `librarian/merge_source`, which reads the source.
+- `merge`: the rewritten note, given the matched note and the incoming source. The default merges note into note: it reads `ctx.candidate` as the incoming note (without a candidate, a step of yours calling it on its own, the source). When that does not fit what is left of `read_chars` after the existing note, no model is asked: the incoming body is added to the note as a section headed by its title, and the tags are joined. If the draft is unchanged, or keeps fewer than half of the new codes, numbers and names (`incoming_values`) of the incoming text, it asks once more with `librarian/merge_source`, which reads the source.
 - `relate`: the notes the new one should link to. The core keeps at most `max_links` of them.
 - `select`: the notes to read for a question.
 - `answer`: the answer text. To be listed in `Answer.citations`, cite a selected note as `[path.md]`.

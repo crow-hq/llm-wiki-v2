@@ -337,7 +337,7 @@ list is in [.env.example](https://github.com/crow-hq/llm-wiki-v2/blob/main/.env.
 | `OKF_UPLOAD_MB` | `25` | largest file or text the server accepts (413 above it) |
 | `OKF_CONCURRENCY` | `4` | documents read and summarized at once by `sync`, the web page and `Wiki.ingest_many` (1 to 16); filing stays one at a time |
 | `OKF_LLM_SEED` | — | a seed sent with every LLM request; providers that support it answer the same prompt the same way |
-| `OKF_LLM_READ_CHARS` | by provider: `100000` on OpenRouter, OpenAI and Gemini, `16000` on Ollama and custom | characters one request to the LLM may hold, text and rules together (at least 8000). A source that does not fit is summarized in parts, and a merge cuts the incoming note to what is left of it after the existing one |
+| `OKF_LLM_READ_CHARS` | by provider: `100000` on OpenRouter, OpenAI and Gemini, `16000` on Ollama and custom | characters one request to the LLM may hold, text and rules together (at least 8000). A source that does not fit is summarized in parts, and an incoming note that does not fit what is left of a merge call after the existing note is added to it as a section, with no model call |
 | `OKF_NOTE_CHARS` | `10000`, and at most half of what one request holds | about how many characters a note body may have (at least 1000): asked of the model, not enforced; a body over 1.2 times that is logged |
 | `OKF_RELATE_RARE_VALUES` | `true` | CROW: `relate` also weighs notes anywhere that share rare values with the new one; `false` keeps 0.3.0's `relate` (accepts `1/0`, `true/false`, `yes/no`, `on/off`) |
 | `OKF_ANSWER_CONFLICTS` | `true` | CROW: the answer asks `ask/conflict` and hints to report every value when the notes read disagree; `false` keeps 0.3.0's answer input (same values as above) |
