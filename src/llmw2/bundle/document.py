@@ -17,6 +17,7 @@ A document without a leading `---` line has no frontmatter and is all body.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -49,6 +50,15 @@ _Loader.yaml_implicit_resolvers = {
 class OKFDocument:
     frontmatter: dict[str, Any] = field(default_factory=dict)
     body: str = ""
+
+    @classmethod
+    def read(cls, path: Path) -> OKFDocument:
+        """The document in a file; OKFDocumentError for one that is not UTF-8 text (an editor saved it as Latin-1)."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as e:
+            raise OKFDocumentError(f"not UTF-8 text (byte {e.start}): save it as UTF-8") from e
+        return cls.parse(text)
 
     @classmethod
     def parse(cls, text: str) -> OKFDocument:

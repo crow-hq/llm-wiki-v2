@@ -154,7 +154,7 @@ def same_document(ctx: StepContext, note: Note, source: Source) -> tuple[str, st
         if why := _same_name(ref, source):
             no(f"a source of the note is another document: {why}")
             return None
-    old = OKFDocument.parse(paths[-1].read_text(encoding="utf-8")).body
+    old = OKFDocument.read(paths[-1]).body
     new_in_old, old_in_new = containment(old, source.text)
     if new_in_old < NEW_IN_OLD or old_in_new < OLD_IN_NEW:
         no(f"the source does not contain the latest copy enough ({new_in_old:.2f}, {old_in_new:.2f})")

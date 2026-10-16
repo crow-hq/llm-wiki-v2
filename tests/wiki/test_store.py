@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from llmw2.bundle import store as store_module
+from llmw2.bundle.check import check
 from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.store import WikiStore, body_hash
 from llmw2.bundle.tree import Folder, Note, graph, join_see_also, parse_index, slugify, split_see_also
@@ -171,6 +172,33 @@ def test_a_written_note_keeps_its_body_hash_when_read_back(store: WikiStore, bod
     again = store.read(note.rel)
 
     assert again.frontmatter["generated"]["body_hash"] == body_hash(again.main_body())
+
+
+def test_a_note_that_is_not_utf8_is_skipped_and_named_not_fatal(store: WikiStore, bundle: Path, caplog: pytest.LogCaptureFixture) -> None:
+    (bundle / "latin1.md").write_bytes("---\ntype: Note\ntitle: Caf\xe9\n---\n\nPrix: 5 \xe9.\n".encode("latin-1"))
+    _put(bundle / "good.md", "---\ntype: Note\n---\n\nBody.\n")
+    (bundle / "index.md").write_bytes(b"# Notes\n\n* [Caf\xe9](good.md) - caf\xe9\n")
+
+    with caplog.at_level(logging.WARNING, logger="llmw2.bundle.store"):
+        root = store.load()
+
+    assert [n.rel for n in root.notes] == ["good.md"]
+    assert "latin1.md" in caplog.text and "UTF-8" in caplog.text
+    assert store.find_origin("any") is None  # the origin index skips it too
+    assert any(p.path == "latin1.md" and "UTF-8" in p.message for p in check(bundle))
+
+
+def test_an_index_and_a_log_saved_as_latin1_keep_their_characters_and_become_utf8(store: WikiStore, bundle: Path) -> None:
+    store.create_folder(store.load(), "cafe", "Caf\u00e9 and bar.")
+    index = bundle / "index.md"
+    index.write_bytes(index.read_text(encoding="utf-8").encode("latin-1"))  # an editor saved them as Latin-1
+    (bundle / "log.md").write_bytes("# Wiki log\n\n## 2026-01-01\n\n* **Note**: Caf\u00e9\n".encode("latin-1"))
+
+    store.create_folder(store.load(), "menu", "What we sell.")  # writes both again
+
+    assert "Caf\u00e9 and bar." in index.read_text(encoding="utf-8")
+    assert "Caf\u00e9" in (bundle / "log.md").read_text(encoding="utf-8")
+    assert store.load().subfolder("cafe").description == "Caf\u00e9 and bar."
 
 
 def test_load_tolerates_an_index_with_malformed_frontmatter(store: WikiStore, bundle: Path) -> None:
