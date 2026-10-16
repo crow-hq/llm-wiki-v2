@@ -18,7 +18,8 @@ On your first pull request a bot asks you to sign by posting one comment:
 
 > I have read the CLA Document and I hereby sign the CLA
 
-It records the signature once; later pull requests pass on their own.
+It records the signature once, in `signatures/cla.json` on the `cla-signatures` branch,
+and later pull requests pass on their own. Each release carries a copy of that file.
 
 ## Development
 
