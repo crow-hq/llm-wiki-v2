@@ -138,6 +138,50 @@ and the share answered through the LLM fallback). The questions are written by a
 Run it from the tree of the arm whose wikis it reads. The repository holds only the prompt: for a corpus that is not
 committed, neither the questions (they quote the documents) nor the texts are, and the results name a question by its id.
 
+## Results of 0.6.0: CROW against CROW 0.5.0 and classic
+
+The PostHog corpus above (120 pages, 30 real folders), filed into an empty wiki in one batch (`--flow batch`), with two
+writing models and Jev as the classifier. Three arms: **classic** (the LLM routes, one level at a time), **CROW 0.5.0** (the
+classifier walks the folders one level at a time) and **CROW 0.6.0** (one Choice among every folder, a plan of the folders
+before each batch window). One run per arm and model.
+
+What the columns measure:
+
+- **AMI**: adjusted mutual information between the folder each page's note ends in and the page's real folder. 0 is no
+  better than chance, 1 is the real tree; it does not reward many small folders.
+- **F1**: pairwise co-location. For every pair of pages, are they in the same folder in the wiki and in the real tree?
+  F1 of those pairs; it falls both when one folder swallows unrelated pages and when related pages are scattered.
+- **Below the first level**: share of notes in a folder at depth 2 or deeper. In the real tree, 30% of the pages sit in a
+  folder that has subfolders.
+- **Folders** (in brackets, those with one note) and **largest folder**: notes in the biggest one.
+- **Cost**: cost per document, as a ratio of classic with the same model (every call at its original cost).
+- **Retrieval**: share of 60 questions, each written blind from one page, for which `select` returns that page's note among
+  the 8 it reads. One question is 1.7 points.
+
+| Model | Arm | AMI | F1 | Below the first level | Folders (one note) | Largest folder | Cost | Retrieval |
+|---|---|---|---|---|---|---|---|---|
+| DeepSeek v4.1 flash | classic | 0.39 | 0.33 | 42% | 40 (19) | 21 | 1 | 97% |
+| | CROW 0.5.0 | 0.43 | 0.32 | 3% | 15 (3) | 35 | 0.52× | 98% |
+| | **CROW 0.6.0** | **0.51** | **0.45** | 53% | 23 (2) | 16 | **0.45×** | 93% |
+| GLM 5.3 flash | classic | 0.41 | 0.30 | 21% | 23 (8) | 42 | 1 | 98% |
+| | CROW 0.5.0 | 0.38 | 0.29 | 0% | 11 (0) | 39 | 0.75× | 98% |
+| | **CROW 0.6.0** | **0.51** | **0.42** | 29% | 17 (0) | 26 | **0.65×** | 97% |
+
+The differences:
+
+- **Against CROW 0.5.0.** Agreement with the real folders is higher with both models (AMI +0.07 and +0.14, F1 +0.13 with
+  both) at 0.86 to 0.87 times the cost. 0.5.0 never opened a second level from an empty wiki (0% to 3% of the notes below
+  the first level, the largest folder holding 35 to 39 notes); 0.6.0 puts 29% to 53% there, around the real tree's 30%.
+- **Against classic.** Classic also builds a deeper tree, but with DeepSeek half of its 40 folders hold one note; 0.6.0
+  agrees more with the real folders (AMI +0.11 to +0.12) at 0.45 to 0.65 times its cost.
+- **Retrieval** is between 93% and 98% for every arm. The lowest, CROW 0.6.0 with DeepSeek, is 3 questions of 60 below
+  0.5.0, within what one run can show; retrieval at this size is near its ceiling and tells the trees apart little.
+
+On four corpora (the coffee corpus, Enron, the GitLab and PostHog handbooks), on an empty and a full wiki, in batches and
+with single documents, CROW 0.6.0 against 0.5.0 is summarised in [docs/wiki/crow.md](../docs/wiki/crow.md#measured-with-the-flat-routing).
+To run the table again: the three arms and the scoring above, with `--gold posthog-corpus/manifest.json` and
+`--baseline` the classic run of the same model.
+
 ## Filing errors judged by readers
 
 The main measure of the comparison on short documents is `filing_error.py`: errors per 150 documents, summed over six

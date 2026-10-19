@@ -20,6 +20,9 @@ classifier decides where things go, so the wiki stays fast and cheap as it grows
 
 ## Start in 2 steps
 
+Rather not use a terminal? [Crow](https://github.com/crow-hq/crow-desktop) is this library as a desktop app, with
+downloads for macOS, Windows and Linux. The steps below install the library itself, with its web page and command line.
+
 **1. Install it** with Python 3.11 or later (in a virtual environment, if your system asks for one):
 
 ```bash
@@ -113,6 +116,10 @@ The filing measures of the CROW routing use, besides the repo's own synthetic co
 corpus, the [Enron email corpus](https://www.cs.cmu.edu/~enron/), the
 [GitLab handbook](https://gitlab.com/gitlab-com/content-sites/handbook) and the
 [PostHog handbook](https://github.com/PostHog/posthog.com): they are linked, not copied.
+On the PostHog handbook, CROW files pages closer to their real folders than `main` (its CROW routing and its classic
+mode) with both models measured, at 0.86 to 0.87 times the cost of main's CROW and 0.45 to 0.65 times that of classic,
+with retrieval between 93% and 98% for all: the table, what each column measures and how to run it again are in
+[benchmarks/README.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/benchmarks/README.md#results-of-060-crow-against-crow-050-and-classic).
 
 **Why AGPL, and why a CLA?** The AGPL keeps the code and every change to it open,
 also when it runs as a service. The CLA keeps the rights clear between the two

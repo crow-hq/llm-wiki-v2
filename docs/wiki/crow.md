@@ -286,3 +286,6 @@ Limits: one run per configuration; retrieval is near its ceiling (93% to 100%), 
 apart little; agreement is measured only where real folders exist. With 500 to 1,000 folders, far
 more than one request holds, the BM25 cut still offers the right folder for 79% to 97% of the
 documents, measured with distractor folders of the same domain added to the final trees.
+
+The three arms side by side (classic, CROW 0.5.0, CROW 0.6.0) on the PostHog handbook, with the metrics explained and
+the command to run them again: [benchmarks/README.md](../../benchmarks/README.md#results-of-060-crow-against-crow-050-and-classic).
