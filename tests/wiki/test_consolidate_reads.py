@@ -6,13 +6,15 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 import pytest
 
-from llmw2 import Wiki, WikiConfig
+from llmw2 import CROW, Wiki, WikiConfig
+from llmw2.agents import steps_crow
 from llmw2.agents.base import Decision
 from llmw2.agents.state import source_state
 from llmw2.errors import ModelError
@@ -38,6 +40,7 @@ def ns(**kw: Any) -> argparse.Namespace:
 
 
 def make_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, steps: Any) -> Wiki:
+    steps = replace(steps or CROW, route=steps_crow._route_by_levels)  # the per-level routing handles "None of these"
     wiki = Wiki(WikiConfig(bundle=bundle, mode="crow"), llm=llm, classifier=classifier, steps=steps)
     wiki.init()
     fruit, _ = wiki.store.create_folder(wiki.store.load(), "fruit", "Fruit and its prices.")

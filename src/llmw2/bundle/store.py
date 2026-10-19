@@ -184,10 +184,10 @@ class WikiStore:
 
     # -- writing --------------------------------------------------------------
 
-    def create_folder(self, parent: Folder, name: str, description: str) -> tuple[Folder, bool]:
+    def create_folder(self, parent: Folder, name: str, description: str, mark: str = "") -> tuple[Folder, bool]:
         """Create `parent/name` and list it in the parent's index; (folder, created).
 
-        A sibling with the same slug is reused instead of duplicated.
+        A sibling with the same slug is reused instead of duplicated. `mark` ends the log line (", by plan").
         """
         name = slugify(name, max_len=40, fallback="topics")
         if parent.is_root and name == RAW:
@@ -200,7 +200,7 @@ class WikiStore:
         parent.subfolders.append(folder)
         self.write_index(folder)
         self.write_index(parent)
-        self.append_log("Created folder", folder.description, f"{rel}/{INDEX}", folder.label)
+        self.append_log("Created folder", folder.description + mark, f"{rel}/{INDEX}", folder.label)
         return folder, True
 
     def write_note(

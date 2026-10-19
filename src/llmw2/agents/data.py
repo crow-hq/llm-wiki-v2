@@ -48,6 +48,25 @@ class Route:
     create: list[tuple[str, str]] = field(default_factory=list)
 
 
+class PlannedFolder(BaseModel):
+    path: str  # "/area" or "/area/subject"
+    description: str
+
+
+class FolderPlan(BaseModel):
+    folders: list[PlannedFolder] = []
+
+
+class SplitFolder(BaseModel):
+    name: str
+    description: str
+    notes: list[int] = []  # the numbers of the notes it takes, as the prompt listed them (from 1)
+
+
+class SplitPlan(BaseModel):
+    folders: list[SplitFolder] = []
+
+
 class NoteDraft(BaseModel):
     title: str
     summary: str

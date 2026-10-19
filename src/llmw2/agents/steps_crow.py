@@ -3,8 +3,9 @@
 
 """The CROW steps: the typed classifier takes the decisions (CROW §5.1 ingest, §5.2 retrieval).
 
-Each falls back to the LLM (the classic step) where the paper prescribes an escape, or when the classifier fails.
-They need `ctx.classifier`: without one they raise `StepError`.
+Routing is one Choice among every folder of the tree; the paper's per-level walk (a Choice per level, with a beam) only
+decides where that Choice has no folder to name. Each step falls back to the LLM (the classic step) where the paper
+prescribes an escape, or when the classifier fails. They need `ctx.classifier`: without one they raise `StepError`.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from llmw2.agents import lexical
 from llmw2.agents import steps_classic as classic
 from llmw2.agents.base import unique_objects
 from llmw2.agents.data import Candidate, Route
@@ -22,7 +24,7 @@ from llmw2.agents.state import source_state
 from llmw2.agents.steps_classic import CONSOLIDATE_SOURCE_MAX, HERE, MODIFY, NEW, NEW_NOTE, NONE, FallbackRoute
 from llmw2.bundle.tree import Folder, Note
 from llmw2.errors import ModelError
-from llmw2.models.classifier import ChoiceAnswer
+from llmw2.models.classifier import MAX_OPTIONS, ChoiceAnswer
 
 if TYPE_CHECKING:
     from llmw2.agents.steps import StepContext
@@ -32,6 +34,8 @@ log = logging.getLogger(__name__)
 FALLBACK_MENU_CHARS = 8000  # most characters of the folder menu the routing fallback shows the LLM
 ROUTE_PROMPT = "classifier/route"  # the routing Choice; with `strict_new_folders` off, 0.3.0's text:
 ROUTE_PROMPT_OPEN = "classifier/route_open"
+ROUTE_DIRECT_PROMPT = "classifier/route_direct"  # the flat routing Choice over every folder
+OPTION_CHARS = 8  # what an option adds to a request besides its name and text (JSON quotes, colon, comma)
 
 
 @dataclass(frozen=True)
@@ -52,8 +56,63 @@ class _Path:
 
 
 def route(ctx: StepContext, root: Folder, cand: Candidate) -> Route:
-    """Step 1: a Choice per level (subfolders, Here, New subfolder, None of these) with a beam."""
+    """Step 1: one Choice among every folder of the tree (full paths) and None of these; the note goes to the top folder.
+
+    The per-level routing (`_route_by_levels`) decides when the tree has no folder, when the Choice ends in "None of
+    these" and when the classifier fails. The Choice is asked once: `votes` apply to the per-level routing only.
+    """
     ctx.need_classifier("route")
+    try:
+        flat = _flat_choice(ctx, root, cand)
+    except ModelError as e:
+        log.warning("classifier failed on the flat route, the per-level routing decides: %s", e)
+        ctx.decide("route_direct", "classifier", "error", fallback=True)
+        return _route_by_levels(ctx, root, cand)
+    if flat is None:  # nothing laid out: the per-level routing may open the first folder
+        return _route_by_levels(ctx, root, cand)
+    if not flat.ranked:  # None of these on top, or no listed folder to name
+        top = max(flat.answer.probabilities.items(), key=lambda kv: kv[1], default=(NONE, None))
+        choice = NONE if flat.none else "error"
+        ctx.decide("route_direct", "classifier", choice, top[1], fallback=not flat.none, scores=flat.answer.probabilities)
+        return _route_by_levels(ctx, root, cand)
+    (best, p), rest = flat.ranked[0], flat.ranked[1:]
+    candidates = best.ancestors()
+    if p < ctx.cfg.crow.tau_route and rest:  # unsure: the second folder's branch joins the pool the match step reads
+        candidates += [f for f in rest[0][0].ancestors() if f not in candidates]
+    ctx.decide("route", "classifier", best.label, p, scores=flat.answer.probabilities)
+    return Route(best, False, candidates)
+
+
+@dataclass(frozen=True)
+class _Flat:
+    answer: ChoiceAnswer
+    ranked: list[tuple[Folder, float]]  # the folders by probability, best first; empty when None of these leads
+    none: bool  # None of these is the top option
+
+
+def _flat_choice(ctx: StepContext, root: Folder, cand: Candidate) -> _Flat | None:
+    """The flat Choice shared by `route` and `audit_route`: every folder but the root, and None of these always offered.
+
+    None for a tree without folders. Raises ModelError when the classifier fails. A level wider than one request is cut
+    by `_fitting` (the folders BM25 ranks first against the note), and None of these stays after them.
+    """
+    folders = [f for f in root.walk() if not f.is_root]
+    if not folders:
+        return None
+    text = ctx.prompts.render_sections(ROUTE_DIRECT_PROMPT)
+    placement = {NONE: text[NONE]}
+    state = routing_state(ctx, cand)
+    options = {f.label: f.description or f.name for f in folders}
+    options = _fitting(ctx, root, state, text["instructions"], options, placement) | placement
+    answer = ctx.need_classifier("route").choice(state, text["instructions"], options, op="route")
+    probs = sorted(((o, p) for o, p in answer.probabilities.items() if o in options), key=lambda kv: kv[1], reverse=True)
+    none = bool(probs) and probs[0][0] == NONE
+    ranked = [] if none else [(f, p) for o, p in probs if o != NONE and (f := root.find(o.strip("/"))) is not None]
+    return _Flat(answer, ranked, none)
+
+
+def _route_by_levels(ctx: StepContext, root: Folder, cand: Candidate) -> Route:
+    """The paper's routing: a Choice per level (subfolders, Here, New subfolder, None of these) with a beam."""
     crow = ctx.cfg.crow
     state = routing_state(ctx, cand)
     try:
@@ -73,7 +132,7 @@ def route(ctx: StepContext, root: Folder, cand: Candidate) -> Route:
 def _decide_paths(ctx: StepContext, root: Folder, state: str) -> tuple[list[_Path], list[Folder]]:
     """The classifier's part of `route`: the finished paths (with the votes' second pass when it applies), the folders visited.
 
-    Raises ModelError when the classifier fails. Shared by `route` and `audit_route`.
+    Raises ModelError when the classifier fails.
     """
     crow = ctx.cfg.crow
     mark = len(ctx.decisions)
@@ -93,22 +152,22 @@ def _decide_paths(ctx: StepContext, root: Folder, state: str) -> tuple[list[_Pat
 
 
 def audit_route(ctx: StepContext, root: Folder, cand: Candidate) -> tuple[Folder, float] | None:
-    """The folder `route` would file `cand` in and the route's confidence, by the classifier alone.
+    """The folder `route` would file `cand` in and the probability the flat Choice gives it, by the classifier alone.
 
-    None where `route` would not settle on a folder by itself: it would ask the LLM (a path score under `tau_path`, no
-    path, a classifier error) or open a new subfolder ("New subfolder", "None of these"). Makes no LLM call.
+    The same Choice as `route` (`_flat_choice`). None where `route` would not settle on a folder from it: a tree with
+    no folder, "None of these" on top, a classifier error. Makes no LLM call and never routes by levels.
     """
     ctx.need_classifier("route")
     try:
-        finished, _ = _decide_paths(ctx, root, routing_state(ctx, cand))
+        flat = _flat_choice(ctx, root, cand)
     except ModelError as e:
         log.warning("classifier failed while auditing a route: %s", e)
         return None
-    best = max(finished, key=lambda p: p.score, default=None)
-    if best is None or best.score < ctx.cfg.crow.tau_path or best.end == NEW:
+    if flat is None or not flat.ranked:
         return None
-    ctx.decide("route", "classifier", f"{best.folders[-1].label} ({best.end})", best.score)
-    return best.folders[-1], best.score
+    best, p = flat.ranked[0]
+    ctx.decide("route", "classifier", best.label, p, scores=flat.answer.probabilities)
+    return best, p
 
 
 def _beam(
@@ -166,13 +225,15 @@ def _expand(
     strict = ctx.cfg.strict_new_folders
     folder = path.folders[-1]
     text = ctx.prompts.render_sections(ROUTE_PROMPT if strict else ROUTE_PROMPT_OPEN, folder=folder.label)
-    options = {f.name: f.description or f.name for f in ctx.children(folder)}
+    placement: dict[str, str] = {}
     if not (folder.is_root and ctx.can_create(folder)):  # the root holds no notes, unless no folder can be made
-        options[HERE] = text[HERE]
+        placement[HERE] = text[HERE]
     if ctx.can_create(folder):
-        options[NEW] = text[NEW]
+        placement[NEW] = text[NEW]
     if not folder.is_root:
-        options[NONE] = text[NONE]
+        placement[NONE] = text[NONE]
+    subfolders = {f.name: f.description or f.name for f in ctx.children(folder)}
+    options = _fitting(ctx, folder, state, text["instructions"], subfolders, placement) | placement
     if len(options) == 1:  # one way only (a new folder in an empty wiki, or Here at max_depth 0): nothing to decide
         return [_Path(path.folders, path.probs, next(iter(options)))]
     classifier = ctx.need_classifier("route")
@@ -204,6 +265,29 @@ def _expand(
             expanded.append(_Path((*path.folders, sub), (*path.probs, p)))
             visited.append(sub)
     return finished
+
+
+def _fitting(
+    ctx: StepContext, folder: Folder, state: str, instructions: str, subfolders: dict[str, str], placement: dict[str, str]
+) -> dict[str, str]:
+    """The subfolders one routing Choice can hold: all of them when they fit (at most MAX_OPTIONS options with the
+    placement ones, and the request within the classifier's `request_chars`); else the ones BM25 ranks first against
+    the note, as many as fit. A level wider than one request is thus decided among its likeliest subfolders."""
+    classifier = ctx.need_classifier("route")
+
+    def chars(opts: dict[str, str]) -> int:
+        return sum(len(k) + len(v) + OPTION_CHARS for k, v in opts.items())
+
+    room = classifier.request_chars - len(state) - len(instructions) - chars(placement)
+    if len(subfolders) + len(placement) <= MAX_OPTIONS and chars(subfolders) <= room:
+        return subfolders
+    kept: dict[str, str] = {}
+    for name in lexical.rank(state, {k: f"{k.replace('-', ' ')} {v}" for k, v in subfolders.items()}):
+        if len(kept) + len(placement) >= MAX_OPTIONS or (kept and chars(kept) + len(name) + len(subfolders[name]) + OPTION_CHARS > room):
+            break
+        kept[name] = subfolders[name]
+    ctx.decide("route_cut", "code", f"{folder.label}: {len(kept)} of {len(subfolders)} subfolders, by BM25")
+    return kept
 
 
 def _without_weak_new(answer: ChoiceAnswer, options: dict[str, str], tau: float) -> tuple[dict[str, float], float]:

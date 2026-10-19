@@ -49,7 +49,7 @@ _RAW_STAMP = re.compile(r"\b\d{8}-\d{6}-")  # raw/<YYYYMMDD-HHMMSS>-<slug>.md
 _LOG_DATE = re.compile(r"^## \d{4}-\d{2}-\d{2}$", re.MULTILINE)
 _MODE = re.compile(r" \((?:classic|crow) [0-9a-f]{8}, [^)]+\)$", re.MULTILINE)  # the ingest log line names the steps and their hash
 _ID = re.compile(r"^id: '?[0-9a-f]{12}'?$", re.MULTILINE)  # a note's random stable id
-_STEPS = re.compile(r"^( *)steps:\n\1  name: \w+\n\1  hash: [0-9a-f]{8}$", re.MULTILINE)  # so does the note's source entry
+_STEPS = re.compile(r"^( *)steps:\n\1  name: \w+\n\1  hash: '?[0-9a-f]{8}'?$", re.MULTILINE)  # so does the note's source entry
 
 
 def normalise(text: str) -> str:
@@ -113,6 +113,7 @@ REVENUE_DRAFT = draft(
 # The same routing decision, taken by each decider.
 CLASSIC_TO_FINANCE = [{"action": "descend", "subfolder": "finance"}, {"action": "here"}]
 CROW_TO_FINANCE: list[ChoiceReply] = [
+    ("None of these", {"None of these": 1.0}, 1.0),  # the flat Choice, asked first in a wiki with folders: the per-level routing follows
     ("finance", {"finance": 0.9, "people": 0.05, "New subfolder": 0.05}, 0.9),  # the root holds no notes: no "Here"
     ("Here", {"Here": 0.9, "New subfolder": 0.05, "None of these": 0.05}, 0.9),
 ]

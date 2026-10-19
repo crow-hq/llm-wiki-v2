@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ import pytest
 from pydantic import ValidationError
 
 from llmw2 import Wiki, WikiConfig
+from llmw2.agents import steps_crow
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.steps import CROW, decision_hash
 from llmw2.config import CrowConfig
@@ -29,6 +31,10 @@ NL = chr(10)
 # -- helpers ----------------------------------------------------------------------
 
 
+# These tests exercise the per-level routing, which handles "None of these": the flat Choice is left out.
+LEVELS = replace(CROW, name="levels", route=steps_crow._route_by_levels)
+
+
 def tag(rel: str) -> str:
     return "D:" + rel.replace("/", "_").replace("-", "_")
 
@@ -43,7 +49,7 @@ def run(bundle: Path, fallback_menu: str | None, extra: int = 0, pad: int = 0) -
     llm, classifier = FakeLLM(tracker), FakeClassifier(tracker)
     crow = CrowConfig(beam=1) if fallback_menu is None else CrowConfig(beam=1, fallback_menu=fallback_menu)  # type: ignore[arg-type]
     # these tests pin 0.3.0's routing arithmetic (a weak route that falls back): strict_new_folders off
-    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", crow=crow, strict_new_folders=False), llm=llm, classifier=classifier)
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", crow=crow, strict_new_folders=False), llm=llm, classifier=classifier, steps=LEVELS)
     wiki.init()
     root = wiki.store.load()
     alpha, _ = wiki.store.create_folder(root, "alpha", f"{tag('alpha')} things.")

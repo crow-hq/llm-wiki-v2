@@ -16,7 +16,7 @@ from llmw2.agents.prompts import Prompts
 from llmw2.agents.steps import decision_hash
 from llmw2.config import ClassifierConfig
 from tests.wiki.fakes import FakeClassifier, FakeLLM
-from tests.wiki.test_rare_value_links import CODE, HERE, SUMMARIZE, draft, relate_questions, seed
+from tests.wiki.test_rare_value_links import CODE, HERE, LEVELS, SUMMARIZE, draft, relate_questions, seed
 from tests.wiki.test_researcher_crow import ANSWER, add_note
 from tests.wiki.test_researcher_crow import answer_prompt as crow_answer_prompt
 
@@ -76,7 +76,7 @@ def test_a_switch_set_in_the_base_settings_is_read(tmp_path: Path) -> None:
 
 
 def crow_ingest(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, **switches: bool) -> Any:
-    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", **switches), llm=llm, classifier=classifier)
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", **switches), llm=llm, classifier=classifier, steps=LEVELS)
     wiki.init()
     seed(wiki)
     llm.add(SUMMARIZE, draft("Q3 revenue", f"# Overview\n\nInvoice {CODE} paid."))
@@ -119,7 +119,7 @@ def test_answer_conflicts_false_does_not_change_the_rare_candidates(bundle: Path
 
 def two_note_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, **switches: bool) -> Wiki:
     """Overview at the root and Revenue policy in /finance: retrieval reads both, the conflict check says 0.9."""
-    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", **switches), llm=llm, classifier=classifier)
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", **switches), llm=llm, classifier=classifier, steps=LEVELS)
     wiki.init()
     root = wiki.store.load()
     add_note(wiki, root, "Overview", "We sell widgets.")

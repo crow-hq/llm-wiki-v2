@@ -14,7 +14,7 @@ import pytest
 from llmw2 import Wiki, WikiConfig, cli
 from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.tree import LOG, Note
-from llmw2.errors import ConfigError, InputError
+from llmw2.errors import ConfigError, InputError, ModelError
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 HERE, NEW, NONE = "Here", "New subfolder", "None of these"
@@ -238,9 +238,9 @@ def filed(crow_wiki: Wiki) -> Wiki:
     return crow_wiki
 
 
-def route_to_beta(classifier: FakeClassifier, root: float = 0.9, here: float = 0.9) -> None:
-    classifier.add_choice("route", "beta", {"beta": root, "alpha": 1 - root}, 0.9)
-    classifier.add_choice("route", HERE, {HERE: here, NEW: (1 - here) / 2, NONE: (1 - here) / 2}, 0.9)
+def route_to_beta(classifier: FakeClassifier, p: float = 0.9) -> None:
+    """The flat Choice of the audit: /beta with probability `p`."""
+    classifier.add_choice("route", "/beta", {"/beta": p, "/alpha": 1 - p}, 0.9)
 
 
 def test_a_note_routed_to_another_folder_above_min_confidence_gets_a_proposal(
@@ -265,20 +265,20 @@ def test_the_audit_makes_no_llm_call_and_changes_nothing(filed: Wiki, llm: FakeL
     filed.audit_routes()
 
     assert llm.calls == []
-    assert classifier.ops == ["route", "route"]
+    assert classifier.ops == ["route"]  # one flat Choice per note
     assert (filed.cfg.bundle / "alpha" / "misfiled.md").read_text(encoding="utf-8") == before
     assert (filed.cfg.bundle / LOG).read_text(encoding="utf-8") == log
 
 
 def test_a_route_below_min_confidence_gives_no_proposal(filed: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
-    route_to_beta(classifier, root=0.75, here=0.48)  # score 0.6: above tau_path (no fallback), below AUDIT_MIN
+    route_to_beta(classifier, p=0.6)  # below AUDIT_MIN
 
     assert filed.audit_routes() == []
     assert llm.calls == []
 
 
 def test_min_confidence_is_a_parameter(filed: Wiki, classifier: FakeClassifier) -> None:
-    route_to_beta(classifier, root=0.75, here=0.48)  # score 0.6
+    route_to_beta(classifier, p=0.6)
 
     proposals = filed.audit_routes(min_confidence=0.55)
 
@@ -287,39 +287,42 @@ def test_min_confidence_is_a_parameter(filed: Wiki, classifier: FakeClassifier) 
 
 
 def test_the_default_min_confidence_is_0_7(filed: Wiki, classifier: FakeClassifier) -> None:
-    route_to_beta(classifier, root=0.75, here=0.75)  # 0.75 passes, 0.6 (above) does not
+    route_to_beta(classifier, p=0.75)  # 0.75 passes the default
 
     assert len(filed.audit_routes()) == 1
 
 
 def test_a_route_to_the_notes_own_folder_gives_no_proposal(filed: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
-    classifier.add_choice("route", "alpha", {"alpha": 0.95, "beta": 0.05}, 0.95)
-    classifier.add_choice("route", HERE, {HERE: 0.95, NEW: 0.025, NONE: 0.025}, 0.95)
+    classifier.add_choice("route", "/alpha", {"/alpha": 0.95, "/beta": 0.05}, 0.95)
 
     assert filed.audit_routes() == []
     assert llm.calls == []
 
 
-def test_a_route_that_would_fall_back_gives_no_proposal_and_no_llm_call(filed: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
-    # path score ~0.42, below tau_path: ingest would ask the LLM (an unsure root explores both folders)
-    classifier.add_choice("route", "beta", {"beta": 0.45, "alpha": 0.4, NEW: 0.15}, 0.0)
-    classifier.add_choice("route", HERE, {HERE: 0.4, NEW: 0.3, NONE: 0.3}, 0.0)
-    classifier.add_choice("route", HERE, {HERE: 0.4, NEW: 0.3, NONE: 0.3}, 0.0)
+def test_a_classifier_error_gives_no_proposal_and_no_llm_call(filed: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
+    # the audit never asks the LLM, nor routes by levels, where ingest would: the note gets no proposal
+    def down(*args: Any, **kwargs: Any) -> Any:
+        raise ModelError("classifier unreachable")
+
+    classifier.ask = down  # type: ignore[method-assign]
 
     assert filed.audit_routes(min_confidence=0.0) == []
     assert llm.calls == []
 
 
-def test_a_route_ending_in_new_subfolder_gives_no_proposal(filed: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
-    classifier.add_choice("route", NEW, {NEW: 0.95, "alpha": 0.03, "beta": 0.02}, 0.95)
+def test_a_route_to_an_ancestor_of_the_notes_folder_gives_no_proposal(filed: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
+    # the flat Choice has no "New subfolder": the other move the audit never proposes is up, out of a subfolder a plan or a split made
+    add_folder(filed, "/alpha", "sub", "Sub things.")
+    add_note(filed, "/alpha/sub", "Deep note")
+    classifier.add_choice("route", "/alpha", {"/alpha": 0.95, "/beta": 0.05}, 0.95)  # Misfiled: its own folder
+    classifier.add_choice("route", "/alpha", {"/alpha": 0.95, "/beta": 0.05}, 0.95)  # Deep note: the parent of its folder
 
     assert filed.audit_routes(min_confidence=0.0) == []
     assert llm.calls == []
 
 
 def test_a_route_ending_in_none_of_these_gives_no_proposal(filed: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
-    classifier.add_choice("route", "beta", {"beta": 0.95, "alpha": 0.05}, 0.95)
-    classifier.add_choice("route", NONE, {NONE: 0.95, HERE: 0.03, NEW: 0.02}, 0.95)
+    classifier.add_choice("route", NONE, {NONE: 0.95, "/beta": 0.05}, 0.95)
 
     assert filed.audit_routes(min_confidence=0.0) == []
     assert llm.calls == []
@@ -335,12 +338,11 @@ def test_a_wiki_without_notes_has_nothing_to_audit(crow_wiki: Wiki, llm: FakeLLM
 def test_the_archive_is_not_audited(filed: Wiki, classifier: FakeClassifier) -> None:
     note = filed.store.load().find("/alpha").note("misfiled")  # type: ignore[union-attr]
     filed.store.archive_note(note)  # type: ignore[arg-type]
-    classifier.add_choice("route", "alpha", {"alpha": 0.95, "beta": 0.05}, 0.95)
-    classifier.add_choice("route", HERE, {HERE: 0.95, NEW: 0.025, NONE: 0.025}, 0.95)
+    classifier.add_choice("route", "/alpha", {"/alpha": 0.95, "/beta": 0.05}, 0.95)
 
     filed.audit_routes()
 
-    assert classifier.ops == ["route", "route"]  # the one note of the tree, not its archived copy
+    assert classifier.ops == ["route"]  # the one note of the tree, not its archived copy
 
 
 def test_apply_moves_the_note_and_the_wiki_stays_clean(filed: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
@@ -355,7 +357,7 @@ def test_apply_moves_the_note_and_the_wiki_stays_clean(filed: Wiki, llm: FakeLLM
     assert filed.check() == []
     assert "Moved" in (filed.cfg.bundle / LOG).read_text(encoding="utf-8")
     assert llm.calls == []
-    assert "classifier 2 calls" in filed.usage.summary()
+    assert "classifier 1 calls" in filed.usage.summary()
 
 
 def test_without_apply_nothing_moves(filed: Wiki, classifier: FakeClassifier) -> None:
@@ -368,7 +370,7 @@ def test_without_apply_nothing_moves(filed: Wiki, classifier: FakeClassifier) ->
 
 
 def test_apply_moves_only_the_proposals(filed: Wiki, classifier: FakeClassifier) -> None:
-    route_to_beta(classifier, root=0.75, here=0.48)  # score 0.6
+    route_to_beta(classifier, p=0.6)
 
     assert filed.audit_routes(apply=True) == []
     assert (filed.cfg.bundle / "alpha" / "misfiled.md").is_file()
@@ -418,7 +420,7 @@ def test_cli_audit_min_confidence_and_apply(
     filed: Wiki, classifier: FakeClassifier, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     cli_with(monkeypatch, filed)
-    route_to_beta(classifier, root=0.75, here=0.48)  # score 0.6
+    route_to_beta(classifier, p=0.6)
 
     code = cli.main(["--bundle", str(filed.cfg.bundle), "audit", "--min-confidence", "0.5", "--apply"])
 
@@ -467,7 +469,7 @@ def test_http_audit_with_min_confidence_and_apply(filed: Wiki, classifier: FakeC
 
     from llmw2.server import create_app
 
-    route_to_beta(classifier, root=0.75, here=0.48)  # score 0.6
+    route_to_beta(classifier, p=0.6)
 
     response = TestClient(create_app(filed)).post("/audit", json={"min_confidence": 0.5, "apply": True})
 
@@ -495,6 +497,7 @@ def test_the_log_line_of_a_note_routed_by_fallback_says_so(crow_wiki: Wiki, llm:
     add_folder(crow_wiki, "/", "alpha", "Alpha things.")
     llm.add(SUMMARIZE, {"title": "Q3 revenue", "summary": "S.", "tags": [], "body": "Facts."})
     llm.add(ROUTE_FALLBACK, {"action": "select", "folder": "/alpha"})
+    classifier.add_choice("route", NONE, {NONE: 1.0}, 1.0)  # the flat Choice: none covers it, so the per-level routing follows
     classifier.add_choice("route", "alpha", {"alpha": 0.45, NEW: 0.35}, 0.3)
     classifier.add_choice("route", HERE, {HERE: 0.4, NEW: 0.3, NONE: 0.3}, 0.9)
 
@@ -506,6 +509,7 @@ def test_the_log_line_of_a_note_routed_by_fallback_says_so(crow_wiki: Wiki, llm:
 def test_the_log_line_of_a_note_routed_by_the_classifier_does_not(crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
     add_folder(crow_wiki, "/", "alpha", "Alpha things.")
     llm.add(SUMMARIZE, {"title": "Q3 revenue", "summary": "S.", "tags": [], "body": "Facts."})
+    classifier.add_choice("route", NONE, {NONE: 1.0}, 1.0)  # the flat Choice: none covers it, so the per-level routing follows
     classifier.add_choice("route", "alpha", {"alpha": 0.9, NEW: 0.1}, 0.9)
     classifier.add_choice("route", HERE, {HERE: 0.9, NEW: 0.05, NONE: 0.05}, 0.9)
 
@@ -686,6 +690,7 @@ def test_health_follows_a_real_ingest(crow_wiki: Wiki, llm: FakeLLM, classifier:
     add_folder(crow_wiki, "/", "alpha", "Alpha things.")
     llm.add(SUMMARIZE, {"title": "Q3 revenue", "summary": "S.", "tags": [], "body": "Facts."})
     llm.add(ROUTE_FALLBACK, {"action": "select", "folder": "/alpha"})
+    classifier.add_choice("route", NONE, {NONE: 1.0}, 1.0)  # the flat Choice: none covers it, so the per-level routing follows
     classifier.add_choice("route", "alpha", {"alpha": 0.45, NEW: 0.35}, 0.3)
     classifier.add_choice("route", HERE, {HERE: 0.4, NEW: 0.3, NONE: 0.3}, 0.9)
     crow_wiki.ingest("Revenue grew.")

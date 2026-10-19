@@ -6,14 +6,17 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from llmw2 import Wiki, WikiConfig
+from llmw2.agents import steps_crow
 from llmw2.agents.base import Decision
 from llmw2.agents.librarian import IngestResult
+from llmw2.agents.steps import CROW
 from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.tree import Note
 from llmw2.errors import ModelError
@@ -26,6 +29,10 @@ ROUTE_FALLBACK, ROUTE = "librarian/route_fallback", "librarian/route"
 
 
 # -- helpers ----------------------------------------------------------------------
+
+
+# These tests exercise the per-level routing, which handles "None of these": the flat Choice is left out.
+LEVELS = replace(CROW, name="levels", route=steps_crow._route_by_levels)
 
 
 def draft(title: str, body: str = "# Overview\n\nThe facts.") -> dict[str, Any]:
@@ -41,7 +48,7 @@ def crow_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> Wiki:
 
 def make_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, **cfg: Any) -> Wiki:
     cfg = {"strict_new_folders": False, **cfg}  # these tests pin 0.3.0's routing arithmetic (beam, scores, fallback)
-    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", **cfg), llm=llm, classifier=classifier)
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", **cfg), llm=llm, classifier=classifier, steps=LEVELS)
     wiki.init()
     return wiki
 

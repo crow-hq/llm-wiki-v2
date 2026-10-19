@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ import pytest
 from pydantic import ValidationError
 
 from llmw2 import Wiki, WikiConfig
+from llmw2.agents import steps_crow
 from llmw2.agents.base import Decision
 from llmw2.agents.librarian import IngestResult
 from llmw2.agents.prompts import Prompts
@@ -35,11 +37,15 @@ ROOT_NEAR = {"alpha": 0.75, "beta": 0.15, NEW: 0.1}  # confidence 0.625, within 
 # -- helpers ----------------------------------------------------------------------
 
 
+# These tests exercise the per-level routing, which handles "None of these": the flat Choice is left out.
+LEVELS = replace(CROW, name="levels", route=steps_crow._route_by_levels)
+
+
 def make_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, **crow: Any) -> Wiki:
     """/alpha and /beta; beam 1 unless said otherwise."""
     # these tests pin 0.3.0's routing arithmetic (votes, averages): strict_new_folders off
     cfg = WikiConfig(bundle=bundle, mode="crow", crow=CrowConfig(**{"beam": 1, **crow}), strict_new_folders=False)
-    wiki = Wiki(cfg, llm=llm, classifier=classifier)
+    wiki = Wiki(cfg, llm=llm, classifier=classifier, steps=LEVELS)
     wiki.init()
     root = wiki.store.load()
     wiki.store.create_folder(root, "alpha", "Alpha things.")

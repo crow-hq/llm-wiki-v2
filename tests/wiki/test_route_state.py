@@ -13,6 +13,7 @@ import pytest
 
 from llmw2 import CROW, Candidate, Source, StepContext, StepError, Steps, Wiki, WikiConfig
 from llmw2.agents import steps_classic as classic
+from llmw2.agents import steps_crow as crow
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.state import source_state
 from llmw2.agents.steps import check_summarize, decision_hash
@@ -292,6 +293,7 @@ LLM_REPLY = {"title": "LLMTITLE", "summary": "LLMSUMMARY", "tags": [], "body": "
 
 
 def make_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, steps: Steps = CROW, **cfg: Any) -> Wiki:
+    steps = replace(steps, route=crow._route_by_levels)  # the per-level routing, which handles "None of these": the flat Choice is left out
     wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", **cfg), llm=llm, classifier=classifier, steps=steps)
     wiki.init()
     root = wiki.store.load()

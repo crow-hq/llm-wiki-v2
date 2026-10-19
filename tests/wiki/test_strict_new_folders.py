@@ -6,12 +6,14 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from llmw2 import Wiki, WikiConfig
+from llmw2.agents import steps_crow
 from llmw2.agents.base import Decision
 from llmw2.agents.librarian import IngestResult
 from llmw2.agents.prompts import Prompts
@@ -29,9 +31,13 @@ FALSE_VALUES = ["0", "false", "False", "no", "NO", "off", "Off"]
 # -- helpers ----------------------------------------------------------------------
 
 
+# These tests exercise the per-level routing, which handles "None of these": the flat Choice is left out.
+LEVELS = replace(CROW, name="levels", route=steps_crow._route_by_levels)
+
+
 def make_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, *folders: str, **cfg: Any) -> Wiki:
     """A CROW wiki (beam 2, tau_route 0.6, tau_path 0.5 by default) with the given root folders."""
-    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", **cfg), llm=llm, classifier=classifier)
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", **cfg), llm=llm, classifier=classifier, steps=LEVELS)
     wiki.init()
     for name in folders:
         wiki.store.create_folder(wiki.store.load(), name, f"{name.title()} things.")

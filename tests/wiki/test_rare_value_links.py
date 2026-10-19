@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from llmw2 import Wiki, WikiConfig
+from llmw2 import CROW, Wiki, WikiConfig
+from llmw2.agents import steps_crow
 from llmw2.agents.linking import RARE_TOP, note_values, rare_scores
 from llmw2.agents.steps_classic import incoming_values
 from llmw2.bundle.tree import Folder, Note
@@ -245,8 +247,12 @@ def relate_questions(classifier: FakeClassifier) -> list[str]:
     return [q["instructions"] for op, _, qs in classifier.calls if op == "relate" for q in qs.values()]
 
 
+# These tests exercise the per-level routing, which handles "None of these": the flat Choice is left out.
+LEVELS = replace(CROW, name="levels", route=steps_crow._route_by_levels)
+
+
 def crow_ingest(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, body: str) -> Any:
-    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow"), llm=llm, classifier=classifier)
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow"), llm=llm, classifier=classifier, steps=LEVELS)
     wiki.init()
     seed(wiki)
     llm.add(SUMMARIZE, draft("Q3 revenue", body))

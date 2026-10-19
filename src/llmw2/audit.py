@@ -19,6 +19,11 @@ AUDIT_MIN = 0.7  # least route confidence for the audit to propose moving a note
 HEALTH_MIN_FILED = 5  # fewest notes filed in a folder and month for the health to flag it
 HEALTH_MAX_SHARE = 0.3  # largest (new subfolders + fallbacks) / filed before the health flags it
 FALLBACK_MARK = ", routed by fallback"  # what the librarian's log line ends with when the LLM fallback chose the folder
+PLAN_MARK = ", by plan"  # what the "Created folder" line of a folder made by `Wiki.plan` on an empty wiki ends with
+PLAN_MORE_MARK = ", by plan_more"  # the same, for a folder `Wiki.plan` added to a wiki that had folders
+SPLIT_MARK = ", by split"  # the same, for a subfolder opened by the split of a full folder
+LAID_OUT_MARKS = (PLAN_MARK, PLAN_MORE_MARK, SPLIT_MARK)  # folders nobody's filing opened: they are not "new subfolders"
+SPLIT_VERB = "Split"  # the log verb of a split attempt: "* **Split**: [/sales](sales/index.md) - at 12 notes, 2 opened: …"
 
 _DAY = re.compile(r"^## (\d{4}-\d{2})-\d{2}$")
 _ENTRY = re.compile(r"^\* \*\*(Created folder|Created|Merged|Revised)\*\*: \[.*?\]\(([^)\s]+)\)(.*)$")
@@ -47,7 +52,7 @@ class FolderHealth:
     folder: str  # label, "/" or "/finance"
     month: str  # "2026-10"
     filed: int  # Created, Merged and Revised lines of notes in the folder
-    new_subfolders: int  # "Created folder" lines under the folder
+    new_subfolders: int  # "Created folder" lines under the folder, but those of folders laid out by a plan or a split
     fallbacks: int  # of the filed lines, those routed by the LLM fallback
     share: float  # (new_subfolders + fallbacks) / filed; 0.0 when nothing was filed
     flag: bool  # filed >= min_filed and share > max_share
@@ -56,12 +61,18 @@ class FolderHealth:
         return asdict(self)
 
 
+def last_split_at(log: str, folder_rel: str) -> int:
+    """The most notes the folder held when a split was last tried on it, by the "Split" lines of a `log.md` text (0 if none)."""
+    line = re.compile(rf"^\* \*\*{SPLIT_VERB}\*\*: \[[^\]]*\]\({re.escape(folder_rel)}/index\.md\) - at (\d+) notes", re.MULTILINE)
+    return max((int(m[1]) for m in line.finditer(log)), default=0)
+
+
 def taxonomy_health(log: str, min_filed: int = HEALTH_MIN_FILED, max_share: float = HEALTH_MAX_SHARE) -> list[FolderHealth]:
     """The health rows of a `log.md` text, newest month first, then by folder.
 
     A line counts for the folder of the note it links (a "Created folder" line, for the parent of the folder it links)
     and for the month of the `## YYYY-MM-DD` heading above it. Lines of other verbs, including the demo's lowercase
-    "created", are ignored.
+    "created" and the "Split" attempts, are ignored; so are the folders a plan or a split laid out (not "new subfolders").
     """
     counts: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0, 0])  # filed, new_subfolders, fallbacks
     month = ""
@@ -75,7 +86,7 @@ def taxonomy_health(log: str, min_filed: int = HEALTH_MIN_FILED, max_share: floa
         parent = link.rpartition("/")[0]  # the folder of a note; for "a/b/index.md" the folder a/b, whose parent is a
         if verb == "Created folder":
             parent = parent.rpartition("/")[0]
-            counts[f"/{parent}", month][1] += 1
+            counts[f"/{parent}", month][1] += not any(mark in rest for mark in LAID_OUT_MARKS)
         else:
             row = counts[f"/{parent}", month]
             row[0] += 1

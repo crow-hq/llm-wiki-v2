@@ -10,14 +10,15 @@ import logging
 import re
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
-from llmw2 import NoteDraft, Origin, Source, StepContext, Wiki, WikiConfig
-from llmw2.agents import revisions
+from llmw2 import CROW, NoteDraft, Origin, Source, StepContext, Wiki, WikiConfig
+from llmw2.agents import revisions, steps_crow
 from llmw2.agents.data import Candidate
 from llmw2.agents.prompts import Prompts
 from llmw2.bundle.document import OKFDocument
@@ -99,9 +100,14 @@ def raising(state: str) -> float:
     raise ModelError("the classifier is down")
 
 
+# These tests exercise the per-level routing, which handles "None of these": the flat Choice is left out.
+LEVELS = replace(CROW, name="levels", route=steps_crow._route_by_levels)
+
+
 def make_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier | None = None, **cfg: Any) -> Wiki:
     mode = "crow" if classifier is not None else "classic"
-    wiki = Wiki(WikiConfig(bundle=bundle, mode=mode, revisions=cfg.pop("revisions", "replace"), **cfg), llm=llm, classifier=classifier)
+    config = WikiConfig(bundle=bundle, mode=mode, revisions=cfg.pop("revisions", "replace"), **cfg)
+    wiki = Wiki(config, llm=llm, classifier=classifier, steps=LEVELS if classifier else None)
     wiki.init()
     return wiki
 

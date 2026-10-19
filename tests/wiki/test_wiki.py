@@ -62,12 +62,14 @@ def ingest_crow(wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> list[In
     first = wiki.ingest("Revenue is booked on delivery.")
 
     llm.add("librarian/summarize", draft("Pricing tiers", "The three price tiers."))
+    classifier.add_choice("route", "None of these", {"None of these": 1.0}, 1.0)  # the flat Choice: the per-level routing follows
     classifier.add_choice("route", "finance", {"finance": 0.9, "New subfolder": 0.1}, 0.9)
     classifier.add_choice("route", "Here", {"Here": 0.8, "None of these": 0.2}, 0.8)
     classifier.noul_scores.update(match={"Revenue recognition": 0.1}, relate={"Revenue recognition": 0.9})
     second = wiki.ingest("Basic, Pro and Enterprise.")
 
     llm.add("librarian/summarize", draft("Revenue update", "Subscriptions are booked monthly."))
+    classifier.add_choice("route", "None of these", {"None of these": 1.0}, 1.0)  # the flat Choice: the per-level routing follows
     classifier.add_choice("route", "finance", {"finance": 0.9, "New subfolder": 0.1}, 0.9)
     classifier.add_choice("route", "Here", {"Here": 0.8, "None of these": 0.2}, 0.8)
     classifier.noul_scores.update(match={"Revenue recognition": 0.9}, relate={})
@@ -113,10 +115,11 @@ def test_each_result_counts_only_its_own_calls(crow_wiki: Wiki, llm: FakeLLM, cl
     llm.add("researcher/answer", "Three tiers.")
     answer = crow_wiki.ask("What are the price tiers?")
 
-    # (llm calls, classifier calls): summarize+name_folder | none (an empty wiki: one way); summarize | route x2, match, relate;
-    # summarize+merge | route x2, match, consolidate, relate; answer | retrieve_folder, retrieve_note.
+    # (llm calls, classifier calls): summarize+name_folder | none (an empty wiki: one way);
+    # summarize | route x3 (the flat Choice, then two levels), match, relate;
+    # summarize+merge | route x3, match, consolidate, relate; answer | retrieve_folder, retrieve_note.
     per_op = [(r.usage.llm.calls, r.usage.classifier.calls) for r in [*results, answer]]
-    assert per_op == [(2, 0), (1, 4), (2, 5), (1, 2)]
+    assert per_op == [(2, 0), (1, 5), (2, 6), (1, 2)]
     assert answer.usage.llm.input_tokens == 100 and answer.usage.classifier.input_tokens == 100
 
 
@@ -127,9 +130,9 @@ def test_wiki_usage_accumulates_across_operations(crow_wiki: Wiki, llm: FakeLLM,
     total = crow_wiki.usage
 
     assert (before.llm.calls, before.classifier.calls) == (0, 0)  # a snapshot, not a live view
-    assert (total.llm.calls, total.classifier.calls) == (len(llm.calls), len(classifier.calls)) == (5, 9)
+    assert (total.llm.calls, total.classifier.calls) == (len(llm.calls), len(classifier.calls)) == (5, 11)
     assert total.by_model["llm:fake/llm"].total_tokens == 5 * 110
-    assert total.by_model["classifier:fake/jev"].input_tokens == 9 * 50
+    assert total.by_model["classifier:fake/jev"].input_tokens == 11 * 50
 
 
 # -- construction ------------------------------------------------------------------

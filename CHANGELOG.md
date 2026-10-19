@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `Wiki.ingest_many` (and so `sync`) reads spreadsheets first, on worker threads, and reports one item per sheet (`"plan, Budget.csv"`); sync counts are per sheet. A workbook has no record under its own origin key (`Wiki.origin` returns None for it), so a sync that lists it fetches it again; sheets whose text is unchanged cost no model call.
+- CROW routing on a level with more subfolders than one classifier request holds (255 options for Jev, the `request_chars` of a classifier with a smaller context) offers the ones a BM25 ranking against the note puts first, as many as fit, instead of failing over to the LLM. A level that fits is asked as before. With Jev on a level of 500 and 1,000 folders the right folder is among those offered for 51 and 49 of 51 documents, and the folder taken is right for 38 and 37, as with about 250 folders all offered at once; asking every folder in groups and a final costs two to four times as much for the same result.
 - CI runs the tests in parallel (`pytest -n auto`, with `pytest-xdist` among the dev dependencies): the Windows jobs had taken the CI from about 3 to about 8.5 minutes.
 
 ### Fixed

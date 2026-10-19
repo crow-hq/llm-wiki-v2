@@ -5,22 +5,29 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from llmw2 import Wiki, WikiConfig
+from llmw2.agents import steps_crow
+from llmw2.agents.steps import CROW
 from llmw2.config import CrowConfig
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 FOLDERS = ("alpha", "beta", "gamma")
 
 
+# These tests exercise the per-level routing, which handles "None of these": the flat Choice is left out.
+LEVELS = replace(CROW, name="levels", route=steps_crow._route_by_levels)
+
+
 @pytest.fixture
 def wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> Wiki:
     """/alpha, /beta, /gamma with one note each; beam 1 at ingestion, 3 at retrieval."""
     crow = CrowConfig(beam=1, retrieval_beam=3, tau_fold=0.1, tau_ret=0.1)
-    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", crow=crow), llm=llm, classifier=classifier)
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", crow=crow), llm=llm, classifier=classifier, steps=LEVELS)
     wiki.init()
     root = wiki.store.load()
     for name in FOLDERS:
