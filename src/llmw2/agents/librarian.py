@@ -132,12 +132,10 @@ class Librarian:
                 action: Literal["created", "merged"] = "merged"
             else:
                 folder = route.folder
-                if route.create:
-                    for name, description in route.create:
-                        folder, is_new = self.store.create_folder(folder, name, description)
-                        created += [folder.label] if is_new else []
-                elif route.new and ctx.can_create(folder):
-                    name, description = check_name_folder(steps.name_folder(ctx, folder, cand))
+                levels = route.create
+                if not levels and route.new and ctx.can_create(folder):
+                    levels = check_name_folder(steps.name_folder(ctx, folder, cand), folder, self.cfg)
+                for name, description in levels:  # an existing level is reused, the note goes in the last
                     folder, is_new = self.store.create_folder(folder, name, description)
                     created += [folder.label] if is_new else []
                 raw, ref = self.save_source(source, cand)

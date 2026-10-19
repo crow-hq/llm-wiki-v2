@@ -200,9 +200,9 @@ changes or the wiki grows.
   attempt is written in `log.md` as a "Split" line (`at 12 notes, 2 opened: ...`) also when it opens nothing or fails,
   and a new `Wiki` on the same bundle reads it, so it does not try again at that multiple, only at the next. A folder
   that is renamed or moved, or a deleted `log.md`, gets one more attempt. A failed split never fails the ingest.
-- **Folders are created lazily.** A `New subfolder` route creates the folder,
-  named by the LLM with `librarian/name_folder`, only when a new note is written
-  into it. If step 3 merges instead, no folder is created, so a merge never
+- **Folders are created lazily.** A `New subfolder` route creates the folders
+  (up to 3 nested levels), named by the LLM with `librarian/name_folder`, only when a new note is written
+  into the last. If step 3 merges instead, no folder is created, so a merge never
   leaves an empty folder.
 - **A classifier outage never fails an ingest or a question** (the LLM must
   still be reachable). Any `ModelError` (HTTP failure after `OKF_CLASSIFIER_ATTEMPTS` tries, default 1, or a

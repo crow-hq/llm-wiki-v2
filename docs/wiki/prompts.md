@@ -35,7 +35,7 @@ passage). `notes` lists notes as `- path: Title — summary`, and
 | `librarian/plan` | `Wiki.plan`, on an empty wiki: before a batch window is filed | `documents` (`- title: opening`), `top`, `depth`; embeds `shared/folder_rules` | JSON `folders`: `path`, `description`, parents before subfolders |
 | `librarian/plan_more` | `Wiki.plan`, on a wiki that has folders: the new folders a batch window needs | `tree` (`- path: description; n notes`), `documents`, `depth` | JSON `folders`, as `librarian/plan`; only new ones |
 | `librarian/split` | `Wiki._split`, after a document filed alone that fills its folder | `notes` (`n. title: summary`), `folder`, `description`, `subfolders` | JSON `folders`: `name`, `description`, `notes` (numbers) |
-| `librarian/name_folder` | `steps_classic.name_folder` | `parent`, `parent_description`, `siblings`, `note`; embeds `shared/folder_rules` | JSON `name`, `description` |
+| `librarian/name_folder` | `steps_classic.name_folder` | `parent`, `parent_description`, `siblings`, `note`, `levels` (at most 3, within `max_depth`); embeds `shared/folder_rules` | JSON `folders`: `name`, `description`, the broadest first |
 | `librarian/find_match` | `steps_classic.match` | `note`, `notes` | JSON `reasoning`, `match` (path or null) |
 | `librarian/merge_source` | `steps_classic.merge`, once, when its draft fails the guard (unchanged, or fewer than half of the new values kept) | `title`, `summary`, `tags`, `body` (the existing note), `source_text`; embeds `shared/note_rules` | JSON `title`, `summary`, `tags`, `body` |
 | `librarian/consolidate` | `steps_classic.consolidate` | `note`, `existing` | JSON `reasoning`, `decision` (`modify`/`new`) |

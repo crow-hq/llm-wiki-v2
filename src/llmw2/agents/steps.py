@@ -145,7 +145,8 @@ class StepContext:
 ExtractStep = Callable[[StepContext, bytes, str], str]
 SummarizeStep = Callable[[StepContext, Source], Candidate]
 RouteStep = Callable[[StepContext, Folder, Candidate], Route]
-NameFolderStep = Callable[[StepContext, Folder, Candidate], tuple[str, str]]  # (name, description)
+# (name, description) per level to open, the broadest first; a lone (name, description) is one level
+NameFolderStep = Callable[[StepContext, Folder, Candidate], list[tuple[str, str]] | tuple[str, str]]
 MatchStep = Callable[[StepContext, list[Note], Candidate], Note | None]
 ConsolidateStep = Callable[[StepContext, Note, Candidate], bool]  # True = modify / merge
 MergeStep = Callable[[StepContext, Note, Source], NoteDraft]
@@ -298,12 +299,20 @@ def check_route(route: object, root: Folder, cfg: WikiConfig) -> Route:
     return route
 
 
-def check_name_folder(out: object) -> tuple[str, str]:
-    if not (isinstance(out, tuple) and len(out) == 2 and all(isinstance(x, str) for x in out)):
-        raise StepError("name_folder", "must return a (name, description) tuple of two str")
-    if not slugify(out[0], max_len=40, fallback=""):
-        raise StepError("name_folder", "the name is empty")
-    return out[0], out[1]
+def check_name_folder(out: object, parent: Folder, cfg: WikiConfig) -> list[tuple[str, str]]:
+    """The levels to open below `parent`, the broadest first; a lone (name, description) tuple is one level."""
+    levels = [out] if isinstance(out, tuple) else out
+    if not (
+        isinstance(levels, list)
+        and levels
+        and all(isinstance(c, tuple) and len(c) == 2 and all(isinstance(x, str) for x in c) for c in levels)
+    ):
+        raise StepError("name_folder", "must return a (name, description) tuple of two str, or a non-empty list of them")
+    if any(not slugify(name, max_len=40, fallback="") for name, _ in levels):
+        raise StepError("name_folder", "a name is empty")
+    if parent.depth + len(levels) > cfg.max_depth:
+        raise StepError("name_folder", f"the levels go beyond max_depth ({cfg.max_depth})")
+    return levels
 
 
 def check_match(match: object, pool: list[Note]) -> Note | None:

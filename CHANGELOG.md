@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A new folder is opened as a path of up to 3 nested folders, the broadest first, not as one folder: `name_folder` asks the LLM for the broad area, the subject and the kind of document (`customers/acme-bakery/legal-documents`), so a document filed in an empty wiki no longer opens a top-level folder named for its own subject. A level with the name of an existing folder is reused. The step returns a list of `(name, description)`; a lone `(name, description)`, and a reply naming one folder, still count as one level.
+
 ## [0.6.0] - 2026-10-19
 
 ### Changed

@@ -61,7 +61,7 @@ output raises `StepError` naming the step.
 | `extract` | `(ctx, data: bytes, filename: str) -> str` | a `str` |
 | `summarize` | `(ctx, source: Source) -> Candidate` | a `Candidate`; non-empty title; `tags` a list of `str`; `fields` a dict that YAML can write |
 | `route` | `(ctx, root: Folder, cand: Candidate) -> Route` | a `Route` whose `folder` and `candidates` are folders of this tree; `create` valid (see [Route.create](#routecreate)) |
-| `name_folder` | `(ctx, parent: Folder, cand: Candidate) -> tuple[str, str]` | `(name, description)`, two `str`, the name not empty |
+| `name_folder` | `(ctx, parent: Folder, cand: Candidate) -> list[tuple[str, str]]` | one `(name, description)` per level, two `str`, no name empty, at least one level and `parent.depth` plus the levels within `max_depth`; a lone `(name, description)` is one level |
 | `match` | `(ctx, pool: list[Note], cand: Candidate) -> Note \| None` | `None` or one of the notes of `pool`, the object itself |
 | `consolidate` | `(ctx, note: Note, cand: Candidate) -> bool` | a `bool` |
 | `merge` | `(ctx, note: Note, source: Source) -> NoteDraft` | a `NoteDraft`, checked like a `Candidate` |
@@ -74,7 +74,7 @@ What each one is for:
 - `extract`: the text of a file. The default reads text, Markdown, PDF, and Word, PowerPoint and OpenDocument text as Markdown (`bundle/formats.py`): a slide is `## Title (slide N)`, so the summary slide of a long deck can count as its own summary; tables of contents and slide numbers are left out, fill-in lines become `___`. Spreadsheets do not reach it: each sheet is a source of its own, a line naming it, a `Caption:` line for the title rows above its header, and its rows as CSV (`bundle/sheets.py`); `summarize`, `merge` and revisions read its first rows only (`sheets.brief`), and the researcher adds the rows a question needs to the sheet's note.
 - `summarize`: the note an ingest would write. The default asks the LLM once, or, for a source longer than `read_chars` less 6000 characters, takes notes on each block of it and writes the note from them (a call that fails fails the step, and the calls already made are lost). With `summarize=False` in the config it keeps the source as it is.
 - `route`: where the note goes, and which folders to look in for a note to merge with. The default for CROW is one classifier Choice among every folder of the tree (and `None of these`); only an empty tree, `None of these` or a classifier error go on to the per-level routing, which may open a folder. The classic default walks the tree one level at a time.
-- `name_folder`: the name and one-line description of a new folder.
+- `name_folder`: the new folders to open below the route's folder, the broadest first, each a name and a one-line description; the note goes in the last. The default asks the LLM for up to 3 nested levels (the broad area, the subject, the kind of document), so the root gets broad areas; a level with the name of an existing folder is reused.
 - `match`: an existing note on the same subject, if any.
 - `consolidate`: `True` to merge into the matched note, `False` to write a new one beside it.
 - `merge`: the rewritten note, given the matched note and the incoming source. The default merges note into note: it reads `ctx.candidate` as the incoming note and cuts it to what is left of `read_chars` after the existing one; without a candidate (a step of yours calling it on its own) it reads the source cut the same way. If the draft is unchanged, or keeps fewer than half of the new codes, numbers and names (`incoming_values`) of the incoming text, it asks once more with `librarian/merge_source`, which reads the source.
@@ -233,8 +233,8 @@ A later `select` can read it back as `note.frontmatter["fields"]`.
 
 ### Route.create
 
-A route normally names a folder, and `new=True` asks `name_folder` for a new
-subfolder of it. CROW's `route` with the Choice among every folder always returns
+A route normally names a folder, and `new=True` asks `name_folder` for the new
+folders below it. CROW's `route` with the Choice among every folder always returns
 `create` empty and `new` False: only its per-level routing, when it decides, opens a folder. When your step already knows the whole path, say it in
 `create`: one `(name, description)` per level below `route.folder`.
 

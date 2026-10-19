@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator
+from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
 from llmw2.agents.base import clean_tags, list_folders, list_notes
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
@@ -36,6 +36,7 @@ MIN_PART = 500  # the least a part's notes may take, in characters, for a long s
 PART_REPLY_FACTOR = 1.3  # a part's reply may take this many times the characters kept of it (`cap`)
 CONSOLIDATE_SOURCE_MAX = 2  # a source longer than this many times `effective_note_chars` is long: read as a state, merged from the text
 DECIDE_CHARS = 2_000  # about how long a decision is: a short JSON with a reasoning line (it sets the output cap)
+NEW_FOLDER_LEVELS = 3  # most nested folders one `name_folder` call opens below its parent (and never below max_depth)
 _SENTENCE_END = re.compile(r"\n|[.!?](?=\s)")
 LOST_MAX = 0.1  # a merge may drop at most this share of the existing note's values before it is asked again
 LOST_LISTED = 80  # most lost values named in that second request
@@ -79,6 +80,16 @@ class FallbackRoute(BaseModel):
 class FolderName(BaseModel):
     name: str
     description: str
+
+
+class FolderPath(BaseModel):
+    folders: list[FolderName] = Field(min_length=1)  # the broadest first, each inside the one before it
+
+    @model_validator(mode="before")
+    @classmethod
+    def _one_folder(cls, value: Any) -> Any:
+        """A reply naming a single folder, `{"name": …, "description": …}`, is a path of one level."""
+        return {"folders": [value]} if isinstance(value, dict) and "folders" not in value and "name" in value else value
 
 
 class Match(BaseModel):
@@ -259,17 +270,21 @@ def route(ctx: StepContext, root: Folder, cand: Candidate) -> Route:
         return Route(folder, new, folder.ancestors())
 
 
-def name_folder(ctx: StepContext, parent: Folder, cand: Candidate) -> tuple[str, str]:
+def name_folder(ctx: StepContext, parent: Folder, cand: Candidate) -> list[tuple[str, str]]:
+    """The nested folders to open below `parent` for the note, broadest first: a broad area, then the subject, then the
+    kind of document, so the root gets areas, not one folder per subject. At most NEW_FOLDER_LEVELS, within max_depth."""
+    levels = min(NEW_FOLDER_LEVELS, ctx.cfg.max_depth - parent.depth)
     out = ctx.ask_json(
         "librarian/name_folder",
-        FolderName,
+        FolderPath,
         parent=parent.label,
         parent_description=parent.description or "(root of the wiki)",
         siblings=list_folders(parent.subfolders),
         note=ctx.state(cand),
+        levels=levels,
         reply_chars=DECIDE_CHARS,
     )
-    return out.name, out.description
+    return [(f.name, f.description) for f in out.folders[:levels]]
 
 
 def match(ctx: StepContext, pool: list[Note], cand: Candidate) -> Note | None:
