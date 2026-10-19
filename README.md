@@ -79,9 +79,11 @@ being rediscovered at every question.
 CROW keeps it that way as the wiki grows. In [Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
 the model finds pages by reading an index, which works at moderate scale (about a
 hundred sources); beyond that the gist suggests adding search, hybrid lexical and
-vector. In CROW a small classifier walks the folders instead, for filing and for
-answering, so the wiki can grow without vectors and stay something a person can
-read. In the [paper](https://doi.org/10.5281/zenodo.22898752), retrieval kept its
+vector. In CROW a small classifier works with the folders instead: filing picks the
+folder among every folder of the wiki in one choice, and answering walks the folders
+level by level, so the wiki can grow without vectors and stay something a person can
+read. The LLM lays out the folders: in a batch, before its documents are filed, and
+for a document filed alone, by splitting a folder that has grown. In the [paper](https://doi.org/10.5281/zenodo.22898752), retrieval kept its
 accuracy across a twentyfold growth of the wiki. A separate test on a private wiki
 of about 500 notes pointed the same way: with CROW the right note was found nearly
 as often at the end as early on, while with the LLM taking the decisions it was
@@ -107,6 +109,10 @@ personal documents, mostly in Italian, with one LLM and one classifier version, 
 says so among its limitations; its rates carry 95% intervals. The corpora and
 scripts behind the 0.4.0 measurements are public in [benchmarks/](https://github.com/crow-hq/llm-wiki-v2/tree/main/benchmarks),
 and every script has a `--dry-run`, so you can run them with your own models.
+The filing measures of the CROW routing use, besides the repo's own synthetic coffee
+corpus, the [Enron email corpus](https://www.cs.cmu.edu/~enron/), the
+[GitLab handbook](https://gitlab.com/gitlab-com/content-sites/handbook) and the
+[PostHog handbook](https://github.com/PostHog/posthog.com): they are linked, not copied.
 
 **Why AGPL, and why a CLA?** The AGPL keeps the code and every change to it open,
 also when it runs as a service. The CLA keeps the rights clear between the two
@@ -160,7 +166,7 @@ curl -X POST localhost:8000/ask -H 'content-type: application/json' \
 The wiki is plain Markdown files you can read, edit and keep in git (`./wiki`
 with Docker). With Docker the CLI runs in the same image: `docker compose run --rm wiki llmwiki2 check`.
 To file a note elsewhere or reword a folder's description from the terminal: `llmwiki2 move finance/pricing.md /sourcing` and `llmwiki2 describe /finance "Money in and out."`.
-In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes the classifier would file in another folder today (no LLM call; it moves them only with `--apply`), and `llmwiki2 health [--min-filed 5] [--max-share 0.3]` shows, from `log.md`, the folders that keep needing new subfolders or the LLM fallback. Every new note carries a stable `id` in its frontmatter (`wiki.find_note(id)`).
+In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes the classifier would file in another branch today (it asks the same single choice among every folder, and proposes only a move to another branch, never deeper into the note's own folder and never up; no LLM call; it moves them only with `--apply`; `--min-confidence` is compared with that choice's top probability, a scale that has not been recalibrated), and `llmwiki2 health [--min-filed 5] [--max-share 0.3]` shows, from `log.md`, the folders that keep needing new subfolders or the LLM fallback (folders laid out by a plan or a split are not counted as new subfolders). Every new note carries a stable `id` in its frontmatter (`wiki.find_note(id)`).
 
 | Endpoint | What it does |
 |---|---|
@@ -171,7 +177,7 @@ In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes 
 | `GET /tree` · `GET /note?path=…` | folder tree · one note (frontmatter and Markdown body) |
 | `GET /check` · `GET /graph` | lint problems · the wiki as nodes and links (JSON) |
 | `POST /note/move` `{path, folder}` · `POST /folder/describe` `{path, description}` | move a note to another folder, links following (returns the note as `GET /note`) · change a folder's description |
-| `POST /audit` `{min_confidence?, apply?}` · `GET /taxonomy` | CROW: notes the classifier would file in another folder (moved if `apply`) · per folder and month, new subfolders and fallbacks (from the log) |
+| `POST /audit` `{min_confidence?, apply?}` · `GET /taxonomy` | CROW: notes the classifier would file in another branch (moved if `apply`) · per folder and month, new subfolders and fallbacks (from the log; folders laid out by a plan or a split not counted) |
 | `DELETE /note?path=…` · `DELETE /folder?path=/…` · `DELETE /wiki` | delete a note · a folder with all it holds · everything; links to them go, and raw copies no remaining note cites |
 | `GET /usage` · `GET /health` | token totals per ledger and model · status |
 | `GET /settings` · `POST /settings` · `POST /settings/test` | provider, model and key (masked) · save them · try them; changes from this machine only |
@@ -244,13 +250,14 @@ and runnable programs, some with no key, in [examples/](https://github.com/crow-
 
 ```
 ingest:  summarize → route → find match → merge or (new folder →) write → relate → link, index, log
+         (CROW: before a batch window of 50, a plan of its folders; after a single document, a split of a folder that grew)
 ask:     select notes (navigate the tree) → answer from them, with [path.md] citations
 ```
 
 | Step | Classic mode (`OKF_MODE=classic`) | CROW mode (`OKF_MODE=crow`) |
 |---|---|---|
 | Summarize the source into a note | LLM | LLM (optional, `OKF_SUMMARIZE=false` files it verbatim) |
-| Route: best folder, or a new one | LLM, one level at a time | classifier Choice per level, beam search, LLM fallback |
+| Route: best folder, or a new one | LLM, one level at a time | one classifier Choice among every folder; per-level Choice and beam for an empty wiki or `None of these`; LLM fallback |
 | Same subject as an existing note? | LLM | classifier Noul per note |
 | Merge into it, or write a new note? | LLM | classifier Choice, unsure → new note |
 | Name a new folder · rewrite a merged note | LLM | LLM |

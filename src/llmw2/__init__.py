@@ -10,7 +10,7 @@ LLM only writes text.
 
 from __future__ import annotations
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.steps import CLASSIC, CROW, StepContext, Steps
