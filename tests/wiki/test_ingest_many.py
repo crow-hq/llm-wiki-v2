@@ -301,8 +301,10 @@ def test_ingest_many_never_prepares_more_than_k_at_once_and_does_reach_k(bundle:
 
 def test_ingest_many_without_a_count_takes_it_from_the_config_and_an_explicit_one_wins(tmp_path: Path) -> None:
     default = Probe(pause=0.03)
+    default.want = 3
     wiki = make_wiki(tmp_path / "a", concurrency=3, steps=default.steps)
     explicit = Probe(pause=0.03)
+    explicit.want = 2
     other = make_wiki(tmp_path / "b", concurrency=3, steps=explicit.steps)
 
     wiki.ingest_many([item(n) for n in range(9)])
@@ -317,6 +319,7 @@ def test_ingest_many_without_a_count_takes_it_from_the_config_and_an_explicit_on
 
 def test_ingest_many_runs_the_serial_steps_one_at_a_time_in_order(bundle: Path) -> None:
     probe = Probe(pause=0.02)
+    probe.want = 2  # each summarize waits until another is in flight: the workers do overlap
     wiki = make_wiki(bundle, concurrency=4, steps=probe.steps, jitter=0.01)
     items = [item(n, ["red-1", "red-2", "blue-1"][n % 3]) for n in range(15)]  # merges, new notes and new folders
 
@@ -324,7 +327,7 @@ def test_ingest_many_runs_the_serial_steps_one_at_a_time_in_order(bundle: Path) 
 
     assert len(filed(report)) == 15
     assert probe.serial_max == 1
-    assert probe.prep_max > 1  # the pause makes the workers overlap
+    assert probe.prep_max > 1  # `want` makes two workers overlap
     assert probe.filed == [f"About {['red-1', 'red-2', 'blue-1'][n % 3]}" for n in range(15)]  # in filename order
 
 

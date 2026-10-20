@@ -319,6 +319,7 @@ def test_sync_files_the_rest_of_a_page_around_an_unusable_reply_and_the_next_run
 
 def test_sync_takes_concurrency_from_its_argument_over_the_config(par: Wiki) -> None:
     probe = Probe(pause=0.03)
+    probe.want = 2
     par.steps = probe.steps
     ids = [f"d{n}" for n in range(8)]
 
@@ -649,6 +650,7 @@ def test_cli_sync_concurrency_sets_how_many_documents_are_prepared_at_once(
     bundle: Path, topics: Path, monkeypatch: pytest.MonkeyPatch, pllm: ContentLLM, capsys: pytest.CaptureFixture[str]
 ) -> None:
     probe = Probe(pause=0.03)
+    probe.want = 2
     use(monkeypatch, bundle, probe, pllm, concurrency=4)
 
     assert cli.main(["--bundle", str(bundle), "sync", str(topics), "--concurrency", "2"]) == 0
@@ -661,6 +663,7 @@ def test_cli_sync_without_concurrency_uses_the_config(
     bundle: Path, topics: Path, monkeypatch: pytest.MonkeyPatch, pllm: ContentLLM
 ) -> None:
     probe = Probe(pause=0.03)
+    probe.want = 3
     use(monkeypatch, bundle, probe, pllm, concurrency=3)
 
     assert cli.main(["--bundle", str(bundle), "sync", str(topics)]) == 0
