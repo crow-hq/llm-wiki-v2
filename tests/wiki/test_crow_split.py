@@ -192,6 +192,20 @@ def test_split_logs_one_split_line_and_marks_the_created_folders_by_split(sales:
     assert len(created) == 2 and all(line.endswith(", by split") for line in created)
 
 
+def test_a_log_saved_as_latin_1_is_read_for_the_split_check(sales: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
+    # ARRANGE: an editor saved log.md as Latin-1 ("é" is one byte, not UTF-8)
+    seed(sales, 11)
+    (sales.cfg.bundle / LOG).write_bytes("# Wiki log\n\n## 2026-10-01\n* **Note**: Café\n".encode("latin-1"))
+    llm.add(SPLIT, groups(("renewals", [1, 2]), ("partners", [3, 4])))
+
+    # ACT
+    file_note(sales, llm, classifier, 12)
+
+    # ASSERT
+    assert splits(llm) == 1
+    assert "Café" in (sales.cfg.bundle / LOG).read_text(encoding="utf-8")
+
+
 def test_split_attempt_with_nothing_opened_is_logged_with_zero(sales: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
     # ARRANGE
     seed(sales, 11)

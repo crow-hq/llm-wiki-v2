@@ -59,7 +59,7 @@ from llmw2.batch import BatchReport, Item
 from llmw2.bundle.check import Problem, check
 from llmw2.bundle.files import is_spreadsheet, sheet_sources, title_of
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
-from llmw2.bundle.store import Deleted, WikiStore
+from llmw2.bundle.store import Deleted, WikiStore, read_utf8_or_latin1
 from llmw2.bundle.tree import LOG, Folder, Note, slugify
 from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import ConfigError, InputError, ReplyInvalid
@@ -574,7 +574,7 @@ class Wiki:
             return
         path = self.store.root / LOG
         multiple = len(folder.notes) // SPLIT_AT
-        if multiple <= last_split_at(path.read_text(encoding="utf-8") if path.exists() else "", folder.rel) // SPLIT_AT:
+        if multiple <= last_split_at(read_utf8_or_latin1(path) if path.exists() else "", folder.rel) // SPLIT_AT:
             return
         opened: list[str] = []
         try:
