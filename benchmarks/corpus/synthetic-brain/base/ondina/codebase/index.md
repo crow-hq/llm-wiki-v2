@@ -1,0 +1,7 @@
+# Notes
+
+* [Meeting Memory — ONDA streaming port + VAD presets (branch feat/onda-stream, 2026-09-29)](meeting-memory-onda-streaming-port-vad-presets-branch-feat.md) - Streaming port Meeting Memory (2026-09-20 — feat/ondina-core-streaming: VAD threshold tuning — Port ONDA baseline DER 8.2%, integrate streaming ring-buffer for 4 real-time factor,…
+* [ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architecture, how to run)](ondina-core-audio-transcription-engine-on-webvtt-with-ondina.md) - Streaming speech-to-text engine, builds Ondina transcription pipeline with overlap-aware speaker diarization across real-time audio processing Pico speaker classifier tunes…
+* [Ondina Desktop 0.2.1: global hotkey, dark theme, crash-log viewer, Reset to defaults → ondina-core (2026-10-16)](ondina-desktop-0-2-1-global-hotkey-dark-theme-crash-log.md) - Four features shipped in this minor release:
+* [Ondina Desktop app for ondina-core (ondina-oss/ondina-app): architecture and decisions (2026-10-15)](ondina-desktop-app-for-ondina-core-ondina-oss-ondina-app.md) - Draft 2026-10-15. Electron/Node.js wrapper over ondina-core with streaming audio capture, real-time waveform, and speaker attribution UI.
+* [Ondina: live waveform view with canvas rendering (replaces the static PNG, 2026-10-16)](ondina-live-waveform-view-with-canvas-rendering-replaces-the.md) - Canvas rendering backend for live audio waveform visualization (ondina-core/canvas, flutterglcanvas) 2026-10-16 (WebGL 2.0 GPU-accelerated).

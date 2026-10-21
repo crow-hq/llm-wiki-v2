@@ -1,0 +1,3389 @@
+{
+ "notes": {
+  "planning/verifica diretta.md": {
+   "folder": "planning",
+   "title": "verifica diretta",
+   "links": [],
+   "wiki": "planning/verifica-diretta.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — 2026-10-05 (giorno 29).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — 2026-10-05 (giorno 29)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-2026-10-05-giorno-29.md"
+  },
+  "tallyo/backend/llm-workers/Receipt OCR retry layer on Tallyo (branch feat-ocr-retry-queue).md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Receipt OCR retry layer on Tallyo (branch feat/ocr-retry-queue)",
+   "links": [
+    "ondina/codebase/Meeting Memory — ONDA streaming port + VAD presets (branch feat-onda-stream, 202.md",
+    "ondina/codebase/ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architectu.md",
+    "tallyo/backend/llm-workers/Receipt OCR inside process-entry- orchestrator + OCR-merchant tools (branch feat.md"
+   ],
+   "wiki": "tallyo/backend/llm-workers/receipt-ocr-retry-layer-on-tallyo-branch-feat-ocr-retry.md"
+  },
+  "quadrante/client-projects/R&M Archivista — flusso estrazione completo, provato sui documenti reali (14-9-2.md": {
+   "folder": "quadrante/client-projects",
+   "title": "R&M Archivista — flusso estrazione completo, provato sui documenti reali (14/9/2026)",
+   "links": [
+    "quadrante/client-projects/R&M · Archivista documenti amministrativi — specifiche concordate (7-9-2026).md"
+   ],
+   "wiki": "quadrante/client-projects/r-m-archivista-flusso-estrazione-completo-provato-sui.md"
+  },
+  "tallyo/app-ui/Istruzione per Tallyo — Ricerca esercenti nelle spese.md": {
+   "folder": "tallyo/app-ui",
+   "title": "Istruzione per Tallyo — Ricerca esercenti nelle spese",
+   "links": [],
+   "wiki": "tallyo/app-ui/istruzione-per-tallyo-ricerca-esercenti-nelle-spese.md"
+  },
+  "tallyo/backend/mcp-server/MCP OAuth fix - deploato e verificato live (01-09).md": {
+   "folder": "tallyo/backend/mcp-server",
+   "title": "MCP OAuth fix - deploato e verificato live (01-09)",
+   "links": [],
+   "wiki": "tallyo/backend/mcp-server/mcp-oauth-fix-deploato-e-verificato-live-01-09.md"
+  },
+  "tallyo/app-ui/Riassunto Tassonomia Tallyo.md": {
+   "folder": "tallyo/app-ui",
+   "title": "Riassunto Tassonomia Tallyo",
+   "links": [],
+   "wiki": "tallyo/app-ui/riassunto-tassonomia-tallyo.md"
+  },
+  "tallyo/app-ui/Struttura del Tallyo — Indice e Tassonomia.md": {
+   "folder": "tallyo/app-ui",
+   "title": "Struttura del Tallyo — Indice e Tassonomia",
+   "links": [
+    "fitosfera/hub/Fitosfera - Hub Progetto.md",
+    "tallyo/Tallyo - Project Overview & Roadmap.md"
+   ],
+   "wiki": "tallyo/app-ui/struttura-del-tallyo-indice-e-tassonomia.md"
+  },
+  "quadrante/client-projects/Quadrante — Progetto Ruotaviva (analisi 28.08.2026).md": {
+   "folder": "quadrante/client-projects",
+   "title": "Quadrante — Progetto Ruotaviva (analisi 28.08.2026)",
+   "links": [
+    "fitosfera/hub/Fitosfera - Hub Progetto.md",
+    "quadrante/client-projects/Confronto AI & Innovazione — cliente di arredamento (Gloria Tessaro) — 27 ago 20.md"
+   ],
+   "wiki": "quadrante/client-projects/quadrante-progetto-ruotaviva-analisi-28-08-2026-2.md"
+  },
+  "merlino/training-logs/Ginnastica mentale 2026-08-20 — sessione serale (registro giorno 1).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale 2026-08-20 — sessione serale (registro giorno 1)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-2026-08-20-sessione-serale-registro.md"
+  },
+  "merlino/training-logs/Ginnastica mentale 2026-08-22 (giorno 3).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale 2026-08-22 (giorno 3)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-2026-08-22-giorno-3.md"
+  },
+  "merlino/training-logs/Ginnastica mentale 2026-09-12 (g22) — numeri + Blu-Verde.md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale 2026-09-12 (g22) — numeri + Blu-Verde",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-2026-09-12-g22-numeri-blu-verde.md"
+  },
+  "merlino/training-logs/Ginnastica mentale 2026-10-02 — sessione serale (giorno 26).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale 2026-10-02 — sessione serale (giorno 26)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-2026-10-02-sessione-serale-giorno-26.md"
+  },
+  "merlino/training-logs/Mind gym — 2 set 2026 (g13)- 8 coppie EN + A tiny, sneaky riddle.md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym — 2 set 2026 (g13): 8 coppie EN + A tiny, sneaky riddle",
+   "links": [
+    "merlino/training-logs/Mind gym 2026-09-03 (giorno 14) — memoria mattina.md"
+   ],
+   "wiki": "merlino/training-logs/mind-gym-2-set-2026-g13-8-coppie-en-a-tiny-sneaky-riddle.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — 2026-08-24 (giorno 5).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — 2026-08-24 (giorno 5)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-2026-08-24-giorno-5.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — 2026-10-03 (giorno 27).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — 2026-10-03 (giorno 27)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-2026-10-03-giorno-27.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — 2026-10-04 (giorno 28, sera).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — 2026-10-04 (giorno 28, sera)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-2026-10-04-giorno-28-sera.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — 21 ago 2026 (giorno 2).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — 21 ago 2026 (giorno 2)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-21-ago-2026-giorno-2.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — 21 ago 2026 (serale, giorno 2).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — 21 ago 2026 (serale, giorno 2)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-21-ago-2026-serale-giorno-2.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — 25 ago 2026 (giorno 6).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — 25 ago 2026 (giorno 6)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-25-ago-2026-giorno-6.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — 28 ago 2026 (giorno 9).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — 28 ago 2026 (giorno 9)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-28-ago-2026-giorno-9.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — 31 ago 2026 (g11)- mini-tabella + Loop in Loop 5.md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — 31 ago 2026 (g11): mini-tabella + Loop in Loop 5",
+   "links": [
+    "merlino/training-logs/Ginnastica mentale — tracking 2026-08-29 (giorno 10, sera).md",
+    "merlino/training-logs/Ginnastica mentale — tracking 2026-08-31 (giorno 11, sera).md",
+    "merlino/training-logs/Mind gym — 2 set 2026 (g13)- 8 coppie EN + A tiny, sneaky riddle.md"
+   ],
+   "wiki": "merlino/training-logs/ginnastica-mentale-31-ago-2026-g11-mini-tabella-loop-in-loop.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — giornata 8 (27-08)- serale.md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — giornata 8 (27-08)- serale",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-giornata-8-27-08-serale.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — giorno 17 (2026-09-06).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — giorno 17 (2026-09-06)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-giorno-17-2026-09-06.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — giorno 9 (28-08)- sessione serale.md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — giorno 9 (28-08)- sessione serale",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-giorno-9-28-08-sessione-serale.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — sera 05-09 (giorno 16).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — sera 05-09 (giorno 16)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-sera-05-09-giorno-16.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — sera 2026-08-23 (giorno 4).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — sera 2026-08-23 (giorno 4)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-sera-2026-08-23-giorno-4.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — sera giorno 3 (2026-08-22).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — sera giorno 3 (2026-08-22)",
+   "links": [],
+   "wiki": "merlino/training-logs/ginnastica-mentale-sera-giorno-3-2026-08-22.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — tracking 2026-08-29 (giorno 10, sera).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — tracking 2026-08-29 (giorno 10, sera)",
+   "links": [
+    "merlino/training-logs/Ginnastica mentale — 31 ago 2026 (g11)- mini-tabella + Loop in Loop 5.md"
+   ],
+   "wiki": "merlino/training-logs/ginnastica-mentale-tracking-2026-08-29-giorno-10-sera.md"
+  },
+  "merlino/training-logs/Ginnastica mentale — tracking 2026-08-31 (giorno 11, sera).md": {
+   "folder": "merlino/training-logs",
+   "title": "Ginnastica mentale — tracking 2026-08-31 (giorno 11, sera)",
+   "links": [
+    "merlino/training-logs/Ginnastica mentale — 31 ago 2026 (g11)- mini-tabella + Loop in Loop 5.md",
+    "merlino/training-logs/Mind gym — 2 set 2026 (g13)- 8 coppie EN + A tiny, sneaky riddle.md"
+   ],
+   "wiki": "merlino/training-logs/ginnastica-mentale-tracking-2026-08-31-giorno-11-sera.md"
+  },
+  "merlino/training-logs/Mind gym 2026-09-03 (giorno 14) — memoria mattina.md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym 2026-09-03 (giorno 14) — memoria mattina",
+   "links": [
+    "merlino/training-logs/Mind gym 2026-09-04 (giorno 15) — memoria mattina.md"
+   ],
+   "wiki": "merlino/training-logs/mind-gym-2026-09-03-giorno-14-memoria-mattina.md"
+  },
+  "merlino/training-logs/Mind gym 2026-09-04 (giorno 15) — memoria mattina.md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym 2026-09-04 (giorno 15) — memoria mattina",
+   "links": [
+    "merlino/training-logs/Mind gym 2026-09-03 (giorno 14) — memoria mattina.md"
+   ],
+   "wiki": "merlino/training-logs/mind-gym-2026-09-04-giorno-15-memoria-mattina.md"
+  },
+  "merlino/training-logs/Mind gym 2026-09-09 (giorno 19).md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym 2026-09-09 (giorno 19)",
+   "links": [],
+   "wiki": "merlino/training-logs/mind-gym-2026-09-09-giorno-19.md"
+  },
+  "merlino/training-logs/Mind gym 2026-09-09 evening (day 19) — delivered.md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym 2026-09-09 evening (day 19) — delivered",
+   "links": [],
+   "wiki": "merlino/training-logs/mind-gym-2026-09-09-evening-day-19-delivered.md"
+  },
+  "merlino/training-logs/Mind gym 2026-09-10 (day 20) — delivered.md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym 2026-09-10 (day 20) — delivered",
+   "links": [],
+   "wiki": "merlino/training-logs/mind-gym-2026-09-10-day-20-delivered.md"
+  },
+  "merlino/training-logs/Mind gym day 18 — 2026-09-07.md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym day 18 — 2026-09-07",
+   "links": [],
+   "wiki": "merlino/training-logs/mind-gym-day-18-2026-09-07.md"
+  },
+  "merlino/training-logs/Mind gym day 5 — sera 2026-08-24.md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym day 5 — sera 2026-08-24",
+   "links": [],
+   "wiki": "merlino/training-logs/mind-gym-day-5-sera-2026-08-24.md"
+  },
+  "merlino/training-logs/Mind gym — 2026-08-23 (day 4).md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym — 2026-08-23 (day 4)",
+   "links": [],
+   "wiki": "merlino/training-logs/mind-gym-2026-08-23-day-4.md"
+  },
+  "merlino/training-logs/Mind gym — day 20 (Sep 10) evening.md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym — day 20 (Sep 10) evening",
+   "links": [],
+   "wiki": "merlino/training-logs/mind-gym-day-20-sep-10-evening.md"
+  },
+  "merlino/training-logs/Mind gym — day 21 (Sep 11) evening.md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym — day 21 (Sep 11) evening",
+   "links": [],
+   "wiki": "merlino/training-logs/mind-gym-day-21-sep-11-evening.md"
+  },
+  "merlino/training-logs/Mind gym — day 21 (Sep 11) morning.md": {
+   "folder": "merlino/training-logs",
+   "title": "Mind gym — day 21 (Sep 11) morning",
+   "links": [],
+   "wiki": "merlino/training-logs/mind-gym-day-21-sep-11-morning.md"
+  },
+  "personal/food/shopping-lists/Lista della spesa.md": {
+   "folder": "personal/food/shopping-lists",
+   "title": "Lista della spesa",
+   "links": [],
+   "wiki": "personal/food/shopping-lists/lista-della-spesa-2.md"
+  },
+  "merlino/training-logs/Routine ginnastica mentale e logica (2×-giorno).md": {
+   "folder": "merlino/training-logs",
+   "title": "Routine ginnastica mentale e logica (2×-giorno)",
+   "links": [],
+   "wiki": "merlino/training-logs/routine-ginnastica-mentale-e-logica-2-giorno.md"
+  },
+  "tallyo/releases/Tallyo- receipt-scanner crop, two Android bugs fixed.md": {
+   "folder": "tallyo/releases",
+   "title": "Tallyo: receipt-scanner crop, two Android bugs fixed",
+   "links": [],
+   "wiki": "tallyo/releases/tallyo-receipt-scanner-crop-two-android-bugs-fixed.md"
+  },
+  "tallyo/paywall/Web app- Paywall -price unavailable- flicker fixed (2f7a1c3).md": {
+   "folder": "tallyo/paywall",
+   "title": "Web app- Paywall -price unavailable- flicker fixed (2f7a1c3)",
+   "links": [],
+   "wiki": "tallyo/paywall/web-app-paywall-price-unavailable-flicker-fixed-2f7a1c3.md"
+  },
+  "merlino/agent/-The sentinel- — architettura dell'agente autonomo locale Merlino (Telegram-firs.md": {
+   "folder": "merlino/agent",
+   "title": "-The sentinel- — architettura dell'agente autonomo locale Merlino (Telegram-first)",
+   "links": [
+    "quadrante/llm-services/ask2sql-service — FastAPI NL→SQL via LiteLLM proxy (2026-08-20).md"
+   ],
+   "wiki": "merlino/agent/the-sentinel-architettura-dell-agente-autonomo-locale.md"
+  },
+  "tallyo/marketing/Tallyo App Store screenshots pipeline (Monochrome style).md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo App Store screenshots pipeline (Monochrome style)",
+   "links": [
+    "tallyo/analytics/Cohort retention analysis, frozen findings (20 Jul 2026).md"
+   ],
+   "wiki": "tallyo/marketing/tallyo-app-store-screenshots-pipeline-monochrome-style.md"
+  },
+  "product-ideas/App per meditazione consapevole e contrasto al dolore cronico da stress.md": {
+   "folder": "product-ideas",
+   "title": "App per meditazione consapevole e contrasto al dolore cronico da stress",
+   "links": [],
+   "wiki": "product-ideas/app-per-meditazione-consapevole-e-contrasto-al-dolore.md"
+  },
+  "product-ideas/NutriScan AI — Analisi ricette TikTok.md": {
+   "folder": "product-ideas",
+   "title": "NutriScan AI — Analisi ricette TikTok",
+   "links": [],
+   "wiki": "product-ideas/nutriscan-ai-analisi-ricette-tiktok.md"
+  },
+  "product-ideas/Idea App — Allenamento mindfulness anti-burnout.md": {
+   "folder": "product-ideas",
+   "title": "Idea App — Allenamento mindfulness anti-burnout",
+   "links": [],
+   "wiki": "product-ideas/idea-app-allenamento-mindfulness-anti-burnout.md"
+  },
+  "quadrante/llm-services/ask2sql-service — FastAPI NL→SQL via LiteLLM proxy (2026-08-20).md": {
+   "folder": "quadrante/llm-services",
+   "title": "ask2sql-service — FastAPI NL→SQL via LiteLLM proxy (2026-08-20)",
+   "links": [
+    "merlino/agent/-The sentinel- — architettura dell'agente autonomo locale Merlino (Telegram-firs.md",
+    "ondina/codebase/ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architectu.md"
+   ],
+   "wiki": "quadrante/llm-services/ask2sql-service-fastapi-nlsql-via-litellm-proxy-2026-08-20.md"
+  },
+  "tallyo/backend/llm-workers/Bugfix Tallyo.md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Bugfix Tallyo",
+   "links": [],
+   "wiki": "tallyo/backend/llm-workers/bugfix-tallyo.md"
+  },
+  "ai-courses/clients/Gianpaolo - Formaplus.md": {
+   "folder": "ai-courses/clients",
+   "title": "Gianpaolo - Formaplus",
+   "links": [],
+   "wiki": "ai-courses/clients/gianpaolo-formaplus.md"
+  },
+  "quadrante/client-projects/R&M · Archivista documenti amministrativi — specifiche concordate (7-9-2026).md": {
+   "folder": "quadrante/client-projects",
+   "title": "R&M · Archivista documenti amministrativi — specifiche concordate (7/9/2026)",
+   "links": [
+    "quadrante/client-projects/R&M Archivista — flusso estrazione completo, provato sui documenti reali (14-9-2.md"
+   ],
+   "wiki": "quadrante/client-projects/r-m-archivista-documenti-amministrativi-specifiche.md"
+  },
+  "quadrante/client-projects/Gruppo Bortolan Imballaggi — Prospect AI per bilanci e chiusure contabili.md": {
+   "folder": "quadrante/client-projects",
+   "title": "Gruppo Bortolan Imballaggi — Prospect AI per bilanci e chiusure contabili",
+   "links": [],
+   "wiki": "quadrante/client-projects/gruppo-bortolan-imballaggi-prospect-ai-per-bilanci-e.md"
+  },
+  "freelance-projects/Sito Orologeria Lugano.md": {
+   "folder": "freelance-projects",
+   "title": "Sito Orologeria Lugano",
+   "links": [],
+   "wiki": "freelance-projects/sito-orologeria-lugano.md"
+  },
+  "ondina/client-projects/Cantine Valdora — Proposta Meeting Memory (v1).md": {
+   "folder": "ondina/client-projects",
+   "title": "Cantine Valdora — Proposta Meeting Memory (v1)",
+   "links": [],
+   "wiki": "ondina/client-projects/cantine-valdora-proposta-meeting-memory-v1.md"
+  },
+  "ondina/client-projects/Cantine Valdora — Specifiche Architetturali Trascrizione Riunioni.md": {
+   "folder": "ondina/client-projects",
+   "title": "Cantine Valdora — Specifiche Architetturali Trascrizione Riunioni",
+   "links": [],
+   "wiki": "ondina/client-projects/cantine-valdora-specifiche-architetturali-trascrizione.md"
+  },
+  "ondina/client-projects/Meeting 2026-08-28 — Gianni Pertile (Meeting Memory Cantine Valdora).md": {
+   "folder": "ondina/client-projects",
+   "title": "Meeting 2026-08-28 — Gianni Pertile (Meeting Memory Cantine Valdora)",
+   "links": [
+    "ondina/models/Meeting Memory- Diarize First, Summarize Later (paper, draft v0.2 — Sept 2026).md"
+   ],
+   "wiki": "ondina/client-projects/meeting-2026-08-28-gianni-pertile-meeting-memory-cantine.md"
+  },
+  "ondina/client-projects/Cantine Valdora — progetto memoria gruppo (call Gianni Pertile 28.08, inviato pr.md": {
+   "folder": "ondina/client-projects",
+   "title": "Cantine Valdora — progetto memoria gruppo (call Gianni Pertile 28.08, inviato progettino il 9/9)",
+   "links": [
+    "ondina/models/Meeting Memory- Diarize First, Summarize Later (paper, draft v0.2 — Sept 2026).md"
+   ],
+   "wiki": "ondina/client-projects/cantine-valdora-progetto-memoria-gruppo-call-gianni-pertile.md"
+  },
+  "ai-courses/clients/Lezione 1 corso AI+n8n — Trascrizione e appunti completi (27 ago 2026).md": {
+   "folder": "ai-courses/clients",
+   "title": "Lezione 1 corso AI+n8n — Trascrizione e appunti completi (27 ago 2026)",
+   "links": [
+    "ai-courses/clients/Corso AI Forno Lievita (Lievita Srl) — contratto, pagamento, fisco.md",
+    "ai-courses/clients/Forno Lievita — Ricerca preparatoria Lezione 2- connettori, Fatture in Cloud, Wo.md",
+    "ai-courses/clients/Forno Lievita — Struttura e Offerta Corso AI.md",
+    "ai-courses/clients/Lezione 2 corso AI+n8n — Sessione pratica (28 ago 2026).md",
+    "ai-courses/clients/Lievita Srl — Call Integrazione AI e Flussi Aziendali.md"
+   ],
+   "wiki": "ai-courses/clients/lezione-1-corso-ai-n8n-trascrizione-e-appunti-completi-27.md"
+  },
+  "ai-courses/clients/Lezione 2 corso AI+n8n — Sessione pratica (28 ago 2026).md": {
+   "folder": "ai-courses/clients",
+   "title": "Lezione 2 corso AI+n8n — Sessione pratica (28 ago 2026)",
+   "links": [
+    "ai-courses/clients/Corso AI Forno Lievita (Lievita Srl) — contratto, pagamento, fisco.md",
+    "ai-courses/clients/Forno Lievita — Ricerca preparatoria Lezione 2- connettori, Fatture in Cloud, Wo.md",
+    "ai-courses/clients/Lezione 1 corso AI+n8n — Trascrizione e appunti completi (27 ago 2026).md",
+    "ai-courses/clients/Lievita Srl — Preparazione e scaletta Lezione 2 (Call pratica).md"
+   ],
+   "wiki": "ai-courses/clients/lezione-2-corso-ai-n8n-sessione-pratica-28-ago-2026.md"
+  },
+  "ondina/client-projects/Lievita Srl — Agenda incontro 22-09-2026.md": {
+   "folder": "ondina/client-projects",
+   "title": "Lievita Srl — Agenda incontro 22-09-2026",
+   "links": [],
+   "wiki": "ondina/client-projects/lievita-srl-agenda-incontro-22-09-2026.md"
+  },
+  "ai-courses/clients/Lievita Srl — Attività post-sessione (15-09-2026).md": {
+   "folder": "ai-courses/clients",
+   "title": "Lievita Srl — Attività post-sessione (15-09-2026)",
+   "links": [],
+   "wiki": "ai-courses/clients/lievita-srl-attivita-post-sessione-15-09-2026.md"
+  },
+  "ai-courses/clients/Lievita Srl — Call Integrazione AI e Flussi Aziendali.md": {
+   "folder": "ai-courses/clients",
+   "title": "Lievita Srl — Call Integrazione AI e Flussi Aziendali",
+   "links": [
+    "ai-courses/clients/Lezione 1 corso AI+n8n — Trascrizione e appunti completi (27 ago 2026).md"
+   ],
+   "wiki": "ai-courses/clients/lievita-srl-call-integrazione-ai-e-flussi-aziendali.md"
+  },
+  "ai-courses/clients/Lievita Srl — Chiamata con Chiara Vianello (15-05-2024).md": {
+   "folder": "ai-courses/clients",
+   "title": "Lievita Srl — Chiamata con Chiara Vianello (15-05-2024)",
+   "links": [],
+   "wiki": "ai-courses/clients/lievita-srl-chiamata-con-chiara-vianello-15-05-2024.md"
+  },
+  "ai-courses/clients/Lievita Srl — Formazione Claude e flussi di lavoro.md": {
+   "folder": "ai-courses/clients",
+   "title": "Lievita Srl — Formazione Claude e flussi di lavoro",
+   "links": [],
+   "wiki": "ai-courses/clients/lievita-srl-formazione-claude-e-flussi-di-lavoro.md"
+  },
+  "ai-courses/clients/Lievita Srl — Offerta economica corso AI e Claude (OFF-2026-LIEVITA-02).md": {
+   "folder": "ai-courses/clients",
+   "title": "Lievita Srl — Offerta economica corso AI e Claude (OFF-2026-LIEVITA-02)",
+   "links": [],
+   "wiki": "ai-courses/clients/lievita-srl-offerta-economica-corso-ai-e-claude-off-2026.md"
+  },
+  "ai-courses/clients/Lievita Srl — Preparazione e scaletta Lezione 2 (Call pratica).md": {
+   "folder": "ai-courses/clients",
+   "title": "Lievita Srl — Preparazione e scaletta Lezione 2 (Call pratica)",
+   "links": [
+    "ai-courses/clients/Forno Lievita — Ricerca preparatoria Lezione 2- connettori, Fatture in Cloud, Wo.md",
+    "ai-courses/clients/Lezione 2 corso AI+n8n — Sessione pratica (28 ago 2026).md"
+   ],
+   "wiki": "ai-courses/clients/lievita-srl-preparazione-e-scaletta-lezione-2-call-pratica.md"
+  },
+  "ai-courses/clients/Lievita Srl — Presentazioni corso AI (Claude e ChatGPT).md": {
+   "folder": "ai-courses/clients",
+   "title": "Lievita Srl — Presentazioni corso AI (Claude e ChatGPT)",
+   "links": [],
+   "wiki": "ai-courses/clients/lievita-srl-presentazioni-corso-ai-claude-e-chatgpt.md"
+  },
+  "ai-courses/clients/Forno Lievita — Progetto Sistema di Gestione AI.md": {
+   "folder": "ai-courses/clients",
+   "title": "Forno Lievita — Progetto Sistema di Gestione AI",
+   "links": [
+    "ai-courses/clients/Lievita Srl — Presentazioni corso AI (Claude e ChatGPT).md"
+   ],
+   "wiki": "ai-courses/clients/forno-lievita-progetto-sistema-di-gestione-ai.md"
+  },
+  "ai-courses/clients/Forno Lievita — Ricerca preparatoria Lezione 2- connettori, Fatture in Cloud, Wo.md": {
+   "folder": "ai-courses/clients",
+   "title": "Forno Lievita — Ricerca preparatoria Lezione 2: connettori, Fatture in Cloud, WooCommerce (28 ago 2026)",
+   "links": [
+    "ai-courses/clients/Lezione 1 corso AI+n8n — Trascrizione e appunti completi (27 ago 2026).md",
+    "ai-courses/clients/Lezione 2 corso AI+n8n — Sessione pratica (28 ago 2026).md",
+    "ai-courses/clients/Lievita Srl — Preparazione e scaletta Lezione 2 (Call pratica).md"
+   ],
+   "wiki": "ai-courses/clients/forno-lievita-ricerca-preparatoria-lezione-2-connettori.md"
+  },
+  "ai-courses/clients/Forno Lievita — Struttura e Offerta Corso AI.md": {
+   "folder": "ai-courses/clients",
+   "title": "Forno Lievita — Struttura e Offerta Corso AI",
+   "links": [
+    "ai-courses/clients/Lezione 1 corso AI+n8n — Trascrizione e appunti completi (27 ago 2026).md",
+    "ai-courses/clients/Lievita Srl — Presentazioni corso AI (Claude e ChatGPT).md"
+   ],
+   "wiki": "ai-courses/clients/forno-lievita-struttura-e-offerta-corso-ai.md"
+  },
+  "ai-courses/clients/Corso Formaplus — Prove pratiche per la prossima lezione.md": {
+   "folder": "ai-courses/clients",
+   "title": "Corso Formaplus — Prove pratiche per la prossima lezione",
+   "links": [],
+   "wiki": "ai-courses/clients/corso-formaplus-prove-pratiche-per-la-prossima-lezione.md"
+  },
+  "quadrante/llm-services/Mistral AI Harness — Scaffolding per Agenti AI.md": {
+   "folder": "quadrante/llm-services",
+   "title": "Mistral AI Harness — Scaffolding per Agenti AI",
+   "links": [],
+   "wiki": "quadrante/llm-services/mistral-ai-harness-scaffolding-per-agenti-ai.md"
+  },
+  "tallyo/backend/operations/Netlify — Redirect www con Namecheap (guida).md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Netlify — Redirect www con Namecheap (guida)",
+   "links": [
+    "quadrante/client-projects/Bollino — Sito web (bollino.app).md",
+    "tallyo/backend/operations/Domain switch executed- tallyo.money → gettallyo.com (full, 2026-07-22).md"
+   ],
+   "wiki": "tallyo/backend/operations/netlify-redirect-www-con-namecheap-guida.md"
+  },
+  "tech-knowledge/Diego Marangon - Mistral Agentic Orchestration.md": {
+   "folder": "tech-knowledge",
+   "title": "Diego Marangon - Mistral Agentic Orchestration",
+   "links": [],
+   "wiki": "tech-knowledge/diego-marangon-mistral-agentic-orchestration.md"
+  },
+  "tech-knowledge/Plume — Cloud Code plugin (revisione diff).md": {
+   "folder": "tech-knowledge",
+   "title": "Plume — Cloud Code plugin (revisione diff)",
+   "links": [],
+   "wiki": "tech-knowledge/plume-cloud-code-plugin-revisione-diff.md"
+  },
+  "quadrante/internal-projects/Repo- claude-code-commit-linter (Claude Code skill).md": {
+   "folder": "quadrante/internal-projects",
+   "title": "Repo: claude-code-commit-linter (Claude Code skill)",
+   "links": [
+    "tallyo/backend/llm-workers/Skill- prompt-regression-check (compare a lighter Mistral against a stronger mod.md"
+   ],
+   "wiki": "quadrante/internal-projects/repo-claude-code-commit-linter-claude-code-skill.md"
+  },
+  "tallyo/marketing/Repo- reel-scheduler — usage & ops guide (auto-schedule IG reels, Claude Code pl.md": {
+   "folder": "tallyo/marketing",
+   "title": "Repo: reel-scheduler — usage & ops guide (auto-schedule IG reels, Claude Code plugin)",
+   "links": [],
+   "wiki": "tallyo/marketing/repo-reel-scheduler-usage-ops-guide-auto-schedule-ig-reels.md"
+  },
+  "fitosfera/seedline/Accesso Bitbucket Competition.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Accesso Bitbucket Competition",
+   "links": [],
+   "wiki": "fitosfera/seedline/accesso-bitbucket-competition.md"
+  },
+  "product-ideas/Progetto Hackathon - Sentieri Condivisi.md": {
+   "folder": "product-ideas",
+   "title": "Progetto Hackathon - Sentieri Condivisi",
+   "links": [],
+   "wiki": "product-ideas/progetto-hackathon-sentieri-condivisi.md"
+  },
+  "social-media/Data tips in 60 seconds - Serie post LinkedIn.md": {
+   "folder": "social-media",
+   "title": "Data tips in 60 seconds - Serie post LinkedIn",
+   "links": [],
+   "wiki": "social-media/data-tips-in-60-seconds-serie-post-linkedin.md"
+  },
+  "social-media/X post - Migrazione schema con Mistral.md": {
+   "folder": "social-media",
+   "title": "X post - Migrazione schema con Mistral",
+   "links": [],
+   "wiki": "social-media/x-post-migrazione-schema-con-mistral.md"
+  },
+  "social-media/LinkedIn post- Test first.md": {
+   "folder": "social-media",
+   "title": "LinkedIn post- Test first",
+   "links": [],
+   "wiki": "social-media/linkedin-post-test-first.md"
+  },
+  "ondina/outreach/Outreach LinkedIn per Ondina - ondina-core (14 ottobre 2026)- chi è stato contat.md": {
+   "folder": "ondina/outreach",
+   "title": "Outreach LinkedIn per Ondina / ondina-core (14 ottobre 2026): chi è stato contattato e chi ha risposto",
+   "links": [],
+   "wiki": "ondina/outreach/outreach-linkedin-per-ondina-ondina-core-14-ottobre-2026-chi.md"
+  },
+  "tallyo/marketing/Outreach LinkedIn per Tallyo (14-16 ottobre 2026)- 97 messaggi in due roun.md": {
+   "folder": "tallyo/marketing",
+   "title": "Outreach LinkedIn per Tallyo (14-16 ottobre 2026)- 97 messaggi in due roun",
+   "links": [],
+   "wiki": "tallyo/marketing/outreach-linkedin-per-tallyo-14-16-ottobre-2026-97-messaggi.md"
+  },
+  "social-media/Post LinkedIn - Masterclass Castelfranco.md": {
+   "folder": "social-media",
+   "title": "Post LinkedIn - Masterclass Castelfranco",
+   "links": [],
+   "wiki": "social-media/post-linkedin-masterclass-castelfranco.md"
+  },
+  "social-media/Post LinkedIn — Claude mi ha scritto il preventivo di un cliente in 5 minuti.md": {
+   "folder": "social-media",
+   "title": "Post LinkedIn — Claude mi ha scritto il preventivo di un cliente in 5 minuti",
+   "links": [
+    "personal/vehicle/Retrofit CarPlay Volvo — presa USB, cavo e negozi Asiago.md",
+    "personal/vehicle/Volvo — Patch firmware e utility.md"
+   ],
+   "wiki": "social-media/post-linkedin-claude-mi-ha-scritto-il-preventivo-di-un.md"
+  },
+  "tallyo/marketing/Post LinkedIn — Tallyo e le bollette ricorrenti (giugno 2026).md": {
+   "folder": "tallyo/marketing",
+   "title": "Post LinkedIn — Tallyo e le bollette ricorrenti (giugno 2026)",
+   "links": [
+    "tallyo/backend/Tallyo shared-expenses- repo onboarding pubblico (skill + guida).md",
+    "tallyo/marketing/Tallyo marketing website (gettallyo.com) — repo & structure.md"
+   ],
+   "wiki": "tallyo/marketing/post-linkedin-tallyo-e-le-bollette-ricorrenti-giugno-2026.md"
+  },
+  "planning/Allineamento MT-GP-RS-EZ (Buste paghe).md": {
+   "folder": "planning",
+   "title": "Allineamento MT-GP-RS-EZ (Buste paghe)",
+   "links": [],
+   "wiki": "planning/allineamento-mt-gp-rs-ez-buste-paghe.md"
+  },
+  "planning/Call MS Teams — Neil Ashcroft.md": {
+   "folder": "planning",
+   "title": "Call MS Teams — Neil Ashcroft",
+   "links": [],
+   "wiki": "planning/call-ms-teams-neil-ashcroft.md"
+  },
+  "fitosfera/hub/Chiacchierata Marco e Ettore.md": {
+   "folder": "fitosfera/hub",
+   "title": "Chiacchierata Marco e Ettore",
+   "links": [],
+   "wiki": "fitosfera/hub/chiacchierata-marco-e-ettore.md"
+  },
+  "ai-courses/clients/Incontro Formaplus — Recap e opportunità formative AI.md": {
+   "folder": "ai-courses/clients",
+   "title": "Incontro Formaplus — Recap e opportunità formative AI",
+   "links": [],
+   "wiki": "ai-courses/clients/incontro-formaplus-recap-e-opportunita-formative-ai.md"
+  },
+  "ai-courses/clients/Incontro Elisa Fontana — Formaplus.md": {
+   "folder": "ai-courses/clients",
+   "title": "Incontro Elisa Fontana — Formaplus",
+   "links": [],
+   "wiki": "ai-courses/clients/incontro-elisa-fontana-formaplus.md"
+  },
+  "quadrante/client-projects/Meeting — Gestione magazzino e riordino automatico fornitori (Cesare Gatti, Silv.md": {
+   "folder": "quadrante/client-projects",
+   "title": "Meeting — Gestione magazzino e riordino automatico fornitori (Cesare Gatti, Silvano T",
+   "links": [],
+   "wiki": "quadrante/client-projects/meeting-gestione-magazzino-e-riordino-automatico-fornitori.md"
+  },
+  "career/Corrado Lunardi (Leadmint.io) — Potenziale nuovo lavoro.md": {
+   "folder": "career",
+   "title": "Corrado Lunardi (Leadmint.io) — Potenziale nuovo lavoro",
+   "links": [],
+   "wiki": "career/corrado-lunardi-leadmint-io-potenziale-nuovo-lavoro.md"
+  },
+  "planning/Riunioni Teams — 19-21 Ottobre 2026.md": {
+   "folder": "planning",
+   "title": "Riunioni Teams — 19-21 Ottobre 2026",
+   "links": [],
+   "wiki": "planning/riunioni-teams-19-21-ottobre-2026.md"
+  },
+  "quadrante/infrastructure/Lista domini Polaris.md": {
+   "folder": "quadrante/infrastructure",
+   "title": "Lista domini Polaris",
+   "links": [],
+   "wiki": "quadrante/infrastructure/lista-domini-polaris.md"
+  },
+  "quadrante/infrastructure/Ventaglio — dove gira in produzione e come verificare cosa è deployato (AWS quad.md": {
+   "folder": "quadrante/infrastructure",
+   "title": "Ventaglio — dove gira in produzione e come verificare cosa è deployato (AWS quadrante-prod-8c24f7e2)",
+   "links": [],
+   "wiki": "quadrante/infrastructure/ventaglio-dove-gira-in-produzione-e-come-verificare-cosa-e.md"
+  },
+  "ondina/codebase/Meeting Memory — ONDA streaming port + VAD presets (branch feat-onda-stream, 202.md": {
+   "folder": "ondina/codebase",
+   "title": "Meeting Memory — ONDA streaming port + VAD presets (branch feat/onda-stream, 2026-09-29)",
+   "links": [
+    "ondina/codebase/ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architectu.md",
+    "ondina/models/Meeting Memory- Diarize First, Summarize Later (paper, draft v0.2 — Sept 2026).md",
+    "tallyo/backend/llm-workers/Receipt OCR retry layer on Tallyo (branch feat-ocr-retry-queue).md"
+   ],
+   "wiki": "ondina/codebase/meeting-memory-onda-streaming-port-vad-presets-branch-feat.md"
+  },
+  "ondina/models/Meeting Memory- Diarize First, Summarize Later (paper, draft v0.2 — Sept 2026).md": {
+   "folder": "ondina/models",
+   "title": "Meeting Memory: Diarize First, Summarize Later (paper, draft v0.2 — Sept 2026)",
+   "links": [
+    "ondina/client-projects/Cantine Valdora — progetto memoria gruppo (call Gianni Pertile 28.08, inviato pr.md",
+    "ondina/client-projects/Meeting 2026-08-28 — Gianni Pertile (Meeting Memory Cantine Valdora).md",
+    "ondina/codebase/Meeting Memory — ONDA streaming port + VAD presets (branch feat-onda-stream, 202.md",
+    "ondina/codebase/ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architectu.md"
+   ],
+   "wiki": "ondina/models/meeting-memory-diarize-first-summarize-later-paper-draft-v0.md"
+  },
+  "ai-courses/clients/Corso AI Forno Lievita (Lievita Srl) — contratto, pagamento, fisco.md": {
+   "folder": "ai-courses/clients",
+   "title": "Corso AI Forno Lievita (Lievita Srl) — contratto, pagamento, fisco",
+   "links": [
+    "ai-courses/clients/Lezione 1 corso AI+n8n — Trascrizione e appunti completi (27 ago 2026).md",
+    "ai-courses/clients/Lezione 2 corso AI+n8n — Sessione pratica (28 ago 2026).md"
+   ],
+   "wiki": "ai-courses/clients/corso-ai-forno-lievita-lievita-srl-contratto-pagamento-fisco.md"
+  },
+  "ondina/models/Ondina benchmark preview carousel (2026-09-25).md": {
+   "folder": "ondina/models",
+   "title": "Ondina benchmark preview carousel (2026-09-25)",
+   "links": [
+    "ondina/outreach/Ondina Core — -Your laptop is enough- explainer video (2026-10-12).md"
+   ],
+   "wiki": "ondina/models/ondina-benchmark-preview-carousel-2026-09-25.md"
+  },
+  "ondina/models/Ondina VAD 0.35 vs 0.5 on the 418-clip bench (2026-10-13)- WER -2.1 pts, +12% GP.md": {
+   "folder": "ondina/models",
+   "title": "Ondina VAD 0.35 vs 0.5 on the 418-clip bench (2026-10-13): WER -2.1 pts, +12% GPU seconds per audio hour",
+   "links": [
+    "ondina/models/ondina 0.7.3 (single-pass overlap head) benchmark vs main b2f5a9c, baseline vs O.md",
+    "tallyo/backend/llm-workers/Receipt OCR inside process-entry- orchestrator + OCR-merchant tools (branch feat.md"
+   ],
+   "wiki": "ondina/models/ondina-vad-0-35-vs-0-5-on-the-418-clip-bench-2026-10-13-wer.md"
+  },
+  "ondina/codebase/Ondina Desktop 0.2.1- global hotkey, dark theme, crash-log viewer, Reset to defa.md": {
+   "folder": "ondina/codebase",
+   "title": "Ondina Desktop 0.2.1: global hotkey, dark theme, crash-log viewer, Reset to defaults → ondina-core (2026-10-16)",
+   "links": [
+    "ondina/codebase/Ondina Desktop app for ondina-core (ondina-oss-ondina-app)- architecture and dec.md",
+    "ondina/codebase/Ondina- live waveform view with canvas rendering (replaces the static PNG, 2026-.md"
+   ],
+   "wiki": "ondina/codebase/ondina-desktop-0-2-1-global-hotkey-dark-theme-crash-log.md"
+  },
+  "ondina/codebase/Ondina Desktop app for ondina-core (ondina-oss-ondina-app)- architecture and dec.md": {
+   "folder": "ondina/codebase",
+   "title": "Ondina Desktop app for ondina-core (ondina-oss/ondina-app): architecture and decisions (2026-10-15)",
+   "links": [
+    "ondina/codebase/Ondina Desktop 0.2.1- global hotkey, dark theme, crash-log viewer, Reset to defa.md",
+    "ondina/codebase/Ondina- live waveform view with canvas rendering (replaces the static PNG, 2026-.md",
+    "ondina/codebase/ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architectu.md"
+   ],
+   "wiki": "ondina/codebase/ondina-desktop-app-for-ondina-core-ondina-oss-ondina-app.md"
+  },
+  "ondina/codebase/Ondina- live waveform view with canvas rendering (replaces the static PNG, 2026-.md": {
+   "folder": "ondina/codebase",
+   "title": "Ondina: live waveform view with canvas rendering (replaces the static PNG, 2026-10-16)",
+   "links": [
+    "ondina/codebase/Ondina Desktop 0.2.1- global hotkey, dark theme, crash-log viewer, Reset to defa.md",
+    "ondina/codebase/Ondina Desktop app for ondina-core (ondina-oss-ondina-app)- architecture and dec.md"
+   ],
+   "wiki": "ondina/codebase/ondina-live-waveform-view-with-canvas-rendering-replaces-the.md"
+  },
+  "ondina/outreach/Ondina Core — -Your laptop is enough- explainer video (2026-10-12).md": {
+   "folder": "ondina/outreach",
+   "title": "Ondina Core — -Your laptop is enough- explainer video (2026-10-12)",
+   "links": [
+    "tallyo/marketing/Tallyo -Payday- film- a paycheck splits itself into jars, Tallyo tallies each on.md"
+   ],
+   "wiki": "ondina/outreach/ondina-core-your-laptop-is-enough-explainer-video-2026-10-12.md"
+  },
+  "ondina/client-projects/Samuel Pozzobon — Ricordia.md": {
+   "folder": "ondina/client-projects",
+   "title": "Samuel Pozzobon — Ricordia",
+   "links": [],
+   "wiki": "ondina/client-projects/samuel-pozzobon-ricordia.md"
+  },
+  "ondina/models/Why short clips hurt Ondina- the encoder pads to 30 s, and punctuate_pass overri.md": {
+   "folder": "ondina/models",
+   "title": "Why short clips hurt Ondina: the encoder pads to 30 s, and punctuate_pass overrides the segment end (2026-10-20)",
+   "links": [
+    "ondina/models/ondina 0.7.3 (single-pass overlap head) benchmark vs main b2f5a9c, baseline vs O.md"
+   ],
+   "wiki": "ondina/models/why-short-clips-hurt-ondina-the-encoder-pads-to-30-s-and.md"
+  },
+  "ondina/codebase/ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architectu.md": {
+   "folder": "ondina/codebase",
+   "title": "ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architecture, how to run)",
+   "links": [
+    "ondina/codebase/Meeting Memory — ONDA streaming port + VAD presets (branch feat-onda-stream, 202.md",
+    "ondina/codebase/Ondina Desktop app for ondina-core (ondina-oss-ondina-app)- architecture and dec.md",
+    "ondina/models/Meeting Memory- Diarize First, Summarize Later (paper, draft v0.2 — Sept 2026).md",
+    "ondina/models/Ondina- Overlap-aware Neural Diarization for streaming Audio (preprint — Septemb.md",
+    "ondina/models/ondina 0.7.3 (single-pass overlap head) benchmark vs main b2f5a9c, baseline vs O.md",
+    "ondina/models/ondina-bench — DER + latency benchmark for a running Ondina (repo, how to run, 2.md",
+    "ondina/models/ondina-core — DER benchmark + VAD threshold calibration (2026-09-24).md",
+    "ondina/models/ondina-core — real-time-factor benchmark baseline vs ONDA (2026-09-24).md",
+    "ondina/outreach/Ondina Core — -Your laptop is enough- explainer video (2026-10-12).md",
+    "quadrante/llm-services/ask2sql-service — FastAPI NL→SQL via LiteLLM proxy (2026-08-20).md",
+    "tallyo/backend/llm-workers/Receipt OCR retry layer on Tallyo (branch feat-ocr-retry-queue).md"
+   ],
+   "wiki": "ondina/codebase/ondina-core-audio-transcription-engine-on-webvtt-with-ondina.md"
+  },
+  "ondina/models/ondina-core — real-time-factor benchmark baseline vs ONDA (2026-09-24).md": {
+   "folder": "ondina/models",
+   "title": "ondina-core — real-time-factor benchmark baseline vs ONDA (2026-09-24)",
+   "links": [
+    "ondina/codebase/ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architectu.md",
+    "ondina/models/Ondina- Overlap-aware Neural Diarization for streaming Audio (preprint — Septemb.md",
+    "ondina/models/ondina-bench — DER + latency benchmark for a running Ondina (repo, how to run, 2.md",
+    "ondina/models/ondina-core — DER benchmark + VAD threshold calibration (2026-09-24).md"
+   ],
+   "wiki": "ondina/models/ondina-core-real-time-factor-benchmark-baseline-vs-onda-2026.md"
+  },
+  "ondina/models/ondina-core — DER benchmark + VAD threshold calibration (2026-09-24).md": {
+   "folder": "ondina/models",
+   "title": "ondina-core — DER benchmark + VAD threshold calibration (2026-09-24)",
+   "links": [
+    "ondina/models/Ondina VAD 0.35 vs 0.5 on the 418-clip bench (2026-10-13)- WER -2.1 pts, +12% GP.md",
+    "ondina/models/Ondina benchmark preview carousel (2026-09-25).md",
+    "ondina/models/ondina-bench — DER + latency benchmark for a running Ondina (repo, how to run, 2.md"
+   ],
+   "wiki": "ondina/models/ondina-core-der-benchmark-vad-threshold-calibration-2026-09.md"
+  },
+  "ondina/models/ondina 0.7.3 (single-pass overlap head) benchmark vs main b2f5a9c, baseline vs O.md": {
+   "folder": "ondina/models",
+   "title": "ondina 0.7.3 (single-pass overlap head) benchmark vs main b2f5a9c, baseline vs ONDA, 418 clips (2026-10-19)",
+   "links": [
+    "ondina/codebase/ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architectu.md",
+    "ondina/models/Ondina VAD 0.35 vs 0.5 on the 418-clip bench (2026-10-13)- WER -2.1 pts, +12% GP.md",
+    "ondina/models/Why short clips hurt Ondina- the encoder pads to 30 s, and punctuate_pass overri.md",
+    "ondina/models/ondina-bench — DER + latency benchmark for a running Ondina (repo, how to run, 2.md"
+   ],
+   "wiki": "ondina/models/ondina-0-7-3-single-pass-overlap-head-benchmark-vs-main.md"
+  },
+  "ondina/models/ondina-bench — DER + latency benchmark for a running Ondina (repo, how to run, 2.md": {
+   "folder": "ondina/models",
+   "title": "ondina-bench — DER + latency benchmark for a running Ondina (repo, how to run, 2026-10-12)",
+   "links": [
+    "ondina/codebase/ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architectu.md",
+    "ondina/models/ondina 0.7.3 (single-pass overlap head) benchmark vs main b2f5a9c, baseline vs O.md",
+    "ondina/models/ondina-core — DER benchmark + VAD threshold calibration (2026-09-24).md",
+    "ondina/models/ondina-core — real-time-factor benchmark baseline vs ONDA (2026-09-24).md"
+   ],
+   "wiki": "ondina/models/ondina-bench-der-latency-benchmark-for-a-running-ondina-repo.md"
+  },
+  "tallyo/backend/operations/Tallyo fix webhook retry (T-247) + rate limit (T-248) COMPLETATO 04-09.md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Tallyo fix webhook retry (T-247) + rate limit (T-248) COMPLETATO 04/09",
+   "links": [
+    "tallyo/backend/operations/Web app deploy 2026-09-08- c8f3e2a live on Vercel (rev 00006-kxm).md"
+   ],
+   "wiki": "tallyo/backend/operations/tallyo-fix-webhook-retry-t-247-rate-limit-t-248-completato.md"
+  },
+  "tallyo/marketing/Tallyo receipt-scan UGC IG ads (2026-09).md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo receipt-scan UGC IG ads (2026-09)",
+   "links": [],
+   "wiki": "tallyo/marketing/tallyo-receipt-scan-ugc-ig-ads-2026-09.md"
+  },
+  "quadrante/client-projects/Quadrante — Progetto Ruotaviva (analisi 28.08.2026) (2).md": {
+   "folder": "quadrante/client-projects",
+   "title": "Quadrante — Progetto Ruotaviva (analisi 28.08.2026)",
+   "links": [
+    "fitosfera/hub/Fitosfera - Hub Progetto.md",
+    "quadrante/client-projects/Confronto AI & Innovazione — cliente di arredamento (Gloria Tessaro) — 27 ago 20.md"
+   ],
+   "wiki": "quadrante/client-projects/quadrante-progetto-ruotaviva-analisi-28-08-2026.md"
+  },
+  "quadrante/internal-projects/Movera- Panoramica Progetto.md": {
+   "folder": "quadrante/internal-projects",
+   "title": "Movera- Panoramica Progetto",
+   "links": [],
+   "wiki": "quadrante/internal-projects/movera-panoramica-progetto.md"
+  },
+  "fitosfera/seedline/RULE — Destructive DB commands (DROP-TRUNCATE-etc) always require a dry run firs.md": {
+   "folder": "fitosfera/seedline",
+   "title": "RULE — Destructive DB commands (DROP/TRUNCATE/etc) always require a dry run first",
+   "links": [],
+   "wiki": "fitosfera/seedline/rule-destructive-db-commands-drop-truncate-etc-always.md"
+  },
+  "tallyo/backend/operations/Domain switch executed- tallyo.money → gettallyo.com (full, 2026-07-22).md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Domain switch executed: tallyo.money → gettallyo.com (full, 2026-07-22)",
+   "links": [],
+   "wiki": "tallyo/backend/operations/domain-switch-executed-tallyo-money-gettallyo-com-full-2026.md"
+  },
+  "tallyo/backend/ElevenLabs voce — regole operative.md": {
+   "folder": "tallyo/backend",
+   "title": "ElevenLabs voce — regole operative",
+   "links": [],
+   "wiki": "tallyo/backend/elevenlabs-voce-regole-operative.md"
+  },
+  "tallyo/app-ui/Online Budget Map (2026-09) — build completo, deploy pending.md": {
+   "folder": "tallyo/app-ui",
+   "title": "Online Budget Map (2026-09) — build completo, deploy pending",
+   "links": [],
+   "wiki": "tallyo/app-ui/online-budget-map-2026-09-build-completo-deploy-pending.md"
+  },
+  "tallyo/analytics/Adapty Transactions.md": {
+   "folder": "tallyo/analytics",
+   "title": "Adapty Transactions",
+   "links": [],
+   "wiki": "tallyo/analytics/adapty-transactions.md"
+  },
+  "tallyo/backend/operations/Tallyo console- staging promote checklist.md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Tallyo console- staging promote checklist",
+   "links": [
+    "tallyo/backend/operations/Domain switch executed- tallyo.money → gettallyo.com (full, 2026-07-22).md"
+   ],
+   "wiki": "tallyo/backend/operations/tallyo-console-staging-promote-checklist.md"
+  },
+  "tallyo/releases/Tallyo freeze window - weekdays only (2026-09-05).md": {
+   "folder": "tallyo/releases",
+   "title": "Tallyo freeze window - weekdays only (2026-09-05)",
+   "links": [
+    "tallyo/backend/operations/Web app deploy 2026-09-08- c8f3e2a live on Vercel (rev 00006-kxm).md"
+   ],
+   "wiki": "tallyo/releases/tallyo-freeze-window-weekdays-only-2026-09-05.md"
+  },
+  "quadrante/employment/Fulvio Righetto — Consulente del lavoro (PD).md": {
+   "folder": "quadrante/employment",
+   "title": "Fulvio Righetto — Consulente del lavoro (PD)",
+   "links": [],
+   "wiki": "quadrante/employment/fulvio-righetto-consulente-del-lavoro-pd.md"
+  },
+  "quadrante/client-projects/Confronto AI & Innovazione — cliente di arredamento (Gloria Tessaro) — 27 ago 20.md": {
+   "folder": "quadrante/client-projects",
+   "title": "Confronto AI & Innovazione — cliente di arredamento (Gloria Tessaro) — 27 ago 2026",
+   "links": [
+    "quadrante/client-projects/Quadrante — Progetto Ruotaviva (analisi 28.08.2026).md",
+    "quadrante/client-projects/Trascrizione completa - Call Coaching AI Gruppo Novaris-Officine Pavan-Rigon (14.md"
+   ],
+   "wiki": "quadrante/client-projects/confronto-ai-innovazione-cliente-di-arredamento-gloria.md"
+  },
+  "quadrante/employment/Contratto di lavoro Quadrante-Gruppo Novaris — lettera di assunzione e documenti.md": {
+   "folder": "quadrante/employment",
+   "title": "Contratto di lavoro Quadrante/Gruppo Novaris — lettera di assunzione e documenti successivi",
+   "links": [],
+   "wiki": "quadrante/employment/contratto-di-lavoro-quadrante-gruppo-novaris-lettera-di.md"
+  },
+  "fitosfera/stakeholders/Fabrizio Callegaro - Novaris Innovation Hub.md": {
+   "folder": "fitosfera/stakeholders",
+   "title": "Fabrizio Callegaro - Novaris Innovation Hub",
+   "links": [],
+   "wiki": "fitosfera/stakeholders/fabrizio-callegaro-novaris-innovation-hub.md"
+  },
+  "ai-courses/clients/Email Silvano Tonin - Consulenze AI Masterclass.md": {
+   "folder": "ai-courses/clients",
+   "title": "Email Silvano Tonin - Consulenze AI Masterclass",
+   "links": [],
+   "wiki": "ai-courses/clients/email-silvano-tonin-consulenze-ai-masterclass.md"
+  },
+  "fitosfera/stakeholders/Ugo Massaro (Gruppo Novaris) — Documento Fitosfera AI.md": {
+   "folder": "fitosfera/stakeholders",
+   "title": "Ugo Massaro (Gruppo Novaris) — Documento Fitosfera AI",
+   "links": [],
+   "wiki": "fitosfera/stakeholders/ugo-massaro-gruppo-novaris-documento-fitosfera-ai.md"
+  },
+  "quadrante/employment/Incontro Maurizio Zago - Richiesta Aumento.md": {
+   "folder": "quadrante/employment",
+   "title": "Incontro Maurizio Zago - Richiesta Aumento",
+   "links": [],
+   "wiki": "quadrante/employment/incontro-maurizio-zago-richiesta-aumento.md"
+  },
+  "ai-courses/clients/Nota Spese Treviso.md": {
+   "folder": "ai-courses/clients",
+   "title": "Nota Spese Treviso",
+   "links": [],
+   "wiki": "ai-courses/clients/nota-spese-treviso.md"
+  },
+  "quadrante/employment/Patto di non concorrenza Quadrante-Gruppo Novaris — clausole e analisi di validi.md": {
+   "folder": "quadrante/employment",
+   "title": "Patto di non concorrenza Quadrante/Gruppo Novaris — clausole e analisi di validità",
+   "links": [
+    "quadrante/employment/Contratto di lavoro Quadrante-Gruppo Novaris — lettera di assunzione e documenti.md",
+    "quadrante/employment/Uscita da Gruppo Novaris — piano per non essere bloccato dal patto di non concor.md"
+   ],
+   "wiki": "quadrante/employment/patto-di-non-concorrenza-quadrante-gruppo-novaris-clausole-e.md"
+  },
+  "ai-courses/lectures/Preparazione Masterclass (16 Giugno).md": {
+   "folder": "ai-courses/lectures",
+   "title": "Preparazione Masterclass (16 Giugno)",
+   "links": [],
+   "wiki": "ai-courses/lectures/preparazione-masterclass-16-giugno.md"
+  },
+  "quadrante/client-projects/Trascrizione completa - Call Coaching AI Gruppo Novaris-Officine Pavan-Rigon (14.md": {
+   "folder": "quadrante/client-projects",
+   "title": "Trascrizione completa - Call Coaching AI Gruppo Novaris/Officine Pavan-Rigon (14 lug 2026)",
+   "links": [
+    "quadrante/client-projects/Confronto AI & Innovazione — cliente di arredamento (Gloria Tessaro) — 27 ago 20.md"
+   ],
+   "wiki": "quadrante/client-projects/trascrizione-completa-call-coaching-ai-gruppo-novaris.md"
+  },
+  "quadrante/employment/Uscita da Gruppo Novaris — piano per non essere bloccato dal patto di non concor.md": {
+   "folder": "quadrante/employment",
+   "title": "Uscita da Gruppo Novaris — piano per non essere bloccato dal patto di non concorrenza",
+   "links": [
+    "quadrante/employment/Contratto di lavoro Quadrante-Gruppo Novaris — lettera di assunzione e documenti.md",
+    "quadrante/employment/Patto di non concorrenza Quadrante-Gruppo Novaris — clausole e analisi di validi.md"
+   ],
+   "wiki": "quadrante/employment/uscita-da-gruppo-novaris-piano-per-non-essere-bloccato-dal.md"
+  },
+  "quadrante/llm-services/LiteLLM proxy ignores per-request timeouts; router-level timeout wins.md": {
+   "folder": "quadrante/llm-services",
+   "title": "LiteLLM proxy ignores per-request timeouts; router-level timeout wins",
+   "links": [],
+   "wiki": "quadrante/llm-services/litellm-proxy-ignores-per-request-timeouts-router-level.md"
+  },
+  "quadrante/infrastructure/Postgres refuses to start after a crash — recovery (2026-09-24).md": {
+   "folder": "quadrante/infrastructure",
+   "title": "Postgres refuses to start after a crash — recovery (2026-09-24)",
+   "links": [
+    "fitosfera/seedline/Seedline — push the prod image to ECR from a Mac (arm64→amd64) + layer cache pru.md"
+   ],
+   "wiki": "quadrante/infrastructure/postgres-refuses-to-start-after-a-crash-recovery-2026-09-24.md"
+  },
+  "merlino/agent/Merlino — cron jobs firing twice after sleep + log rotation stuck (fixed 2026-10.md": {
+   "folder": "merlino/agent",
+   "title": "Merlino — cron jobs firing twice after sleep + log rotation stuck (fixed 2026-10-01)",
+   "links": [],
+   "wiki": "merlino/agent/merlino-cron-jobs-firing-twice-after-sleep-log-rotation.md"
+  },
+  "tech-knowledge/Ollama API — which keep_alive-num_ctx options actually apply (verified).md": {
+   "folder": "tech-knowledge",
+   "title": "Ollama API — which keep_alive/num_ctx options actually apply (verified)",
+   "links": [
+    "quadrante/internal-projects/sheetsync — Rust port- global install, commands, design decisions.md"
+   ],
+   "wiki": "tech-knowledge/ollama-api-which-keep-alive-num-ctx-options-actually-apply.md"
+  },
+  "ondina/models/Open-source alternatives to Pico.md": {
+   "folder": "ondina/models",
+   "title": "Open-source alternatives to Pico",
+   "links": [],
+   "wiki": "ondina/models/open-source-alternatives-to-pico.md"
+  },
+  "tech-knowledge/Bedrock — Cross-Region Failover (APAC).md": {
+   "folder": "tech-knowledge",
+   "title": "Bedrock — Cross-Region Failover (APAC)",
+   "links": [],
+   "wiki": "tech-knowledge/bedrock-cross-region-failover-apac.md"
+  },
+  "quadrante/internal-projects/sheetsync — Rust port- global install, commands, design decisions.md": {
+   "folder": "quadrante/internal-projects",
+   "title": "sheetsync — Rust port: global install, commands, design decisions",
+   "links": [],
+   "wiki": "quadrante/internal-projects/sheetsync-rust-port-global-install-commands-design-decisions.md"
+  },
+  "quadrante/internal-projects/Corso personale -Cartesio in 5 giorni- — dove sta, com'è fatto, difetti trovat.md": {
+   "folder": "quadrante/internal-projects",
+   "title": "Corso personale -Cartesio in 5 giorni- — dove sta, com'è fatto, difetti trovat",
+   "links": [],
+   "wiki": "quadrante/internal-projects/corso-personale-cartesio-in-5-giorni-dove-sta-com-e-fatto.md"
+  },
+  "quadrante/internal-projects/Kick-off team Cartesio - Bramble — 5 ott 2026 (team, Daily, demo Pixie-Moonbeam,.md": {
+   "folder": "quadrante/internal-projects",
+   "title": "Kick-off team Cartesio / Bramble — 5 ott 2026 (team, Daily, demo Pixie/Moonbeam, next step)",
+   "links": [
+    "fitosfera/stakeholders/Greta Bonfante - Fitosfera.md",
+    "quadrante/internal-projects/Cartesio - Bramble — team, ruoli e interlocutori.md"
+   ],
+   "wiki": "quadrante/internal-projects/kick-off-team-cartesio-bramble-5-ott-2026-team-daily-demo.md"
+  },
+  "quadrante/internal-projects/Cartesio - Bramble — team, ruoli e interlocutori.md": {
+   "folder": "quadrante/internal-projects",
+   "title": "Cartesio / Bramble — team, ruoli e interlocutori",
+   "links": [
+    "quadrante/internal-projects/Kick-off team Cartesio - Bramble — 5 ott 2026 (team, Daily, demo Pixie-Moonbeam,.md"
+   ],
+   "wiki": "quadrante/internal-projects/cartesio-bramble-team-ruoli-e-interlocutori.md"
+  },
+  "quadrante/infrastructure/Riduzione costi AWS — quadrante-lab e quadrante-prod.md": {
+   "folder": "quadrante/infrastructure",
+   "title": "Riduzione costi AWS — quadrante-lab e quadrante-prod",
+   "links": [
+    "quadrante/infrastructure/Quadrante Bastion SSH (quadrante-prod) — session limits too tight, raised via ss.md"
+   ],
+   "wiki": "quadrante/infrastructure/riduzione-costi-aws-quadrante-lab-e-quadrante-prod.md"
+  },
+  "fitosfera/seedline/Dalmonte bulletin QA fixes 23-7- duplicate dates in header + page footers -p.-.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Dalmonte bulletin QA fixes 23-7- duplicate dates in header + page footers -p.-",
+   "links": [],
+   "wiki": "fitosfera/seedline/dalmonte-bulletin-qa-fixes-23-7-duplicate-dates-in-header.md"
+  },
+  "quadrante/infrastructure/Quadrante Bastion SSH (quadrante-prod) — session limits too tight, raised via ss.md": {
+   "folder": "quadrante/infrastructure",
+   "title": "Quadrante Bastion SSH (quadrante-prod) — session limits too tight, raised via sshd drop-in",
+   "links": [],
+   "wiki": "quadrante/infrastructure/quadrante-bastion-ssh-quadrante-prod-session-limits-too.md"
+  },
+  "quadrante/llm-services/ask2sql-service — progetto Bitbucket Quadrante creato, v1 pushata.md": {
+   "folder": "quadrante/llm-services",
+   "title": "ask2sql-service — progetto Bitbucket Quadrante creato, v1 pushata",
+   "links": [],
+   "wiki": "quadrante/llm-services/ask2sql-service-progetto-bitbucket-quadrante-creato-v1.md"
+  },
+  "ai-courses/lectures/Presentazione LLM RAG e Function Calling.md": {
+   "folder": "ai-courses/lectures",
+   "title": "Presentazione LLM RAG e Function Calling",
+   "links": [],
+   "wiki": "ai-courses/lectures/presentazione-llm-rag-e-function-calling.md"
+  },
+  "ai-courses/lectures/Presentazione Sistemi Multi-Agente UniTN.md": {
+   "folder": "ai-courses/lectures",
+   "title": "Presentazione Sistemi Multi-Agente UniTN",
+   "links": [
+    "ai-courses/lectures/UniTN - AI Agents & Multi-Agent Systems.md"
+   ],
+   "wiki": "ai-courses/lectures/presentazione-sistemi-multi-agente-unitn.md"
+  },
+  "ai-courses/lectures/UniTN - AI Agents & Multi-Agent Systems.md": {
+   "folder": "ai-courses/lectures",
+   "title": "UniTN - AI Agents & Multi-Agent Systems",
+   "links": [
+    "ai-courses/lectures/Presentazione Sistemi Multi-Agente UniTN.md"
+   ],
+   "wiki": "ai-courses/lectures/unitn-ai-agents-multi-agent-systems.md"
+  },
+  "quadrante/client-projects/Bollino — Aggiornamento Safety Gate.md": {
+   "folder": "quadrante/client-projects",
+   "title": "Bollino — Aggiornamento Safety Gate",
+   "links": [
+    "quadrante/client-projects/Bollino — Cosa fa & skill disponibili (reference funzionale).md",
+    "quadrante/client-projects/Novaris Registri — Analisi richiami Safety Gate & opportunità (case Bollino).md"
+   ],
+   "wiki": "quadrante/client-projects/bollino-aggiornamento-safety-gate.md"
+  },
+  "quadrante/client-projects/Bollino — Cosa fa & skill disponibili (reference funzionale).md": {
+   "folder": "quadrante/client-projects",
+   "title": "Bollino — Cosa fa & skill disponibili (reference funzionale)",
+   "links": [
+    "quadrante/client-projects/Bollino — Aggiornamento Safety Gate.md",
+    "quadrante/client-projects/Bollino — Miglioramenti plugin (checklist).md",
+    "quadrante/client-projects/Bollino — Sito web (bollino.app).md",
+    "quadrante/client-projects/Novaris Registri — Analisi richiami Safety Gate & opportunità (case Bollino).md"
+   ],
+   "wiki": "quadrante/client-projects/bollino-cosa-fa-skill-disponibili-reference-funzionale.md"
+  },
+  "quadrante/client-projects/Bollino — Miglioramenti plugin (checklist).md": {
+   "folder": "quadrante/client-projects",
+   "title": "Bollino — Miglioramenti plugin (checklist)",
+   "links": [
+    "quadrante/client-projects/Bollino — Cosa fa & skill disponibili (reference funzionale).md"
+   ],
+   "wiki": "quadrante/client-projects/bollino-miglioramenti-plugin-checklist.md"
+  },
+  "quadrante/client-projects/Bollino — Nuove fonti & roadmap integrazioni.md": {
+   "folder": "quadrante/client-projects",
+   "title": "Bollino — Nuove fonti & roadmap integrazioni",
+   "links": [
+    "quadrante/client-projects/Bollino — Aggiornamento Safety Gate.md",
+    "quadrante/client-projects/Bollino — Cosa fa & skill disponibili (reference funzionale).md",
+    "quadrante/client-projects/Bollino — Miglioramenti plugin (checklist).md",
+    "quadrante/client-projects/Novaris Registri — Analisi richiami Safety Gate & opportunità (case Bollino).md"
+   ],
+   "wiki": "quadrante/client-projects/bollino-nuove-fonti-roadmap-integrazioni.md"
+  },
+  "quadrante/client-projects/Bollino — Sito web (bollino.app).md": {
+   "folder": "quadrante/client-projects",
+   "title": "Bollino — Sito web (bollino.app)",
+   "links": [
+    "quadrante/client-projects/Bollino — Cosa fa & skill disponibili (reference funzionale).md",
+    "tallyo/backend/operations/Netlify — Redirect www con Namecheap (guida).md"
+   ],
+   "wiki": "quadrante/client-projects/bollino-sito-web-bollino-app.md"
+  },
+  "quadrante/client-projects/Novaris Registri — Analisi richiami Safety Gate & opportunità (case Bollino).md": {
+   "folder": "quadrante/client-projects",
+   "title": "Novaris Registri — Analisi richiami Safety Gate & opportunità (case Bollino)",
+   "links": [
+    "quadrante/client-projects/Bollino — Aggiornamento Safety Gate.md",
+    "quadrante/client-projects/Bollino — Cosa fa & skill disponibili (reference funzionale).md"
+   ],
+   "wiki": "quadrante/client-projects/novaris-registri-analisi-richiami-safety-gate-opportunita.md"
+  },
+  "career/CV Simone Dal Pra.md": {
+   "folder": "career",
+   "title": "CV Simone Dal Pra",
+   "links": [],
+   "wiki": "career/cv-simone-dal-pra.md"
+  },
+  "career/Candidatura Brightloop — Invio disponibilità colloquio.md": {
+   "folder": "career",
+   "title": "Candidatura Brightloop — Invio disponibilità colloquio",
+   "links": [],
+   "wiki": "career/candidatura-brightloop-invio-disponibilita-colloquio.md"
+  },
+  "career/Colloquio Selvia Recruitment.md": {
+   "folder": "career",
+   "title": "Colloquio Selvia Recruitment",
+   "links": [
+    "career/Ettore Zanon CV (AI Engineer).md"
+   ],
+   "wiki": "career/colloquio-selvia-recruitment.md"
+  },
+  "career/Colloquio con Noemi Recruiter.md": {
+   "folder": "career",
+   "title": "Colloquio con Noemi Recruiter",
+   "links": [
+    "career/DataPulse Italia - Analisi Azienda (Target AI Engineer).md",
+    "career/Ettore Zanon CV (AI Engineer).md"
+   ],
+   "wiki": "career/colloquio-con-noemi-recruiter.md"
+  },
+  "fitosfera/stakeholders/Contatto Petra Lazzarin (Agrify).md": {
+   "folder": "fitosfera/stakeholders",
+   "title": "Contatto Petra Lazzarin (Agrify)",
+   "links": [],
+   "wiki": "fitosfera/stakeholders/contatto-petra-lazzarin-agrify.md"
+  },
+  "career/DataPulse Italia - Analisi Azienda (Target AI Engineer).md": {
+   "folder": "career",
+   "title": "DataPulse Italia - Analisi Azienda (Target AI Engineer)",
+   "links": [
+    "career/Colloquio con Noemi Recruiter.md",
+    "career/Ettore Zanon CV (AI Engineer).md"
+   ],
+   "wiki": "career/datapulse-italia-analisi-azienda-target-ai-engineer.md"
+  },
+  "career/Ivano Cecchin — Invio CV.md": {
+   "folder": "career",
+   "title": "Ivano Cecchin — Invio CV",
+   "links": [],
+   "wiki": "career/ivano-cecchin-invio-cv.md"
+  },
+  "career/Northwind Labs — Disponibilità colloquio (Senior Software Engineer).md": {
+   "folder": "career",
+   "title": "Northwind Labs — Disponibilità colloquio (Senior Software Engineer)",
+   "links": [],
+   "wiki": "career/northwind-labs-disponibilita-colloquio-senior-software.md"
+  },
+  "quadrante/internal-projects/Tessera — attività dev AI agosto + next step (riunione 3 set 2026).md": {
+   "folder": "quadrante/internal-projects",
+   "title": "Tessera — attività dev AI agosto + next step (riunione 3 set 2026)",
+   "links": [
+    "fitosfera/hub/Fitosfera - Hub Progetto.md"
+   ],
+   "wiki": "quadrante/internal-projects/tessera-attivita-dev-ai-agosto-next-step-riunione-3-set-2026.md"
+  },
+  "fitosfera/seedline/Cambio provider Dalmonte.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Cambio provider Dalmonte",
+   "links": [],
+   "wiki": "fitosfera/seedline/cambio-provider-dalmonte.md"
+  },
+  "fitosfera/hub/Chiamata Dott. Bruno - Evolutive Fitosfera.md": {
+   "folder": "fitosfera/hub",
+   "title": "Chiamata Dott. Bruno - Evolutive Fitosfera",
+   "links": [],
+   "wiki": "fitosfera/hub/chiamata-dott-bruno-evolutive-fitosfera.md"
+  },
+  "fitosfera/data-gateway/Fitosfera Data Gateway — cosa ha scaricato Verdana (ricostruzione dai log ECS, 2.md": {
+   "folder": "fitosfera/data-gateway",
+   "title": "Fitosfera Data Gateway — cosa ha scaricato Verdana (ricostruzione dai log ECS, 2026-09-24)",
+   "links": [
+    "fitosfera/data-gateway/Fitosfera Data Gateway — verifica 2026-09-24- rate limit partner attivo su tutti.md"
+   ],
+   "wiki": "fitosfera/data-gateway/fitosfera-data-gateway-cosa-ha-scaricato-verdana.md"
+  },
+  "fitosfera/data-gateway/Fitosfera Data Gateway — verifica 2026-09-24- rate limit partner attivo su tutti.md": {
+   "folder": "fitosfera/data-gateway",
+   "title": "Fitosfera Data Gateway — verifica 2026-09-24: rate limit partner attivo su tutti gli endpoint (metodo + numeri)",
+   "links": [
+    "fitosfera/data-gateway/Fitosfera Data Gateway — cosa ha scaricato Verdana (ricostruzione dai log ECS, 2.md"
+   ],
+   "wiki": "fitosfera/data-gateway/fitosfera-data-gateway-verifica-2026-09-24-rate-limit.md"
+  },
+  "fitosfera/data-gateway/Data gateway compliance- partner tokens must ALWAYS expire within 24h.md": {
+   "folder": "fitosfera/data-gateway",
+   "title": "Data gateway compliance: partner tokens must ALWAYS expire within 24h",
+   "links": [],
+   "wiki": "fitosfera/data-gateway/data-gateway-compliance-partner-tokens-must-always-expire.md"
+  },
+  "fitosfera/seedline/File Excel Ornella (Dalmonte).md": {
+   "folder": "fitosfera/seedline",
+   "title": "File Excel Ornella (Dalmonte)",
+   "links": [],
+   "wiki": "fitosfera/seedline/file-excel-ornella-dalmonte.md"
+  },
+  "quadrante/internal-projects/Kestrel — Stima Fase 1 in versione semplice (58 gg).md": {
+   "folder": "quadrante/internal-projects",
+   "title": "Kestrel — Stima Fase 1 in versione semplice (58 gg)",
+   "links": [],
+   "wiki": "quadrante/internal-projects/kestrel-stima-fase-1-in-versione-semplice-58-gg.md"
+  },
+  "quadrante/internal-projects/Kestrel — Stima Fase 1+2 completa con audio (58 + 191 gg).md": {
+   "folder": "quadrante/internal-projects",
+   "title": "Kestrel — Stima Fase 1+2 completa con audio (58 + 191 gg)",
+   "links": [],
+   "wiki": "quadrante/internal-projects/kestrel-stima-fase-1-2-completa-con-audio-58-191-gg.md"
+  },
+  "fitosfera/hub/Fitosfera - Hub Progetto.md": {
+   "folder": "fitosfera/hub",
+   "title": "Fitosfera - Hub Progetto",
+   "links": [
+    "career/Ettore Zanon CV (AI Engineer).md",
+    "quadrante/client-projects/Quadrante — Progetto Ruotaviva (analisi 28.08.2026).md",
+    "quadrante/internal-projects/Tessera — attività dev AI agosto + next step (riunione 3 set 2026).md",
+    "tallyo/app-ui/Struttura del Tallyo — Indice e Tassonomia.md"
+   ],
+   "wiki": "fitosfera/hub/fitosfera-hub-progetto.md"
+  },
+  "fitosfera/data-gateway/Fitosfera — Switch Tag AGRIS e API Verdana.md": {
+   "folder": "fitosfera/data-gateway",
+   "title": "Fitosfera — Switch Tag AGRIS e API Verdana",
+   "links": [],
+   "wiki": "fitosfera/data-gateway/fitosfera-switch-tag-agris-e-api-verdana.md"
+  },
+  "fitosfera/seedline/Fitosfera - Update CF.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Fitosfera - Update CF",
+   "links": [],
+   "wiki": "fitosfera/seedline/fitosfera-update-cf.md"
+  },
+  "fitosfera/hub/Pitch CdA - Fitosfera v1.0 & MCP (Maggio 2026).md": {
+   "folder": "fitosfera/hub",
+   "title": "Pitch CdA - Fitosfera v1.0 & MCP (Maggio 2026)",
+   "links": [],
+   "wiki": "fitosfera/hub/pitch-cda-fitosfera-v1-0-mcp-maggio-2026.md"
+  },
+  "quadrante/client-projects/Specifica e Stima- Gestionale Relazioni Tecniche.md": {
+   "folder": "quadrante/client-projects",
+   "title": "Specifica e Stima- Gestionale Relazioni Tecniche",
+   "links": [],
+   "wiki": "quadrante/client-projects/specifica-e-stima-gestionale-relazioni-tecniche.md"
+  },
+  "fitosfera/seedline/CF dalmonte-banca-suoli go-live — readiness analysis + deploy runbook (2026-07-0.md": {
+   "folder": "fitosfera/seedline",
+   "title": "CF dalmonte/banca-suoli go-live — readiness analysis + deploy runbook (2026-07-06)",
+   "links": [
+    "fitosfera/seedline/Seedline — Campinet daily-update flow + CREA schema drift fix & replay (Jun 2026.md",
+    "fitosfera/seedline/Seedline — Circolari tecniche Scraping Processor (built + tested locally).md",
+    "fitosfera/seedline/Seedline — Circolari tecniche staging indexing run + v0.21.3 deploy (2026-06-26).md",
+    "fitosfera/seedline/Seedline — Scraping staging indexing run (deploy + EKS + curls + results).md",
+    "fitosfera/seedline/quadrante-seedline — scraping disciplinari regionali ALL-REGIONS processor (bran.md"
+   ],
+   "wiki": "fitosfera/seedline/cf-dalmonte-banca-suoli-go-live-readiness-analysis-deploy.md"
+  },
+  "fitosfera/seedline/Nuovo Processor Seedline per Circolari tecniche.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Nuovo Processor Seedline per Circolari tecniche",
+   "links": [
+    "fitosfera/seedline/Seedline — Circolari tecniche staging indexing run + v0.21.3 deploy (2026-06-26).md"
+   ],
+   "wiki": "fitosfera/seedline/nuovo-processor-seedline-per-circolari-tecniche.md"
+  },
+  "fitosfera/seedline/PR Nicola Furlan- Banca Suoli.md": {
+   "folder": "fitosfera/seedline",
+   "title": "PR Nicola Furlan- Banca Suoli",
+   "links": [],
+   "wiki": "fitosfera/seedline/pr-nicola-furlan-banca-suoli.md"
+  },
+  "fitosfera/seedline/Spiegazione semplice- Problema aggiornamenti Seedline (Bollettini fitosanitari).md": {
+   "folder": "fitosfera/seedline",
+   "title": "Spiegazione semplice- Problema aggiornamenti Seedline (Bollettini fitosanitari)",
+   "links": [
+    "fitosfera/seedline/Dalmonte bollettini fitosanitari QA — SHIPPED 21-07- v0.23.8rc deploy + replay o.md",
+    "fitosfera/seedline/Seedline — Campinet daily-update flow + CREA schema drift fix & replay (Jun 2026.md"
+   ],
+   "wiki": "fitosfera/seedline/spiegazione-semplice-problema-aggiornamenti-seedline.md"
+  },
+  "fitosfera/seedline/Dalmonte Lambda — S3 event prefix-filter bug + fix.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Dalmonte Lambda — S3 event prefix-filter bug + fix",
+   "links": [],
+   "wiki": "fitosfera/seedline/dalmonte-lambda-s3-event-prefix-filter-bug-fix.md"
+  },
+  "fitosfera/seedline/Dalmonte bollettini fitosanitari QA — SHIPPED 21-07- v0.23.8rc deploy + replay o.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Dalmonte bollettini fitosanitari QA — SHIPPED 21/07: v0.23.8rc deploy + replay ok (75k bollettini); tombale disciplinari ingerito",
+   "links": [],
+   "wiki": "fitosfera/seedline/dalmonte-bollettini-fitosanitari-qa-shipped-21-07-v0-23-8rc.md"
+  },
+  "fitosfera/seedline/Dalmonte staging edge function — deploy runbook & live state.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Dalmonte staging edge function — deploy runbook & live state",
+   "links": [
+    "fitosfera/seedline/Dalmonte bollettini fitosanitari QA — SHIPPED 21-07- v0.23.8rc deploy + replay o.md",
+    "fitosfera/seedline/Seedline EKS Cluster — Architecture & Ops Runbook.md"
+   ],
+   "wiki": "fitosfera/seedline/dalmonte-staging-edge-function-deploy-runbook-live-state.md"
+  },
+  "fitosfera/seedline/Seedline EKS Cluster — Architecture & Ops Runbook.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Seedline EKS Cluster — Architecture & Ops Runbook",
+   "links": [
+    "fitosfera/seedline/Dalmonte staging edge function — deploy runbook & live state.md",
+    "fitosfera/seedline/Seedline — Campinet daily-update flow + CREA schema drift fix & replay (Jun 2026.md",
+    "fitosfera/seedline/Seedline — Scraping staging indexing run (deploy + EKS + curls + results).md",
+    "fitosfera/seedline/Seedline — push the prod image to ECR from a Mac (arm64→amd64) + layer cache pru.md"
+   ],
+   "wiki": "fitosfera/seedline/seedline-eks-cluster-architecture-ops-runbook.md"
+  },
+  "fitosfera/seedline/Seedline — AGEA + ARPA indicizzati in staging (8 ott 2026), prod pronta ma non l.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Seedline — AGEA + ARPA indicizzati in staging (8 ott 2026), prod pronta ma non lanciata",
+   "links": [
+    "fitosfera/seedline/Seedline — Circolari tecniche Scraping Processor (built + tested locally).md"
+   ],
+   "wiki": "fitosfera/seedline/seedline-agea-arpa-indicizzati-in-staging-8-ott-2026-prod.md"
+  },
+  "fitosfera/seedline/Seedline — Fix QA scraping bollettini fitosanitari (branch hotfix-bulletin-qa, 2.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Seedline — Fix QA scraping bollettini fitosanitari (branch hotfix/bulletin-qa, 2026-08-18)",
+   "links": [
+    "fitosfera/seedline/Seedline — Scraping staging indexing run (deploy + EKS + curls + results).md"
+   ],
+   "wiki": "fitosfera/seedline/seedline-fix-qa-scraping-bollettini-fitosanitari-branch.md"
+  },
+  "fitosfera/seedline/Seedline — Campinet daily-update flow + CREA schema drift fix & replay (Jun 2026.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Seedline — Campinet daily-update flow + CREA schema drift fix & replay (Jun 2026)",
+   "links": [
+    "fitosfera/seedline/CF dalmonte-banca-suoli go-live — readiness analysis + deploy runbook (2026-07-0.md",
+    "fitosfera/seedline/Seedline EKS Cluster — Architecture & Ops Runbook.md",
+    "fitosfera/seedline/Seedline — Circolari tecniche staging indexing run + v0.21.3 deploy (2026-06-26).md",
+    "fitosfera/seedline/Seedline — Scraping staging indexing run (deploy + EKS + curls + results).md",
+    "fitosfera/seedline/Seedline — push the prod image to ECR from a Mac (arm64→amd64) + layer cache pru.md"
+   ],
+   "wiki": "fitosfera/seedline/seedline-campinet-daily-update-flow-crea-schema-drift-fix.md"
+  },
+  "fitosfera/seedline/Seedline — Ore di lavoro.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Seedline — Ore di lavoro",
+   "links": [],
+   "wiki": "fitosfera/seedline/seedline-ore-di-lavoro.md"
+  },
+  "fitosfera/seedline/Seedline — Circolari tecniche Scraping Processor (built + tested locally).md": {
+   "folder": "fitosfera/seedline",
+   "title": "Seedline — Circolari tecniche Scraping Processor (built + tested locally)",
+   "links": [
+    "fitosfera/seedline/CF dalmonte-banca-suoli go-live — readiness analysis + deploy runbook (2026-07-0.md",
+    "fitosfera/seedline/Seedline — AGEA + ARPA indicizzati in staging (8 ott 2026), prod pronta ma non l.md",
+    "fitosfera/seedline/Seedline — Circolari tecniche staging indexing run + v0.21.3 deploy (2026-06-26).md",
+    "fitosfera/seedline/Seedline — Scraping staging indexing run (deploy + EKS + curls + results).md"
+   ],
+   "wiki": "fitosfera/seedline/seedline-circolari-tecniche-scraping-processor-built-tested.md"
+  },
+  "fitosfera/seedline/Seedline — Circolari tecniche staging indexing run + v0.21.3 deploy (2026-06-26).md": {
+   "folder": "fitosfera/seedline",
+   "title": "Seedline — Circolari tecniche staging indexing run + v0.21.3 deploy (2026-06-26)",
+   "links": [
+    "fitosfera/seedline/CF dalmonte-banca-suoli go-live — readiness analysis + deploy runbook (2026-07-0.md",
+    "fitosfera/seedline/Nuovo Processor Seedline per Circolari tecniche.md",
+    "fitosfera/seedline/Seedline — Campinet daily-update flow + CREA schema drift fix & replay (Jun 2026.md",
+    "fitosfera/seedline/Seedline — Circolari tecniche Scraping Processor (built + tested locally).md",
+    "fitosfera/seedline/Seedline — Scraping staging indexing run (deploy + EKS + curls + results).md"
+   ],
+   "wiki": "fitosfera/seedline/seedline-circolari-tecniche-staging-indexing-run-v0-21-3.md"
+  },
+  "fitosfera/seedline/Seedline — Scraping staging indexing run (deploy + EKS + curls + results).md": {
+   "folder": "fitosfera/seedline",
+   "title": "Seedline — Scraping staging indexing run (deploy + EKS + curls + results)",
+   "links": [
+    "fitosfera/seedline/CF dalmonte-banca-suoli go-live — readiness analysis + deploy runbook (2026-07-0.md",
+    "fitosfera/seedline/Seedline EKS Cluster — Architecture & Ops Runbook.md",
+    "fitosfera/seedline/Seedline — Campinet daily-update flow + CREA schema drift fix & replay (Jun 2026.md",
+    "fitosfera/seedline/Seedline — Circolari tecniche Scraping Processor (built + tested locally).md",
+    "fitosfera/seedline/Seedline — Circolari tecniche staging indexing run + v0.21.3 deploy (2026-06-26).md",
+    "fitosfera/seedline/Seedline — Fix QA scraping bollettini fitosanitari (branch hotfix-bulletin-qa, 2.md",
+    "fitosfera/seedline/Seedline — bollettini duplicati- PDF scansionati che saturano la coda OCR (17 se.md",
+    "fitosfera/seedline/Seedline — push the prod image to ECR from a Mac (arm64→amd64) + layer cache pru.md"
+   ],
+   "wiki": "fitosfera/seedline/seedline-scraping-staging-indexing-run-deploy-eks-curls.md"
+  },
+  "fitosfera/seedline/Seedline — push the prod image to ECR from a Mac (arm64→amd64) + layer cache pru.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Seedline — push the prod image to ECR from a Mac (arm64→amd64) + layer cache pruning",
+   "links": [
+    "fitosfera/seedline/Seedline EKS Cluster — Architecture & Ops Runbook.md",
+    "fitosfera/seedline/Seedline — Campinet daily-update flow + CREA schema drift fix & replay (Jun 2026.md",
+    "fitosfera/seedline/Seedline — Scraping staging indexing run (deploy + EKS + curls + results).md",
+    "quadrante/infrastructure/Postgres refuses to start after a crash — recovery (2026-09-24).md"
+   ],
+   "wiki": "fitosfera/seedline/seedline-push-the-prod-image-to-ecr-from-a-mac-arm64amd64.md"
+  },
+  "fitosfera/seedline/Seedline — bollettini duplicati- PDF scansionati che saturano la coda OCR (17 se.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Seedline — bollettini duplicati: PDF scansionati che saturano la coda OCR (17 set 2026)",
+   "links": [
+    "fitosfera/seedline/Seedline — Scraping staging indexing run (deploy + EKS + curls + results).md",
+    "fitosfera/seedline/quadrante-seedline — scraping disciplinari regionali ALL-REGIONS processor (bran.md"
+   ],
+   "wiki": "fitosfera/seedline/seedline-bollettini-duplicati-pdf-scansionati-che-saturano.md"
+  },
+  "fitosfera/seedline/quadrante-seedline — scraping disciplinari regionali ALL-REGIONS processor (bran.md": {
+   "folder": "fitosfera/seedline",
+   "title": "quadrante-seedline — scraping disciplinari regionali ALL-REGIONS processor (branch 5986606)",
+   "links": [
+    "fitosfera/seedline/CF dalmonte-banca-suoli go-live — readiness analysis + deploy runbook (2026-07-0.md",
+    "fitosfera/seedline/Seedline — bollettini duplicati- PDF scansionati che saturano la coda OCR (17 se.md"
+   ],
+   "wiki": "fitosfera/seedline/quadrante-seedline-scraping-disciplinari-regionali-all.md"
+  },
+  "fitosfera/stakeholders/Greta Bonfante - Fitosfera.md": {
+   "folder": "fitosfera/stakeholders",
+   "title": "Greta Bonfante - Fitosfera",
+   "links": [
+    "quadrante/internal-projects/Kick-off team Cartesio - Bramble — 5 ott 2026 (team, Daily, demo Pixie-Moonbeam,.md"
+   ],
+   "wiki": "fitosfera/stakeholders/greta-bonfante-fitosfera.md"
+  },
+  "quadrante/employment/Corso Orizzonti Gruppo Novaris.md": {
+   "folder": "quadrante/employment",
+   "title": "Corso Orizzonti Gruppo Novaris",
+   "links": [],
+   "wiki": "quadrante/employment/corso-orizzonti-gruppo-novaris.md"
+  },
+  "personal/finance/Chiusura conto BPER.md": {
+   "folder": "personal/finance",
+   "title": "Chiusura conto BPER",
+   "links": [],
+   "wiki": "personal/finance/chiusura-conto-bper.md"
+  },
+  "quadrante/employment/Dubbi su ferie residue e rimborso trasferte.md": {
+   "folder": "quadrante/employment",
+   "title": "Dubbi su ferie residue e rimborso trasferte",
+   "links": [],
+   "wiki": "quadrante/employment/dubbi-su-ferie-residue-e-rimborso-trasferte.md"
+  },
+  "tallyo/business/Scelta Commercialista e Primo Trimestre IVA.md": {
+   "folder": "tallyo/business",
+   "title": "Scelta Commercialista e Primo Trimestre IVA",
+   "links": [],
+   "wiki": "tallyo/business/scelta-commercialista-e-primo-trimestre-iva.md"
+  },
+  "quadrante/employment/Polizza Infortuni Aziendale.md": {
+   "folder": "quadrante/employment",
+   "title": "Polizza Infortuni Aziendale",
+   "links": [],
+   "wiki": "quadrante/employment/polizza-infortuni-aziendale.md"
+  },
+  "personal/finance/Regole scadenze bollette.md": {
+   "folder": "personal/finance",
+   "title": "Regole scadenze bollette",
+   "links": [],
+   "wiki": "personal/finance/regole-scadenze-bollette.md"
+  },
+  "tallyo/releases/Google Play Developer Program — Aggiornamento termini Allegato 8 (UE).md": {
+   "folder": "tallyo/releases",
+   "title": "Google Play Developer Program — Aggiornamento termini Allegato 8 (UE)",
+   "links": [],
+   "wiki": "tallyo/releases/google-play-developer-program-aggiornamento-termini-allegato.md"
+  },
+  "tallyo/releases/Google Play Developer Agreement — Accettazione accordi.md": {
+   "folder": "tallyo/releases",
+   "title": "Google Play Developer Agreement — Accettazione accordi",
+   "links": [],
+   "wiki": "tallyo/releases/google-play-developer-agreement-accettazione-accordi.md"
+  },
+  "tallyo/releases/Android 3.1.2 vc18 published to Play production 2026-08-26.md": {
+   "folder": "tallyo/releases",
+   "title": "Android 3.1.2 vc18 published to Play production 2026-08-26",
+   "links": [
+    "tallyo/releases/Android 3.1.2 vc18 receipt capture fix VERIFIED on emulator (all tests pass).md",
+    "tallyo/releases/Android export halted after 2.1s- iOS background timer misreads Android timestam.md",
+    "tallyo/releases/Android release build flow (3.1.2 vc18 staged).md"
+   ],
+   "wiki": "tallyo/releases/android-3-1-2-vc18-published-to-play-production-2026-08-26.md"
+  },
+  "tallyo/releases/Android 3.1.2 vc18 receipt capture fix VERIFIED on emulator (all tests pass).md": {
+   "folder": "tallyo/releases",
+   "title": "Android 3.1.2 vc18 receipt capture fix VERIFIED on emulator (all tests pass)",
+   "links": [
+    "tallyo/releases/Android 3.1.2 vc18 published to Play production 2026-08-26.md",
+    "tallyo/releases/Android export halted after 2.1s- iOS background timer misreads Android timestam.md",
+    "tallyo/releases/Android release build flow (3.1.2 vc18 staged).md"
+   ],
+   "wiki": "tallyo/releases/android-3-1-2-vc18-receipt-capture-fix-verified-on-emulator.md"
+  },
+  "tallyo/releases/Android export halted after 2.1s- iOS background timer misreads Android timestam.md": {
+   "folder": "tallyo/releases",
+   "title": "Android export halted after 2.1s: iOS background timer misreads Android timestamp",
+   "links": [
+    "tallyo/releases/Android 3.1.2 vc18 published to Play production 2026-08-26.md",
+    "tallyo/releases/Android 3.1.2 vc18 receipt capture fix VERIFIED on emulator (all tests pass).md",
+    "tallyo/releases/Android release build flow (3.1.2 vc18 staged).md"
+   ],
+   "wiki": "tallyo/releases/android-export-halted-after-2-1s-ios-background-timer.md"
+  },
+  "tallyo/releases/Android release build flow (3.1.2 vc18 staged).md": {
+   "folder": "tallyo/releases",
+   "title": "Android release build flow (3.1.2 vc18 staged)",
+   "links": [
+    "tallyo/releases/Android 3.1.2 vc18 published to Play production 2026-08-26.md",
+    "tallyo/releases/Android 3.1.2 vc18 receipt capture fix VERIFIED on emulator (all tests pass).md",
+    "tallyo/releases/Android export halted after 2.1s- iOS background timer misreads Android timestam.md"
+   ],
+   "wiki": "tallyo/releases/android-release-build-flow-3-1-2-vc18-staged.md"
+  },
+  "tallyo/backend/Architettura ricerca spese — Filtro per periodo + full-text sui merchant (Top-K).md": {
+   "folder": "tallyo/backend",
+   "title": "Architettura ricerca spese — Filtro per periodo + full-text sui merchant (Top-K)",
+   "links": [],
+   "wiki": "tallyo/backend/architettura-ricerca-spese-filtro-per-periodo-full-text-sui.md"
+  },
+  "fitosfera/seedline/Audit branch perla cleanup- implementation finished, release candidate built.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Audit branch perla cleanup- implementation finished, release candidate built",
+   "links": [],
+   "wiki": "fitosfera/seedline/audit-branch-perla-cleanup-implementation-finished-release.md"
+  },
+  "tallyo/app-ui/Budget Map layout spacing tuning.md": {
+   "folder": "tallyo/app-ui",
+   "title": "Budget Map layout spacing tuning",
+   "links": [],
+   "wiki": "tallyo/app-ui/budget-map-layout-spacing-tuning.md"
+  },
+  "tallyo/releases/Bug Fixes - Tallyo 2.3.1.md": {
+   "folder": "tallyo/releases",
+   "title": "Bug Fixes - Tallyo 2.3.1",
+   "links": [
+    "personal/travel/Alloggio Ivo in Sardegna.md",
+    "personal/travel/Viaggio in Sardegna (Maggio 2026).md",
+    "tallyo/Tallyo - Project Overview & Roadmap.md",
+    "tallyo/feedback/Tallyo - Feedback & Idee Evolutive.md",
+    "tallyo/marketing/Collaborazione Ivo - Credenziali Instagram.md"
+   ],
+   "wiki": "tallyo/releases/bug-fixes-tallyo-2-3-1.md"
+  },
+  "tallyo/feedback/Bug — Scomparsa campo categorizzazione durante scatto ricevuta.md": {
+   "folder": "tallyo/feedback",
+   "title": "Bug — Scomparsa campo categorizzazione durante scatto ricevuta",
+   "links": [],
+   "wiki": "tallyo/feedback/bug-scomparsa-campo-categorizzazione-durante-scatto-ricevuta.md"
+  },
+  "tallyo/backend/llm-workers/Receipt OCR inside process-entry- orchestrator + OCR-merchant tools (branch feat.md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Receipt OCR inside process-entry: orchestrator + OCR/merchant tools (branch feat/receipt-orchestrator, 2026-10-13)",
+   "links": [
+    "ondina/models/Ondina VAD 0.35 vs 0.5 on the 418-clip bench (2026-10-13)- WER -2.1 pts, +12% GP.md",
+    "tallyo/backend/llm-workers/Receipt OCR retry layer on Tallyo (branch feat-ocr-retry-queue).md",
+    "tallyo/backend/llm-workers/Retry queue in expense-processing- backoff schedule + dead letters (branches fea.md"
+   ],
+   "wiki": "tallyo/backend/llm-workers/receipt-ocr-inside-process-entry-orchestrator-ocr-merchant.md"
+  },
+  "tallyo/backend/llm-workers/Tallyo — idea- split-bill detection from a single receipt photo (multi-payer rec.md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Tallyo — idea: split-bill detection from a single receipt photo (multi-payer receipts)",
+   "links": [],
+   "wiki": "tallyo/backend/llm-workers/tallyo-idea-split-bill-detection-from-a-single-receipt-photo.md"
+  },
+  "merlino/agent/Npm rebuild breaks Merlino scheduler and halts Android deployment.md": {
+   "folder": "merlino/agent",
+   "title": "Npm rebuild breaks Merlino scheduler and halts Android deployment",
+   "links": [],
+   "wiki": "merlino/agent/npm-rebuild-breaks-merlino-scheduler-and-halts-android.md"
+  },
+  "tallyo/marketing/Fake-receipt Instagram promo set (budgeting-tips-2026-08).md": {
+   "folder": "tallyo/marketing",
+   "title": "Fake-receipt Instagram promo set (budgeting-tips-2026-08)",
+   "links": [
+    "tallyo/marketing/Fake-receipt ad set batch 3- 20 humor creatives (51 to 70).md"
+   ],
+   "wiki": "tallyo/marketing/fake-receipt-instagram-promo-set-budgeting-tips-2026-08.md"
+  },
+  "tallyo/marketing/Fake-receipt ad set batch 3- 20 humor creatives (51 to 70).md": {
+   "folder": "tallyo/marketing",
+   "title": "Fake-receipt ad set batch 3: 20 humor creatives (51 to 70)",
+   "links": [
+    "tallyo/marketing/Fake-receipt Instagram promo set (budgeting-tips-2026-08).md"
+   ],
+   "wiki": "tallyo/marketing/fake-receipt-ad-set-batch-3-20-humor-creatives-51-to-70.md"
+  },
+  "tech-knowledge/Claude 3.5 Sonnet API Deprecation Notice.md": {
+   "folder": "tech-knowledge",
+   "title": "Claude 3.5 Sonnet API Deprecation Notice",
+   "links": [],
+   "wiki": "tech-knowledge/claude-3-5-sonnet-api-deprecation-notice.md"
+  },
+  "tallyo/backend/llm-workers/Mistral Large 2 swap deployed (expense-processing v145, weekly-digest v31).md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Mistral Large 2 swap deployed (expense-processing v145, weekly-digest v31)",
+   "links": [
+    "tallyo/backend/llm-workers/Mistral Large 2.1 swap- text-parsing outage repaired, prod on Large (2026-08-18).md"
+   ],
+   "wiki": "tallyo/backend/llm-workers/mistral-large-2-swap-deployed-expense-processing-v145-weekly.md"
+  },
+  "tallyo/backend/llm-workers/Mistral Large 2.1 swap- text-parsing outage repaired, prod on Large (2026-08-18).md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Mistral Large 2.1 swap: text-parsing outage repaired, prod on Large (2026-08-18)",
+   "links": [],
+   "wiki": "tallyo/backend/llm-workers/mistral-large-2-1-swap-text-parsing-outage-repaired-prod-on.md"
+  },
+  "tallyo/backend/llm-workers/Mistral Nemo worker lowered to 'fast' mode (receipt-parsing).md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Mistral Nemo worker lowered to 'fast' mode (receipt-parsing)",
+   "links": [],
+   "wiki": "tallyo/backend/llm-workers/mistral-nemo-worker-lowered-to-fast-mode-receipt-parsing.md"
+  },
+  "tallyo/backend/llm-workers/Prompt Cache Warmup — cost notes for Tallyo (process-entry) — log.md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Prompt Cache Warmup — cost notes for Tallyo (process-entry) — log",
+   "links": [
+    "tallyo/backend/llm-workers/Skill- prompt-regression-check (compare a lighter Mistral against a stronger mod.md"
+   ],
+   "wiki": "tallyo/backend/llm-workers/prompt-cache-warmup-cost-notes-for-tallyo-process-entry-log.md"
+  },
+  "fitosfera/hub/Crystalline Dashboard.md": {
+   "folder": "fitosfera/hub",
+   "title": "Crystalline Dashboard",
+   "links": [],
+   "wiki": "fitosfera/hub/crystalline-dashboard.md"
+  },
+  "tallyo/backend/llm-workers/Retry queue in expense-processing- backoff schedule + dead letters (branches fea.md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Retry queue in expense-processing: backoff schedule + dead letters (branches feat/processing-retries, feat/ios-offline-queue, 2026-10-13)",
+   "links": [
+    "tallyo/releases/Tallyo Android 3.4.0 (vc19)- caught up with iOS, Pieter's voice-log bug fixed (2.md"
+   ],
+   "wiki": "tallyo/backend/llm-workers/retry-queue-in-expense-processing-backoff-schedule-dead.md"
+  },
+  "tallyo/backend/operations/Firebase emulator ignores .runtimeconfig.json after a port change (function conf.md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Firebase emulator ignores .runtimeconfig.json after a port change (function config)",
+   "links": [],
+   "wiki": "tallyo/backend/operations/firebase-emulator-ignores-runtimeconfig-json-after-a-port.md"
+  },
+  "tallyo/marketing/Meta ads tracking for Tallyo - the simple guide (2026-07-28).md": {
+   "folder": "tallyo/marketing",
+   "title": "Meta ads tracking for Tallyo - the simple guide (2026-07-28)",
+   "links": [],
+   "wiki": "tallyo/marketing/meta-ads-tracking-for-tallyo-the-simple-guide-2026-07-28.md"
+  },
+  "tallyo/marketing/Meta lookalike seed from signups (310 users).md": {
+   "folder": "tallyo/marketing",
+   "title": "Meta lookalike seed from signups (310 users)",
+   "links": [
+    "quadrante/infrastructure/curl TLS fails behind this proxy (SSL_ERROR_SYSCALL).md"
+   ],
+   "wiki": "tallyo/marketing/meta-lookalike-seed-from-signups-310-users.md"
+  },
+  "tallyo/app-ui/Hot reload loses auth state in Flutter web build (Crashlytics init fix).md": {
+   "folder": "tallyo/app-ui",
+   "title": "Hot reload loses auth state in Flutter web build (Crashlytics init fix)",
+   "links": [],
+   "wiki": "tallyo/app-ui/hot-reload-loses-auth-state-in-flutter-web-build-crashlytics.md"
+  },
+  "tallyo/releases/Imported receipt OCR results now cached locally (ios build, 2026-09-10).md": {
+   "folder": "tallyo/releases",
+   "title": "Imported receipt OCR results now cached locally (ios build, 2026-09-10)",
+   "links": [],
+   "wiki": "tallyo/releases/imported-receipt-ocr-results-now-cached-locally-ios-build.md"
+  },
+  "tallyo/backend/operations/PROD DEPLOY 2026-09-05 (client-only).md": {
+   "folder": "tallyo/backend/operations",
+   "title": "PROD DEPLOY 2026-09-05 (client-only)",
+   "links": [
+    "tallyo/backend/operations/Web app deploy 2026-09-08- c8f3e2a live on Vercel (rev 00006-kxm).md"
+   ],
+   "wiki": "tallyo/backend/operations/prod-deploy-2026-09-05-client-only.md"
+  },
+  "fitosfera/seedline/Phase 6 backward-compat audit— both findings FIXED, 11-11 SAFE.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Phase 6 backward-compat audit— both findings FIXED, 11-11 SAFE",
+   "links": [],
+   "wiki": "fitosfera/seedline/phase-6-backward-compat-audit-both-findings-fixed-11-11-safe.md"
+  },
+  "tallyo/backend/llm-workers/Free tier receipt-scan limit defect (found via Ingrid support ticket).md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Free tier receipt-scan limit defect (found via Ingrid support ticket)",
+   "links": [],
+   "wiki": "tallyo/backend/llm-workers/free-tier-receipt-scan-limit-defect-found-via-ingrid-support.md"
+  },
+  "tallyo/analytics/Query Firebase — nuovi account ultimi 2 giorni.md": {
+   "folder": "tallyo/analytics",
+   "title": "Query Firebase — nuovi account ultimi 2 giorni",
+   "links": [
+    "tallyo/analytics/Query metriche Tallyo — attivazione premium-trial.md",
+    "tallyo/marketing/Rendimento Meta Ads — 12 giugno 2026.md"
+   ],
+   "wiki": "tallyo/analytics/query-firebase-nuovi-account-ultimi-2-giorni.md"
+  },
+  "tallyo/analytics/Query metriche Tallyo — attivazione premium-trial.md": {
+   "folder": "tallyo/analytics",
+   "title": "Query metriche Tallyo — attivazione premium/trial",
+   "links": [
+    "tallyo/analytics/Query Firebase — nuovi account ultimi 2 giorni.md",
+    "tallyo/marketing/Rendimento Meta Ads — 12 giugno 2026.md"
+   ],
+   "wiki": "tallyo/analytics/query-metriche-tallyo-attivazione-premium-trial.md"
+  },
+  "tallyo/paywall/Adapty Paywall — Prezzi localizzati & Test TestFlight (RISOLTO).md": {
+   "folder": "tallyo/paywall",
+   "title": "Adapty Paywall — Prezzi localizzati & Test TestFlight (RISOLTO)",
+   "links": [
+    "tallyo/paywall/Tallyo — Free-tier limits & paywall enforcement (runbook, June 2026).md",
+    "tallyo/paywall/Tallyo — Paywall Concept Generator (Prompt).md"
+   ],
+   "wiki": "tallyo/paywall/adapty-paywall-prezzi-localizzati-test-testflight-risolto.md"
+  },
+  "tallyo/backend/operations/Adapty webhook duplicates RENEWAL events (retry after timeout).md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Adapty webhook duplicates RENEWAL events (retry after timeout)",
+   "links": [
+    "tallyo/backend/operations/Tallyo backend code lives in the tallyo-backend repo (deploy source).md"
+   ],
+   "wiki": "tallyo/backend/operations/adapty-webhook-duplicates-renewal-events-retry-after-timeout.md"
+  },
+  "tallyo/paywall/Rule- Tallyo never shows a price-change banner before checkout (3.1.0).md": {
+   "folder": "tallyo/paywall",
+   "title": "Rule: Tallyo never shows a price-change banner before checkout (3.1.0)",
+   "links": [
+    "tallyo/releases/Tallyo v2.1.4- dark-mode chart palette + crash-report opt-in.md",
+    "tallyo/releases/v1.8.2- widget refresh interval reverted to 15 min.md"
+   ],
+   "wiki": "tallyo/paywall/rule-tallyo-never-shows-a-price-change-banner-before.md"
+  },
+  "tallyo/backend/operations/Runbook— Send a weekly digest to all users.md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Runbook— Send a weekly digest to all users",
+   "links": [],
+   "wiki": "tallyo/backend/operations/runbook-send-a-weekly-digest-to-all-users.md"
+  },
+  "tallyo/backend/operations/Digest email sent twice to some users — scheduler retry (2026-06-26).md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Digest email sent twice to some users — scheduler retry (2026-06-26)",
+   "links": [
+    "tallyo/backend/operations/Runbook — Send a sync notification to all users (notify-sync.mjs).md",
+    "tallyo/backend/operations/Tallyo push notifications (Flutter) + FCM credentials.md",
+    "tallyo/paywall/Tallyo trial length shown from remote config + annual badge gotcha.md"
+   ],
+   "wiki": "tallyo/backend/operations/digest-email-sent-twice-to-some-users-scheduler-retry-2026.md"
+  },
+  "tallyo/backend/operations/Runbook — Send a sync notification to all users (notify-sync.mjs).md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Runbook — Send a sync notification to all users (notify-sync.mjs)",
+   "links": [
+    "tallyo/backend/mcp-server/Tallyo MCP — Runbook Deploy & Stato Live (pannello di controllo).md",
+    "tallyo/backend/operations/Digest email sent twice to some users — scheduler retry (2026-06-26).md",
+    "tallyo/backend/operations/Tallyo push notifications (Flutter) + FCM credentials.md"
+   ],
+   "wiki": "tallyo/backend/operations/runbook-send-a-sync-notification-to-all-users-notify-sync.md"
+  },
+  "tallyo/backend/operations/Tallyo push notifications (Flutter) + FCM credentials.md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Tallyo push notifications (Flutter) + FCM credentials",
+   "links": [
+    "tallyo/backend/operations/Digest email sent twice to some users — scheduler retry (2026-06-26).md",
+    "tallyo/backend/operations/Runbook — Send a sync notification to all users (notify-sync.mjs).md",
+    "tallyo/releases/iOS deployment-archive runbook (build increment + Xcode signing, auto-provision).md"
+   ],
+   "wiki": "tallyo/backend/operations/tallyo-push-notifications-flutter-fcm-credentials.md"
+  },
+  "tallyo/paywall/Tallyo — Free-tier limits & paywall enforcement (runbook, June 2026).md": {
+   "folder": "tallyo/paywall",
+   "title": "Tallyo — Free-tier limits & paywall enforcement (runbook, June 2026)",
+   "links": [
+    "tallyo/paywall/Adapty Paywall — Prezzi localizzati & Test TestFlight (RISOLTO).md"
+   ],
+   "wiki": "tallyo/paywall/tallyo-free-tier-limits-paywall-enforcement-runbook-june.md"
+  },
+  "tallyo/backend/llm-workers/Skill- prompt-regression-check (compare a lighter Mistral against a stronger mod.md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Skill: prompt-regression-check (compare a lighter Mistral against a stronger model on auto-tag)",
+   "links": [
+    "quadrante/internal-projects/Repo- claude-code-commit-linter (Claude Code skill).md",
+    "tallyo/backend/llm-workers/Prompt Cache Warmup — cost notes for Tallyo (process-entry) — log.md",
+    "tallyo/paywall/Tallyo free tier bill-reminder limit raised to 5 (prod).md"
+   ],
+   "wiki": "tallyo/backend/llm-workers/skill-prompt-regression-check-compare-a-lighter-mistral.md"
+  },
+  "tallyo/releases/iOS deployment-archive runbook (build increment + Xcode signing, auto-provision).md": {
+   "folder": "tallyo/releases",
+   "title": "iOS deployment/archive runbook (build increment + Xcode signing, auto-provision)",
+   "links": [
+    "tallyo/backend/operations/Tallyo push notifications (Flutter) + FCM credentials.md"
+   ],
+   "wiki": "tallyo/releases/ios-deployment-archive-runbook-build-increment-xcode-signing.md"
+  },
+  "tallyo/feedback/Tallyo — Bugfix & User Feedback (Ingrid Solvang).md": {
+   "folder": "tallyo/feedback",
+   "title": "Tallyo — Bugfix & User Feedback (Ingrid Solvang)",
+   "links": [],
+   "wiki": "tallyo/feedback/tallyo-bugfix-user-feedback-ingrid-solvang.md"
+  },
+  "tallyo/releases/Tallyo 3.2.1 — recurring bill reminders fix (timezone shift after DST).md": {
+   "folder": "tallyo/releases",
+   "title": "Tallyo 3.2.1 — recurring bill reminders fix (timezone shift after DST)",
+   "links": [],
+   "wiki": "tallyo/releases/tallyo-3-2-1-recurring-bill-reminders-fix-timezone-shift.md"
+  },
+  "tallyo/releases/Tallyo 3.3.0 - the rebuilt Budget Map (build 3 submitted for review).md": {
+   "folder": "tallyo/releases",
+   "title": "Tallyo 3.3.0 - the rebuilt Budget Map (build 3 submitted for review)",
+   "links": [
+    "tallyo/releases/Tallyo Android 3.4.0 (vc19)- caught up with iOS, Pieter's voice-log bug fixed (2.md"
+   ],
+   "wiki": "tallyo/releases/tallyo-3-3-0-the-rebuilt-budget-map-build-3-submitted-for.md"
+  },
+  "tallyo/releases/Tallyo Android 3.4.0 (vc19)- caught up with iOS, Pieter's voice-log bug fixed (2.md": {
+   "folder": "tallyo/releases",
+   "title": "Tallyo Android 3.4.0 (vc19): caught up with iOS, Pieter's voice-log bug fixed (2026-10-15)",
+   "links": [],
+   "wiki": "tallyo/releases/tallyo-android-3-4-0-vc19-caught-up-with-ios-pieter-s-voice.md"
+  },
+  "tallyo/backend/llm-workers/Tallyo Dev — Switch a Mistral Large 4.2.md": {
+   "folder": "tallyo/backend/llm-workers",
+   "title": "Tallyo Dev — Switch a Mistral Large 4.2",
+   "links": [],
+   "wiki": "tallyo/backend/llm-workers/tallyo-dev-switch-a-mistral-large-4-2.md"
+  },
+  "tallyo/backend/mcp-server/Tallyo MCP moved to mcp.gettallyo.com — CORS preflight fixed, Claude listing res.md": {
+   "folder": "tallyo/backend/mcp-server",
+   "title": "Tallyo MCP moved to mcp.gettallyo.com — CORS preflight fixed, Claude listing resubmitted",
+   "links": [
+    "tallyo/app-ui/Tallyo widget on iPad- pairing never completes after reinstall (fixed 0.3.2).md",
+    "tallyo/backend/mcp-server/Tallyo MCP — infrastruttura live- dove sta il Server, i domini, come si deployan.md"
+   ],
+   "wiki": "tallyo/backend/mcp-server/tallyo-mcp-moved-to-mcp-gettallyo-com-cors-preflight-fixed.md"
+  },
+  "tallyo/backend/mcp-server/Tallyo MCP pagination- DEPLOYED (mcp v8 + 00032); digest half still pending.md": {
+   "folder": "tallyo/backend/mcp-server",
+   "title": "Tallyo MCP pagination: DEPLOYED (mcp v8 + 00032); digest half still pending",
+   "links": [
+    "tallyo/backend/mcp-server/Tallyo MCP — Runbook Deploy & Stato Live (pannello di controllo).md",
+    "tallyo/backend/operations/Firebase emulator ignores .runtimeconfig.json after a port change (function conf.md"
+   ],
+   "wiki": "tallyo/backend/mcp-server/tallyo-mcp-pagination-deployed-mcp-v8-00032-digest-half.md"
+  },
+  "tallyo/backend/operations/Tallyo backend code lives in the tallyo-backend repo (deploy source).md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Tallyo backend code lives in the tallyo-backend repo (deploy source)",
+   "links": [
+    "tallyo/backend/operations/Adapty webhook duplicates RENEWAL events (retry after timeout).md"
+   ],
+   "wiki": "tallyo/backend/operations/tallyo-backend-code-lives-in-the-tallyo-backend-repo-deploy.md"
+  },
+  "tallyo/paywall/Tallyo free tier bill-reminder limit raised to 5 (prod).md": {
+   "folder": "tallyo/paywall",
+   "title": "Tallyo free tier bill-reminder limit raised to 5 (prod)",
+   "links": [
+    "tallyo/backend/llm-workers/Skill- prompt-regression-check (compare a lighter Mistral against a stronger mod.md"
+   ],
+   "wiki": "tallyo/paywall/tallyo-free-tier-bill-reminder-limit-raised-to-5-prod.md"
+  },
+  "tallyo/releases/Tallyo iOS 3.0.5 — swipe-to-delete row gesture fix (tap misread as drag).md": {
+   "folder": "tallyo/releases",
+   "title": "Tallyo iOS 3.0.5 — swipe-to-delete row gesture fix (tap misread as drag)",
+   "links": [],
+   "wiki": "tallyo/releases/tallyo-ios-3-0-5-swipe-to-delete-row-gesture-fix-tap-misread.md"
+  },
+  "tallyo/app-ui/Tallyo widget on iPad- pairing never completes after reinstall (fixed 0.3.2).md": {
+   "folder": "tallyo/app-ui",
+   "title": "Tallyo widget on iPad: pairing never completes after reinstall (fixed 0.3.2)",
+   "links": [
+    "tallyo/backend/mcp-server/Tallyo MCP moved to mcp.gettallyo.com — CORS preflight fixed, Claude listing res.md"
+   ],
+   "wiki": "tallyo/app-ui/tallyo-widget-on-ipad-pairing-never-completes-after.md"
+  },
+  "tallyo/paywall/Tallyo trial length shown from remote config + annual badge gotcha.md": {
+   "folder": "tallyo/paywall",
+   "title": "Tallyo trial length shown from remote config + annual badge gotcha",
+   "links": [
+    "tallyo/backend/operations/Digest email sent twice to some users — scheduler retry (2026-06-26).md"
+   ],
+   "wiki": "tallyo/paywall/tallyo-trial-length-shown-from-remote-config-annual-badge.md"
+  },
+  "tallyo/backend/operations/Tallyo expense-tracking (00033 + 00034) - LIVE 2026-07-23, incl. per-ca.md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Tallyo expense-tracking (00033 + 00034) - LIVE 2026-07-23, incl. per-ca",
+   "links": [],
+   "wiki": "tallyo/backend/operations/tallyo-expense-tracking-00033-00034-live-2026-07-23-incl-per.md"
+  },
+  "tallyo/releases/Tallyo v2.1.4- dark-mode chart palette + crash-report opt-in.md": {
+   "folder": "tallyo/releases",
+   "title": "Tallyo v2.1.4: dark-mode chart palette + crash-report opt-in",
+   "links": [
+    "tallyo/analytics/Cohort retention analysis, frozen findings (20 Jul 2026).md",
+    "tallyo/paywall/Rule- Tallyo never shows a price-change banner before checkout (3.1.0).md"
+   ],
+   "wiki": "tallyo/releases/tallyo-v2-1-4-dark-mode-chart-palette-crash-report-opt-in.md"
+  },
+  "tallyo/paywall/Tallyo v2.2.1- annual-default plan picker.md": {
+   "folder": "tallyo/paywall",
+   "title": "Tallyo v2.2.1- annual-default plan picker",
+   "links": [],
+   "wiki": "tallyo/paywall/tallyo-v2-2-1-annual-default-plan-picker.md"
+  },
+  "tallyo/releases/Notarize and distribute a Tallyo macOS build with notarytool (CLI + Gatekeeper c.md": {
+   "folder": "tallyo/releases",
+   "title": "Notarize and distribute a Tallyo macOS build with notarytool (CLI + Gatekeeper check)",
+   "links": [],
+   "wiki": "tallyo/releases/notarize-and-distribute-a-tallyo-macos-build-with-notarytool.md"
+  },
+  "tallyo/releases/Verifica account Google Play Console e SHA-256 — Android.md": {
+   "folder": "tallyo/releases",
+   "title": "Verifica account Google Play Console e SHA-256 — Android",
+   "links": [],
+   "wiki": "tallyo/releases/verifica-account-google-play-console-e-sha-256-android.md"
+  },
+  "tallyo/backend/operations/Web app deploy 2026-09-08- c8f3e2a live on Vercel (rev 00006-kxm).md": {
+   "folder": "tallyo/backend/operations",
+   "title": "Web app deploy 2026-09-08: c8f3e2a live on Vercel (rev 00006-kxm)",
+   "links": [
+    "tallyo/backend/operations/PROD DEPLOY 2026-09-05 (client-only).md",
+    "tallyo/backend/operations/Tallyo fix webhook retry (T-247) + rate limit (T-248) COMPLETATO 04-09.md",
+    "tallyo/releases/Tallyo freeze window - weekdays only (2026-09-05).md"
+   ],
+   "wiki": "tallyo/backend/operations/web-app-deploy-2026-09-08-c8f3e2a-live-on-vercel-rev-00006.md"
+  },
+  "tallyo/app-ui/Why the web dashboard stayed on the 0.9.4 chart library.md": {
+   "folder": "tallyo/app-ui",
+   "title": "Why the web dashboard stayed on the 0.9.4 chart library",
+   "links": [],
+   "wiki": "tallyo/app-ui/why-the-web-dashboard-stayed-on-the-0-9-4-chart-library.md"
+  },
+  "tallyo/marketing/X carousel generator (expense-tracking tips deck).md": {
+   "folder": "tallyo/marketing",
+   "title": "X carousel generator (expense-tracking tips deck)",
+   "links": [],
+   "wiki": "tallyo/marketing/x-carousel-generator-expense-tracking-tips-deck.md"
+  },
+  "tallyo/releases/Xcode archive- distribution profile mismatch warning is harmless.md": {
+   "folder": "tallyo/releases",
+   "title": "Xcode archive: distribution profile mismatch warning is harmless",
+   "links": [],
+   "wiki": "tallyo/releases/xcode-archive-distribution-profile-mismatch-warning-is.md"
+  },
+  "tallyo/releases/iOS build fix — CocoaPods cache cleared (Xcode 27 simulator arch mismatch).md": {
+   "folder": "tallyo/releases",
+   "title": "iOS build fix — CocoaPods cache cleared (Xcode 27 simulator arch mismatch)",
+   "links": [
+    "tallyo/Tallyo - Project Overview & Roadmap.md",
+    "tallyo/releases/iOS deployment-archive runbook (build increment + Xcode signing, auto-provision).md"
+   ],
+   "wiki": "tallyo/releases/ios-build-fix-cocoapods-cache-cleared-xcode-27-simulator.md"
+  },
+  "tallyo/releases/iOS v2.0.8- biometric prompt loop fix + stale badge count fix (race conditions).md": {
+   "folder": "tallyo/releases",
+   "title": "iOS v2.0.8: biometric prompt loop fix + stale badge count fix (race conditions)",
+   "links": [
+    "tallyo/Tallyo - Project Overview & Roadmap.md",
+    "tallyo/releases/Tallyo - Bug Fix & Ottimizzazioni.md"
+   ],
+   "wiki": "tallyo/releases/ios-v2-0-8-biometric-prompt-loop-fix-stale-badge-count-fix.md"
+  },
+  "tallyo/backend/operations/bulk-archive — pulizia vecchie voci per @tallyo.app (attivo dal 2026-08-18).md": {
+   "folder": "tallyo/backend/operations",
+   "title": "bulk-archive — pulizia vecchie voci per @tallyo.app (attivo dal 2026-08-18)",
+   "links": [],
+   "wiki": "tallyo/backend/operations/bulk-archive-pulizia-vecchie-voci-per-tallyo-app-attivo-dal.md"
+  },
+  "tallyo/releases/iOS 1.8.3 vs 1.8.2 build- diff of assets = icons + version only.md": {
+   "folder": "tallyo/releases",
+   "title": "iOS 1.8.3 vs 1.8.2 build- diff of assets = icons + version only",
+   "links": [],
+   "wiki": "tallyo/releases/ios-1-8-3-vs-1-8-2-build-diff-of-assets-icons-version-only.md"
+  },
+  "fitosfera/seedline/process-entry- Pixtral (MistralAPI) vision experiment on 'development' branch.md": {
+   "folder": "fitosfera/seedline",
+   "title": "process-entry- Pixtral (MistralAPI) vision experiment on 'development' branch",
+   "links": [],
+   "wiki": "fitosfera/seedline/process-entry-pixtral-mistralapi-vision-experiment-on.md"
+  },
+  "quadrante/infrastructure/curl TLS fails behind this proxy (SSL_ERROR_SYSCALL).md": {
+   "folder": "quadrante/infrastructure",
+   "title": "curl TLS fails behind this proxy (SSL_ERROR_SYSCALL)",
+   "links": [
+    "tallyo/marketing/Meta lookalike seed from signups (310 users).md"
+   ],
+   "wiki": "quadrante/infrastructure/curl-tls-fails-behind-this-proxy-ssl-error-syscall.md"
+  },
+  "tallyo/releases/v1.8.2- widget refresh interval reverted to 15 min.md": {
+   "folder": "tallyo/releases",
+   "title": "v1.8.2: widget refresh interval reverted to 15 min",
+   "links": [
+    "tallyo/paywall/Rule- Tallyo never shows a price-change banner before checkout (3.1.0).md"
+   ],
+   "wiki": "tallyo/releases/v1-8-2-widget-refresh-interval-reverted-to-15-min.md"
+  },
+  "tallyo/releases/v1.9.1 - fix entries losing line breaks on export (CSV fidelity gate).md": {
+   "folder": "tallyo/releases",
+   "title": "v1.9.1 - fix entries losing line breaks on export (CSV fidelity gate)",
+   "links": [],
+   "wiki": "tallyo/releases/v1-9-1-fix-entries-losing-line-breaks-on-export-csv-fidelity.md"
+  },
+  "tallyo/backend/pdf-report skill + wkhtmltopdf font gotcha.md": {
+   "folder": "tallyo/backend",
+   "title": "pdf-report skill + wkhtmltopdf font gotcha",
+   "links": [],
+   "wiki": "tallyo/backend/pdf-report-skill-wkhtmltopdf-font-gotcha.md"
+  },
+  "tallyo/feedback/Bug Report- Dark Mode Chart Labels Unreadable on Android (Daniel Weir) - FIXED 2.md": {
+   "folder": "tallyo/feedback",
+   "title": "Bug Report- Dark Mode Chart Labels Unreadable on Android (Daniel Weir) - FIXED 2026-10",
+   "links": [
+    "tallyo/backend/operations/Adapty webhook duplicates RENEWAL events (retry after timeout).md"
+   ],
+   "wiki": "tallyo/feedback/bug-report-dark-mode-chart-labels-unreadable-on-android.md"
+  },
+  "tallyo/feedback/Bug ordinamento scadenze — Settimana vs Mese.md": {
+   "folder": "tallyo/feedback",
+   "title": "Bug ordinamento scadenze — Settimana vs Mese",
+   "links": [],
+   "wiki": "tallyo/feedback/bug-ordinamento-scadenze-settimana-vs-mese.md"
+  },
+  "tallyo/feedback/Feedback Utenti v1.5.0 - Tallyo.md": {
+   "folder": "tallyo/feedback",
+   "title": "Feedback Utenti v1.5.0 - Tallyo",
+   "links": [
+    "tallyo/Tallyo - Project Overview & Roadmap.md",
+    "tallyo/feedback/Tallyo - Feedback & Idee Evolutive.md"
+   ],
+   "wiki": "tallyo/feedback/feedback-utenti-v1-5-0-tallyo.md"
+  },
+  "tallyo/feedback/Feedback — Bug esportazione CSV e duplicati scontrini.md": {
+   "folder": "tallyo/feedback",
+   "title": "Feedback — Bug esportazione CSV e duplicati scontrini",
+   "links": [],
+   "wiki": "tallyo/feedback/feedback-bug-esportazione-csv-e-duplicati-scontrini.md"
+  },
+  "tallyo/feedback/Idee per prossime versioni — Feedback Daniel Weir.md": {
+   "folder": "tallyo/feedback",
+   "title": "Idee per prossime versioni — Feedback Daniel Weir",
+   "links": [],
+   "wiki": "tallyo/feedback/idee-per-prossime-versioni-feedback-daniel-weir.md"
+  },
+  "tallyo/feedback/Tallyo - Feedback & Idee Evolutive.md": {
+   "folder": "tallyo/feedback",
+   "title": "Tallyo - Feedback & Idee Evolutive",
+   "links": [
+    "tallyo/Tallyo - Project Overview & Roadmap.md",
+    "tallyo/feedback/Feedback Utenti v1.5.0 - Tallyo.md",
+    "tallyo/releases/Bug Fixes - Tallyo 2.3.1.md"
+   ],
+   "wiki": "tallyo/feedback/tallyo-feedback-idee-evolutive.md"
+  },
+  "tallyo/analytics/Google Play payouts vs Adapty — verifica + fix tabella (2026-08-27).md": {
+   "folder": "tallyo/analytics",
+   "title": "Google Play payouts vs Adapty — verifica + fix tabella (2026-08-27)",
+   "links": [
+    "tallyo/analytics/Dashboard ricavi vs bonifici Stripe — controllo (2026-10-01).md"
+   ],
+   "wiki": "tallyo/analytics/google-play-payouts-vs-adapty-verifica-fix-tabella-2026-08.md"
+  },
+  "tallyo/analytics/Dashboard ricavi vs bonifici Stripe — controllo (2026-10-01).md": {
+   "folder": "tallyo/analytics",
+   "title": "Dashboard ricavi vs bonifici Stripe — controllo (2026-10-01)",
+   "links": [
+    "tallyo/analytics/Google Play payouts vs Adapty — verifica + fix tabella (2026-08-27).md"
+   ],
+   "wiki": "tallyo/analytics/dashboard-ricavi-vs-bonifici-stripe-controllo-2026-10-01.md"
+  },
+  "tallyo/analytics/Tallyo — Report P&L (7 Giugno – 4 Luglio 2026).md": {
+   "folder": "tallyo/analytics",
+   "title": "Tallyo — Report P&L (7 Giugno – 4 Luglio 2026)",
+   "links": [],
+   "wiki": "tallyo/analytics/tallyo-report-p-l-7-giugno-4-luglio-2026.md"
+  },
+  "tallyo/analytics/Cohort retention playbook (how to reproduce).md": {
+   "folder": "tallyo/analytics",
+   "title": "Cohort retention playbook (how to reproduce)",
+   "links": [
+    "tallyo/analytics/Cohort retention analysis, frozen findings (20 Jul 2026).md"
+   ],
+   "wiki": "tallyo/analytics/cohort-retention-playbook-how-to-reproduce.md"
+  },
+  "tallyo/analytics/Cohort retention analysis, frozen findings (20 Jul 2026).md": {
+   "folder": "tallyo/analytics",
+   "title": "Cohort retention analysis, frozen findings (20 Jul 2026)",
+   "links": [
+    "tallyo/analytics/Cohort retention playbook (how to reproduce).md",
+    "tallyo/marketing/Tallyo App Store screenshots pipeline (Monochrome style).md",
+    "tallyo/releases/Tallyo v2.1.4- dark-mode chart palette + crash-report opt-in.md"
+   ],
+   "wiki": "tallyo/analytics/cohort-retention-analysis-frozen-findings-20-jul-2026.md"
+  },
+  "tallyo/app-ui/Splitwise — Tallyo to Shared Budget.md": {
+   "folder": "tallyo/app-ui",
+   "title": "Splitwise — Tallyo to Shared Budget",
+   "links": [],
+   "wiki": "tallyo/app-ui/splitwise-tallyo-to-shared-budget.md"
+  },
+  "tallyo/app-ui/Nuova interfaccia Tallyo.md": {
+   "folder": "tallyo/app-ui",
+   "title": "Nuova interfaccia Tallyo",
+   "links": [
+    "tallyo/Tallyo - Project Overview & Roadmap.md"
+   ],
+   "wiki": "tallyo/app-ui/nuova-interfaccia-tallyo.md"
+  },
+  "tallyo/Roba da fare - Tallyo.md": {
+   "folder": "tallyo",
+   "title": "Roba da fare - Tallyo",
+   "links": [
+    "tallyo/Tallyo - Project Overview & Roadmap.md"
+   ],
+   "wiki": "tallyo/roba-da-fare-tallyo.md"
+  },
+  "tallyo/releases/Tallyo - Bug Fix & Ottimizzazioni.md": {
+   "folder": "tallyo/releases",
+   "title": "Tallyo - Bug Fix & Ottimizzazioni",
+   "links": [
+    "tallyo/Tallyo - Project Overview & Roadmap.md",
+    "tallyo/releases/iOS v2.0.8- biometric prompt loop fix + stale badge count fix (race conditions).md"
+   ],
+   "wiki": "tallyo/releases/tallyo-bug-fix-ottimizzazioni.md"
+  },
+  "tallyo/releases/Tallyo - Feature & Evolutive.md": {
+   "folder": "tallyo/releases",
+   "title": "Tallyo - Feature & Evolutive",
+   "links": [
+    "tallyo/Tallyo - Project Overview & Roadmap.md"
+   ],
+   "wiki": "tallyo/releases/tallyo-feature-evolutive.md"
+  },
+  "tallyo/Tallyo - Project Overview & Roadmap.md": {
+   "folder": "tallyo",
+   "title": "Tallyo - Project Overview & Roadmap",
+   "links": [
+    "personal/travel/Alloggio Ivo in Sardegna.md",
+    "personal/travel/Viaggio in Sardegna (Maggio 2026).md",
+    "tallyo/marketing/Collaborazione Ivo - Credenziali Instagram.md",
+    "tallyo/releases/Bug Fixes - Tallyo 2.3.1.md",
+    "tallyo/releases/Tallyo - Bug Fix & Ottimizzazioni.md",
+    "tallyo/releases/iOS v2.0.8- biometric prompt loop fix + stale badge count fix (race conditions).md"
+   ],
+   "wiki": "tallyo/tallyo-project-overview-roadmap.md"
+  },
+  "tallyo/app-ui/Tallyo — Concept widget da polso (Smartwatch).md": {
+   "folder": "tallyo/app-ui",
+   "title": "Tallyo — Concept widget da polso (Smartwatch)",
+   "links": [],
+   "wiki": "tallyo/app-ui/tallyo-concept-widget-da-polso-smartwatch.md"
+  },
+  "tallyo/paywall/Tallyo — Paywall Concept Generator (Prompt).md": {
+   "folder": "tallyo/paywall",
+   "title": "Tallyo — Paywall Concept Generator (Prompt)",
+   "links": [],
+   "wiki": "tallyo/paywall/tallyo-paywall-concept-generator-prompt.md"
+  },
+  "tallyo/releases/Tallyo v1.4.0 release (CSV export + accessibility pass).md": {
+   "folder": "tallyo/releases",
+   "title": "Tallyo v1.4.0 release (CSV export + accessibility pass)",
+   "links": [
+    "tallyo/Tallyo - Project Overview & Roadmap.md",
+    "tallyo/releases/iOS deployment-archive runbook (build increment + Xcode signing, auto-provision).md"
+   ],
+   "wiki": "tallyo/releases/tallyo-v1-4-0-release-csv-export-accessibility-pass.md"
+  },
+  "tallyo/app-ui/Tallyo — Bug fix- Language consistency.md": {
+   "folder": "tallyo/app-ui",
+   "title": "Tallyo — Bug fix- Language consistency",
+   "links": [],
+   "wiki": "tallyo/app-ui/tallyo-bug-fix-language-consistency.md"
+  },
+  "tallyo/business/Tallyo — Switch account a Brightmoor Apps LLC.md": {
+   "folder": "tallyo/business",
+   "title": "Tallyo — Switch account a Brightmoor Apps LLC",
+   "links": [],
+   "wiki": "tallyo/business/tallyo-switch-account-a-brightmoor-apps-llc.md"
+  },
+  "tallyo/backend/Tallyo- Panoramica, Punti di Forza e Architettura.md": {
+   "folder": "tallyo/backend",
+   "title": "Tallyo- Panoramica, Punti di Forza e Architettura",
+   "links": [
+    "tallyo/backend/Tallyo shared-expenses- repo onboarding pubblico (skill + guida).md",
+    "tallyo/backend/mcp-server/Tallyo MCP — Runbook Deploy & Stato Live (pannello di controllo).md",
+    "tallyo/paywall/Tallyo — Free-tier limits & paywall enforcement (runbook, June 2026).md"
+   ],
+   "wiki": "tallyo/backend/tallyo-panoramica-punti-di-forza-e-architettura.md"
+  },
+  "ondina/outreach/Ernesto - Profilo e Strategia Chiamata.md": {
+   "folder": "ondina/outreach",
+   "title": "Ernesto - Profilo e Strategia Chiamata",
+   "links": [],
+   "wiki": "ondina/outreach/ernesto-profilo-e-strategia-chiamata.md"
+  },
+  "tallyo/marketing/Collaborazione Ivo - Credenziali Instagram.md": {
+   "folder": "tallyo/marketing",
+   "title": "Collaborazione Ivo - Credenziali Instagram",
+   "links": [
+    "personal/travel/Alloggio Ivo in Sardegna.md",
+    "personal/travel/Viaggio in Sardegna (Maggio 2026).md",
+    "tallyo/Tallyo - Project Overview & Roadmap.md"
+   ],
+   "wiki": "tallyo/marketing/collaborazione-ivo-credenziali-instagram.md"
+  },
+  "quadrante/infrastructure/Michele Gobbo (AWS).md": {
+   "folder": "quadrante/infrastructure",
+   "title": "Michele Gobbo (AWS)",
+   "links": [],
+   "wiki": "quadrante/infrastructure/michele-gobbo-aws.md"
+  },
+  "fitosfera/stakeholders/Henrik — Copenhagen (henrik_cph).md": {
+   "folder": "fitosfera/stakeholders",
+   "title": "Henrik — Copenhagen (henrik_cph)",
+   "links": [],
+   "wiki": "fitosfera/stakeholders/henrik-copenhagen-henrik-cph.md"
+  },
+  "tallyo/business/Loris Pavanello (Commercialista).md": {
+   "folder": "tallyo/business",
+   "title": "Loris Pavanello (Commercialista)",
+   "links": [],
+   "wiki": "tallyo/business/loris-pavanello-commercialista.md"
+  },
+  "tallyo/marketing/lunaviva — Collaborazione creator.md": {
+   "folder": "tallyo/marketing",
+   "title": "lunaviva — Collaborazione creator",
+   "links": [],
+   "wiki": "tallyo/marketing/lunaviva-collaborazione-creator.md"
+  },
+  "tallyo/analytics/SocialMetrics — Offerta Analytics gratuito.md": {
+   "folder": "tallyo/analytics",
+   "title": "SocialMetrics — Offerta Analytics gratuito",
+   "links": [],
+   "wiki": "tallyo/analytics/socialmetrics-offerta-analytics-gratuito.md"
+  },
+  "tallyo/marketing/Esempio Annuncio — Team Automatico (Spunto).md": {
+   "folder": "tallyo/marketing",
+   "title": "Esempio Annuncio — Team Automatico (Spunto)",
+   "links": [],
+   "wiki": "tallyo/marketing/esempio-annuncio-team-automatico-spunto.md"
+  },
+  "tallyo/marketing/TikTok Pixel sistemato + Budget Google Ads dimezzato (Ivo).md": {
+   "folder": "tallyo/marketing",
+   "title": "TikTok Pixel sistemato + Budget Google Ads dimezzato (Ivo)",
+   "links": [
+    "tallyo/Tallyo - Project Overview & Roadmap.md",
+    "tallyo/marketing/Rendimento Meta Ads — 12 giugno 2026.md"
+   ],
+   "wiki": "tallyo/marketing/tiktok-pixel-sistemato-budget-google-ads-dimezzato-ivo.md"
+  },
+  "tallyo/marketing/Fake-reels ad set — batches 7 and 8 (creatives 201 to 218).md": {
+   "folder": "tallyo/marketing",
+   "title": "Fake-reels ad set — batches 7 and 8 (creatives 201 to 218)",
+   "links": [
+    "tallyo/marketing/Tallyo hook graphics v2 — 5 posters with a real Pixel 9 Pro frame.md"
+   ],
+   "wiki": "tallyo/marketing/fake-reels-ad-set-batches-7-and-8-creatives-201-to-218.md"
+  },
+  "tallyo/marketing/Guerrilla Marketing QR Code — Tallyo.md": {
+   "folder": "tallyo/marketing",
+   "title": "Guerrilla Marketing QR Code — Tallyo",
+   "links": [],
+   "wiki": "tallyo/marketing/guerrilla-marketing-qr-code-tallyo.md"
+  },
+  "tallyo/analytics/Impatto sconto del lancio sui rinnovi.md": {
+   "folder": "tallyo/analytics",
+   "title": "Impatto sconto del lancio sui rinnovi",
+   "links": [],
+   "wiki": "tallyo/analytics/impatto-sconto-del-lancio-sui-rinnovi.md"
+  },
+  "tech-knowledge/Leadmill.io — LinkedIn Business Network Tool.md": {
+   "folder": "tech-knowledge",
+   "title": "Leadmill.io — LinkedIn Business Network Tool",
+   "links": [],
+   "wiki": "tech-knowledge/leadmill-io-linkedin-business-network-tool.md"
+  },
+  "tech-knowledge/Animation libraries for FFmpeg workflows (Synapse, Fluent, Keyframe, Moti....md": {
+   "folder": "tech-knowledge",
+   "title": "Animation libraries for FFmpeg workflows (Synapse, Fluent, Keyframe, Moti...",
+   "links": [
+    "tallyo/marketing/Tallyo -Payday- film- a paycheck splits itself into jars, Tallyo tallies each on.md"
+   ],
+   "wiki": "tech-knowledge/animation-libraries-for-ffmpeg-workflows-synapse-fluent.md"
+  },
+  "tallyo/marketing/Rendimento Meta Ads — 12 giugno 2026.md": {
+   "folder": "tallyo/marketing",
+   "title": "Rendimento Meta Ads — 12 giugno 2026",
+   "links": [
+    "tallyo/analytics/Query Firebase — nuovi account ultimi 2 giorni.md",
+    "tallyo/analytics/Query metriche Tallyo — attivazione premium-trial.md",
+    "tallyo/marketing/TikTok Pixel sistemato + Budget Google Ads dimezzato (Ivo).md"
+   ],
+   "wiki": "tallyo/marketing/rendimento-meta-ads-12-giugno-2026.md"
+  },
+  "tallyo/marketing/Proposta GTM & Marketing TikTok — Owen Prescott.md": {
+   "folder": "tallyo/marketing",
+   "title": "Proposta GTM & Marketing TikTok — Owen Prescott",
+   "links": [],
+   "wiki": "tallyo/marketing/proposta-gtm-marketing-tiktok-owen-prescott.md"
+  },
+  "tallyo/marketing/Tallyo - Carosello di Presentazione.md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo - Carosello di Presentazione",
+   "links": [],
+   "wiki": "tallyo/marketing/tallyo-carosello-di-presentazione.md"
+  },
+  "tallyo/marketing/Tallyo -Payday- film- a paycheck splits itself into jars, Tallyo tallies each on.md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo -Payday- film- a paycheck splits itself into jars, Tallyo tallies each on",
+   "links": [],
+   "wiki": "tallyo/marketing/tallyo-payday-film-a-paycheck-splits-itself-into-jars-tallyo.md"
+  },
+  "tallyo/marketing/Tallyo Google-style ad — 19.2s vertical cut (2026-09-11).md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo Google-style ad — 19.2s vertical cut (2026-09-11)",
+   "links": [],
+   "wiki": "tallyo/marketing/tallyo-google-style-ad-19-2s-vertical-cut-2026-09-11.md"
+  },
+  "tallyo/marketing/Tallyo hook graphics v2 — 5 posters with a real Pixel 9 Pro frame.md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo hook graphics v2 — 5 posters with a real Pixel 9 Pro frame",
+   "links": [
+    "tallyo/marketing/Fake-reels ad set — batches 7 and 8 (creatives 201 to 218).md"
+   ],
+   "wiki": "tallyo/marketing/tallyo-hook-graphics-v2-5-posters-with-a-real-pixel-9-pro.md"
+  },
+  "tallyo/marketing/Tallyo marketing website (gettallyo.com) — repo & structure.md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo marketing website (gettallyo.com) — repo & structure",
+   "links": [],
+   "wiki": "tallyo/marketing/tallyo-marketing-website-gettallyo-com-repo-structure.md"
+  },
+  "tallyo/marketing/Tallyo coin-spin reveal ad — 9-16 11s Seedance 2.0 (2026-07-20).md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo coin-spin reveal ad — 9:16 11s Seedance 2.0 (2026-07-20)",
+   "links": [],
+   "wiki": "tallyo/marketing/tallyo-coin-spin-reveal-ad-9-16-11s-seedance-2-0-2026-07-20.md"
+  },
+  "tallyo/marketing/Tallyo desk-lamp budget ad — 9-16 Seedance 2.0 recipe, v2 one-take 12s (2026-07-.md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo desk-lamp budget ad — 9:16 Seedance 2.0 recipe, v2 one-take 12s (2026-07-20)",
+   "links": [
+    "tallyo/marketing/Tallyo coin-spin reveal ad — 9-16 11s Seedance 2.0 (2026-07-20).md"
+   ],
+   "wiki": "tallyo/marketing/tallyo-desk-lamp-budget-ad-9-16-seedance-2-0-recipe-v2-one.md"
+  },
+  "tallyo/marketing/Tallyo — Ad Feature- Categorizza automaticamente.md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo — Ad Feature- Categorizza automaticamente",
+   "links": [],
+   "wiki": "tallyo/marketing/tallyo-ad-feature-categorizza-automaticamente.md"
+  },
+  "tallyo/marketing/Tallyo — Instagram Caption (IT & EN).md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo — Instagram Caption (IT & EN)",
+   "links": [],
+   "wiki": "tallyo/marketing/tallyo-instagram-caption-it-en.md"
+  },
+  "tallyo/business/Tallyo — Pitch Deck e Slides di Presentazione.md": {
+   "folder": "tallyo/business",
+   "title": "Tallyo — Pitch Deck e Slides di Presentazione",
+   "links": [],
+   "wiki": "tallyo/business/tallyo-pitch-deck-e-slides-di-presentazione.md"
+  },
+  "tallyo/marketing/Tallyo — Raccolta e Risorse Marketing.md": {
+   "folder": "tallyo/marketing",
+   "title": "Tallyo — Raccolta e Risorse Marketing",
+   "links": [],
+   "wiki": "tallyo/marketing/tallyo-raccolta-e-risorse-marketing.md"
+  },
+  "tallyo/marketing/Submit-receipts Instagram carousel (EN, 9 slides).md": {
+   "folder": "tallyo/marketing",
+   "title": "Submit-receipts Instagram carousel (EN, 9 slides)",
+   "links": [],
+   "wiki": "tallyo/marketing/submit-receipts-instagram-carousel-en-9-slides.md"
+  },
+  "tallyo/marketing/Social Post — Tallyo Voice Notes.md": {
+   "folder": "tallyo/marketing",
+   "title": "Social Post — Tallyo Voice Notes",
+   "links": [
+    "tallyo/marketing/Tallyo hook graphics v2 — 5 posters with a real Pixel 9 Pro frame.md"
+   ],
+   "wiki": "tallyo/marketing/social-post-tallyo-voice-notes.md"
+  },
+  "tallyo/marketing/Stato Meta Ads - Tallyo.md": {
+   "folder": "tallyo/marketing",
+   "title": "Stato Meta Ads - Tallyo",
+   "links": [],
+   "wiki": "tallyo/marketing/stato-meta-ads-tallyo.md"
+  },
+  "tallyo/marketing/Tutorial Tallyo su PC con Loom (Idee Video).md": {
+   "folder": "tallyo/marketing",
+   "title": "Tutorial Tallyo su PC con Loom (Idee Video)",
+   "links": [],
+   "wiki": "tallyo/marketing/tutorial-tallyo-su-pc-con-loom-idee-video.md"
+  },
+  "tallyo/marketing/Video commerciale — Note di montaggio dello screen recording.md": {
+   "folder": "tallyo/marketing",
+   "title": "Video commerciale — Note di montaggio dello screen recording",
+   "links": [],
+   "wiki": "tallyo/marketing/video-commerciale-note-di-montaggio-dello-screen-recording.md"
+  },
+  "social-media/Viral Tactics — Hook + Setup + Payoff Framework.md": {
+   "folder": "social-media",
+   "title": "Viral Tactics — Hook + Setup + Payoff Framework",
+   "links": [],
+   "wiki": "social-media/viral-tactics-hook-setup-payoff-framework.md"
+  },
+  "tallyo/marketing/YouTube video package — -Receipts Without the Shoebox- Meet Tallyo 💰-.md": {
+   "folder": "tallyo/marketing",
+   "title": "YouTube video package — -Receipts Without the Shoebox- Meet Tallyo 💰-",
+   "links": [],
+   "wiki": "tallyo/marketing/youtube-video-package-receipts-without-the-shoebox-meet.md"
+  },
+  "tallyo/backend/mcp-server/Magic link login web (plugin -pair) — setup completo Firebase + dominio email (R.md": {
+   "folder": "tallyo/backend/mcp-server",
+   "title": "Magic link login web (plugin /pair) — setup completo Firebase + dominio email (RISOLTO 11 giu 2026)",
+   "links": [
+    "tallyo/backend/Tallyo shared-expenses- repo onboarding pubblico (skill + guida).md",
+    "tallyo/backend/mcp-server/Tallyo MCP — Runbook Deploy & Stato Live (pannello di controllo).md",
+    "tallyo/backend/mcp-server/Tallyo MCP — come funziona il login (OAuth end to end).md",
+    "tallyo/marketing/Tallyo marketing website (gettallyo.com) — repo & structure.md"
+   ],
+   "wiki": "tallyo/backend/mcp-server/magic-link-login-web-plugin-pair-setup-completo-firebase.md"
+  },
+  "tallyo/backend/mcp-server/Tallyo MCP — Runbook Deploy & Stato Live (pannello di controllo).md": {
+   "folder": "tallyo/backend/mcp-server",
+   "title": "Tallyo MCP — Runbook Deploy & Stato Live (pannello di controllo)",
+   "links": [
+    "tallyo/backend/Tallyo shared-expenses- repo onboarding pubblico (skill + guida).md",
+    "tallyo/backend/mcp-server/Tallyo MCP pagination- DEPLOYED (mcp v8 + 00032); digest half still pending.md",
+    "tallyo/backend/mcp-server/Tallyo MCP — infrastruttura live- dove sta il Server, i domini, come si deployan.md",
+    "tallyo/backend/operations/Runbook — Send a sync notification to all users (notify-sync.mjs).md",
+    "tallyo/marketing/Tallyo marketing website (gettallyo.com) — repo & structure.md"
+   ],
+   "wiki": "tallyo/backend/mcp-server/tallyo-mcp-runbook-deploy-stato-live-pannello-di-controllo.md"
+  },
+  "tallyo/backend/mcp-server/Tallyo MCP — come funziona il login (OAuth end to end).md": {
+   "folder": "tallyo/backend/mcp-server",
+   "title": "Tallyo MCP — come funziona il login (OAuth end to end)",
+   "links": [
+    "tallyo/backend/mcp-server/Magic link login web (plugin -pair) — setup completo Firebase + dominio email (R.md",
+    "tallyo/backend/mcp-server/Tallyo MCP — infrastruttura live- dove sta il Server, i domini, come si deployan.md"
+   ],
+   "wiki": "tallyo/backend/mcp-server/tallyo-mcp-come-funziona-il-login-oauth-end-to-end.md"
+  },
+  "tallyo/backend/mcp-server/Tallyo MCP — infrastruttura live- dove sta il Server, i domini, come si deployan.md": {
+   "folder": "tallyo/backend/mcp-server",
+   "title": "Tallyo MCP — infrastruttura live: dove sta il Server, i domini, come si deployano",
+   "links": [
+    "tallyo/backend/Tallyo shared-expenses- repo onboarding pubblico (skill + guida).md",
+    "tallyo/backend/mcp-server/Tallyo MCP moved to mcp.gettallyo.com — CORS preflight fixed, Claude listing res.md",
+    "tallyo/backend/mcp-server/Tallyo MCP — Runbook Deploy & Stato Live (pannello di controllo).md",
+    "tallyo/backend/mcp-server/Tallyo MCP — come funziona il login (OAuth end to end).md"
+   ],
+   "wiki": "tallyo/backend/mcp-server/tallyo-mcp-infrastruttura-live-dove-sta-il-server-i-domini.md"
+  },
+  "tallyo/backend/Tallyo shared-expenses- repo onboarding pubblico (skill + guida).md": {
+   "folder": "tallyo/backend",
+   "title": "Tallyo shared-expenses: repo onboarding pubblico (skill + guida)",
+   "links": [
+    "career/Ettore Zanon CV (AI Engineer).md",
+    "tallyo/backend/mcp-server/Magic link login web (plugin -pair) — setup completo Firebase + dominio email (R.md",
+    "tallyo/backend/mcp-server/Tallyo MCP — Runbook Deploy & Stato Live (pannello di controllo).md",
+    "tallyo/backend/mcp-server/Tallyo MCP — infrastruttura live- dove sta il Server, i domini, come si deployan.md",
+    "tallyo/marketing/Post LinkedIn — Tallyo e le bollette ricorrenti (giugno 2026).md",
+    "tallyo/marketing/Tallyo marketing website (gettallyo.com) — repo & structure.md"
+   ],
+   "wiki": "tallyo/backend/tallyo-shared-expenses-repo-onboarding-pubblico-skill-guida.md"
+  },
+  "tallyo/backend/PyPI publish- gotcha 2FA, classifiers e token (riferimento).md": {
+   "folder": "tallyo/backend",
+   "title": "PyPI publish: gotcha 2FA, classifiers e token (riferimento)",
+   "links": [
+    "tallyo/backend/mcp-server/Tallyo MCP — Runbook Deploy & Stato Live (pannello di controllo).md"
+   ],
+   "wiki": "tallyo/backend/pypi-publish-gotcha-2fa-classifiers-e-token-riferimento.md"
+  },
+  "social-media/Instagram Reel Script — Message to Freelancers (Charge More).md": {
+   "folder": "social-media",
+   "title": "Instagram Reel Script — Message to Freelancers (Charge More)",
+   "links": [],
+   "wiki": "social-media/instagram-reel-script-message-to-freelancers-charge-more.md"
+  },
+  "personal/wellbeing/Consigli per il benessere e l'equilibrio cognitivo.md": {
+   "folder": "personal/wellbeing",
+   "title": "Consigli per il benessere e l'equilibrio cognitivo",
+   "links": [],
+   "wiki": "personal/wellbeing/consigli-per-il-benessere-e-l-equilibrio-cognitivo.md"
+  },
+  "career/I Miei Successi e Punti di Forza.md": {
+   "folder": "career",
+   "title": "I Miei Successi e Punti di Forza",
+   "links": [],
+   "wiki": "career/i-miei-successi-e-punti-di-forza.md"
+  },
+  "personal/food/Riso in bianco con burro e parmigiano.md": {
+   "folder": "personal/food",
+   "title": "Riso in bianco con burro e parmigiano",
+   "links": [],
+   "wiki": "personal/food/riso-in-bianco-con-burro-e-parmigiano.md"
+  },
+  "personal/food/Cena del 30 aprile 2026.md": {
+   "folder": "personal/food",
+   "title": "Cena del 30 aprile 2026",
+   "links": [],
+   "wiki": "personal/food/cena-del-30-aprile-2026.md"
+  },
+  "personal/food/Cena di oggi.md": {
+   "folder": "personal/food",
+   "title": "Cena di oggi",
+   "links": [],
+   "wiki": "personal/food/cena-di-oggi.md"
+  },
+  "personal/food/Cacio e pepe.md": {
+   "folder": "personal/food",
+   "title": "Cacio e pepe",
+   "links": [],
+   "wiki": "personal/food/cacio-e-pepe.md"
+  },
+  "personal/food/Pasta al tartufo.md": {
+   "folder": "personal/food",
+   "title": "Pasta al tartufo",
+   "links": [],
+   "wiki": "personal/food/pasta-al-tartufo.md"
+  },
+  "personal/food/Pasta brisée.md": {
+   "folder": "personal/food",
+   "title": "Pasta brisée",
+   "links": [],
+   "wiki": "personal/food/pasta-brisee.md"
+  },
+  "personal/food/Ricetta Pho Vietnamita con Manzo e Riso.md": {
+   "folder": "personal/food",
+   "title": "Ricetta Pho Vietnamita con Manzo e Riso",
+   "links": [],
+   "wiki": "personal/food/ricetta-pho-vietnamita-con-manzo-e-riso.md"
+  },
+  "personal/food/Pollo Arrosto all'Italiana.md": {
+   "folder": "personal/food",
+   "title": "Pollo Arrosto all'Italiana",
+   "links": [],
+   "wiki": "personal/food/pollo-arrosto-all-italiana.md"
+  },
+  "personal/food/Lecce — Posti dove mangiare.md": {
+   "folder": "personal/food",
+   "title": "Lecce — Posti dove mangiare",
+   "links": [],
+   "wiki": "personal/food/lecce-posti-dove-mangiare.md"
+  },
+  "personal/food/Ming (Ristorante Cinese).md": {
+   "folder": "personal/food",
+   "title": "Ming (Ristorante Cinese)",
+   "links": [],
+   "wiki": "personal/food/ming-ristorante-cinese.md"
+  },
+  "personal/food/Xin Long - Chinatown Verona.md": {
+   "folder": "personal/food",
+   "title": "Xin Long - Chinatown Verona",
+   "links": [],
+   "wiki": "personal/food/xin-long-chinatown-verona.md"
+  },
+  "personal/food/Trattoria Ai Salumi — Todi.md": {
+   "folder": "personal/food",
+   "title": "Trattoria Ai Salumi — Todi",
+   "links": [],
+   "wiki": "personal/food/trattoria-ai-salumi-todi.md"
+  },
+  "personal/food/osteria della locanda.md": {
+   "folder": "personal/food",
+   "title": "osteria della locanda",
+   "links": [],
+   "wiki": "personal/food/osteria-della-locanda.md"
+  },
+  "planning/pranzo trattoria.md": {
+   "folder": "planning",
+   "title": "pranzo trattoria",
+   "links": [],
+   "wiki": "planning/pranzo-trattoria.md"
+  },
+  "personal/food/shopping-lists/Lista della Spesa (3).md": {
+   "folder": "personal/food/shopping-lists",
+   "title": "Lista della Spesa (3)",
+   "links": [],
+   "wiki": "personal/food/shopping-lists/lista-della-spesa-3.md"
+  },
+  "personal/food/shopping-lists/Lista della Spesa (26 Giugno 2026).md": {
+   "folder": "personal/food/shopping-lists",
+   "title": "Lista della Spesa (26 Giugno 2026)",
+   "links": [],
+   "wiki": "personal/food/shopping-lists/lista-della-spesa-26-giugno-2026.md"
+  },
+  "personal/food/shopping-lists/Lista della spesa (2).md": {
+   "folder": "personal/food/shopping-lists",
+   "title": "Lista della spesa",
+   "links": [],
+   "wiki": "personal/food/shopping-lists/lista-della-spesa.md"
+  },
+  "personal/food/shopping-lists/Spesa di oggi.md": {
+   "folder": "personal/food/shopping-lists",
+   "title": "Spesa di oggi",
+   "links": [],
+   "wiki": "personal/food/shopping-lists/spesa-di-oggi.md"
+  },
+  "personal/food/shopping-lists/Spesa per il compleanno di Graziella.md": {
+   "folder": "personal/food/shopping-lists",
+   "title": "Spesa per il compleanno di Graziella",
+   "links": [],
+   "wiki": "personal/food/shopping-lists/spesa-per-il-compleanno-di-graziella.md"
+  },
+  "personal/home/Arredamento Soggiorno — Dettagli e Oggetti.md": {
+   "folder": "personal/home",
+   "title": "Arredamento Soggiorno — Dettagli e Oggetti",
+   "links": [],
+   "wiki": "personal/home/arredamento-soggiorno-dettagli-e-oggetti.md"
+  },
+  "personal/vehicle/Volvo — Patch firmware e utility.md": {
+   "folder": "personal/vehicle",
+   "title": "Volvo — Patch firmware e utility",
+   "links": [
+    "personal/vehicle/Retrofit CarPlay Volvo — presa USB, cavo e negozi Asiago.md",
+    "social-media/Post LinkedIn — Claude mi ha scritto il preventivo di un cliente in 5 minuti.md"
+   ],
+   "wiki": "personal/vehicle/volvo-patch-firmware-e-utility.md"
+  },
+  "personal/vehicle/Checklist manutenzione e controllo auto.md": {
+   "folder": "personal/vehicle",
+   "title": "Checklist manutenzione e controllo auto",
+   "links": [],
+   "wiki": "personal/vehicle/checklist-manutenzione-e-controllo-auto.md"
+  },
+  "personal/vehicle/Multa Comune di Verona - Verbale n. 00287451-2026.md": {
+   "folder": "personal/vehicle",
+   "title": "Multa Comune di Verona - Verbale n. 00287451-2026",
+   "links": [],
+   "wiki": "personal/vehicle/multa-comune-di-verona-verbale-n-00287451-2026.md"
+  },
+  "personal/vehicle/Retrofit CarPlay Volvo — presa USB, cavo e negozi Asiago.md": {
+   "folder": "personal/vehicle",
+   "title": "Retrofit CarPlay Volvo — presa USB, cavo e negozi Asiago",
+   "links": [],
+   "wiki": "personal/vehicle/retrofit-carplay-volvo-presa-usb-cavo-e-negozi-asiago.md"
+  },
+  "personal/vehicle/Riparazione Stereo Volvo V40.md": {
+   "folder": "personal/vehicle",
+   "title": "Riparazione Stereo Volvo V40",
+   "links": [],
+   "wiki": "personal/vehicle/riparazione-stereo-volvo-v40.md"
+  },
+  "personal/home/Fontana Azzurra — Ordine acqua.md": {
+   "folder": "personal/home",
+   "title": "Fontana Azzurra — Ordine acqua",
+   "links": [],
+   "wiki": "personal/home/fontana-azzurra-ordine-acqua.md"
+  },
+  "personal/food/Diplomático- DP-11.2021.07.md": {
+   "folder": "personal/food",
+   "title": "Diplomático: DP/11.2021.07",
+   "links": [],
+   "wiki": "personal/food/diplomatico-dp-11-2021-07.md"
+  },
+  "personal/food/Don Papa Rum.md": {
+   "folder": "personal/food",
+   "title": "Don Papa Rum",
+   "links": [],
+   "wiki": "personal/food/don-papa-rum.md"
+  },
+  "personal/food/Bacardi- Legacy of Cuba.md": {
+   "folder": "personal/food",
+   "title": "Bacardi: Legacy of Cuba",
+   "links": [],
+   "wiki": "personal/food/bacardi-legacy-of-cuba.md"
+  },
+  "personal/travel/30° Compleanno di Jonas Weidinger (Amburgo).md": {
+   "folder": "personal/travel",
+   "title": "30° Compleanno di Jonas Weidinger (Amburgo)",
+   "links": [],
+   "wiki": "personal/travel/30-compleanno-di-jonas-weidinger-amburgo.md"
+  },
+  "planning/Evento Musica- Cascina Monticello.md": {
+   "folder": "planning",
+   "title": "Evento Musica- Cascina Monticello",
+   "links": [],
+   "wiki": "planning/evento-musica-cascina-monticello.md"
+  },
+  "personal/travel/Festa di Laurea di Nicola a Lubiana.md": {
+   "folder": "personal/travel",
+   "title": "Festa di Laurea di Nicola a Lubiana",
+   "links": [],
+   "wiki": "personal/travel/festa-di-laurea-di-nicola-a-lubiana.md"
+  },
+  "fitosfera/seedline/Incontro con Dario Scarpa.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Incontro con Dario Scarpa",
+   "links": [],
+   "wiki": "fitosfera/seedline/incontro-con-dario-scarpa.md"
+  },
+  "personal/finance/Abbonamento ChatGPT Plus.md": {
+   "folder": "personal/finance",
+   "title": "Abbonamento ChatGPT Plus",
+   "links": [],
+   "wiki": "personal/finance/abbonamento-chatgpt-plus.md"
+  },
+  "personal/finance/Budget Mensile — Aprile 2026.md": {
+   "folder": "personal/finance",
+   "title": "Budget Mensile — Aprile 2026",
+   "links": [],
+   "wiki": "personal/finance/budget-mensile-aprile-2026.md"
+  },
+  "personal/finance/Scelta 8 per mille.md": {
+   "folder": "personal/finance",
+   "title": "Scelta 8 per mille",
+   "links": [],
+   "wiki": "personal/finance/scelta-8-per-mille.md"
+  },
+  "personal/finance/Spese Maggio 2026.md": {
+   "folder": "personal/finance",
+   "title": "Spese Maggio 2026",
+   "links": [],
+   "wiki": "personal/finance/spese-maggio-2026.md"
+  },
+  "personal/finance/Storno bancomat BPER - Alghero.md": {
+   "folder": "personal/finance",
+   "title": "Storno bancomat BPER - Alghero",
+   "links": [],
+   "wiki": "personal/finance/storno-bancomat-bper-alghero.md"
+  },
+  "personal/home/Il mio terrazzo.md": {
+   "folder": "personal/home",
+   "title": "Il mio terrazzo",
+   "links": [],
+   "wiki": "personal/home/il-mio-terrazzo.md"
+  },
+  "personal/documents/Appuntamento Carta d'Identità Elettronica (CIE).md": {
+   "folder": "personal/documents",
+   "title": "Appuntamento Carta d'Identità Elettronica (CIE)",
+   "links": [],
+   "wiki": "personal/documents/appuntamento-carta-d-identita-elettronica-cie.md"
+  },
+  "personal/family/Casa Dario — Abano Terme.md": {
+   "folder": "personal/family",
+   "title": "Casa Dario — Abano Terme",
+   "links": [],
+   "wiki": "personal/family/casa-dario-abano-terme.md"
+  },
+  "personal/finance/Certificazione Unica 2026 - Ettore Zanon (Novaris Innovation Hub).md": {
+   "folder": "personal/finance",
+   "title": "Certificazione Unica 2026 - Ettore Zanon (Novaris Innovation Hub)",
+   "links": [],
+   "wiki": "personal/finance/certificazione-unica-2026-ettore-zanon-novaris-innovation.md"
+  },
+  "career/Ettore Zanon CV (AI Engineer).md": {
+   "folder": "career",
+   "title": "Ettore Zanon CV (AI Engineer)",
+   "links": [
+    "career/Colloquio Selvia Recruitment.md",
+    "career/Colloquio con Noemi Recruiter.md",
+    "career/DataPulse Italia - Analisi Azienda (Target AI Engineer).md",
+    "fitosfera/hub/Fitosfera - Hub Progetto.md",
+    "tallyo/Tallyo - Project Overview & Roadmap.md",
+    "tallyo/app-ui/Struttura del Tallyo — Indice e Tassonomia.md",
+    "tallyo/backend/Tallyo shared-expenses- repo onboarding pubblico (skill + guida).md"
+   ],
+   "wiki": "career/ettore-zanon-cv-ai-engineer.md"
+  },
+  "personal/documents/Ettore Zanon — Profilo personale.md": {
+   "folder": "personal/documents",
+   "title": "Ettore Zanon — Profilo personale",
+   "links": [
+    "career/Ettore Zanon CV (AI Engineer).md"
+   ],
+   "wiki": "personal/documents/ettore-zanon-profilo-personale.md"
+  },
+  "career/Ettore Zanon.md": {
+   "folder": "career",
+   "title": "Ettore Zanon",
+   "links": [],
+   "wiki": "career/ettore-zanon.md"
+  },
+  "personal/documents/Bitbucket — Recovery Codes.md": {
+   "folder": "personal/documents",
+   "title": "Bitbucket — Recovery Codes",
+   "links": [],
+   "wiki": "personal/documents/bitbucket-recovery-codes.md"
+  },
+  "personal/documents/Indirizzo di casa.md": {
+   "folder": "personal/documents",
+   "title": "Indirizzo di casa",
+   "links": [],
+   "wiki": "personal/documents/indirizzo-di-casa.md"
+  },
+  "personal/curiosities/Numero 2048 — Numero ricorrente.md": {
+   "folder": "personal/curiosities",
+   "title": "Numero 2048 — Numero ricorrente",
+   "links": [],
+   "wiki": "personal/curiosities/numero-2048-numero-ricorrente.md"
+  },
+  "personal/documents/Password Principale.md": {
+   "folder": "personal/documents",
+   "title": "Password Principale",
+   "links": [],
+   "wiki": "personal/documents/password-principale.md"
+  },
+  "fitosfera/seedline/Stella — Nota e memoria.md": {
+   "folder": "fitosfera/seedline",
+   "title": "Stella — Nota e memoria",
+   "links": [],
+   "wiki": "fitosfera/seedline/stella-nota-e-memoria.md"
+  },
+  "tech-knowledge/Axios — Senato USA e nuove regole sui chip di Helion Labs.md": {
+   "folder": "tech-knowledge",
+   "title": "Axios — Senato USA e nuove regole sui chip di Helion Labs",
+   "links": [],
+   "wiki": "tech-knowledge/axios-senato-usa-e-nuove-regole-sui-chip-di-helion-labs.md"
+  },
+  "personal/wellbeing/Tems - Free Mind.md": {
+   "folder": "personal/wellbeing",
+   "title": "Tems - Free Mind",
+   "links": [],
+   "wiki": "personal/wellbeing/tems-free-mind.md"
+  },
+  "personal/entertainment/Film per Gestione Conflitti.md": {
+   "folder": "personal/entertainment",
+   "title": "Film per Gestione Conflitti",
+   "links": [],
+   "wiki": "personal/entertainment/film-per-gestione-conflitti.md"
+  },
+  "personal/entertainment/SOLIVAGO (Netflix).md": {
+   "folder": "personal/entertainment",
+   "title": "SOLIVAGO (Netflix)",
+   "links": [],
+   "wiki": "personal/entertainment/solivago-netflix.md"
+  },
+  "personal/entertainment/Fatoumata Diawara, Ibrahim Maalouf & KOKOROKO — Sanou (Ostrich & KOKOROKO Remix).md": {
+   "folder": "personal/entertainment",
+   "title": "Fatoumata Diawara, Ibrahim Maalouf & KOKOROKO — Sanou (Ostrich & KOKOROKO Remix)",
+   "links": [],
+   "wiki": "personal/entertainment/fatoumata-diawara-ibrahim-maalouf-kokoroko-sanou-ostrich.md"
+  },
+  "personal/entertainment/Insidious — La dimora del male (2010).md": {
+   "folder": "personal/entertainment",
+   "title": "Insidious — La dimora del male (2010)",
+   "links": [],
+   "wiki": "personal/entertainment/insidious-la-dimora-del-male-2010.md"
+  },
+  "quadrante/infrastructure/Sicurezza AnalisiCalc.it - Post di Matteo V.md": {
+   "folder": "quadrante/infrastructure",
+   "title": "Sicurezza AnalisiCalc.it - Post di Matteo V",
+   "links": [],
+   "wiki": "quadrante/infrastructure/sicurezza-analisicalc-it-post-di-matteo-v.md"
+  },
+  "tech-knowledge/TechCrunch — European Robotics Startups Raise Record Seed Rounds.md": {
+   "folder": "tech-knowledge",
+   "title": "TechCrunch — European Robotics Startups Raise Record Seed Rounds",
+   "links": [],
+   "wiki": "tech-knowledge/techcrunch-european-robotics-startups-raise-record-seed.md"
+  },
+  "personal/entertainment/Ben Böhmer — Breathing.md": {
+   "folder": "personal/entertainment",
+   "title": "Ben Böhmer — Breathing",
+   "links": [],
+   "wiki": "personal/entertainment/ben-bohmer-breathing.md"
+  },
+  "planning/Piani e Checklist — Settimana 24-30 Agosto 2026.md": {
+   "folder": "planning",
+   "title": "Piani e Checklist — Settimana 24-30 Agosto 2026",
+   "links": [],
+   "wiki": "planning/piani-e-checklist-settimana-24-30-agosto-2026.md"
+  },
+  "planning/Programma del giorno — 14 Settembre 2026.md": {
+   "folder": "planning",
+   "title": "Programma del giorno — 14 Settembre 2026",
+   "links": [],
+   "wiki": "planning/programma-del-giorno-14-settembre-2026.md"
+  },
+  "planning/Analisi del Tempo e Produttività.md": {
+   "folder": "planning",
+   "title": "Analisi del Tempo e Produttività",
+   "links": [],
+   "wiki": "planning/analisi-del-tempo-e-produttivita.md"
+  },
+  "tech-knowledge/Remote Collaboration- Async-First Teams.md": {
+   "folder": "tech-knowledge",
+   "title": "Remote Collaboration- Async-First Teams",
+   "links": [],
+   "wiki": "tech-knowledge/remote-collaboration-async-first-teams.md"
+  },
+  "personal/wellbeing/Ortodontista — Allineamento dentale.md": {
+   "folder": "personal/wellbeing",
+   "title": "Ortodontista — Allineamento dentale",
+   "links": [],
+   "wiki": "personal/wellbeing/ortodontista-allineamento-dentale.md"
+  },
+  "personal/wellbeing/Integrazione Vitamina D.md": {
+   "folder": "personal/wellbeing",
+   "title": "Integrazione Vitamina D",
+   "links": [],
+   "wiki": "personal/wellbeing/integrazione-vitamina-d.md"
+  },
+  "personal/wellbeing/L-Carnitina.md": {
+   "folder": "personal/wellbeing",
+   "title": "L-Carnitina",
+   "links": [],
+   "wiki": "personal/wellbeing/l-carnitina.md"
+  },
+  "personal/wellbeing/Note su Gengivite.md": {
+   "folder": "personal/wellbeing",
+   "title": "Note su Gengivite",
+   "links": [],
+   "wiki": "personal/wellbeing/note-su-gengivite.md"
+  },
+  "personal/sports/Carbohydrate intake.md": {
+   "folder": "personal/sports",
+   "title": "Carbohydrate intake",
+   "links": [],
+   "wiki": "personal/sports/carbohydrate-intake.md"
+  },
+  "personal/sports/Allenamento Trail running.md": {
+   "folder": "personal/sports",
+   "title": "Allenamento Trail running",
+   "links": [
+    "personal/sports/Trail running — gare e mete (shortlist con Ivo).md"
+   ],
+   "wiki": "personal/sports/allenamento-trail-running.md"
+  },
+  "personal/sports/Allenamento — Forza Gambe e Total Body.md": {
+   "folder": "personal/sports",
+   "title": "Allenamento — Forza Gambe e Total Body",
+   "links": [],
+   "wiki": "personal/sports/allenamento-forza-gambe-e-total-body.md"
+  },
+  "personal/sports/Attrezzatura Windsurf — Vele.md": {
+   "folder": "personal/sports",
+   "title": "Attrezzatura Windsurf — Vele",
+   "links": [],
+   "wiki": "personal/sports/attrezzatura-windsurf-vele.md"
+  },
+  "personal/sports/Torbole — Windsurf.md": {
+   "folder": "personal/sports",
+   "title": "Torbole — Windsurf",
+   "links": [],
+   "wiki": "personal/sports/torbole-windsurf.md"
+  },
+  "personal/sports/Nuovo Programma di Allenamento.md": {
+   "folder": "personal/sports",
+   "title": "Nuovo Programma di Allenamento",
+   "links": [],
+   "wiki": "personal/sports/nuovo-programma-di-allenamento.md"
+  },
+  "personal/sports/Piano di allenamento — Maratona di Siviglia.md": {
+   "folder": "personal/sports",
+   "title": "Piano di allenamento — Maratona di Siviglia",
+   "links": [],
+   "wiki": "personal/sports/piano-di-allenamento-maratona-di-siviglia.md"
+  },
+  "personal/sports/Riassunto Allenamenti.md": {
+   "folder": "personal/sports",
+   "title": "Riassunto Allenamenti",
+   "links": [],
+   "wiki": "personal/sports/riassunto-allenamenti.md"
+  },
+  "personal/sports/Scheda di Allenamento.md": {
+   "folder": "personal/sports",
+   "title": "Scheda di Allenamento",
+   "links": [],
+   "wiki": "personal/sports/scheda-di-allenamento.md"
+  },
+  "personal/sports/Trail running — gare e mete (shortlist con Ivo).md": {
+   "folder": "personal/sports",
+   "title": "Trail running — gare e mete (shortlist con Ivo)",
+   "links": [
+    "personal/sports/Allenamento Trail running.md"
+   ],
+   "wiki": "personal/sports/trail-running-gare-e-mete-shortlist-con-ivo.md"
+  },
+  "personal/sports/Massimali Palestra.md": {
+   "folder": "personal/sports",
+   "title": "Massimali Palestra",
+   "links": [],
+   "wiki": "personal/sports/massimali-palestra.md"
+  },
+  "personal/wellbeing/Taglio Capelli.md": {
+   "folder": "personal/wellbeing",
+   "title": "Taglio Capelli",
+   "links": [],
+   "wiki": "personal/wellbeing/taglio-capelli.md"
+  },
+  "personal/travel/Matrimonio Giacomo (Puglia).md": {
+   "folder": "personal/travel",
+   "title": "Matrimonio Giacomo (Puglia)",
+   "links": [],
+   "wiki": "personal/travel/matrimonio-giacomo-puglia.md"
+  },
+  "personal/travel/Nuovo viaggio in Puglia.md": {
+   "folder": "personal/travel",
+   "title": "Nuovo viaggio in Puglia",
+   "links": [],
+   "wiki": "personal/travel/nuovo-viaggio-in-puglia.md"
+  },
+  "personal/travel/Splitwise — Vacanza Puglia.md": {
+   "folder": "personal/travel",
+   "title": "Splitwise — Vacanza Puglia",
+   "links": [],
+   "wiki": "personal/travel/splitwise-vacanza-puglia.md"
+  },
+  "personal/travel/Viaggio in Puglia (Aprile 2026).md": {
+   "folder": "personal/travel",
+   "title": "Viaggio in Puglia (Aprile 2026)",
+   "links": [],
+   "wiki": "personal/travel/viaggio-in-puglia-aprile-2026.md"
+  },
+  "personal/travel/Viaggio a Dublino.md": {
+   "folder": "personal/travel",
+   "title": "Viaggio a Dublino",
+   "links": [
+    "personal/food/Bacardi- Legacy of Cuba.md",
+    "personal/food/Diplomático- DP-11.2021.07.md"
+   ],
+   "wiki": "personal/travel/viaggio-a-dublino.md"
+  },
+  "personal/travel/Checklist equipaggiamento — Campeggio Ardenne.md": {
+   "folder": "personal/travel",
+   "title": "Checklist equipaggiamento — Campeggio Ardenne",
+   "links": [],
+   "wiki": "personal/travel/checklist-equipaggiamento-campeggio-ardenne.md"
+  },
+  "personal/travel/Ardenne — Lista cose da portare.md": {
+   "folder": "personal/travel",
+   "title": "Ardenne — Lista cose da portare",
+   "links": [],
+   "wiki": "personal/travel/ardenne-lista-cose-da-portare.md"
+  },
+  "personal/travel/Itinerario naturalistico Ardenne — mappa e coordinate.md": {
+   "folder": "personal/travel",
+   "title": "Itinerario naturalistico Ardenne — mappa e coordinate",
+   "links": [
+    "personal/travel/Lost places Ardenne — coordinate verificate.md",
+    "personal/travel/Viaggio Ardenne.md"
+   ],
+   "wiki": "personal/travel/itinerario-naturalistico-ardenne-mappa-e-coordinate.md"
+  },
+  "personal/travel/Lost places Ardenne — coordinate verificate.md": {
+   "folder": "personal/travel",
+   "title": "Lost places Ardenne — coordinate verificate",
+   "links": [
+    "personal/travel/Itinerario naturalistico Ardenne — mappa e coordinate.md",
+    "personal/travel/Viaggio Ardenne.md"
+   ],
+   "wiki": "personal/travel/lost-places-ardenne-coordinate-verificate.md"
+  },
+  "personal/travel/Campeggio Houffalize — Prenotazione 30-31 luglio 2026.md": {
+   "folder": "personal/travel",
+   "title": "Campeggio Houffalize — Prenotazione 30-31 luglio 2026",
+   "links": [],
+   "wiki": "personal/travel/campeggio-houffalize-prenotazione-30-31-luglio-2026.md"
+  },
+  "personal/travel/Viaggio Ardenne.md": {
+   "folder": "personal/travel",
+   "title": "Viaggio Ardenne",
+   "links": [
+    "personal/travel/Itinerario naturalistico Ardenne — mappa e coordinate.md",
+    "personal/travel/Lost places Ardenne — coordinate verificate.md"
+   ],
+   "wiki": "personal/travel/viaggio-ardenne.md"
+  },
+  "personal/travel/Idee per viaggi futuri in Croazia.md": {
+   "folder": "personal/travel",
+   "title": "Idee per viaggi futuri in Croazia",
+   "links": [],
+   "wiki": "personal/travel/idee-per-viaggi-futuri-in-croazia.md"
+  },
+  "personal/travel/Vacanza in Croazia - Agosto 2026 (Vis e Lastovo).md": {
+   "folder": "personal/travel",
+   "title": "Vacanza in Croazia - Agosto 2026 (Vis e Lastovo)",
+   "links": [],
+   "wiki": "personal/travel/vacanza-in-croazia-agosto-2026-vis-e-lastovo.md"
+  },
+  "personal/travel/Barca e Evento Pieve di Ledro.md": {
+   "folder": "personal/travel",
+   "title": "Barca e Evento Pieve di Ledro",
+   "links": [],
+   "wiki": "personal/travel/barca-e-evento-pieve-di-ledro.md"
+  },
+  "personal/sports/Bellugio - Pieve di Ledro.md": {
+   "folder": "personal/sports",
+   "title": "Bellugio - Pieve di Ledro",
+   "links": [],
+   "wiki": "personal/sports/bellugio-pieve-di-ledro.md"
+  },
+  "personal/home/Sistemazione oggetti personali.md": {
+   "folder": "personal/home",
+   "title": "Sistemazione oggetti personali",
+   "links": [],
+   "wiki": "personal/home/sistemazione-oggetti-personali.md"
+  },
+  "personal/travel/Viaggi 2026 — raccolta e proposta 2027 (Norvegia).md": {
+   "folder": "personal/travel",
+   "title": "Viaggi 2026 — raccolta e proposta 2027 (Norvegia)",
+   "links": [],
+   "wiki": "personal/travel/viaggi-2026-raccolta-e-proposta-2027-norvegia.md"
+  },
+  "personal/travel/Alloggio Ivo in Sardegna.md": {
+   "folder": "personal/travel",
+   "title": "Alloggio Ivo in Sardegna",
+   "links": [
+    "personal/travel/Viaggio in Sardegna (Maggio 2026).md",
+    "tallyo/Tallyo - Project Overview & Roadmap.md",
+    "tallyo/marketing/Collaborazione Ivo - Credenziali Instagram.md"
+   ],
+   "wiki": "personal/travel/alloggio-ivo-in-sardegna.md"
+  },
+  "personal/travel/Contatto Alghero Tours (Noleggio e Transfer).md": {
+   "folder": "personal/travel",
+   "title": "Contatto Alghero Tours (Noleggio e Transfer)",
+   "links": [],
+   "wiki": "personal/travel/contatto-alghero-tours-noleggio-e-transfer.md"
+  },
+  "personal/travel/Organizzazione Viaggio in Sardegna (Agosto).md": {
+   "folder": "personal/travel",
+   "title": "Organizzazione Viaggio in Sardegna (Agosto)",
+   "links": [],
+   "wiki": "personal/travel/organizzazione-viaggio-in-sardegna-agosto.md"
+  },
+  "personal/travel/Viaggio in Sardegna (Maggio 2026).md": {
+   "folder": "personal/travel",
+   "title": "Viaggio in Sardegna (Maggio 2026)",
+   "links": [
+    "personal/travel/Alloggio Ivo in Sardegna.md",
+    "personal/travel/Contatto Alghero Tours (Noleggio e Transfer).md",
+    "tallyo/Tallyo - Project Overview & Roadmap.md",
+    "tallyo/marketing/Collaborazione Ivo - Credenziali Instagram.md",
+    "tallyo/releases/Bug Fixes - Tallyo 2.3.1.md"
+   ],
+   "wiki": "personal/travel/viaggio-in-sardegna-maggio-2026.md"
+  },
+  "personal/travel/Viaggio in Austria - Trail running.md": {
+   "folder": "personal/travel",
+   "title": "Viaggio in Austria - Trail running",
+   "links": [],
+   "wiki": "personal/travel/viaggio-in-austria-trail-running.md"
+  },
+  "personal/travel/Splitwise — Viaggio in Umbria.md": {
+   "folder": "personal/travel",
+   "title": "Splitwise — Viaggio in Umbria",
+   "links": [],
+   "wiki": "personal/travel/splitwise-viaggio-in-umbria.md"
+  },
+  "personal/travel/Viaggio in Umbria - Maggio-Giugno 2026.md": {
+   "folder": "personal/travel",
+   "title": "Viaggio in Umbria - Maggio-Giugno 2026",
+   "links": [],
+   "wiki": "personal/travel/viaggio-in-umbria-maggio-giugno-2026.md"
+  },
+  "personal/travel/Viaggio ad Amburgo — Marta e Ricky.md": {
+   "folder": "personal/travel",
+   "title": "Viaggio ad Amburgo — Marta e Ricky",
+   "links": [],
+   "wiki": "personal/travel/viaggio-ad-amburgo-marta-e-ricky.md"
+  },
+  "personal/travel/Viaggio ad Amburgo — Irene.md": {
+   "folder": "personal/travel",
+   "title": "Viaggio ad Amburgo — Irene",
+   "links": [],
+   "wiki": "personal/travel/viaggio-ad-amburgo-irene.md"
+  },
+  "personal/travel/Viaggio a Valencia — Visita a Ivo.md": {
+   "folder": "personal/travel",
+   "title": "Viaggio a Valencia — Visita a Ivo",
+   "links": [],
+   "wiki": "personal/travel/viaggio-a-valencia-visita-a-ivo.md"
+  },
+  "personal/travel/Viaggio ad Asiago — Spese.md": {
+   "folder": "personal/travel",
+   "title": "Viaggio ad Asiago — Spese",
+   "links": [],
+   "wiki": "personal/travel/viaggio-ad-asiago-spese.md"
+  },
+  "personal/travel/Consigli per visitare Lisbona.md": {
+   "folder": "personal/travel",
+   "title": "Consigli per visitare Lisbona",
+   "links": [],
+   "wiki": "personal/travel/consigli-per-visitare-lisbona.md"
+  },
+  "personal/travel/Spese Casa — Minorca.md": {
+   "folder": "personal/travel",
+   "title": "Spese Casa — Minorca",
+   "links": [],
+   "wiki": "personal/travel/spese-casa-minorca.md"
+  },
+  "planning/Checklist cose da fare del mese.md": {
+   "folder": "planning",
+   "title": "Checklist cose da fare del mese",
+   "links": [],
+   "wiki": "planning/checklist-cose-da-fare-del-mese.md"
+  },
+  "ai-courses/clients/Corso AI — Analisi dei Casi (Elisa Fontana).md": {
+   "folder": "ai-courses/clients",
+   "title": "Corso AI — Analisi dei Casi (Elisa Fontana)",
+   "links": [],
+   "wiki": "ai-courses/clients/corso-ai-analisi-dei-casi-elisa-fontana.md"
+  },
+  "ai-courses/lectures/Corso ChatGPT per amici.md": {
+   "folder": "ai-courses/lectures",
+   "title": "Corso ChatGPT per amici",
+   "links": [],
+   "wiki": "ai-courses/lectures/corso-chatgpt-per-amici.md"
+  },
+  "personal/family/Sofia (cugina) — Consigli psicologo e inserimento lavorativo.md": {
+   "folder": "personal/family",
+   "title": "Sofia (cugina) — Consigli psicologo e inserimento lavorativo",
+   "links": [],
+   "wiki": "personal/family/sofia-cugina-consigli-psicologo-e-inserimento-lavorativo.md"
+  },
+  "personal/family/Compleanni di Famiglia.md": {
+   "folder": "personal/family",
+   "title": "Compleanni di Famiglia",
+   "links": [],
+   "wiki": "personal/family/compleanni-di-famiglia.md"
+  },
+  "personal/family/Famiglia e Relazioni.md": {
+   "folder": "personal/family",
+   "title": "Famiglia e Relazioni",
+   "links": [],
+   "wiki": "personal/family/famiglia-e-relazioni.md"
+  },
+  "personal/family/Ruggine — Cane.md": {
+   "folder": "personal/family",
+   "title": "Ruggine — Cane",
+   "links": [],
+   "wiki": "personal/family/ruggine-cane.md"
+  },
+  "personal/family/Lauretta (mamma di Marta).md": {
+   "folder": "personal/family",
+   "title": "Lauretta (mamma di Marta)",
+   "links": [],
+   "wiki": "personal/family/lauretta-mamma-di-marta.md"
+  },
+  "personal/documents/Carta d'identità — Marta Bortolin.md": {
+   "folder": "personal/documents",
+   "title": "Carta d'identità — Marta Bortolin",
+   "links": [],
+   "wiki": "personal/documents/carta-d-identita-marta-bortolin.md"
+  },
+  "personal/travel/Cose da prendere per Marta.md": {
+   "folder": "personal/travel",
+   "title": "Cose da prendere per Marta",
+   "links": [],
+   "wiki": "personal/travel/cose-da-prendere-per-marta.md"
+  },
+  "personal/family/Ricerca lavoro Marta.md": {
+   "folder": "personal/family",
+   "title": "Ricerca lavoro Marta",
+   "links": [],
+   "wiki": "personal/family/ricerca-lavoro-marta.md"
+  },
+  "personal/sports/Cambio scarpe Asics - Centro Le Brentelle.md": {
+   "folder": "personal/sports",
+   "title": "Cambio scarpe Asics - Centro Le Brentelle",
+   "links": [],
+   "wiki": "personal/sports/cambio-scarpe-asics-centro-le-brentelle.md"
+  },
+  "personal/finance/Lavanderia Tintoria Express — Ricevute di ritiro.md": {
+   "folder": "personal/finance",
+   "title": "Lavanderia Tintoria Express — Ricevute di ritiro",
+   "links": [],
+   "wiki": "personal/finance/lavanderia-tintoria-express-ricevute-di-ritiro.md"
+  },
+  "personal/family/Profumo per Marta — Jo Malone Wood Sage & Sea Salt.md": {
+   "folder": "personal/family",
+   "title": "Profumo per Marta — Jo Malone Wood Sage & Sea Salt",
+   "links": [],
+   "wiki": "personal/family/profumo-per-marta-jo-malone-wood-sage-sea-salt.md"
+  },
+  "ondina/models/Ondina — Zero-shot speaker attribution.md": {
+   "folder": "ondina/models",
+   "title": "Ondina — Zero-shot speaker attribution",
+   "links": [
+    "ondina/outreach/X (@ettorezn) — lancio Ondina e post pronti.md"
+   ],
+   "wiki": "ondina/models/ondina-zero-shot-speaker-attribution.md"
+  },
+  "ondina/models/Ondina- Overlap-aware Neural Diarization for streaming Audio (preprint — Septemb.md": {
+   "folder": "ondina/models",
+   "title": "Ondina: Overlap-aware Neural Diarization for streaming Audio (preprint — September 2026)",
+   "links": [
+    "ondina/codebase/ondina-core — Audio transcription engine on WebVTT with Ondina (repo, architectu.md",
+    "ondina/models/Ondina benchmark preview carousel (2026-09-25).md",
+    "ondina/models/ondina-core — DER benchmark + VAD threshold calibration (2026-09-24).md",
+    "ondina/models/ondina-core — real-time-factor benchmark baseline vs ONDA (2026-09-24).md",
+    "ondina/outreach/X (@ettorezn) — lancio Ondina e post pronti.md"
+   ],
+   "wiki": "ondina/models/ondina-overlap-aware-neural-diarization-for-streaming-audio.md"
+  },
+  "tech-knowledge/Meta Prophet — Modello di Time Series Forecasting.md": {
+   "folder": "tech-knowledge",
+   "title": "Meta Prophet — Modello di Time Series Forecasting",
+   "links": [],
+   "wiki": "tech-knowledge/meta-prophet-modello-di-time-series-forecasting.md"
+  },
+  "tech-knowledge/Modelli Mixture-of-Experts — Architetture AI.md": {
+   "folder": "tech-knowledge",
+   "title": "Modelli Mixture-of-Experts — Architetture AI",
+   "links": [],
+   "wiki": "tech-knowledge/modelli-mixture-of-experts-architetture-ai.md"
+  },
+  "tech-knowledge/Granite Q4 2 14B — LLM locale.md": {
+   "folder": "tech-knowledge",
+   "title": "Granite Q4 2 14B — LLM locale",
+   "links": [],
+   "wiki": "tech-knowledge/granite-q4-2-14b-llm-locale.md"
+  },
+  "ondina/outreach/X (@ettorezn) — lancio Ondina e post pronti.md": {
+   "folder": "ondina/outreach",
+   "title": "X (@ettorezn) — lancio Ondina e post pronti",
+   "links": [
+    "ondina/models/Ondina — Zero-shot speaker attribution.md",
+    "ondina/models/Ondina- Overlap-aware Neural Diarization for streaming Audio (preprint — Septemb.md"
+   ],
+   "wiki": "ondina/outreach/x-ettorezn-lancio-ondina-e-post-pronti.md"
+  }
+ }
+}

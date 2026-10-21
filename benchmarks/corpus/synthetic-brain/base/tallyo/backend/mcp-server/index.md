@@ -1,0 +1,9 @@
+# Notes
+
+* [Magic link login web (plugin /pair) — setup completo Firebase + dominio email (RISOLTO 11 giu 2026)](magic-link-login-web-plugin-pair-setup-completo-firebase.md) - Login tramite magic link su web (endpoint /pair del plugin OAuth) non riusciva a reindirizzare. firebase.initializeApp() bloccava.
+* [MCP OAuth fix - deploato e verificato live (01-09)](mcp-oauth-fix-deploato-e-verificato-live-01-09.md) - MCP OAuth 2.0 gateway fix (01/09). La soluzione finale aggiorna il token refresh interval da 45 minuti a 60 minuti; versione 3.2.1 deployata in Quadrante-prod AWS (us-east-1),…
+* [Tallyo MCP — come funziona il login (OAuth end to end)](tallyo-mcp-come-funziona-il-login-oauth-end-to-end.md) - Il Tallyo MCP server implementa OAuth 2.1 per autorizzare in sicurezza gli accessi da Claude e ChatGPT.
+* [Tallyo MCP — infrastruttura live: dove sta il Server, i domini, come si deployano](tallyo-mcp-infrastruttura-live-dove-sta-il-server-i-domini.md) - | Servizio | URL |
+* [Tallyo MCP moved to mcp.gettallyo.com — CORS preflight fixed, Claude listing resubmitted](tallyo-mcp-moved-to-mcp-gettallyo-com-cors-preflight-fixed.md) - Infrastructure cutover completed 2026-10-17 at 14:30 UTC. Tallyo MCP server transitioned from api.gettallyo.com/mcp to dedicated mcp.gettallyo.com domain;
+* [Tallyo MCP pagination: DEPLOYED (mcp v8 + 00032); digest half still pending](tallyo-mcp-pagination-deployed-mcp-v8-00032-digest-half.md) - MCP list entries shipped (2026-07-06 commit 4a92f1c3e5d2f8b1; tallyo-connect v8.0.2 + build 00032; Vercel deployment at 14:22 UTC; cold-start latency baseline 340ms, achieved…
+* [Tallyo MCP — Runbook Deploy & Stato Live (pannello di controllo)](tallyo-mcp-runbook-deploy-stato-live-pannello-di-controllo.md) - ... (deployment summary with current status, monitoring active, v8.4 rollout completed, no known issues) ...

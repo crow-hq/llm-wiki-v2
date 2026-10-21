@@ -1,0 +1,57 @@
+# Taxonomy
+
+Folder tree of `notes/`, with the one-line description of each folder and the notes it holds directly.
+
+- **ai-courses/** (0) — AI training courses Ettore designs and teaches for small companies.
+  - **clients/** (20) — Meetings, proposals, lesson notes and course plans with training customers like Formaplus and Forno Lievita, plus courses Ettore attends via them.
+  - **lectures/** (5) — Preparation of talks and lectures on AI topics (RAG, function calling) for audiences such as startups; customer plans live in clients.
+- **career/** (11) — Ettore's professional path beyond his current projects: job search, recruiters, interviews, company research, CVs and professional profiles, self-assessment of strengths.
+- **fitosfera/** (0) — Fitosfera, Quadrante's agronomy product aggregating phytosanitary bulletins with AI: hub, team, roadmap, partners.
+  - **data-gateway/** (4) — Fitosfera data gateway for partner APIs: access rules, rate limits, token expiry, compliance, tag-schema changes (e.g. Verdana); partner contacts live in stakeholders.
+  - **hub/** (5) — Fitosfera project hub: team, roadmap, tech stack, dashboard specs, status, internal meetings, board pitches and strategy; ingestion work lives in seedline.
+  - **seedline/** (29) — Seedline, the ingestion pipeline feeding Fitosfera: bulletin updates, schema drift, replay, build and deploy runbooks.
+  - **stakeholders/** (5) — People and partner organisations around Fitosfera (e.g. Novaris, Agrify, Northwind Labs): contacts, partnership talks and expectations; API access mechanics live in data-gateway.
+- **freelance-projects/** (1) — Ettore's independent client work outside Quadrante, courses and his own products: websites and apps for external customers (e.g. Orologeria Lugano e-commerce).
+- **merlino/** (0) — Merlino, the local agent that runs Ettore's daily memory-training sessions: architecture, operations, logs.
+  - **agent/** (3) — The Merlino agent itself: Sentinel architecture, Telegram link, launchd scheduling, logs, incidents and fixes; session content lives in training-logs.
+  - **training-logs/** (34) — Daily memory-training log series (Ginnastica mentale / Mind gym) and its routine: puzzles, attempts and results of each session.
+- **ondina/** (0) — Ondina, Ettore's open-source dictation and diarization engine: development and deployments.
+  - **client-projects/** (6) — Customer deployments of Ondina / Meeting Memory (e.g. Cantine Valdora, Lievita, Ricordia): briefs, proposals, specs, meetings; code work lives in codebase.
+  - **codebase/** (5) — Ondina software: ondina-core repo and CLI, Ondina Desktop app architecture, features and releases, Meeting Memory streaming ports; benchmarks and model research live in models.
+  - **models/** (11) — Models and research behind Ondina: speech/diarization model choice, DER/WER/VAD benchmarks and calibration, accuracy bugs, latency and memory comparisons, Ondina papers and preprint.
+  - **outreach/** (4) — Promotion of Ondina: launch posts on X, LinkedIn outreach, partnership and prospect calls (e.g. Ernesto), explainer-video concepts, follow-ups.
+- **personal/** (0) — Ettore's private life, kept apart from work: travel, documents, wellbeing, food, friends.
+  - **curiosities/** (1) — Small personal quirks and observations about Ettore himself, such as recurring lucky numbers and coincidences; not habits (wellbeing) or plans.
+  - **documents/** (6) — Identity cards, personal records of Ettore and family, and account recovery codes (e.g. Bitbucket 2FA backups).
+  - **entertainment/** (5) — Series, films, music and other leisure or educational watchlists and listening logs (e.g. conflict-management films, world-music tracks); not trips, sports or food.
+  - **family/** (8) — Family members and close people (e.g. Marta, cousin Sofia), Ruggine the dog, friends' contact records, birthdays, gift ideas; not documents or trips.
+  - **finance/** (9) — Ettore's private money matters: monthly budgets, household bill and tax deadlines, card or ATM incidents, bank references, tax choices such as 8 per mille.
+  - **food/** (16) — Food and drink: preferences, recipes, dinner logs, restaurant and trattoria reviews, rum tastings; shopping lists live in the subfolder.
+    - **shopping-lists/** (6) — Grocery and errand shopping lists; recipes and tastings stay in personal/food.
+  - **home/** (4) — Ettore's home in Padova: living-room furniture, terrace plants and furnishings, inventories of the flat; not vehicle or documents.
+  - **sports/** (13) — Ettore's sports and outdoor hobbies: windsurfing at Lago di Garda, running, and the gear for them.
+  - **travel/** (31) — Trips, bookings, itineraries, shared trip expenses (Splitwise) and lake or boat getaways; ideas for future destinations (e.g. Croatia, Puglia).
+  - **vehicle/** (5) — Ettore's car (Volvo V40): maintenance checklists, servicing, inspections and related paperwork.
+  - **wellbeing/** (7) — Meditation, mindfulness, mental-health apps and habits, healthcare and dental treatment, and personal care such as haircuts and grooming.
+- **planning/** (10) — Ettore's agendas and to-do checklists by day, week or month, meeting invitations, work calendars and time/productivity analyses, spanning work and private life.
+- **product-ideas/** (4) — Concepts for possible new apps or products Ettore has not started building, such as NutriScan AI; his existing products have their own branches.
+- **quadrante/** (0) — Quadrante srl as employer and company context, beyond a single product: contract, clients, internal projects.
+  - **client-projects/** (15) — Quadrante work for named external customers, from discovery calls and prospects to delivery: Verdana, Bollino, R&M Archivista, Ruotaviva, Officine Pavan.
+  - **employment/** (8) — Ettore's employment at Quadrante: contract, clauses, salary, benefits, workplace insurance, internal company training courses, plus the external labor-law and payroll consultant.
+  - **infrastructure/** (8) — Quadrante AWS infrastructure and server operations: cost reduction, AWS contacts, bastion SSH, proxy/TLS issues, incidents, security assessments (e.g. AnalisiCalc); LLM services live in llm-services.
+  - **internal-projects/** (9) — Quadrante's codenamed projects and in-house tools beyond Fitosfera: Cartesio/Bramble, Kestrel, Tessera, Movera, sheetsync, commit-linter; named customer engagements live in client-projects.
+  - **llm-services/** (4) — Quadrante LLM infrastructure and services: ask2sql, LiteLLM proxy behaviour, Mistral agent scaffolding on Polaris; generic model cards live in tech-knowledge.
+- **social-media/** (7) — Ettore's personal-brand posts, reel scripts and content frameworks (LinkedIn, X, Instagram) on data, AI, courses, freelancing; Tallyo or Ondina promotion lives in those branches.
+- **tallyo/** (2) — Tallyo, Ettore's indie expense-tracking app: product, releases, backend, marketing; the root holds the project overview, roadmap and general to-dos.
+  - **analytics/** (10) — Tallyo business metrics: revenue reconciliation (Google Play, Adapty payouts), cohort retention and acquisition-quality analyses; paywall mechanics stay in paywall.
+  - **app-ui/** (12) — Tallyo interface and in-app features from the user's side: category taxonomy, merchant search, Budget Map, widgets, dashboard, UI fixes; feedback lives in feedback.
+  - **backend/** (6) — Tallyo architecture and general server side: overview, search design, shared-expenses repo, tooling (PDF, PyPI, voice); specifics live in mcp-server, llm-workers, operations.
+    - **llm-workers/** (12) — Mistral model workers and receipt processing: OCR, retry queues, model swaps, prompt regression checks, parsing bugs (e.g. HEIC), split-bill ideas.
+    - **mcp-server/** (7) — Tallyo MCP server: live infrastructure, OAuth login flow, magic-link login, domains, CORS and directory listing.
+    - **operations/** (15) — Running the Tallyo backend: deploys, domain and DNS switches, user digest/notification runbooks, push, webhooks, archive jobs, local emulator issues.
+  - **business/** (4) — Tallyo as a company: seed pitch deck, company account (Brightmoor Apps LLC), accountants and VAT deadlines; metrics stay in analytics, pricing in paywall.
+  - **feedback/** (8) — Tallyo user and beta-tester feedback, bug reports and feature-request lists awaiting triage (e.g. Daniel Weir, Ingrid); shipped fixes live in releases.
+  - **marketing/** (34) — Tallyo promotion: ad creatives and promo videos, Meta/TikTok/Google ads and pixels, social posts and captions, creator and outreach campaigns, marketing website.
+  - **paywall/** (8) — Tallyo subscriptions and paywall: Adapty SDK, localized pricing, TestFlight store tests.
+  - **releases/** (27) — Tallyo versions: release notes, per-version bug-fix sprints and roadmaps, build/signing/notarization runbooks, store agreements, freeze policy, rollouts (Android, iOS, macOS).
+- **tech-knowledge/** (13) — External tech know-how not tied to Ettore's projects: AI concept explainers, model and tool cards, verified tool tests, video/animation libraries, tech and startup news.

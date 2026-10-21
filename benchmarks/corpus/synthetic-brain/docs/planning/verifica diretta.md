@@ -1,0 +1,3 @@
+# verifica diretta
+
+- [ ] **Run**

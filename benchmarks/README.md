@@ -14,6 +14,7 @@ first, and `--dry-run` tries them for free.
 | `long2/` | 15 long documents (10-55 pages, up to 194k characters): several topics, a misleading native summary, revisions, a mailbox without headings; planted facts by position (`labels.json`: `facts`), written by `make_long2_corpus.py`. Some values are corrupted or contradicted on purpose | long documents: placement, merges, which facts survive into the notes |
 | `deep/` | a three-level reorganisation of the demo wiki (`deep/base/`, built by `make_deep_demo.py`, no model) and 52 documents (the growth ones remapped plus 22 new, `make_deep_corpus.py`) | the routing fallback on a deep tree |
 | `dup/` | a base wiki (`dup/base/`: the demo plus 66 generated notes) and 40 documents (`dup/docs/`): 15 duplicates, 10 contradictions, 10 traps (a shared value, a different subject) and 5 distractors, each paired with a note of the base; `labels.json` gives the pair, the slot, the values and, for contradictions, a question and the expected answer. Written by `make_dup_corpus.py` | See-also links between duplicates, answers that report both values of a contradiction, no false link on a trap |
+| `synthetic-brain/` | a fictional personal second brain, the reference for benches on real-looking data: 477 notes in 53 folders (depth ≤ 3) of one invented owner, mixed Italian and English. `docs/` is the notes export as written (no frontmatter, URL-encoded links, 178 `note://` links to notes outside the set); `base/` is the same brain as a wiki, every note in its gold folder, built from `docs/` by `make_brain_corpus.py` (no model); `gold.json` gives each document its folder, title, links and its note in `base/`; `TAXONOMY.md` the folder tree with a line per folder | filing a real-looking export against its reference folders (`incremental.py`, `incremental_score.py`), answering on the reference wiki |
 
 The real corpora are not committed (licence and size): only the scripts that select them, the source and a pin.
 
@@ -39,7 +40,8 @@ The real corpora are not committed (licence and size): only the scripts that sel
 - `replay.py` — a replay cache of model answers (`stability.py --cache llm classifier`), so a series pays only for the calls a
   variant changes.
 - `ingest_parallel.py` — time and quality of `ingest_many` against the serial ingest.
-- `make_long2_corpus.py`, `make_deep_demo.py`, `make_deep_corpus.py`, `make_dup_corpus.py` — generators (the corpora are
+- `make_long2_corpus.py`, `make_deep_demo.py`, `make_deep_corpus.py`, `make_dup_corpus.py`,
+  `make_brain_corpus.py` — generators (the corpora are
   committed; they are run only to change them; `--check` is free). `corpus_common.py` holds what they share.
 - `t9_labels.py` — merges the two blind annotations of a synthetic half into one `labels.json`.
 - `t9_handbook_select.py`, `t9_enron_select.py`, `posthog_select.py` — build the real corpora from their sources (above).
@@ -48,6 +50,22 @@ The real corpora are not committed (licence and size): only the scripts that sel
 - `incremental_score.py` — shape, cost and agreement with gold folders (AMI, pairwise F1) of the runs of `incremental.py`. Free.
 - `retrieval.py` — CROW's `select` step on the final wiki of a run, for questions written about its documents. Costs a few calls
   per question; `--make-cases` is free.
+
+## The synthetic second brain
+
+`corpus/synthetic-brain/` imitates a personal notes export without exposing anyone's notes: every person, company,
+product, place, number and URL in it is invented. A real export of 621 notes was the template. A world bible gave the
+fictional owner (a data and AI engineer in Padova) a counterpart for every recurring person, project and place; Haiku
+agents wrote each note blind to the original, from the bible, a new title and a content-free skeleton (Markdown shape,
+word counts); a Sonnet auditor compared each note with its original and kept the 477 that leak nothing; a Sonnet
+librarian filed them one by one into a growing tree, an Opus review moved, merged and renamed 54 folders, and a last
+scan checked that no name, handle or identifier of the real owner is left.
+
+The flaws of a real export are kept on purpose: Italian and English inside one note, a first heading that differs from
+the title, file names cut at 80 characters, typos and unclosed Markdown, stubs next to 40 KB documents, two notes with
+identical content, two shopping lists with the same title, and links to notes renamed or deleted since (`note://`).
+
+    python benchmarks/make_brain_corpus.py --check   # free: base/ is a clean wiki, matches gold.json and a fresh build of docs/
 
 ## Comparing with `main`: three arms, three models
 

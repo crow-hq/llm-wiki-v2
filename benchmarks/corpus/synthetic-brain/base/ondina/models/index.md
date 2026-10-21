@@ -1,0 +1,13 @@
+# Notes
+
+* [Meeting Memory: Diarize First, Summarize Later (paper, draft v0.2 — Sept 2026)](meeting-memory-diarize-first-summarize-later-paper-draft-v0.md) - Meeting Memory Lab
+* [ondina 0.7.3 (single-pass overlap head) benchmark vs main b2f5a9c, baseline vs ONDA, 418 clips (2026-10-19)](ondina-0-7-3-single-pass-overlap-head-benchmark-vs-main.md) - Commit & release: b2f5a9c (overlap head merge, ~2.4 h pre-run); ondina-core v0.7.3 release branch (A100 40GB, CUDA 12.1, torch.seed=42).
+* [ondina-bench — DER + latency benchmark for a running Ondina (repo, how to run, 2026-10-12)](ondina-bench-der-latency-benchmark-for-a-running-ondina-repo.md) - Benchmarking harness for Ondina audio transcription with streaming diarization on local or cloud GPU; measures DER + WER, latency, GPU seconds @ 2026-10-12).
+* [Ondina benchmark preview carousel (2026-09-25)](ondina-benchmark-preview-carousel-2026-09-25.md) - Public-facing carousel preview of Ondina's benchmark-suite-v3.2 results (Radio Brenta corpus, 28 speakers, GPU seconds and DER). Layout for app and web embed.
+* [ondina-core — DER benchmark + VAD threshold calibration (2026-09-24)](ondina-core-der-benchmark-vad-threshold-calibration-2026-09.md) - Framework (ondina-bench v0.8.1, Kite-0.3-7B encoder):
+* [ondina-core — real-time-factor benchmark baseline vs ONDA (2026-09-24)](ondina-core-real-time-factor-benchmark-baseline-vs-onda-2026.md) - Setup:
+* [Ondina: Overlap-aware Neural Diarization for streaming Audio (preprint — September 2026)](ondina-overlap-aware-neural-diarization-for-streaming-audio.md) - Ettore Zanon¹, Michele Gobbo², Tiziano Rigon²
+* [Ondina VAD 0.35 vs 0.5 on the 418-clip bench (2026-10-13): WER -2.1 pts, +12% GPU seconds per audio hour](ondina-vad-0-35-vs-0-5-on-the-418-clip-bench-2026-10-13-wer.md) - Problem: VAD threshold choice trades word error rate vs GPU compute cost. Lower threshold (0.35) captures speech onset and overlaps, higher threshold (0.5) reduces overhead. Radio…
+* [Ondina — Zero-shot speaker attribution](ondina-zero-shot-speaker-attribution.md) - Attribuzione zero-shot: identificazione di parlanti senza addestrare il modello su voci specifiche.
+* [Open-source alternatives to Pico](open-source-alternatives-to-pico.md) - Valutazione comparativa di modelli open-source leggeri per rimpiazzare Pico in deployment locali e edge, rispetto a performance, costi e integrazione con Ondina e Merlino.
+* [Why short clips hurt Ondina: the encoder pads to 30 s, and punctuate_pass overrides the segment end (2026-10-20)](why-short-clips-hurt-ondina-the-encoder-pads-to-30-s-and.md) - Encoder padding to 30s, clips under 30s get zero-padded to exactly 30s before acoustic model inference.

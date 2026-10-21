@@ -1,0 +1,10 @@
+# Notes
+
+* [Adapty Paywall — Prezzi localizzati & Test TestFlight (RISOLTO)](adapty-paywall-prezzi-localizzati-test-testflight-risolto.md) - Adapty SDK cache non sincronizzava i prezzi localizzati durante il cambio di locale su TestFlight. Utenti italiani vedevano €5.99 come $4.99 anche quando il sistema era impostato…
+* [Rule: Tallyo never shows a price-change banner before checkout (3.1.0)](rule-tallyo-never-shows-a-price-change-banner-before.md) - The Tallyo app must never display a price-change notification, alert banner, or confirmation dialog to the user between the moment they tap a payment method and the moment the…
+* [Tallyo free tier bill-reminder limit raised to 5 (prod)](tallyo-free-tier-bill-reminder-limit-raised-to-5-prod.md) - Aumento limite promemoria bollette nel piano gratuito da 3 a 5 voci per utenti base. Decision: discussione iniziale 2026-09-15, approvazione 2026-09-22, testing completato…
+* [Tallyo — Free-tier limits & paywall enforcement (runbook, June 2026)](tallyo-free-tier-limits-paywall-enforcement-runbook-june.md) - The PAYWALL SYSTEM enforces tier-based quotas with firebase-rules Realtime Database validation starting 2026-06-11.
+* [Tallyo — Paywall Concept Generator (Prompt)](tallyo-paywall-concept-generator-prompt.md) - Questo documento struttura i pilastri di un paywall coerente per Tallyo Pro v2.4 usando framing psicologico testato e principi di persuasione UX verificati su 1247 utenti IT/EU.
+* [Tallyo trial length shown from remote config + annual badge gotcha](tallyo-trial-length-shown-from-remote-config-annual-badge.md) - Config: RemoteConfig manages trial and pricing copy from tallyo-prod-7c41e.
+* [Tallyo v2.2.1- annual-default plan picker](tallyo-v2-2-1-annual-default-plan-picker.md) - Initial commit on 2026-10-18, ~3400 LOC across lib/screens/billing/, lib/models/subscription.dart, and related Firebase functions.
+* [Web app- Paywall -price unavailable- flicker fixed (2f7a1c3)](web-app-paywall-price-unavailable-flicker-fixed-2f7a1c3.md) - Release includes 1 commit to app.gettallyo.com,

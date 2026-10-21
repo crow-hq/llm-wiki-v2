@@ -1,0 +1,17 @@
+# Notes
+
+* [Bollino — Aggiornamento Safety Gate](bollino-aggiornamento-safety-gate.md) - Completamento della sincronizzazione automatica con NANDO, nuove mappature GPSR e richieste di ritiro prodotto, integrazione con il gateway di Novaris.
+* [Bollino — Cosa fa & skill disponibili (reference funzionale)](bollino-cosa-fa-skill-disponibili-reference-funzionale.md) - Recall management (piattaforma integrata per tracciare richiami prodotto, conformità Safety Gate e GPSR per retailer e PMI italiane).
+* [Bollino — Miglioramenti plugin (checklist)](bollino-miglioramenti-plugin-checklist.md) - Roadmap Q4/Q1 per integrazioni Verdana e Safety Gate. 7 item principali.
+* [Bollino — Nuove fonti & roadmap integrazioni](bollino-nuove-fonti-roadmap-integrazioni.md) - Dodici nuove fonti di dati pubblici in progress; tre deprecate. Q4 2026: RASFF + Safety Gate in produzione.
+* [Bollino — Sito web (bollino.app)](bollino-sito-web-bollino-app.md) - ✅ Beta pubblico Sito web live dal 27/08/2026, tracciamento GPSR e Safety Gate
+* [Confronto AI & Innovazione — cliente di arredamento (Gloria Tessaro) — 27 ago 2026](confronto-ai-innovazione-cliente-di-arredamento-gloria.md) - Azienda: "Azienda arredamenti Gloria Tessaro srl—progettazione integrata e produzione arredo su misura, sedi Bolzano zona artigianale)"
+* [Gruppo Bortolan Imballaggi — Prospect AI per bilanci e chiusure contabili](gruppo-bortolan-imballaggi-prospect-ai-per-bilanci-e.md) - Primo contatto: 18 settembre 2026
+* [Meeting — Gestione magazzino e riordino automatico fornitori (Cesare Gatti, Silvano T](meeting-gestione-magazzino-e-riordino-automatico-fornitori.md) - Meeting indetto da Cesare Gatti (Quadrante) per discutere l'implementazione di un sistema di gestione automatica dei magazzini con riordino intelligente dei fornitori alimentari…
+* [Novaris Registri — Analisi richiami Safety Gate & opportunità (case Bollino)](novaris-registri-analisi-richiami-safety-gate-opportunita.md) - Bollino monitora i richiami europei per Safety Gate e GPSR, tracciando circa 3600 prodotti a rischio al mese su alimentari/non-food. Analisi del modello commerciale, competitor…
+* [Quadrante — Progetto Ruotaviva (analisi 28.08.2026)](quadrante-progetto-ruotaviva-analisi-28-08-2026-2.md) - Gloria Tessaro è cliente di arredamento. Ruotaviva produce sedute in serie, con 12 linee produttive e 847 SKU in catalogo. Problemi: lead time medio 19 giorni, verniciatura collo…
+* [Quadrante — Progetto Ruotaviva (analisi 28.08.2026)](quadrante-progetto-ruotaviva-analisi-28-08-2026.md) - Gloria Tessaro è cliente di arredamento. Ruotaviva produce sedute in serie, con 12 linee produttive e 847 SKU in catalogo. Problemi: lead time medio 19 giorni, verniciatura collo…
+* [R&M · Archivista documenti amministrativi — specifiche concordate (7/9/2026)](r-m-archivista-documenti-amministrativi-specifiche.md) - Specifiche finali approvate in riunione 7 settembre con R&M team.
+* [R&M Archivista — flusso estrazione completo, provato sui documenti reali (14/9/2026)](r-m-archivista-flusso-estrazione-completo-provato-sui.md) - Completamento della pipeline, validazione sui dati reali.
+* [Specifica e Stima- Gestionale Relazioni Tecniche](specifica-e-stima-gestionale-relazioni-tecniche.md) - Sistema di gestione centralizzato per relazioni agronomiche.
+* [Trascrizione completa - Call Coaching AI Gruppo Novaris/Officine Pavan-Rigon (14 lug 2026)](trascrizione-completa-call-coaching-ai-gruppo-novaris.md) - 14 luglio 2026, 14:30–16:45 (Gloria Tessaro, Officine Pavan-Rigon)
