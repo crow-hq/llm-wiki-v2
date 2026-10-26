@@ -42,17 +42,41 @@ def reply_tokens(chars: int) -> int:
 
 
 def extract_json(text: str) -> str:
-    """The first JSON object inside a reply, tolerating code fences and chatter (even with braces) around it."""
+    """The first JSON object inside a reply, tolerating code fences and chatter (even with braces) around it.
+
+    An object that does not parse is skipped whole, to the brace that closes it (or to the end of a reply cut short):
+    a dict inside it is never taken for the reply, which would read a broken plan as one of its folders, or as none.
+    """
     text = _FENCE.sub("", text.strip())
     decoder = json.JSONDecoder()
+    skip = 0  # the end of the last object that did not parse
     for start in (i for i, ch in enumerate(text) if ch == "{"):
+        if start < skip:
+            continue
         try:
             obj, end = decoder.raw_decode(text, start)
         except ValueError:
+            skip = _closing(text, start)
             continue
         if isinstance(obj, dict):
             return text[start:end]
     return text
+
+
+def _closing(text: str, start: int) -> int:
+    """Just past the brace that closes the one at `start`, counting braces outside strings; the end of the text if none."""
+    depth, quoted, escaped = 0, False, False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if quoted:
+            escaped, quoted = (False, True) if escaped else (ch == "\\", ch != '"')
+        elif ch == '"':
+            quoted = True
+        elif ch in "{}":
+            depth += 1 if ch == "{" else -1
+            if depth == 0:
+                return i + 1
+    return len(text)
 
 
 class LLM(HttpModel):
@@ -77,6 +101,8 @@ class LLM(HttpModel):
         self._least = preset.reasoning_least if off else None  # tried once, if the model refuses the off switch
         self._cap_field = preset.max_tokens_field
         self._thinks = not off  # known not to think only while the off switch is applied
+        if cfg.provider == "ollama" and preset.reasoning_off and preset.reasoning_off.items() <= cfg.extra_body.items():
+            self._thinks = False  # Ollama only: the caller's extra_body is the off switch itself, so the cap needs no reasoning room
         self._least_applied = False  # True once the switch to the least reasoning happened
         self._switch_lock = threading.Lock()
 

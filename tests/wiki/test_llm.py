@@ -234,6 +234,32 @@ def test_extract_json(text: str, expected: str) -> None:
     assert extract_json(text) == expected
 
 
+@pytest.mark.parametrize(
+    "reply",
+    [
+        '{"folders": [{"path": "/a", "description": "x"} {"path": "/b", "description": "y"}]}',  # a comma missing
+        '{"folders": [{"path": "/a", "description": "x"}, {"path": "/b", "desc',  # cut short
+    ],
+    ids=["missing-comma", "cut-short"],
+)
+def test_a_dict_inside_a_broken_reply_is_never_taken_for_it(reply: str) -> None:
+    assert extract_json(reply) == reply
+
+
+def test_an_object_after_chatter_with_broken_braces_is_still_found() -> None:
+    assert extract_json('Use {braces} like this: {"a": 1}') == '{"a": 1}'
+
+
+def test_a_reply_without_folders_is_no_plan() -> None:
+    from pydantic import ValidationError
+
+    from llmw2.agents.data import FolderPlan
+
+    with pytest.raises(ValidationError):
+        FolderPlan.model_validate({"path": "/a", "description": "x"})
+    assert FolderPlan.model_validate({"folders": []}).folders == []
+
+
 @pytest.mark.parametrize(("usage", "cost"), [({"cost": 0.0021}, 0.0021), ({}, None), ({"cost": "x"}, None), ({"cost": True}, None)])
 def test_reported_cost_reads_the_openrouter_number(usage: dict[str, Any], cost: float | None) -> None:
     assert reported_cost(usage) == cost

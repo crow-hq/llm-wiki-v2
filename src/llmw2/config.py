@@ -49,7 +49,11 @@ PROVIDERS: dict[str, Provider] = {
         ("gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"),
         read_chars=100_000,
     ),
-    "ollama": Provider("http://localhost:11434/v1", "", ("gemma4", "qwen3.8")),
+    "ollama": Provider(
+        "http://localhost:11434/v1", "", ("gemma4", "qwen3.8"),
+        {"reasoning_effort": "none"},  # without it every capped reply gets the reasoning room, and a runaway small model writes it all
+        {"reasoning_effort": "low"},
+    ),
     "custom": Provider("", "", ()),  # vLLM, LM Studio, llama.cpp, a gateway: set base_url (and api_key if it wants one)
 }
 
