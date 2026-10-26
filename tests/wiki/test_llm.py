@@ -13,7 +13,7 @@ import pytest
 from pydantic import BaseModel
 
 from llmw2.config import LLMConfig
-from llmw2.errors import ModelError
+from llmw2.errors import ModelError, ReplyInvalid
 from llmw2.models.client import HttpModel, reported_cost
 from llmw2.models.llm import LLM, extract_json
 from llmw2.models.usage import UsageTracker
@@ -198,6 +198,25 @@ def test_a_client_error_raises_without_retry(tracker: UsageTracker) -> None:
     assert len(requests) == 1
 
 
+def test_a_reply_the_server_stops_for_repeating_itself_is_invalid(tracker: UsageTracker) -> None:
+    looped = httpx.Response(500, json={"error": {"message": "prediction aborted, token repeat limit reached", "type": "api_error"}})
+    llm, requests = make_llm(tracker, looped, provider="ollama")
+
+    with pytest.raises(ReplyInvalid, match="repeating itself"):
+        llm.complete("system", "user")
+
+    assert len(requests) == HttpModel.attempts  # a 500 is tried again first: the next reply may not loop
+
+
+def test_any_other_server_error_is_still_an_endpoint_error(tracker: UsageTracker) -> None:
+    llm, _ = make_llm(tracker, httpx.Response(500, text="internal error"), provider="ollama")
+
+    with pytest.raises(ModelError, match="500") as raised:
+        llm.complete("system", "user")
+
+    assert not isinstance(raised.value, ReplyInvalid)
+
+
 @pytest.mark.parametrize(
     "payload",
     [{"choices": []}, {"error": {"message": "overloaded"}}, {"choices": [{"text": "legacy completion"}]}],
@@ -232,6 +251,32 @@ def test_a_non_json_reply_raises(tracker: UsageTracker) -> None:
 )
 def test_extract_json(text: str, expected: str) -> None:
     assert extract_json(text) == expected
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        '{"folders": [{"path": "/a", "description": "x"} {"path": "/b", "description": "y"}]}',  # a comma missing
+        '{"folders": [{"path": "/a", "description": "x"}, {"path": "/b", "desc',  # cut short
+    ],
+    ids=["missing-comma", "cut-short"],
+)
+def test_a_dict_inside_a_broken_reply_is_never_taken_for_it(reply: str) -> None:
+    assert extract_json(reply) == reply
+
+
+def test_an_object_after_chatter_with_broken_braces_is_still_found() -> None:
+    assert extract_json('Use {braces} like this: {"a": 1}') == '{"a": 1}'
+
+
+def test_a_reply_without_folders_is_no_plan() -> None:
+    from pydantic import ValidationError
+
+    from llmw2.agents.data import FolderPlan
+
+    with pytest.raises(ValidationError):
+        FolderPlan.model_validate({"path": "/a", "description": "x"})
+    assert FolderPlan.model_validate({"folders": []}).folders == []
 
 
 @pytest.mark.parametrize(("usage", "cost"), [({"cost": 0.0021}, 0.0021), ({}, None), ({"cost": "x"}, None), ({"cost": True}, None)])

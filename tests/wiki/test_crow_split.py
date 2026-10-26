@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from llmw2 import CROW, Item, ModelError, Origin, Route, Wiki, WikiConfig
 from llmw2.agents.prompts import Prompts
@@ -124,7 +125,8 @@ def test_split_at_is_twelve() -> None:
 def test_split_plan_models() -> None:
     from llmw2.agents.data import SplitFolder, SplitPlan
 
-    assert SplitPlan().folders == []
+    with pytest.raises(ValidationError):  # a reply without "folders" is no split plan, not an empty one
+        SplitPlan.model_validate({"name": "a", "description": "b", "notes": [1, 2]})
     assert SplitFolder(name="a", description="b").notes == []
     assert SplitPlan.model_validate({"folders": [{"name": "a", "description": "b", "notes": [1, 2]}]}).folders[0].notes == [1, 2]
 

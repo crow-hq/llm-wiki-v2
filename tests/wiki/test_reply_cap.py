@@ -164,9 +164,9 @@ def test_complete_when_the_caller_sets_reasoning_then_the_room_is_added(tracker:
     assert sent(requests[0])["max_tokens"] == N + REASONING_ROOM
 
 
-@pytest.mark.parametrize("provider", ["gemini", "ollama", "custom"])
+@pytest.mark.parametrize("provider", ["gemini", "custom"])
 def test_complete_when_the_preset_has_no_off_switch_then_the_room_is_added(tracker: UsageTracker, provider: str) -> None:
-    # A3: "a preset with no switch: openai, gemini, ollama, custom"; A2: the others keep "max_tokens"
+    # A3: "a preset with no switch: openai, gemini, custom"; A2: the others keep "max_tokens"
     llm, requests = make_llm(tracker, completion("ok"), provider=provider)
 
     llm.complete("sys", "user", max_tokens=N)
@@ -634,3 +634,31 @@ def test_summarize_part_and_the_combine_are_capped_by_a_note(tracker: UsageTrack
     # round 6 (P1): the cap follows `cap` (half a note) times 1.3, not a whole note
     assert parts == [reply_tokens(math.ceil(1.3 * (ctx.cfg.effective_note_chars // 2)))] * 2
     assert combine == [reply_tokens(ctx.cfg.effective_note_chars)]
+
+
+def test_complete_on_ollama_turns_reasoning_off_and_adds_no_room(tracker: UsageTracker) -> None:
+    # without the off switch a small model that runs away writes the whole reasoning room before it is cut
+    llm, requests = make_llm(tracker, completion("ok"), provider="ollama")
+
+    llm.complete("sys", "user", max_tokens=N)
+
+    body = sent(requests[0])
+    assert (body["max_tokens"], body["reasoning_effort"]) == (N, "none")
+
+
+def test_complete_on_ollama_when_the_callers_extra_body_is_the_off_switch_then_no_room_is_added(tracker: UsageTracker) -> None:
+    llm, requests = make_llm(tracker, completion("ok"), provider="ollama", extra_body={"reasoning_effort": "none"})
+
+    llm.complete("sys", "user", max_tokens=N)
+
+    assert sent(requests[0])["max_tokens"] == N
+
+
+def test_complete_on_openrouter_when_the_callers_extra_body_is_the_off_switch_then_the_room_is_still_added(tracker: UsageTracker) -> None:
+    # only Ollama takes a caller's off switch to mean no reasoning room: the other providers add it, as before
+    llm, requests = make_llm(tracker, completion("ok"), extra_body={"reasoning": {"enabled": False}})
+
+    llm.complete("sys", "user", max_tokens=N)
+
+    body = sent(requests[0])
+    assert (body["max_tokens"], body["reasoning"]) == (N + REASONING_ROOM, {"enabled": False})

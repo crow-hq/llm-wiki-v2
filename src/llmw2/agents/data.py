@@ -54,7 +54,7 @@ class PlannedFolder(BaseModel):
 
 
 class FolderPlan(BaseModel):
-    folders: list[PlannedFolder] = []
+    folders: list[PlannedFolder]  # required: a reply without it is no plan, never an empty one
 
 
 class SplitFolder(BaseModel):
@@ -64,7 +64,7 @@ class SplitFolder(BaseModel):
 
 
 class SplitPlan(BaseModel):
-    folders: list[SplitFolder] = []
+    folders: list[SplitFolder]  # required, as in FolderPlan
 
 
 class NoteDraft(BaseModel):

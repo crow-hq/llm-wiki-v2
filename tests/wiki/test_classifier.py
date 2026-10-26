@@ -199,6 +199,63 @@ def test_batched_nouls_record_usage_once_per_request(tracker: UsageTracker) -> N
     assert tracker.snapshot().llm.calls == 0
 
 
+TOO_MANY = "questions must contain 1\N{EN DASH}64 fields"  # what the local classifier server answers (HTTP 400) to a request over its limit
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        httpx.Response(400, json={"error": TOO_MANY}),
+        httpx.Response(400, content=b'{"error": "questions must contain 1\\u201364 fields"}'),
+        httpx.Response(400, text="questions must contain 1-64 fields"),
+    ],
+    ids=["en-dash", "escaped", "hyphen"],
+)
+def test_nouls_a_server_that_takes_64_questions_gets_a_longer_batch_in_halves(tracker: UsageTracker, refusal: httpx.Response) -> None:
+    def reply(request: httpx.Request) -> httpx.Response:
+        questions = sent(request)["questions"]
+        if len(questions) > 64:
+            return httpx.Response(refusal.status_code, content=refusal.content)
+        return answered({key: {"type": "noul", "noul": int(key[1:]) / 1000} for key in questions})
+
+    questions = {f"n{i}": f"Statement number {i}." for i in range(150)}
+    clf, requests = make_classifier(tracker, reply)
+
+    result = clf.nouls("state", questions, op="match")
+
+    assert result == {key: int(key[1:]) / 1000 for key in questions}
+    assert len(sent(requests[0])["questions"]) == 150  # the whole batch went first, as it does to a server with no such limit
+    asked = [key for r in requests if len(sent(r)["questions"]) <= 64 for key in sent(r)["questions"]]
+    assert sorted(asked) == sorted(questions)  # the questions that were refused are answered in smaller requests, each once
+
+
+def test_nouls_a_server_that_takes_more_than_64_questions_gets_them_in_one_request(tracker: UsageTracker) -> None:
+    clf, requests = make_classifier(tracker, noul(0.5))
+
+    result = clf.nouls("state", {f"n{i}": f"Statement number {i}." for i in range(114)}, op="match")
+
+    assert (len(result), len(requests)) == (114, 1)
+
+
+def test_nouls_any_other_refusal_is_raised_without_a_split(tracker: UsageTracker) -> None:
+    clf, requests = make_classifier(tracker, httpx.Response(400, json={"error": "unknown model"}), noul(0.5))
+
+    with pytest.raises(ModelError, match="unknown model"):
+        clf.nouls("state", {f"n{i}": f"Statement number {i}." for i in range(100)})
+
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("count", [1, 5])
+def test_nouls_when_every_size_is_refused_then_raises_once_a_batch_cannot_be_halved(tracker: UsageTracker, count: int) -> None:
+    clf, requests = make_classifier(tracker, httpx.Response(400, json={"error": TOO_MANY}))
+
+    with pytest.raises(ModelError, match="must contain"):
+        clf.nouls("state", {f"n{i}": f"Statement number {i}." for i in range(count)})
+
+    assert len(requests) <= count
+
+
 def test_answers_without_usage_count_as_missing(tracker: UsageTracker) -> None:
     clf, _ = make_classifier(tracker, answered({"a": {"type": "noul", "noul": 0.5}}, usage=None))
 

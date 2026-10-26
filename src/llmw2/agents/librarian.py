@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass, field, replace
 from functools import cached_property
 from typing import Any, Literal
 
-from llmw2.agents import linking, revisions
+from llmw2.agents import linking, revisions, steps_classic
 from llmw2.agents.base import Decision, clean_tags, unique_objects
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.prompts import Prompts
@@ -35,8 +35,9 @@ from llmw2.agents.steps import (
 from llmw2.bundle.origin import content_hash
 from llmw2.bundle.sheets import brief
 from llmw2.bundle.store import WikiStore
+from llmw2.bundle.tree import slugify
 from llmw2.config import WikiConfig
-from llmw2.errors import ModelError
+from llmw2.errors import ModelError, ReplyInvalid, StepError
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport
@@ -83,6 +84,13 @@ class Librarian:
         self.steps = steps
         self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="librarian/system")
 
+    @property
+    def local_writer(self) -> bool:
+        """A writer on Ollama: a small model whose unusable reply (invalid, cut, or refused by a check) is worked around (the
+        source text, a section, a name from the note) instead of stopping the ingest. A hosted writer's failure stops it,
+        so a later run retries it, and so does an endpoint that fails (down, wrong model, timeout) on any provider."""
+        return self.cfg.llm.provider == "ollama"
+
     @cached_property
     def hash(self) -> str:
         """What the provenance says decided: the steps, prompts and decision parameters (see `decision_hash`)."""
@@ -96,7 +104,14 @@ class Librarian:
         read = _read(source)
         self.ctx.source = read
         with self.ctx.llm.usage.span() as used:
-            cand = check_summarize(self.steps.summarize(self.ctx, read))
+            try:
+                cand = check_summarize(self.steps.summarize(self.ctx, read))
+            except (ReplyInvalid, StepError) as e:  # a local writer that cannot summarize it: the note keeps the source text
+                if not self.local_writer:
+                    raise
+                log.warning("summarize failed (%s): the note keeps the source text", e)
+                self.ctx.decide("summarize", "code", "verbatim")
+                cand = steps_classic._verbatim(read, self.cfg.classifier.state_chars)
         return Prepared(source, cand, used, list(self.ctx.decisions))
 
     def file(self, prepared: Prepared) -> IngestResult:
@@ -121,7 +136,14 @@ class Librarian:
                     archived = self.store.archive_note(match)
                     revised = True
                 else:
-                    draft = check_merge(steps.merge(ctx, match, read))
+                    try:
+                        draft = check_merge(steps.merge(ctx, match, read))
+                    except (ReplyInvalid, StepError) as e:  # a local writer that cannot merge: the note becomes a section
+                        if not self.local_writer:
+                            raise
+                        log.warning("merge into %s failed (%s): the incoming note is added as a section", match.rel, e)
+                        ctx.decide("merge", "code", "appended")
+                        draft = steps_classic._appended(match, match.main_body(), cand, read)
                 raw, ref = self.save_source(source, cand)
                 note = self.store.update_note(
                     match,
@@ -141,7 +163,16 @@ class Librarian:
                         folder, is_new = self.store.create_folder(folder, name, description)
                         created += [folder.label] if is_new else []
                 elif route.new and ctx.can_create(folder):
-                    name, description = check_name_folder(steps.name_folder(ctx, folder, cand))
+                    try:
+                        name, description = check_name_folder(steps.name_folder(ctx, folder, cand))
+                    except (ReplyInvalid, StepError) as e:  # a local writer that cannot name it: named after the note
+                        if not self.local_writer:
+                            raise
+                        stem = (read.title or "").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+                        words = next((w for w in map(_name_words, (cand.title, cand.summary, stem)) if w), [])
+                        name, description = " ".join(words) or "notes", cand.summary
+                        log.warning("name_folder failed (%s): the folder is named after the note, %r", e, name)
+                        ctx.decide("name_folder", "code", name)
                     folder, is_new = self.store.create_folder(folder, name, description)
                     created += [folder.label] if is_new else []
                 raw, ref = self.save_source(source, cand)
@@ -210,3 +241,11 @@ def _read(source: Source) -> Source:
     """The source as the steps read it: a spreadsheet sheet by its first rows, the note catalogues it (`sheets.brief`)."""
     text = brief(source.text)
     return source if text is source.text else replace(source, text=text)
+
+
+def _name_words(text: str | None) -> list[str]:
+    """The first four words of a text for a folder named after its note, a leading count ("8", "26.") left out."""
+    words = (text or "").split()
+    while words and not slugify(words[0].strip(".,;:()"), fallback="").replace("-", "").isalpha():
+        words.pop(0)
+    return words[:4] if slugify(" ".join(words[:4]), max_len=40, fallback="") else []

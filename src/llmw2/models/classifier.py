@@ -101,13 +101,27 @@ class Classifier(HttpModel):
         """Probability that each statement holds, batched so every request fits the context."""
         result: dict[str, float] = {}
         for batch in self._batches(state, questions):
-            answers = self.ask(state, {k: {"type": "noul", "instructions": q} for k, q in batch.items()}, op=op)
-            for key, answer in answers.items():
-                try:
-                    result[key] = float(answer["noul"])
-                except (KeyError, TypeError, ValueError) as e:
-                    raise ModelError(f"malformed noul answer: {answer!r}") from e
+            result.update(self._nouls(state, batch, op))
         return result
+
+    def _nouls(self, state: str, batch: dict[str, str], op: str) -> dict[str, float]:
+        """One batch. A server that takes fewer questions per request than the batch holds (the local one takes 64) gets it in halves."""
+        try:
+            answers = self.ask(state, {k: {"type": "noul", "instructions": q} for k, q in batch.items()}, op=op)
+        except ModelError as e:
+            if len(batch) < 2 or not _too_many_questions(e):
+                raise
+            keys = list(batch)
+            half = len(keys) // 2
+            first, second = {k: batch[k] for k in keys[:half]}, {k: batch[k] for k in keys[half:]}
+            return {**self._nouls(state, first, op), **self._nouls(state, second, op)}
+        out: dict[str, float] = {}
+        for key, answer in answers.items():
+            try:
+                out[key] = float(answer["noul"])
+            except (KeyError, TypeError, ValueError) as e:
+                raise ModelError(f"malformed noul answer: {answer!r}") from e
+        return out
 
     def _batches(self, state: str, questions: dict[str, str]) -> list[dict[str, str]]:
         budget = max(self.request_chars - len(state), 1)
@@ -120,6 +134,12 @@ class Classifier(HttpModel):
             batches[-1][key] = question
             used += len(question)
         return [b for b in batches if b]
+
+
+def _too_many_questions(e: ModelError) -> bool:
+    """Whether a server refused a request for holding more questions than it takes: "questions must contain 1-64 fields"."""
+    text = str(e).lower()
+    return "must contain 1" in text and "fields" in text  # the dash between the numbers varies: en dash, hyphen, escaped in JSON
 
 
 def probe(classifier: Classifier) -> float:

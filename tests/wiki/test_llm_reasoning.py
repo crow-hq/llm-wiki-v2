@@ -1,7 +1,7 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""The writing model's reasoning switch: off by default on OpenRouter, the least effort when a model must think."""
+"""The writing model's reasoning switch: off by default on OpenRouter and Ollama, the least effort when a model must think."""
 
 from __future__ import annotations
 
@@ -64,6 +64,18 @@ def test_complete_when_the_model_refuses_to_stop_thinking_then_retries_once_with
     # ASSERT
     assert reply == "ok"
     assert [sent(r)["reasoning"] for r in requests] == [{"enabled": False}, {"effort": "minimal"}]
+
+
+def test_complete_on_ollama_when_the_model_refuses_to_stop_thinking_then_retries_once_with_low_effort() -> None:
+    # ARRANGE
+    llm, requests = make_llm(MANDATORY, completion("ok"), provider="ollama")
+
+    # ACT
+    reply = llm.complete("sys", "user")
+
+    # ASSERT
+    assert reply == "ok"
+    assert [sent(r)["reasoning_effort"] for r in requests] == ["none", "low"]
 
 
 def test_complete_when_the_least_effort_was_learnt_then_the_next_call_sends_it_directly() -> None:
