@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from llmw2 import Wiki, WikiConfig
 from llmw2.errors import ModelError
-from llmw2.server import create_app
+from llmw2.server import NO_MCP, create_app
 from llmw2.settings import Settings
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
@@ -229,3 +229,19 @@ def test_saving_the_memory_switch_rebuilds_the_wiki_with_it(local: TestClient, r
     body = local.post("/settings", json={"mcp": "true", "api_key": KEY}).json()
 
     assert (body["values"]["mcp"], rebuilt[-1].mcp) == (True, True)
+
+
+def test_without_the_mcp_extra_mcp_says_what_to_install_and_the_page_knows(
+    classic_wiki: Wiki, home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ARRANGE: a base install, without llmwiki2[mcp]
+    monkeypatch.setattr("llmw2.server.mcp_installed", lambda: False)
+
+    # ACT
+    with TestClient(create_app(classic_wiki, settings=Settings({})), **LOCAL) as client:
+        mcp = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        view = client.get("/settings").json()
+
+    # ASSERT
+    assert (mcp.status_code, mcp.json()["detail"]) == (501, NO_MCP)
+    assert view["mcp_installed"] is False

@@ -9,7 +9,8 @@ GET /tree, GET /note,
 GET /graph, GET /usage, GET /check, GET /health; DELETE /note, DELETE /folder and
 DELETE /wiki (empty it); GET /settings, POST /settings,
 POST /settings/test, POST /settings/models and POST /settings/memory when the app is given the settings file;
-/mcp, the wiki as an MCP memory for Claude Code, Codex or any MCP client, while the settings turn it on (llmw2.memory).
+/mcp, the wiki as an MCP memory for Claude Code, Codex or any MCP client (llmw2.memory), with the mcp extra
+(llmwiki2[mcp]); without it, /mcp says what to install.
 
 Two guards for a wiki on your machine, where any web page you visit can send requests:
 - every request that changes something must be same-origin when a browser sends it
@@ -21,6 +22,7 @@ Settings can be changed only from this machine: from a loopback address, to a lo
 
 from __future__ import annotations
 
+import importlib.util
 import threading
 from collections.abc import Callable
 from importlib import resources
@@ -34,6 +36,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
+from starlette.types import ASGIApp, Lifespan
 
 from llmw2 import __version__
 from llmw2.audit import AUDIT_MIN, HEALTH_MAX_SHARE, HEALTH_MIN_FILED
@@ -42,7 +45,6 @@ from llmw2.bundle.origin import Origin
 from llmw2.bundle.tree import graph
 from llmw2.config import WikiConfig, missing_keys
 from llmw2.errors import ConfigError, InputError, ModelError
-from llmw2.memory import Memory
 from llmw2.models.classifier import probe as probe_classifier
 from llmw2.models.llm import context_warning, live_models, probe
 from llmw2.settings import Settings
@@ -50,6 +52,7 @@ from llmw2.wiki import Wiki
 
 LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+NO_MCP = "the memory needs the mcp extra: pip install 'llmwiki2[mcp]' (or uv tool install 'llmwiki2[mcp]'), then start llmwiki2 again"
 
 
 class OriginModel(BaseModel):
@@ -171,6 +174,21 @@ def is_local(request: Request) -> bool:
     )
 
 
+def mcp_installed() -> bool:
+    """Whether the mcp extra (llmwiki2[mcp]) is installed: the memory at /mcp comes with it."""
+    return importlib.util.find_spec("mcp") is not None
+
+
+def memory_endpoint(wiki: Callable[[], Wiki]) -> tuple[ASGIApp, Lifespan[Any] | None]:
+    """/mcp and the lifespan it runs with. Without the mcp extra, an endpoint that says what to install."""
+    if not mcp_installed():
+        return JSONResponse({"detail": NO_MCP}, status_code=501), None  # a response is an ASGI app too, for any method
+    from llmw2.memory import Memory  # mcp comes with the extra only, so the memory is imported only with it
+
+    memory = Memory(wiki)
+    return memory, memory.lifespan
+
+
 def create_app(
     wiki: Wiki,
     *,
@@ -187,9 +205,9 @@ def create_app(
         wiki: Wiki = app.state.wiki
         return wiki
 
-    memory = Memory(current)  # /mcp: its sessions run with the app, its tools on the wiki of the moment
+    memory, lifespan = memory_endpoint(current)  # /mcp: its sessions run with the app, its tools on the wiki of the moment
     # No /docs, /redoc or /openapi.json: a local service, and the schema would map it for any page that can reach it.
-    app = FastAPI(title="llmwiki2", version=__version__, docs_url=None, redoc_url=None, openapi_url=None, lifespan=memory.lifespan)
+    app = FastAPI(title="llmwiki2", version=__version__, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
     @app.middleware("http")
     async def guard(request: Request, call_next: Callable[[Request], Any]) -> Any:
@@ -377,7 +395,7 @@ def create_app(
         if settings is None:
             raise HTTPException(404, "settings are managed by whoever built this app")
         try:
-            return {**settings.view(), "editable": is_local(request)}
+            return {**settings.view(), "editable": is_local(request), "mcp_installed": mcp_installed()}
         except ValueError as e:
             raise HTTPException(500, str(e)) from e
 

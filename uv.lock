@@ -1,11 +1,11 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15'",
     "python_full_version == '3.14.*'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
-    "(python_full_version < '3.14' and sys_platform != 'emscripten') or (python_full_version < '3.12' and sys_platform == 'emscripten')",
+    "python_full_version < '3.12' or (python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'emscripten')",
 ]
 
 [[package]]
@@ -693,7 +693,6 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "mcp" },
     { name = "pydantic" },
     { name = "pypdf" },
     { name = "pyyaml" },
@@ -702,6 +701,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "mcp" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -709,12 +709,16 @@ dev = [
     { name = "ruff" },
     { name = "types-pyyaml" },
 ]
+mcp = [
+    { name = "mcp" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.110" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "mcp", specifier = ">=2.3,<3" },
+    { name = "llmwiki2", extras = ["mcp"], marker = "extra == 'dev'" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.3,<3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pypdf", specifier = ">=4.0" },
@@ -726,7 +730,7 @@ requires-dist = [
     { name = "types-pyyaml", marker = "extra == 'dev'" },
     { name = "uvicorn", specifier = ">=0.29" },
 ]
-provides-extras = ["server", "dev"]
+provides-extras = ["server", "mcp", "dev"]
 
 [[package]]
 name = "mcp"

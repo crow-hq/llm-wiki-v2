@@ -17,7 +17,7 @@ WORKDIR /app
 COPY pyproject.toml README.md LICENSE NOTICE ./
 COPY LICENSES ./LICENSES
 COPY src ./src
-RUN pip install ".[server]" && useradd --uid 1000 --no-create-home wiki
+RUN pip install ".[server,mcp]" && useradd --uid 1000 --no-create-home wiki
 
 # Docker creates a missing ./wiki as root: hand it to "wiki", then drop root and
 # run as the folder's owner, so on Linux the files on the host stay yours.

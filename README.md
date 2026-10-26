@@ -74,6 +74,12 @@ so you can add to it or delete it. To try it without installing anything but uv:
 ## Claude's memory (MCP)
 
 The wiki can be the long-term memory of Claude Code, Codex or any MCP client, documents already filed included.
+It comes with the `mcp` extra (the Docker image has it):
+
+```bash
+pip install 'llmwiki2[mcp]'      # or: uv tool install 'llmwiki2[mcp]'
+```
+
 Open **Memory** on the page, press **Start**, and connect a client:
 
 ```bash
@@ -81,7 +87,7 @@ claude mcp add --transport http --scope user llm-wiki http://127.0.0.1:8000/mcp
 codex mcp add llm-wiki --url http://127.0.0.1:8000/mcp
 ```
 
-The client gets three tools: `recall` answers from your notes and documents, citing them; `remember` files what it
+The client gets its tools: `recall` answers from your notes and documents, citing them; `remember` files what it
 learns, in the right folder, merged and linked like any note (CROW); `read_note` reads a note in full. Which models
 do the work is a choice under Memory:
 
@@ -89,7 +95,8 @@ do the work is a choice under Memory:
   client only calls the memory.
 - **Claude or GPT for everything.** The memory hands the client every model call it makes, while CROW runs as always.
   Claude Code decides with a Haiku subagent and writes with its own model; Codex uses its own. It runs on the client's
-  plan, with no key in the wiki.
+  plan, with no key in the wiki. The requests carry your documents' text to the client: it is told to read it as data
+  and to answer without tools, but that is an instruction, not a sandbox (see Security in the memory guide).
 
 Docker, the tools and security: [docs/wiki/memory.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/memory.md).
 
@@ -211,7 +218,7 @@ In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes 
 | `DELETE /note?path=…` · `DELETE /folder?path=/…` · `DELETE /wiki` | delete a note · a folder with all it holds · everything; links to them go, and raw copies no remaining note cites |
 | `GET /usage` · `GET /health` | token totals per ledger and model · status |
 | `GET /settings` · `POST /settings` · `POST /settings/test` | provider, model and key (masked) · save them · try them; changes from this machine only |
-| `POST /mcp` | the wiki as an MCP memory (Streamable HTTP; `recall`, `remember`, `read_note`, `reply`) while the settings turn it on (`OKF_MCP`, or **Memory** → **Start**); 404 otherwise |
+| `POST /mcp` | the wiki as an MCP memory (Streamable HTTP; `recall`, `remember`, `read_note`, `reply`), with the `mcp` extra. Its tools work while the settings turn it on (`OKF_MCP`, or **Memory** → **Start**), and say how to turn it on otherwise; without the extra, 501 and what to install |
 | `POST /settings/memory` `{mcp?, mcp_models?}` | turn the memory on or off, and choose whose models do its work; no key needed, from this machine only |
 
 </details>

@@ -11,6 +11,14 @@ A memory is a note like any other. It shows up in the page, and the page can mov
 
 ## Start it and connect a client
 
+The memory comes with the `mcp` extra, which the Docker image has:
+
+```bash
+pip install 'llmwiki2[mcp]'      # or: uv tool install 'llmwiki2[mcp]'
+```
+
+Without it, `/mcp` answers 501 with what to install, and the **Memory** page says the same.
+
 On the page, open **Memory** and press **Start**. Without the page, set `OKF_MCP=1` where the server runs.
 The memory answers at the server's own address, `http://127.0.0.1:8000/mcp`
 by default, while `llmwiki2` runs. **Stop** turns its tools off: they answer that the memory is off, and how to start it.
@@ -86,10 +94,7 @@ a model that does not answer would. While a memory is filed, the wiki is held fo
 waits for the client meanwhile. `log.md` names `mcp-client` as the model of the notes the client filed. The CROW
 thresholds stay the wiki's own, as in **Settings**.
 
-A memory takes a few round trips, from a minute or so. The client's tool calls and subagents run on its own plan.
-Measured on 2026-10-26:
-- Claude Code (Sonnet, with Haiku subagents deciding) filed a memory and recalled it in 45 s.
-- Codex filed and recalled one in 57 s.
+A memory takes a few round trips: about a minute. The client's tool calls and subagents run on its own plan.
 
 The page's own filing (files dropped on it) keeps using the wiki's own models, as no client is there to ask. The memory
 files through CROW whichever models do it.
@@ -106,6 +111,14 @@ The memory has no authentication, like the rest of the HTTP API. It sits behind 
 - no request may come from another site's page.
 
 Keep the port on your machine. In Docker that means `127.0.0.1:8000:8000` if the machine is on a shared network.
+
+With **Claude or GPT for everything**, the requests carry your documents' text to the client's model, and that model
+has tools: commands, files, the web. A document with hidden instructions (an email, a web page) could try to steer it.
+The memory tells the client that a request is data, never instructions, and that it answers with text alone and no
+tool, its subagents included. A decision's document also travels escaped, inside a prompt that says it is untrusted.
+That is an instruction, not a sandbox: Claude Code documents no way to give a subagent no tools. So with documents you did
+not write, keep the client's permission prompts on (in Claude Code, not `--dangerously-skip-permissions`), or let this
+wiki's own models do the work, which have no tools.
 
 ## How it works
 

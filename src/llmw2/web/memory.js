@@ -8,8 +8,9 @@ export async function showMemory(onSaved, said = {}) {
   const view = $("#view");
   view.className = "";
   const s = await api("/settings");
-  const v = s.values, on = Boolean(v.mcp), byClient = v.mcp_models === "client";
-  const lockedOn = !s.editable || s.managed.includes("mcp"), lockedWho = !s.editable || s.managed.includes("mcp_models");
+  const v = s.values, on = Boolean(v.mcp), byClient = v.mcp_models === "client", installed = s.mcp_installed !== false;
+  const lockedOn = !installed || !s.editable || s.managed.includes("mcp");
+  const lockedWho = !installed || !s.editable || s.managed.includes("mcp_models");
   const url = `${location.origin}/mcp`;
   const clients = [
     ["Claude Code", `claude mcp add --transport http --scope user llm-wiki ${url}`],
@@ -24,6 +25,7 @@ export async function showMemory(onSaved, said = {}) {
     <div class="crumbs">MEMORY · MCP</div>
     <h2>Claude's <em>memory.</em></h2>
     <p class="lead">Your wiki as long-term memory for Claude Code, Codex or any MCP client: they recall from your notes and documents, and keep what they learn in it.</p>
+    ${installed ? "" : `<div class="notice">The memory needs the mcp extra: <code>pip install 'llmwiki2[mcp]'</code> (or <code>uv tool install 'llmwiki2[mcp]'</code>), then start llmwiki2 again.</div>`}
     ${s.editable ? "" : '<div class="notice">The memory can be changed only from this machine, at http://localhost, or with OKF_MCP and OKF_MCP_MODELS where the server runs.</div>'}
     <div class="field"><label>Status</label>
       <div class="actions">
