@@ -131,6 +131,19 @@ def test_an_endpoint_error_on_ollama_stops_the_ingest(
     assert not isinstance(raised.value, ReplyInvalid)  # a reply error would have been worked around
 
 
+def test_a_reply_the_server_stops_for_repeating_itself_is_worked_around_on_ollama(
+    bundle: Path, tracker: UsageTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(HttpModel, "backoff", 0)  # the 500 is tried three times
+    looped = httpx.Response(500, json={"error": {"message": "prediction aborted, token repeat limit reached", "type": "api_error"}})
+    writer, _ = make_llm(tracker, looped, provider="ollama")
+    wiki = build(bundle, writer, replace(OFFLINE, summarize=CLASSIC.summarize))  # the real summarize, over a writer that loops
+
+    result = wiki.ingest("Payroll runs monthly.", title="Payroll calendar")
+
+    assert any(d.step == "summarize" and d.choice == "verbatim" for d in result.decisions)
+
+
 @pytest.mark.parametrize(
     ("text", "words"),
     [

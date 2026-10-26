@@ -34,6 +34,7 @@ MIN_REPLY_TOKENS = 1_024  # no cap is ever lower
 REASONING_ROOM = 32_000  # tokens added to the cap when the model may think: they count against it
 
 _CAP_REFUSED = ("max_tokens", "max_completion_tokens", "context length", "maximum context", "max_model_len")
+_LOOPED = "token repeat limit"  # Ollama's 500 when it stops a model that keeps repeating itself: a bad reply, not an outage
 
 
 def reply_tokens(chars: int) -> int:
@@ -121,6 +122,8 @@ class LLM(HttpModel):
                 elif max_tokens is not None and self._cap and e.status in (400, 404) and any(w in text for w in _CAP_REFUSED):
                     log.info("%s refuses the output cap: sending requests without it from now on", self.model)
                     self._cap = False
+                elif e.status == 500 and _LOOPED in text:
+                    raise ReplyInvalid(f"llm {op or 'chat'}: the server stopped a reply repeating itself: {e}", status=e.status) from e
                 else:
                     raise
         usage = data.get("usage") or {}

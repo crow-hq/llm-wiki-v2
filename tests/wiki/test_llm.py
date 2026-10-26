@@ -13,7 +13,7 @@ import pytest
 from pydantic import BaseModel
 
 from llmw2.config import LLMConfig
-from llmw2.errors import ModelError
+from llmw2.errors import ModelError, ReplyInvalid
 from llmw2.models.client import HttpModel, reported_cost
 from llmw2.models.llm import LLM, extract_json
 from llmw2.models.usage import UsageTracker
@@ -196,6 +196,25 @@ def test_a_client_error_raises_without_retry(tracker: UsageTracker) -> None:
         llm.complete("system", "user")
 
     assert len(requests) == 1
+
+
+def test_a_reply_the_server_stops_for_repeating_itself_is_invalid(tracker: UsageTracker) -> None:
+    looped = httpx.Response(500, json={"error": {"message": "prediction aborted, token repeat limit reached", "type": "api_error"}})
+    llm, requests = make_llm(tracker, looped, provider="ollama")
+
+    with pytest.raises(ReplyInvalid, match="repeating itself"):
+        llm.complete("system", "user")
+
+    assert len(requests) == HttpModel.attempts  # a 500 is tried again first: the next reply may not loop
+
+
+def test_any_other_server_error_is_still_an_endpoint_error(tracker: UsageTracker) -> None:
+    llm, _ = make_llm(tracker, httpx.Response(500, text="internal error"), provider="ollama")
+
+    with pytest.raises(ModelError, match="500") as raised:
+        llm.complete("system", "user")
+
+    assert not isinstance(raised.value, ReplyInvalid)
 
 
 @pytest.mark.parametrize(
