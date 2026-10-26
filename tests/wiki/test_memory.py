@@ -174,7 +174,7 @@ WRITES = {
 def client(request: dict[str, Any]) -> str:
     """A client doing the memory's model work: a decision says every statement likely and picks the first option."""
     if request["kind"] == "decide":
-        questions = json.loads(request["prompt"].split("<questions>\n", 1)[1].removesuffix("\n</questions>"))
+        questions = json.loads(request["prompt"].split("<questions>\n", 1)[1].split("\n</questions>", 1)[0])
         picked = {k: {next(iter(q["criteria"])): 1.0} if q["type"] == "choice" else 0.9 for k, q in questions.items()}
         return json.dumps({"answers": picked})
     if request["step"] == "researcher/answer":

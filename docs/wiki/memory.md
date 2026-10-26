@@ -83,8 +83,11 @@ the client as a request, and its reply lets the work go on. `recall` and `rememb
   {"id": "r1", "kind": "write", "step": "librarian/summarize", "system": "…", "prompt": "…"}]}
 ```
 
-- A `decide` request is a typed decision: the System One questions, and the prompt of TypeSafe's system-one-adapter.
-  Claude Code runs it with a Haiku subagent; other clients answer it with their own model.
+- A `decide` request is a typed decision: the System One questions, and the prompt of TypeSafe's system-one-adapter,
+  which ends with the reply's shape keyed by the question ids. Claude Code runs it with a Haiku subagent; other
+  clients answer it with their own model. The reply is read as a light model writes it: an answer keyed by its
+  question's text, a reply cut before its last brackets, percentages, a choice given as one of its labels. Anything
+  else falls back to the LLM.
 - A `write` request is the wiki's own prompt, for the client's model.
 
 While the work goes on without the client (it waits for the wiki to be free, say), the status is `waiting`, and
