@@ -222,3 +222,10 @@ def test_settings_try_when_changes_are_invalid_then_422(local: TestClient, path:
 
     # ASSERT
     assert response.status_code == 422 and "needs a base_url and a model" in response.json()["detail"]
+
+
+
+def test_saving_the_memory_switch_rebuilds_the_wiki_with_it(local: TestClient, rebuilt: list[WikiConfig]) -> None:
+    body = local.post("/settings", json={"mcp": "true", "api_key": KEY}).json()
+
+    assert (body["values"]["mcp"], rebuilt[-1].mcp) == (True, True)

@@ -50,6 +50,7 @@ dependencies = [
     "pypdf>=4.0",
     "fastapi>=0.110",
     "uvicorn>=0.29",
+    "mcp>=2.3,<3",  # the wiki as an MCP memory at /mcp (llmw2.memory)
 ]
 
 [project.optional-dependencies]

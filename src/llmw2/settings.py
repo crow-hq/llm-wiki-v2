@@ -69,6 +69,8 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "classifier_attempts": ("classifier", "attempts"),
     "classifier_state_chars": ("classifier", "state_chars"),
     "classifier_request_chars": ("classifier", "request_chars"),
+    "mcp": ("mcp",),  # "true": the server answers as an MCP memory at /mcp (the page's Memory)
+    "mcp_models": ("mcp_models",),  # "client": the MCP client's models do the memory's work; "": this wiki's own
 }
 # The parameters of each model the page edits (a number each), with the default a new provider starts from.
 PARAMS = {
@@ -160,6 +162,8 @@ class Settings:
             "bundle": ["OKF_BUNDLE"],
             "concurrency": ["OKF_CONCURRENCY"],
             "note_chars": ["OKF_NOTE_CHARS"],
+            "mcp": ["OKF_MCP"],
+            "mcp_models": ["OKF_MCP_MODELS"],
             **{f"crow_{name}": [f"OKF_{name.upper()}"] for name in CrowConfig.model_fields},
             **{name: [f"OKF_LLM_{name.upper()}"] for name in PARAMS["llm"]},
             **{f"classifier_{name}": [f"OKF_CLASSIFIER_{name.upper()}"] for name in PARAMS["classifier"]},
@@ -186,6 +190,8 @@ class Settings:
                 "bundle": str(cfg.bundle),
                 "concurrency": cfg.concurrency,
                 "note_chars": "" if cfg.note_chars is None else cfg.note_chars,
+                "mcp": cfg.mcp,
+                "mcp_models": cfg.mcp_models,
                 **{f"crow_{name}": value for name, value in cfg.crow.model_dump().items()},
                 **{name: param(cfg.llm, name) for name in PARAMS["llm"]},
                 **{f"classifier_{name}": getattr(cfg.classifier, name) for name in PARAMS["classifier"]},
@@ -260,10 +266,13 @@ class Settings:
         except ValidationError as e:
             raise InputError("; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}".lstrip(": ") for err in e.errors())) from e
 
-    def save(self, changes: Mapping[str, Any]) -> WikiConfig:
-        """Apply `changes` and write the file (readable by its owner only); InputError, saying which key, when one is missing."""
+    def save(self, changes: Mapping[str, Any], *, require_keys: bool = True) -> WikiConfig:
+        """Apply `changes` and write the file (readable by its owner only); InputError, saying which key, when one is missing.
+
+        Without `require_keys`, a missing key is no reason to refuse: the memory's switches need none.
+        """
         saved, cfg = self.apply(changes)
-        if problems := missing_keys(cfg):
+        if require_keys and (problems := missing_keys(cfg)):
             raise InputError(" ".join(problems))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")

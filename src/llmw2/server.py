@@ -8,7 +8,8 @@ POST /audit (CROW: notes the classifier would file elsewhere), GET /taxonomy (ne
 GET /tree, GET /note,
 GET /graph, GET /usage, GET /check, GET /health; DELETE /note, DELETE /folder and
 DELETE /wiki (empty it); GET /settings, POST /settings,
-POST /settings/test and POST /settings/models when the app is given the settings file.
+POST /settings/test, POST /settings/models and POST /settings/memory when the app is given the settings file;
+/mcp, the wiki as an MCP memory for Claude Code, Codex or any MCP client, while the settings turn it on (llmw2.memory).
 
 Two guards for a wiki on your machine, where any web page you visit can send requests:
 - every request that changes something must be same-origin when a browser sends it
@@ -41,6 +42,7 @@ from llmw2.bundle.origin import Origin
 from llmw2.bundle.tree import graph
 from llmw2.config import WikiConfig, missing_keys
 from llmw2.errors import ConfigError, InputError, ModelError
+from llmw2.memory import Memory
 from llmw2.models.classifier import probe as probe_classifier
 from llmw2.models.llm import context_warning, live_models, probe
 from llmw2.settings import Settings
@@ -135,6 +137,17 @@ class SettingsChanges(BaseModel):
     classifier_attempts: str | None = None
     classifier_state_chars: str | None = None
     classifier_request_chars: str | None = None
+    mcp: str | None = None  # "true" answers as an MCP memory at /mcp, "" turns it off
+    mcp_models: str | None = None  # "client": the MCP client's models do the memory's work, "" this wiki's own
+
+
+class MemoryChanges(BaseModel):
+    """What the page's Memory changes: whether it answers, and whose models do its work."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    mcp: str | None = None
+    mcp_models: str | None = None
 
 
 def hostname(request: Request) -> str:
@@ -169,8 +182,14 @@ def create_app(
 
     `local_only` (a server bound to localhost) refuses requests naming any other Host.
     """
+
+    def current() -> Wiki:
+        wiki: Wiki = app.state.wiki
+        return wiki
+
+    memory = Memory(current)  # /mcp: its sessions run with the app, its tools on the wiki of the moment
     # No /docs, /redoc or /openapi.json: a local service, and the schema would map it for any page that can reach it.
-    app = FastAPI(title="llmwiki2", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="llmwiki2", version=__version__, docs_url=None, redoc_url=None, openapi_url=None, lifespan=memory.lifespan)
 
     @app.middleware("http")
     async def guard(request: Request, call_next: Callable[[Request], Any]) -> Any:
@@ -210,10 +229,9 @@ def create_app(
     write_lock = threading.Lock()  # the edits by hand and the settings, one at a time; ingests take the bundle's lock
     web = resources.files("llmw2") / "web"
     app.mount("/web", StaticFiles(directory=str(web)), name="web")
-
-    def current() -> Wiki:
-        wiki: Wiki = app.state.wiki
-        return wiki
+    # Starlette serves an endpoint that is not a function as an ASGI app (its typing knows only functions); the guard
+    # above still runs first, so /mcp too answers only at a loopback Host when bound to localhost, and never cross-site.
+    app.add_route("/mcp", memory)  # type: ignore[arg-type]
 
     def max_bytes() -> int:
         return current().cfg.upload_mb * 1_000_000
@@ -390,6 +408,28 @@ def create_app(
                 raise
             # solo: the old Wiki is not closed, a question may still be using it; one pool per save, reclaimed by the GC.
             app.state.wiki = fresh
+        return {**store.view(), "editable": True}
+
+    @app.post("/settings/memory")
+    def save_memory(request: Request, changes: MemoryChanges) -> dict[str, Any]:
+        """Turn the memory on or off, and choose whose models do its work. Neither needs a key, so none is checked."""
+        store = editable(request)
+        wanted = changes.model_dump(exclude_unset=True)
+        with write_lock:
+            try:
+                _, cfg = store.apply(wanted)
+            except ValueError as e:
+                raise HTTPException(422, str(e)) from e
+            fresh = make_wiki(cfg)  # before the file is written, as for a settings save: a wiki that fails saves nothing
+            try:
+                store.save(wanted, require_keys=False)
+            except ValueError as e:  # the file changed meanwhile, and no longer holds
+                fresh.close()
+                raise HTTPException(422, str(e)) from e
+            except OSError:
+                fresh.close()
+                raise
+            app.state.wiki = fresh  # the old one is not closed, as after a settings save
         return {**store.view(), "editable": True}
 
     @app.post("/settings/test")

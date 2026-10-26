@@ -26,6 +26,11 @@ keeping its copyright and license banner:
 - d3 7.9.0 (https://github.com/d3/d3), Copyright 2010-2023 Mike Bostock, ISC
   License.
 
+Adapted third-party text: the typed-decision prompt in src/llmw2/models/typed.py
+(TYPED_DECISIONS) is adapted from system-one-adapter
+(https://github.com/typesafe-ai/system-one-adapter-python), Copyright (c) 2026
+TypeSafe AI, MIT License.
+
 Fonts shipped unmodified in src/llmw2/web/vendor/fonts/ (latin subsets as
 packaged by Fontsource 5.3.0), under the SIL Open Font License 1.1, whose text
 is in src/llmw2/web/vendor/fonts/OFL.txt:
