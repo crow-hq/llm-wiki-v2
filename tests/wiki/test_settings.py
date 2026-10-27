@@ -493,3 +493,25 @@ def test_okf_concurrency_wins_over_the_file_and_locks_the_field() -> None:
 
 def test_a_concurrency_flag_wins_over_the_variable(tmp_path: Path) -> None:
     assert Settings({"OKF_CONCURRENCY": "4"}, concurrency=2, bundle=tmp_path).config().concurrency == 2
+
+
+@pytest.mark.parametrize(("change", "saved", "shown"), [("true", "true", True), ("", None, False)], ids=["on", "off"])
+def test_save_when_the_memory_is_turned_on_or_off_then_it_is_kept_and_shown_as_a_bool(change: str, saved: str | None, shown: bool) -> None:
+    # ARRANGE
+    settings = Settings({})
+    settings.save({"mcp": "true", "api_key": KEY})
+
+    # ACT
+    cfg = settings.save({"mcp": change})
+
+    # ASSERT
+    assert (written(settings).get("mcp"), cfg.mcp) == (saved, shown)
+    assert settings.view()["values"]["mcp"] is shown
+
+
+def test_managed_when_okf_mcp_is_set_then_the_memory_switch_is_locked_and_not_saved() -> None:
+    settings = Settings({"OKF_MCP": "1"})
+
+    cfg = settings.save({"mcp": "", "api_key": KEY})
+
+    assert "mcp" in settings.managed("openrouter") and "mcp" not in written(settings) and cfg.mcp is True

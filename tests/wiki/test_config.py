@@ -33,6 +33,8 @@ def env_for(bundle: Path, **variables: str) -> dict[str, str]:
         ("OKF_CLASSIFIER_ATTEMPTS", "3", "classifier.attempts", 3),
         ("OKF_UPLOAD_MB", "5", "upload_mb", 5),
         ("OKF_CONCURRENCY", "4", "concurrency", 4),
+        ("OKF_MCP", "1", "mcp", True),
+        ("OKF_MCP", "off", "mcp", False),
     ],
 )
 def test_from_env_when_a_variable_is_set_then_its_field_takes_the_value(

@@ -201,8 +201,10 @@ def crow_preset(classifier_provider: str) -> str:
 # WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).
 _TOP_LEVEL_ENV = (
     "bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency", "usage_log",
-    "prompts_dir", "note_chars", "note_length", "revisions", "relate_rare_values", "answer_conflicts", "strict_new_folders",
+    "prompts_dir", "note_chars", "note_length", "revisions", "relate_rare_values", "answer_conflicts", "strict_new_folders", "mcp",
+    "mcp_models",
 )
+_BOOL_FIELDS = ("relate_rare_values", "answer_conflicts", "strict_new_folders", "mcp")  # OKF_<NAME> read as on or off
 _BOOL_ENV = {"1": True, "true": True, "yes": True, "on": True, "0": False, "false": False, "no": False, "off": False}
 
 
@@ -229,6 +231,10 @@ class WikiConfig(BaseModel):
     # covers the note (OKF_STRICT_NEW_FOLDERS; false: 0.3.0's routing). See `steps_crow._expand`.
     strict_new_folders: bool = True
     upload_mb: int = Field(25, gt=0)  # largest request body the server reads: a big PDF fits, a runaway upload does not fill memory
+    # The server answers as an MCP memory at /mcp (OKF_MCP, or Start on the page's Memory): recall, remember, read_note.
+    mcp: bool = False
+    # Who does the memory's model work: this wiki's own models, or the MCP client's, on its own plan (models.relay).
+    mcp_models: Literal["wiki", "client"] = "wiki"
     concurrency: int = Field(4, ge=1, le=16)  # documents prepared (extracted, summarized) at once by a batch or the server
     actor: str = f"llmw2/{__version__}"  # OKF `generated.by`
     usage_log: Path | None = None  # optional JSONL audit of every model call
@@ -304,7 +310,7 @@ class WikiConfig(BaseModel):
         top: dict[str, Any] = {}
         for key in _TOP_LEVEL_ENV:
             if value := env.get(f"OKF_{key.upper()}"):
-                if key in ("relate_rare_values", "answer_conflicts", "strict_new_folders"):
+                if key in _BOOL_FIELDS:
                     if value.strip().lower() not in _BOOL_ENV:
                         raise ConfigError(f"OKF_{key.upper()} must be one of 1/0, true/false, yes/no, on/off, not {value!r}")
                     top[key] = _BOOL_ENV[value.strip().lower()]

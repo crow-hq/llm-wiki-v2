@@ -65,10 +65,40 @@ so you can add to it or delete it. To try it without installing anything but uv:
 |---|---|
 | **Add documents** | Drop text, Markdown, PDF, Word, PowerPoint, Excel or OpenDocument files anywhere on the page. Each one lands in the right folder, merged with what the wiki already knows; a spreadsheet gives a note per sheet. |
 | **Ask questions** | Type a question. The answer cites the notes it used: click one to read it. |
+| **Give Claude a memory** | **Memory** → **Start**, then paste the `claude mcp add …` or `codex mcp add …` line it shows: Claude Code, Codex or any MCP client recall from your wiki and file what they learn in it. |
 | **See the brain** | A live map of your folders, notes and links. |
 | **Delete** | Hover a note or folder in the sidebar and press the bin, or **Delete note** at the foot of a note. Links to it go from the other notes. **Empty the wiki** on the home page starts over. |
 | **Move and describe** | **Move** at the foot of a note files it in another folder; every link to and from it follows. The pencil beside a folder in the sidebar edits its description, the line the librarian routes by. |
 | **Keep your files** | Plain Markdown in `~/llm-wiki`: open it in any editor, keep it in git. |
+
+## Claude's memory (MCP)
+
+The wiki can be the long-term memory of Claude Code, Codex or any MCP client, documents already filed included.
+It comes with the `mcp` extra (the Docker image has it):
+
+```bash
+pip install 'llmwiki2[mcp]'      # or: uv tool install 'llmwiki2[mcp]'
+```
+
+Open **Memory** on the page, press **Start**, and connect a client:
+
+```bash
+claude mcp add --transport http --scope user llm-wiki http://127.0.0.1:8000/mcp
+codex mcp add llm-wiki --url http://127.0.0.1:8000/mcp
+```
+
+The client gets its tools: `recall` answers from your notes and documents, citing them; `remember` files what it
+learns, in the right folder, merged and linked like any note (CROW); `read_note` reads a note in full. Which models
+do the work is a choice under Memory:
+
+- **This wiki's settings** (the default). OpenRouter or a local model, with Jev or Laya deciding, file the memories; the
+  client only calls the memory.
+- **Claude or GPT for everything.** The memory hands the client every model call it makes, while CROW runs as always.
+  Claude Code decides with a Haiku subagent and writes with its own model; Codex uses its own. It runs on the client's
+  plan, with no key in the wiki. The requests carry your documents' text to the client: it is told to read it as data
+  and to answer without tools, but that is an instruction, not a sandbox (see Security in the memory guide).
+
+Docker, the tools and security: [docs/wiki/memory.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/memory.md).
 
 ## Why not RAG?
 
@@ -188,6 +218,8 @@ In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes 
 | `DELETE /note?path=…` · `DELETE /folder?path=/…` · `DELETE /wiki` | delete a note · a folder with all it holds · everything; links to them go, and raw copies no remaining note cites |
 | `GET /usage` · `GET /health` | token totals per ledger and model · status |
 | `GET /settings` · `POST /settings` · `POST /settings/test` | provider, model and key (masked) · save them · try them; changes from this machine only |
+| `POST /mcp` | the wiki as an MCP memory (Streamable HTTP; `recall`, `remember`, `read_note`, `reply`), with the `mcp` extra. Its tools work while the settings turn it on (`OKF_MCP`, or **Memory** → **Start**), and say how to turn it on otherwise; without the extra, 501 and what to install |
+| `POST /settings/memory` `{mcp?, mcp_models?}` | turn the memory on or off, and choose whose models do its work; no key needed, from this machine only |
 
 </details>
 
@@ -349,6 +381,8 @@ list is in [.env.example](https://github.com/crow-hq/llm-wiki-v2/blob/main/.env.
 | `OKF_CONFIG` | `~/.config/llm-wiki/config.json` | the settings file |
 | `OKF_PROMPTS_DIR` | — | folder whose prompt files replace the packaged ones |
 | `OKF_UPLOAD_MB` | `25` | largest file or text the server accepts (413 above it) |
+| `OKF_MCP` | `false` | `true` serves the wiki as an MCP memory at `/mcp`, as **Memory** → **Start** does on the page |
+| `OKF_MCP_MODELS` | `wiki` | whose models do the memory's work: `wiki` (the ones above) or `client` (the MCP client's, on its own plan) |
 | `OKF_CONCURRENCY` | `4` | documents read and summarized at once by `sync`, the web page and `Wiki.ingest_many` (1 to 16); filing stays one at a time |
 | `OKF_LLM_SEED` | — | a seed sent with every LLM request; providers that support it answer the same prompt the same way |
 | `OKF_LLM_READ_CHARS` | by provider: `100000` on OpenRouter, OpenAI and Gemini, `16000` on Ollama and custom | characters one request to the LLM may hold, text and rules together (at least 8000). A source that does not fit is summarized in parts, and an incoming note that does not fit what is left of a merge call after the existing note is added to it as a section, with no model call |
