@@ -179,7 +179,8 @@ class CrowConfig(BaseModel):
 
 
 # CROW thresholds per classifier: Jev's (OpenRouter, TypeSafe) are CrowConfig's defaults, the paper's; a custom
-# classifier starts from Laya's.
+# classifier starts from Laya's, and one that is not a Laya checkpoint (a small model on Ollama, such as tev1 or kev)
+# merges at tau_cons 0.7 (SMALL_CLASSIFIER), the value it was measured with: Laya's merge confidence stays under it.
 # Laya's typed-decisions checkpoint answers with flatter probabilities; measured on 25 sample notes (2026-09-28):
 # a routing choice it gets wrong scores at most 0.61 and it never picks "New subfolder", so below 0.65 the LLM routes;
 # its merge confidence is 0.23-0.40 for a real follow-up and at most 0.25 for a related but distinct note (measured as
@@ -191,6 +192,7 @@ CROW_PRESETS: dict[str, dict[str, float | int]] = {
     "jev": {},
     "laya": {"tau_path": 0.65, "tau_ing": 0.45, "tau_cons": 0.26, "tau_fold": 0.15, "tau_ret": 0.2, "tau_link": 0.5, "k": 5},
 }
+SMALL_CLASSIFIER: dict[str, float | int] = {"tau_cons": 0.7}  # over Laya's preset, for a custom model that is not Laya's
 
 
 def crow_preset(classifier_provider: str) -> str:
@@ -201,7 +203,7 @@ def crow_preset(classifier_provider: str) -> str:
 # WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).
 _TOP_LEVEL_ENV = (
     "bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency", "usage_log",
-    "prompts_dir", "note_chars", "note_length", "revisions", "relate_rare_values", "answer_conflicts", "strict_new_folders",
+    "prompts_dir", "note_chars", "note_length", "revisions", "plan", "relate_rare_values", "answer_conflicts", "strict_new_folders",
 )
 _BOOL_ENV = {"1": True, "true": True, "yes": True, "on": True, "0": False, "false": False, "no": False, "off": False}
 
@@ -221,6 +223,9 @@ class WikiConfig(BaseModel):
     # A source that revises the one document a note cites: the note replaced by the new version with the old body archived
     # ("replace", the default; OKF_REVISIONS), or merged into the note ("merge"). See `agents.revisions`.
     revisions: Literal["merge", "replace"] = "replace"
+    # CROW: how a batch on an empty wiki lays out its folders: the writer's plan ("writer", the default; OKF_PLAN), or groups
+    # made in code with no model call ("groups", for small writers). See `Wiki.plan_groups`.
+    plan: Literal["writer", "groups"] = "writer"
     # CROW: `relate` also weighs the notes anywhere that share rare values with the new one (OKF_RELATE_RARE_VALUES; false: 0.3.0's relate).
     relate_rare_values: bool = True
     # CROW: `ask` asks the typed `ask/conflict` question and hints at disagreeing notes (OKF_ANSWER_CONFLICTS; false: 0.3.0's answer input).
@@ -252,7 +257,10 @@ class WikiConfig(BaseModel):
     @model_validator(mode="after")
     def _crow_preset(self) -> WikiConfig:
         """The thresholds not set explicitly (environment, settings, caller) come from the classifier's preset."""
-        for name, value in CROW_PRESETS[crow_preset(self.classifier.provider)].items():
+        preset = dict(CROW_PRESETS[crow_preset(self.classifier.provider)])
+        if self.classifier.provider == "custom" and self.classifier.model not in CLASSIFIER_PROVIDERS["custom"].models:
+            preset |= SMALL_CLASSIFIER
+        for name, value in preset.items():
             if name not in self.crow.model_fields_set:
                 setattr(self.crow, name, value)
         return self

@@ -29,13 +29,14 @@ import concurrent.futures
 import contextvars
 import itertools
 import logging
+import re
 import threading
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import PurePath
 from typing import Any, Self
 
-from llmw2.agents import steps_crow
+from llmw2.agents import echo, grouping, lexical, steps_crow
 from llmw2.agents.base import Decision
 from llmw2.agents.data import Candidate, FolderPlan, Source, SplitPlan
 from llmw2.agents.librarian import IngestResult, Librarian, Prepared
@@ -205,9 +206,10 @@ class Wiki:
         1. read: each document is fetched and extracted, and checked for "unchanged", on worker threads (in classic
            mode this is part of preparing it);
         2. plan (CROW only): when two or more documents of the window are to be filed, `plan` lays out the folders they
-           need, from their titles and openings (an empty wiki gets its folders; any other, the new ones it needs). A
-           plan that fails (a model error, a reply that is no plan) is logged as a warning and the window goes on with
-           the folders there are;
+           need, from their titles and openings (an empty wiki gets its folders; any other, the new ones it needs). With
+           `cfg.plan` set to "groups" on a wiki that had no folders when the batch began, `plan_groups` plans every window
+           instead, with no model call. A plan that fails (a model error, a reply that is no plan) is logged
+           as a warning and the window goes on with the folders there are;
         3. prepare: each is summarized, on worker threads;
         4. file: one document at a time in that order, under the lock, so the wiki is what `ingest_file` called in turn
            would make of it. At most `concurrency` documents are being prepared or wait to be filed.
@@ -237,8 +239,11 @@ class Wiki:
             return report
         self._require_classifier()
         self.store.init()
+        # with `plan` "groups", a batch on an empty wiki is planned by groups (`_file_window`)
+        fresh = self.cfg.mode == "crow" and self.cfg.plan == "groups" and not self.store.load().subfolders
+        seen: dict[str, Any] = {}  # what the batch's group plans have read, for the next window's (`plan_groups`)
         for start in range(0, len(ordered), PLAN_BATCH):
-            if not self._file_window(ordered[start : start + PLAN_BATCH], workers, report, on_result):
+            if not self._file_window(ordered[start : start + PLAN_BATCH], workers, report, on_result, fresh, seen):
                 report.not_done += ordered[start + PLAN_BATCH :]
                 break
         if report.stopped is None:
@@ -254,8 +259,15 @@ class Wiki:
         workers: int,
         report: BatchReport,
         on_result: Callable[[Item, IngestResult | Exception], None] | None,
+        fresh: bool,
+        seen: dict[str, Any] | None = None,
     ) -> bool:
-        """One window of `ingest_many` (see there for the phases); False when it stopped the batch, `report` saying why."""
+        """One window of `ingest_many` (see there for the phases); False when it stopped the batch, `report` saying why.
+
+        `fresh`: a batch with `cfg.plan` "groups" that began on a wiki with no folders. Only then are the documents grouped
+        in code (`plan_groups`): a small writer plans a tree poorly, and a small classifier routes poorly among many
+        folders. A wiki that has folders is extended by the writer's plan, as its folders were not made from groups and a
+        group compared with them by words lands in the wrong one; with `plan` "writer" the writer always plans."""
         halt = [len(window)]  # the first item that failed for a reason that is not its own: none after it starts
         halting = threading.Lock()
         reads: list[Read | Exception] = []  # CROW: what the read phase found, per item
@@ -292,9 +304,10 @@ class Wiki:
             except (InputError, ReplyInvalid) as e:
                 return e
             assert ready is not None  # only items after a failure are skipped, and the loop stops at that one
-            return ready if isinstance(ready, IngestResult) else self._file(ready)
+            return ready if isinstance(ready, IngestResult) else self._file(ready, placed.get(i))
 
         single: int | None = None  # the one document of the window to file, when there is just one
+        placed: dict[int, str] = {}  # the batch plan's groups: item -> the folder (label) its note goes to
         with concurrent.futures.ThreadPoolExecutor(workers, thread_name_prefix="llmw2-prepare") as pool:
             if self.cfg.mode == "crow":
                 # a context of its own per item: usage spans are context variables
@@ -306,7 +319,11 @@ class Wiki:
                 elif filing:
                     documents = [(r.source.title, r.source.text) for r in filing if r.source is not None]
                     try:
-                        self.plan(documents)
+                        if fresh:
+                            at = [i for i, r in enumerate(reads) if isinstance(r, Read) and r.known is None and r.source is not None]
+                            placed.update({at[j]: label for j, label in self.plan_groups(documents, seen).items()})
+                        else:
+                            self.plan(documents)
                     except Exception as e:
                         log.warning("the plan of %d documents failed, they are filed in the folders there are: %s", len(documents), e)
             try:
@@ -429,14 +446,16 @@ class Wiki:
         ready.usage = used
         return ready
 
-    def _file(self, prepared: Prepared) -> IngestResult:
-        """File what `_prepare` made, one writer at a time; the origin is checked again, as it may have been filed meanwhile."""
+    def _file(self, prepared: Prepared, folder: str | None = None) -> IngestResult:
+        """File what `_prepare` made, one writer at a time; the origin is checked again, as it may have been filed meanwhile.
+
+        `folder` (a label) is where a group of the batch plan goes: the note is filed there without routing."""
         with self.store.lock():  # the librarian reads the tree, then writes on what it read
             origin = prepared.source.origin
             if origin is not None and (known := self._unchanged(origin, prepared.source.text)) is not None:
                 known.usage = prepared.usage
                 return known
-            return self.librarian().file(prepared)
+            return self.librarian().file(prepared, planned=folder)
 
     def origin(self, key: str) -> OriginRecord | None:
         """The latest raw copy cited by a note for an origin key (`Origin.key`), or None if no note cites one.
@@ -527,7 +546,8 @@ class Wiki:
         while len(lines) > 2 and sum(len(line) + 1 for line in lines) > room:
             lines = lines[::2]
         depth = min(PLAN_DEPTH, self.cfg.max_depth)
-        ctx = self.librarian().ctx
+        librarian = self.librarian()
+        ctx = librarian.ctx
         existing = [f for f in self.store.load().walk() if not f.is_root]
         if existing:
             tree = "\n".join(f"- {f.label}: {f.description or '(no description)'}; {len(f.notes)} notes" for f in existing)
@@ -540,6 +560,7 @@ class Wiki:
             )
         made: list[Folder] = []
         mark = PLAN_MORE_MARK if existing else PLAN_MARK
+        prompt, shown = ("librarian/plan_more" if existing else "librarian/plan"), "\n".join(lines)
         with self.store.lock():
             tree_now = self.store.load()
             if not existing and tree_now.subfolders:  # a document was filed meanwhile: its folders stand
@@ -548,6 +569,11 @@ class Wiki:
                 parts = [slugify(p, max_len=40, fallback="") for p in planned.path.strip().strip("/").split("/") if p.strip()]
                 if not parts or "" in parts or len(parts) > depth or not planned.description.strip():
                     continue
+                if librarian.local_writer:  # a small writer copies its prompt ("/area/subject", "new-top-level-area")
+                    parts = [echo.own_name(p, shown) or p for p in parts[:-1]] + [echo.own_name(parts[-1], shown)]
+                    if not parts[-1] or not echo.own_text(planned.description, shown, ctx.prompts, prompt):
+                        log.warning("plan: folder %s is not named or described from the documents, left out", planned.path)
+                        continue
                 parent = tree_now.find("/".join(parts[:-1]))
                 if parent is None:
                     continue
@@ -555,6 +581,51 @@ class Wiki:
                 if created:
                     made.append(folder)
         return made
+
+    def plan_groups(self, documents: list[tuple[str | None, str]], seen: dict[str, Any] | None = None) -> dict[int, str]:
+        """The batch plan for `cfg.plan` "groups" (see `_file_window`): the documents that share a subject, grouped in code
+        (`grouping.groups`), each group filed together; the folder (label) for each document of a group, by its index in
+        `documents`. No model call.
+
+        A group goes to the folder (already there before this plan) whose notes' sources it resembles
+        (`grouping.closest`), else to a new top-level folder named from the group's own words (`grouping.name`) and
+        described by the titles of its first three documents; the log line of the folder ends with ", by plan". A
+        document in no group, or in a group whose documents share no word to name it by, is routed as usual.
+
+        `seen`: what earlier plans of the same batch read (the raw copies, the words of each text), kept in it for the next
+        one: every window compares its groups with all the folders' sources, which it would otherwise read and split again."""
+        texts = [text for _, text in documents]
+        found = grouping.groups(texts)
+        if not found:
+            return {}
+        self.store.init()
+        placed: dict[int, str] = {}
+        with self.store.lock():
+            root = self.store.load()
+            # the folders' documents as ingested, not their notes: a group is compared with texts of the same kind
+            memo = {} if seen is None else seen
+            bodies: dict[str, str] = memo.setdefault("bodies", {})
+            split: dict[str, list[str]] = memo.setdefault("words", {})
+
+            def words(text: str) -> list[str]:
+                if text not in split:
+                    split[text] = lexical.words(text)
+                return split[text]
+
+            existing = {f.label: [self.store.source_text(n, bodies) for n in f.notes] for f in root.walk() if not f.is_root}
+            # every group against the folders there before this plan (one made below is not joined by the next group)
+            joins = grouping.closest_each([[texts[i] for i in group] for group in found], existing, words=words)
+            for group, label in zip(found, joins, strict=True):
+                if label is None:
+                    name = grouping.name(texts, group)
+                    if not name:
+                        continue
+                    description = "; ".join((documents[i][0] or "").strip() or " ".join(texts[i].split()[:8]) for i in group[:3])
+                    folder, _ = self.store.create_folder(self.store.load(), name, description, PLAN_MARK)
+                    label = folder.label
+                for i in group:
+                    placed[i] = label
+        return placed
 
     def _split(self, result: IngestResult) -> None:
         """CROW: after one document filed alone, one attempt to split its folder when it holds too many notes directly.
@@ -592,7 +663,9 @@ class Wiki:
         notes = list(folder.notes)
         listing = "\n".join(f"{i}. {n.title}: {' '.join((n.summary or '').split())[:200]}" for i, n in enumerate(notes, start=1))
         subfolders = "\n".join(f"- {c.label}: {c.description}" for c in folder.subfolders) or "(none)"
-        plan = self.librarian().ctx.ask_json(
+        librarian = self.librarian()
+        ctx = librarian.ctx
+        plan = ctx.ask_json(
             "librarian/split",
             SplitPlan,
             notes=listing,
@@ -606,11 +679,17 @@ class Wiki:
             here = self.store.load().find(folder.label)
             if here is None:
                 return
+            parent_words = set(re.split(r"[/-]", folder.label))
             for proposed in plan.folders:
                 name = slugify(proposed.name, max_len=40, fallback="")
                 numbers = sorted({i for i in proposed.notes if 1 <= i <= len(notes)} - taken)
                 if not name or not proposed.description.strip() or len(numbers) < 2:
                     continue
+                # a small writer's name made of the folder's own path ("benefits-benefits") or of the prompt is no subject
+                if librarian.local_writer:
+                    name = echo.own_name(proposed.name, listing, parent_words)
+                    if not name or not echo.own_text(proposed.description, listing, ctx.prompts, "librarian/split"):
+                        continue
                 sub, created = self.store.create_folder(here, name, proposed.description, SPLIT_MARK)
                 if not created:  # an existing subfolder is never moved into
                     continue

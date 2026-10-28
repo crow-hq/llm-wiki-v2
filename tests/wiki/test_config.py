@@ -33,6 +33,8 @@ def env_for(bundle: Path, **variables: str) -> dict[str, str]:
         ("OKF_CLASSIFIER_ATTEMPTS", "3", "classifier.attempts", 3),
         ("OKF_UPLOAD_MB", "5", "upload_mb", 5),
         ("OKF_CONCURRENCY", "4", "concurrency", 4),
+        ("OKF_PLAN", "groups", "plan", "groups"),
+        ("OKF_PLAN", "writer", "plan", "writer"),
     ],
 )
 def test_from_env_when_a_variable_is_set_then_its_field_takes_the_value(
@@ -139,6 +141,19 @@ def test_config_when_the_classifier_is_chosen_then_its_thresholds_preset_applies
     assert (crow.tau_path, crow.tau_cons, crow.k, crow.tau_route) == (tau_path, tau_cons, k, 0.6)
 
 
+@pytest.mark.parametrize(("model", "tau_cons"), [("typed-decisions", 0.26), ("auto", 0.26), ("tev1s-8k:latest", 0.7)])
+def test_config_when_a_custom_classifier_is_not_a_laya_checkpoint_then_it_merges_at_the_small_classifiers_tau_cons(
+    tmp_path: Path, model: str, tau_cons: float
+) -> None:
+    # ACT
+    url = "http://127.0.0.1:11434/v1"
+    env = env_for(tmp_path, OKF_CLASSIFIER_PROVIDER="custom", OKF_CLASSIFIER_BASE_URL=url, OKF_CLASSIFIER_MODEL=model)
+    config = WikiConfig.from_env(env)
+
+    # ASSERT
+    assert (config.crow.tau_path, config.crow.tau_cons) == (0.65, tau_cons)
+
+
 def test_config_when_a_threshold_is_set_then_it_wins_over_the_laya_preset(tmp_path: Path) -> None:
     # ACT
     env = env_for(tmp_path, OKF_CLASSIFIER_PROVIDER="custom", OKF_CLASSIFIER_BASE_URL="http://127.0.0.1:8001/v1", OKF_TAU_PATH="0.8")
@@ -204,6 +219,12 @@ def test_none_overrides_are_ignored(tmp_path: Path) -> None:
     config = WikiConfig.from_env(env, bundle=None, mode=None)
 
     assert (config.bundle, config.mode) == (tmp_path, "crow")
+
+
+def test_plan_defaults_to_the_writers_and_an_invalid_value_raises(tmp_path: Path) -> None:
+    assert WikiConfig.from_env(env_for(tmp_path)).plan == "writer"
+    with pytest.raises(ValidationError, match="plan"):
+        WikiConfig.from_env(env_for(tmp_path, OKF_PLAN="code"))
 
 
 def test_invalid_mode_raises(tmp_path: Path) -> None:

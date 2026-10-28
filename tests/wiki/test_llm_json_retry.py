@@ -85,6 +85,29 @@ def test_json_when_first_request_is_sent_then_it_has_no_response_format(tracker:
     assert "response_format" not in sent(requests[0])
 
 
+def test_json_when_reply_holds_a_lone_surrogate_then_it_becomes_a_replacement_character(tracker: UsageTracker) -> None:
+    # ARRANGE
+    llm, _ = make_llm(tracker, completion('{"title": "Ca\\ud8a1ts"}'))
+
+    # ACT
+    result = llm.json("system", "Name it.", Title)
+
+    # ASSERT
+    assert result == Title(title="Ca�ts")
+    assert result.title.encode("utf-8")  # writable
+
+
+def test_chat_when_reply_holds_a_lone_surrogate_then_it_becomes_a_replacement_character(tracker: UsageTracker) -> None:
+    # ARRANGE
+    llm, _ = make_llm(tracker, httpx.Response(200, content=b'{"choices": [{"message": {"content": "x\\udc00y"}}]}'))
+
+    # ACT
+    reply = llm.chat([{"role": "user", "content": "Hi"}])
+
+    # ASSERT
+    assert reply == "x�y"
+
+
 @pytest.mark.parametrize("broken", [BAD, NOT_JSON], ids=["schema-violation", "not-json"])
 def test_json_when_reply_is_broken_then_retries_once_without_the_broken_reply(tracker: UsageTracker, broken: httpx.Response) -> None:
     # ARRANGE
@@ -153,7 +176,7 @@ def test_json_when_extra_body_has_provider_then_retry_keeps_its_keys(tracker: Us
     assert provider["require_parameters"] is True
 
 
-@pytest.mark.parametrize("provider", ["custom", "ollama"])
+@pytest.mark.parametrize("provider", ["custom"])
 def test_json_when_provider_is_not_openrouter_then_retry_has_no_provider_key(tracker: UsageTracker, provider: str) -> None:
     # ARRANGE
     llm, requests = make_llm(tracker, BAD, GOOD, provider=provider)
@@ -292,3 +315,13 @@ def test_json_when_finish_reason_is_length_then_does_not_retry_and_still_logs(tm
     lines = [json.loads(row) for row in log_path.read_text(encoding="utf-8").splitlines()]
     assert len(lines) == 1
     assert lines[0]["finish_reason"] == "length"
+
+
+def test_json_retry_on_ollama_is_held_to_the_reply_schema(tracker: UsageTracker) -> None:
+    llm, requests = make_llm(tracker, BAD, GOOD, provider="ollama")
+
+    llm.json("system", "Name it.", Title)
+
+    assert "response_format" not in sent(requests[0])  # the first request is free text, as everywhere
+    rf = sent(requests[1])["response_format"]
+    assert rf["type"] == "json_schema" and rf["json_schema"]["schema"] == Title.model_json_schema()

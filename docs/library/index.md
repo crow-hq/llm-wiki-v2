@@ -47,6 +47,7 @@ The fields you will touch most:
 | `relate_rare_values` | `True` | CROW: `relate` also weighs notes that share rare values (`OKF_RELATE_RARE_VALUES`); `False` keeps 0.3.0's `relate` |
 | `answer_conflicts` | `True` | CROW: the answer is asked with a hint when the notes read disagree (`OKF_ANSWER_CONFLICTS`); `False` keeps 0.3.0's answer input |
 | `strict_new_folders` | `True` | CROW: a new subfolder only when the classifier is sure of it (`OKF_STRICT_NEW_FOLDERS`); `False` keeps 0.3.0's routing |
+| `plan` | `writer` | CROW: how a batch on an empty wiki lays out its folders (`OKF_PLAN`): `writer` is the writer's `plan`; `groups` makes them in code with no model call, for a small local writer (about 1B parameters or less), which plans poorly. A capable writer plans better than the groups |
 | `llm`, `classifier`, `crow` | | the models and the CROW thresholds |
 
 ### Note length: proportional or fixed

@@ -1,7 +1,8 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Blind from the spec: `Wiki.plan` on a wiki with folders (plan_more) and the plan of every window of a CROW batch."""
+"""Blind from the spec: `Wiki.plan` on a wiki with folders (plan_more) and the plan of every window of a CROW batch; a local
+writer's batch on an empty wiki is planned by groups made in code."""
 
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from tests.wiki.fakes import ContentLLM, FakeClassifier, FakeLLM
 HERE, NEW, NONE = "Here", "New subfolder", "None of these"
 PLAN, PLAN_MORE = "librarian/plan", "librarian/plan_more"
 SUMMARIZE = "librarian/summarize"
+OLLAMA = {"provider": "ollama", "model": "small", "base_url": "http://localhost:11434/v1"}  # a local writer
 JSON_SUFFIX = "\n\nReply with a single JSON object and nothing else."  # what `LLM.json` adds to every user message
 
 PLAN_MORE_TEXT = """A knowledge base already has these folders (path: description; notes directly in it):
@@ -453,6 +455,95 @@ def test_batch_on_a_wiki_with_folders_asks_plan_more(bundle: Path) -> None:
     assert llm.ops.index(PLAN_MORE) < llm.ops.index(SUMMARIZE)
     assert "/blue" in [f.label for f in wiki.store.load().walk()]
     assert [line.endswith(", by plan_more") for line in log_lines(wiki, "Created folder")[:1]] == [True]
+
+
+def test_a_batch_on_an_empty_wiki_with_plan_groups_is_planned_by_groups_in_every_window(
+    bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ARRANGE
+    wiki, llm = make_crow(bundle, llm=OLLAMA, plan="groups")
+    calls: list[int] = []
+    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None: calls.append(len(documents)) or {})
+
+    # ACT
+    report = wiki.ingest_many([item(n) for n in range(52)])
+
+    # ASSERT
+    assert filed_all(report, 52)
+    assert calls == [50, 2]  # the second window too, though the first one opened folders
+    assert plans(llm) == []
+
+
+def test_groups_are_filed_together_in_folders_named_in_code(bundle: Path) -> None:
+    # ARRANGE
+    wiki, llm = make_crow(bundle, llm=OLLAMA, plan="groups")
+    texts = {
+        "roast-1": "Aurora roast profile: the Aurora espresso blend is roasted to 212 degrees, first crack at nine minutes.",
+        "roast-2": "Aurora roast adjustments after cupping: the Aurora espresso blend roasted darker, first crack later.",
+        "pay-1": "Payroll calendar: salaries are paid on the 27th, payroll closes on the 20th, payslips by email.",
+        "pay-2": "Payroll changes: the payroll closing day moves to the 18th, salaries paid on the 27th, payslips unchanged.",
+    }
+    items = [Item(f"{t}.md", data=f"topic: {t}\n{text}".encode(), origin=Origin("test", "acct", t)) for t, text in texts.items()]
+
+    # ACT
+    report = wiki.ingest_many(items)
+
+    # ASSERT
+    assert filed_all(report, 4)
+    assert plans(llm) == [] and "librarian/name_folder" not in llm.ops  # no model plans or names a folder
+    folder = {i.filename: r.folder for i, r in report.results if not isinstance(r, Exception)}
+    assert folder["roast-1.md"] == folder["roast-2.md"] != folder["pay-1.md"] == folder["pay-2.md"]
+    assert sorted(labels(wiki)) == sorted({folder["roast-1.md"], folder["pay-1.md"]})
+    assert all(line.endswith(", by plan") for line in log_lines(wiki, "Created folder"))
+    assert all(any(d.step == "route" and d.decider == "code" for d in r.decisions) for _, r in report.results)  # type: ignore[union-attr]
+
+
+def test_a_hosted_writers_batch_with_plan_groups_is_planned_by_groups(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # ARRANGE
+    wiki, llm = make_crow(bundle, plan="groups")
+    calls: list[int] = []
+    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None: calls.append(len(documents)) or {})
+
+    # ACT
+    report = wiki.ingest_many([item(n) for n in range(3)])
+
+    # ASSERT
+    assert filed_all(report, 3)
+    assert calls == [3]
+    assert plans(llm) == []
+
+
+@pytest.mark.parametrize("writer", [{}, {"llm": OLLAMA}], ids=["hosted", "ollama"])
+def test_a_batch_on_an_empty_wiki_gets_the_writers_plan_not_groups_by_default(
+    bundle: Path, monkeypatch: pytest.MonkeyPatch, writer: dict[str, Any]
+) -> None:
+    # ARRANGE
+    wiki, llm = make_crow(bundle, **writer)
+    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None: pytest.fail("the default plan is the writer's"))
+
+    # ACT
+    report = wiki.ingest_many([item(n) for n in range(3)])
+
+    # ASSERT
+    assert filed_all(report, 3)
+    assert plans(llm) == [PLAN]
+
+
+def test_a_batch_with_plan_groups_on_a_wiki_with_folders_gets_the_writers_plan_not_groups(
+    bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ARRANGE
+    wiki, llm = make_crow(bundle, llm=OLLAMA, plan="groups")
+    add_folder(wiki, "/", "red", "Red things.")
+    llm.plan_more_reply = {"folders": []}
+    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None: pytest.fail("a wiki with folders is not planned by groups"))
+
+    # ACT
+    report = wiki.ingest_many([item(n) for n in range(3)])
+
+    # ASSERT
+    assert filed_all(report, 3)
+    assert plans(llm) == [PLAN_MORE]
 
 
 def test_a_window_of_fifty_documents_is_one_plan_and_the_next_window_plans_again(bundle: Path) -> None:

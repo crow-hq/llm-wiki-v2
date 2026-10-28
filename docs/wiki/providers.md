@@ -128,8 +128,9 @@ settings page sets the classifier's provider, address, model and key under
 | `typesafe` | `https://api.typesafe.ai/v1` | `TYPESAFE_API_KEY` or `OKF_CLASSIFIER_API_KEY` |
 | `custom` (any System One server, such as Laya on this computer: `LAYA_PORT=8001 laya-serve`, the wiki takes 8000) | `OKF_CLASSIFIER_BASE_URL`, the URL under which it serves `/systemone` (Laya: `http://127.0.0.1:8001/v1`) | `OKF_CLASSIFIER_API_KEY`, if it needs one (Laya: only with `LAYA_API_KEY`) |
 
-A `custom` classifier starts from the Laya thresholds preset ([crow.md](crow.md#thresholds)),
-and its model from `typed-decisions`, the Laya checkpoint that preset was measured on;
+A `custom` classifier starts from the Laya thresholds preset ([crow.md](crow.md#thresholds))
+(another model merges at `tau_cons` 0.7, set for small classifiers on Ollama), and its model from
+`typed-decisions`, the Laya checkpoint that preset was measured on;
 `auto` lets Laya pick its English or multilingual checkpoint per note.
 
 Ollama (0.35 or later) serves `/systemone` too: use `custom` with `http://localhost:11434/v1`.

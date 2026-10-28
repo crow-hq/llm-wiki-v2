@@ -11,7 +11,7 @@ import math
 import re
 import threading
 import time
-from typing import Any, TypeVar
+from typing import Any, TypeVar, overload
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -40,6 +40,25 @@ _LOOPED = "token repeat limit"  # Ollama's 500 when it stops a model that keeps 
 def reply_tokens(chars: int) -> int:
     """The output cap, in tokens, for a reply that should take about `chars` characters."""
     return max(MIN_REPLY_TOKENS, math.ceil(REPLY_FACTOR * chars / CHARS_PER_TOKEN))
+
+
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+@overload
+def no_surrogates(value: str) -> str: ...
+@overload
+def no_surrogates(value: Any) -> Any: ...
+def no_surrogates(value: Any) -> Any:
+    """`value` with every lone UTF-16 surrogate (a reply's "\\ud8a1") made U+FFFD: a note holding one cannot be written
+    as UTF-8, and the batch would stop on it. Strings inside lists and objects too."""
+    if isinstance(value, str):
+        return _SURROGATE.sub("�", value)
+    if isinstance(value, list):
+        return [no_surrogates(v) for v in value]
+    if isinstance(value, dict):
+        return {k: no_surrogates(v) for k, v in value.items()}
+    return value
 
 
 def extract_json(text: str) -> str:
@@ -92,6 +111,8 @@ class LLM(HttpModel):
         self.pin = cfg.pin_provider if cfg.provider == "openrouter" else []
         self._openrouter = cfg.provider == "openrouter"
         self._json_mode = True  # retries ask for response_format json_object, until the provider refuses it
+        # Ollama holds a retry to the reply's schema (constrained decoding)
+        self._schema_retry = cfg.provider == "ollama"
         self._cap = True  # requests carry the output cap, until the provider refuses it
         if cfg.pin_provider and not self.pin:
             log.warning("pin_provider only works on OpenRouter: ignored for provider %r", cfg.provider)
@@ -107,7 +128,10 @@ class LLM(HttpModel):
         self._least_applied = False  # True once the switch to the least reasoning happened
         self._switch_lock = threading.Lock()
 
-    def chat(self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
+    def chat(
+        self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool | dict[str, Any] = False, max_tokens: int | None = None
+    ) -> str:
+        """`json_mode`: True asks for a JSON object, a JSON schema for an object of that schema."""
         start = time.perf_counter()
         reasoning_resent = False  # each request resends at most once for reasoning
         while True:
@@ -155,7 +179,7 @@ class LLM(HttpModel):
                 written = None
             raise ReplyCut(f"llm {op or 'chat'}: reply {cut} (finish_reason length)", text=written if isinstance(written, str) else "")
         try:
-            return data["choices"][0]["message"]["content"] or ""
+            return no_surrogates(data["choices"][0]["message"]["content"] or "")
         except (KeyError, IndexError, TypeError) as e:
             raise ReplyInvalid(f"llm reply without content: {str(data)[:300]}") from e
 
@@ -172,12 +196,18 @@ class LLM(HttpModel):
                 return True
             return self._least_applied and not built_switched
 
-    def _body(self, messages: list[dict[str, str]], json_mode: bool = False, max_tokens: int | None = None) -> dict[str, Any]:
+    def _body(
+        self, messages: list[dict[str, str]], json_mode: bool | dict[str, Any] = False, max_tokens: int | None = None
+    ) -> dict[str, Any]:
         pin = {"provider": {"order": self.pin, "allow_fallbacks": False, "require_parameters": True}} if self.pin else {}
         seed = {"seed": self.seed} if self.seed is not None else {}
         body = {**pin, **seed, **self.extra_body, "model": self.model, "messages": messages, "temperature": self.temperature}
         if json_mode:
-            body["response_format"] = {"type": "json_object"}
+            body["response_format"] = (
+                {"type": "json_schema", "json_schema": {"name": "reply", "schema": json_mode}}
+                if isinstance(json_mode, dict)
+                else {"type": "json_object"}
+            )
             if self._openrouter:
                 body["provider"] = {**body.get("provider", {}), "require_parameters": True}
         if max_tokens is not None and self._cap and not {"max_tokens", "max_completion_tokens"} & body.keys():  # the caller's cap wins
@@ -194,17 +224,17 @@ class LLM(HttpModel):
         """
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         try:
-            return self.chat(messages, op=op, max_tokens=max_tokens)
+            return no_surrogates(self.chat(messages, op=op, max_tokens=max_tokens))
         except ReplyCut as e:
             if keep_cut:
                 log.warning("%s: reply cut at the output cap: kept the %d characters written", op, len(e.text))
                 if cut is not None:
-                    cut.append(e.text)
-                return e.text
+                    cut.append(no_surrogates(e.text))
+                return no_surrogates(e.text)
             if max_tokens is None:
                 raise
         messages = [messages[0], {"role": "user", "content": user + _cut_note(max_tokens)}]
-        return self.chat(messages, op=op, max_tokens=max_tokens)
+        return no_surrogates(self.chat(messages, op=op, max_tokens=max_tokens))
 
     def json(self, system: str, user: str, schema: type[T], *, op: str = "", max_tokens: int | None = None) -> T:
         """Ask for one JSON object and validate it; one retry that asks for JSON mode, then ModelError.
@@ -217,7 +247,10 @@ class LLM(HttpModel):
         while True:
             messages = [{"role": "system", "content": system}, {"role": "user", "content": user + notes}]
             try:
-                reply = self._retry(messages, op, max_tokens) if invalid_retried else self.chat(messages, op=op, max_tokens=max_tokens)
+                if invalid_retried:
+                    reply = self._retry(messages, op, max_tokens, schema.model_json_schema() if self._schema_retry else None)
+                else:
+                    reply = self.chat(messages, op=op, max_tokens=max_tokens)
             except ReplyCut:
                 if max_tokens is None or cut_retried:
                     raise
@@ -226,17 +259,17 @@ class LLM(HttpModel):
                 notes += _cut_note(max_tokens)
                 continue
             try:
-                return schema.model_validate(json.loads(extract_json(reply)))
+                return schema.model_validate(no_surrogates(json.loads(extract_json(reply))))
             except (ValueError, ValidationError) as e:
                 if invalid_retried:
                     raise ReplyInvalid(f"llm {op or 'json'} reply invalid after retry: {_short(e)}") from e
                 invalid_retried = True
                 notes += f"\n\nA previous reply to this request was not valid: {_short(e)} Reply with only the JSON object."
 
-    def _retry(self, messages: list[dict[str, str]], op: str, max_tokens: int | None = None) -> str:
-        """The retry, in JSON mode; asked once more without it if the provider refuses response_format."""
+    def _retry(self, messages: list[dict[str, str]], op: str, max_tokens: int | None = None, schema: dict[str, Any] | None = None) -> str:
+        """The retry, in JSON mode (held to `schema` if given); asked once more without it if the provider refuses response_format."""
         try:
-            return self.chat(messages, op=op, json_mode=self._json_mode, max_tokens=max_tokens)
+            return self.chat(messages, op=op, json_mode=(schema or True) if self._json_mode else False, max_tokens=max_tokens)
         except ModelError as e:
             text = str(e).lower()
             refused = any(w in text for w in ("response_format", "json_object", "no endpoints"))

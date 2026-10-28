@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 """Small local models: a writer's unusable reply is worked around on Ollama (the source text, a section, a name from the
-note). The failure of another writer stops the ingest, and so does an endpoint that fails, on every provider."""
+note, the classifier's best path for a failing route fallback). The failure of another writer stops the ingest, and so
+does an endpoint that fails, on every provider. A title that is the file name or empty is replaced from the text."""
 
 from __future__ import annotations
 
@@ -14,14 +15,16 @@ from typing import NoReturn
 import httpx
 import pytest
 
-from llmw2 import CLASSIC, Candidate, ModelError, ReplyInvalid, Route, StepContext, StepError, Steps, Wiki, WikiConfig
-from llmw2.agents.librarian import IngestResult, _name_words
+from llmw2 import CLASSIC, Candidate, ModelError, ReplyInvalid, Route, Source, StepContext, StepError, Steps, Wiki, WikiConfig
+from llmw2.agents import steps_crow
+from llmw2.agents.librarian import IngestResult, _name_words, _unusable_title
+from llmw2.agents.steps import CROW
 from llmw2.bundle.tree import Folder
 from llmw2.errors import ReplyCut
 from llmw2.models.client import HttpModel
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageTracker
-from tests.wiki.fakes import FakeLLM
+from tests.wiki.fakes import FakeClassifier, FakeLLM
 from tests.wiki.test_reply_cap import make_llm
 from tests.wiki.test_steps import MERGING, OFFLINE, SEED, finance
 
@@ -154,3 +157,123 @@ def test_a_reply_the_server_stops_for_repeating_itself_is_worked_around_on_ollam
 )
 def test_a_folder_named_after_its_note_leaves_the_leading_count_out(text: str, words: list[str]) -> None:
     assert _name_words(text) == words
+
+
+# -- a title that is the file name or a placeholder ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("title", "name", "unusable"),
+    [
+        ("26 new hire induction checklist", "26-new-hire-induction-checklist.md", True),
+        ("a03 guji test roast note", "a03-guji-test-roast-note.md", True),
+        ("26-new-hire-checklist-md", "anything.md", True),
+        ("...", "memo.md", True),
+        ("— · —", "memo.md", True),
+        ("Offices in Baltimore, MD", "offices.md", False),
+        ("Годовой отчёт", "report.md", False),
+        ("年度报告", "report.md", False),
+        ("Contract", "contract.md", False),
+        ("Board minutes", "board-minutes.md", False),
+        ("New hire induction checklist", "26-new-hire-induction-checklist.md", False),
+    ],
+)
+def test_unusable_title(title: str, name: str, unusable: bool) -> None:
+    assert _unusable_title(title, Source(text="x", title=name)) is unusable
+
+
+def test_a_copied_file_name_or_placeholder_is_replaced_from_the_text(bundle: Path, llm: FakeLLM) -> None:
+    def copies(ctx: StepContext, source: Source) -> Candidate:
+        return Candidate("26 payroll calendar", "...", [], source.text)
+
+    text = "# Payroll calendar for 2027\n\nSalaries are paid on the 27th."
+    result = build(bundle, llm, replace(OFFLINE, summarize=copies), provider="ollama").ingest(text, title="26-payroll-calendar.md")
+
+    assert result.title == "Payroll calendar for 2027"
+    assert "description: Salaries are paid on the 27th." in (bundle / result.note).read_text(encoding="utf-8")
+
+
+def test_a_hosted_writers_title_and_summary_are_kept_as_written(bundle: Path, llm: FakeLLM) -> None:
+    def copies(ctx: StepContext, source: Source) -> Candidate:
+        return Candidate("26 payroll calendar", "...", [], source.text)
+
+    text = "# Payroll calendar for 2027\n\nSalaries are paid on the 27th."
+    result = build(bundle, llm, replace(OFFLINE, summarize=copies), provider="openrouter").ingest(text, title="26-payroll-calendar.md")
+
+    assert result.title == "26 payroll calendar"  # as on main: the cloud path is unchanged
+
+
+SALES = "Выручка выросла на 12%."
+
+
+def test_a_title_and_summary_in_another_script_are_kept(bundle: Path, llm: FakeLLM) -> None:
+    def writes(ctx: StepContext, source: Source) -> Candidate:
+        return Candidate("Годовой отчёт", SALES, [], source.text)
+
+    text = f"# Отчёт\n\n{SALES}"
+    result = build(bundle, llm, replace(OFFLINE, summarize=writes), provider="ollama").ingest(text, title="otchet.md")
+
+    assert result.title == "Годовой отчёт"
+    assert SALES in (bundle / result.note).read_text(encoding="utf-8")
+
+
+# -- the route fallback of an Ollama writer whose reply fails: the classifier's best path -----------------------------
+
+
+@pytest.mark.parametrize(("provider", "goes_on"), [("ollama", True), ("openrouter", False)])
+def test_a_failing_route_fallback_of_an_ollama_writer_takes_the_classifiers_best_path(
+    bundle: Path, llm: FakeLLM, tracker, provider: str, goes_on: bool
+) -> None:
+    classifier = FakeClassifier(tracker)
+    cfg = WikiConfig(
+        bundle=bundle, mode="crow", crow={"beam": 1}, strict_new_folders=False,
+        llm={"provider": provider, "model": "small", "base_url": "http://localhost:1234/v1"},
+    )
+    levels = replace(CROW, name="levels", route=steps_crow._route_by_levels)
+    wiki = Wiki(cfg, llm=llm, classifier=classifier, steps=levels)
+    wiki.init()
+    root = wiki.store.load()
+    wiki.store.create_folder(root, "alpha", "Alpha things.")
+    wiki.store.create_folder(root, "beta", "Beta things.")
+    llm.add("librarian/summarize", {"title": "Q3 revenue", "summary": "Revenue.", "tags": [], "body": "# Overview\n\nFacts."})
+    llm.add("librarian/route_fallback", {"action": "create"}, {"action": "create"})  # no folder, twice
+    classifier.add_choice("route", "alpha", {"alpha": 0.2, "beta": 0.1, "New subfolder": 0.1}, 0.9)  # under tau_path
+    for _ in range(3):
+        classifier.add_choice("route", "Here", {"Here": 0.9, "New subfolder": 0.05, "None of these": 0.05}, 0.9)
+
+    if not goes_on:
+        with pytest.raises(ModelError):
+            wiki.ingest("Revenue grew.")
+        return
+    result = wiki.ingest("Revenue grew.")
+
+    assert result.folder == "/alpha"
+    assert any(d.step == "route" and d.decider == "code" for d in result.decisions)
+
+
+def test_a_route_fallback_whose_endpoint_fails_still_stops_the_ingest(
+    bundle: Path, llm: FakeLLM, tracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    classifier = FakeClassifier(tracker)
+    cfg = WikiConfig(
+        bundle=bundle, mode="crow", crow={"beam": 1}, strict_new_folders=False,
+        llm={"provider": "ollama", "model": "small", "base_url": "http://localhost:1234/v1"},
+    )
+    wiki = Wiki(cfg, llm=llm, classifier=classifier, steps=replace(CROW, name="levels", route=steps_crow._route_by_levels))
+    wiki.init()
+    wiki.store.create_folder(wiki.store.load(), "alpha", "Alpha things.")
+    llm.add("librarian/summarize", {"title": "Q3 revenue", "summary": "Revenue.", "tags": [], "body": "# Overview\n\nFacts."})
+    classifier.add_choice("route", "alpha", {"alpha": 0.2, "New subfolder": 0.1}, 0.9)  # under tau_path: the LLM routes
+    for _ in range(3):
+        classifier.add_choice("route", "Here", {"Here": 0.9, "New subfolder": 0.05, "None of these": 0.05}, 0.9)
+    chat = llm.chat
+
+    def down(messages: list[dict[str, str]], *, op: str = "", **kw: object) -> str:
+        if op == "librarian/route_fallback":
+            raise ModelError("llm: timed out")
+        return chat(messages, op=op, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(llm, "chat", down)
+
+    with pytest.raises(ModelError, match="timed out"):  # a failing endpoint is not a reply to work around
+        wiki.ingest("Revenue grew.")
