@@ -3,6 +3,7 @@
 
 import { $, api, esc, fmt, md, post } from "./util.js";
 import { leaveGraph, refreshGraph, showGraph } from "./graph.js";
+import { showMemory } from "./memory.js";
 import { enqueue, startQueue } from "./queue.js";
 import { loadSettings, showSettings } from "./settings.js";
 
@@ -185,6 +186,7 @@ function route() {
     });
   }
   else if (h === "#/settings") { current = ""; highlight(); showSettings(saved); }
+  else if (h === "#/memory") { current = ""; highlight(); showMemory(saved); }
   else if (h !== "#/ask") home();
 }
 
@@ -348,6 +350,7 @@ $("#dlg").onclose = () => {
 $("#ask").onsubmit = (e) => { e.preventDefault(); const q = $("#q").value.trim(); if (q) ask(q); };
 
 $("#gear").onclick = () => (location.hash = "#/settings");
+$("#memory").onclick = () => (location.hash = "#/memory");
 
 // -- start -------------------------------------------------------------------
 async function loadModels() {
@@ -363,7 +366,7 @@ async function saved(settings) { // the server rebuilt the wiki: show its models
 
 (async () => {
   const [settings] = await Promise.all([loadSettings(), loadModels()]);
-  $("#gear").hidden = !settings;
+  $("#gear").hidden = $("#memory").hidden = !settings;
   await loadTree(); loadUsage();
   noModel = Boolean(settings && !settings.ready); missing = settings?.missing || [];
   if (noModel && settings.editable && !countNotes(tree) && !location.hash) history.replaceState(null, "", "#/settings"); // first run: ask for a key

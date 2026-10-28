@@ -240,6 +240,11 @@ details.advanced[open] summary { margin-bottom: 18px; }
 .aside-note { margin-top: 28px; font-size: 12px; color: var(--faint); line-height: 1.7; }
 .aside-note code { color: var(--amber); }
 
+/* -- memory --------------------------------------------------------------- */
+.field .hint + .actions { margin-top: 12px; }
+.cmd { position: relative; margin: 6px 0 14px; padding: 12px 72px 12px 14px; border: 1px solid var(--edge); border-radius: 8px; background: var(--field); font: 12px/1.6 var(--mono); color: var(--amber); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cmd .mini { position: absolute; top: 9px; right: 9px; }
+
 @media (max-width: 900px) {
   body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   aside { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--rule); }

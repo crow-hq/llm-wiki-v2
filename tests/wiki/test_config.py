@@ -35,6 +35,8 @@ def env_for(bundle: Path, **variables: str) -> dict[str, str]:
         ("OKF_CONCURRENCY", "4", "concurrency", 4),
         ("OKF_PLAN", "groups", "plan", "groups"),
         ("OKF_PLAN", "writer", "plan", "writer"),
+        ("OKF_MCP", "1", "mcp", True),
+        ("OKF_MCP", "off", "mcp", False),
     ],
 )
 def test_from_env_when_a_variable_is_set_then_its_field_takes_the_value(
