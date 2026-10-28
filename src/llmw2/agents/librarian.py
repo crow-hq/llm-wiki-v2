@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass, field, replace
 from functools import cached_property
 from typing import Any, Literal
 
-from llmw2.agents import linking, revisions, steps_classic
+from llmw2.agents import echo, linking, revisions, steps_classic
 from llmw2.agents.base import Decision, clean_tags, unique_objects
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.prompts import Prompts
@@ -43,6 +43,43 @@ from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport
 
 log = logging.getLogger(__name__)
+
+
+def _first_heading(text: str) -> str:
+    """The first non-empty line of a text, without its Markdown heading marks."""
+    return next((line.strip().lstrip("#").strip() for line in text.splitlines() if line.strip().lstrip("#").strip()), "")
+
+
+_FALLBACK_PROMPTS = (*echo.SUMMARIZE_PROMPTS, "librarian/name_folder", "shared/folder_rules")
+
+
+def _name_words(text: str | None) -> list[str]:
+    """The first four words of a text for a folder named after its note, a leading count ("8", "26.") left out."""
+    words = (text or "").split()
+    while words and not slugify(words[0].strip(".,;:()"), fallback="").replace("-", "").isalpha():
+        words.pop(0)
+    return words[:4] if slugify(" ".join(words[:4]), max_len=40, fallback="") else []
+
+
+def _first_line(text: str) -> str:
+    """The first non-empty line of a text that is not a Markdown heading (a body opens with "# Overview")."""
+    return next((line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")), "")
+
+
+def _unusable_title(title: str, source: Source) -> bool:
+    """A title that is only the source's file name as small writers copy it, numbering included ("26 new hire
+    checklist" for 26-new-hire-checklist.md, "26-new-hire-checklist-md"; not "Contract" for contract.md), or a
+    placeholder with no letter or digit ("...")."""
+    name = (source.title or "").rsplit("/", 1)[-1]
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    if not any(c.isalnum() for c in title):
+        return True
+    slug = slugify(title, fallback="")
+    if slug.endswith("-md") and not any(c.isspace() for c in title.strip()):  # a file name: "26-new-hire-checklist-md"
+        return True
+    numbered = any(c.isdigit() for c in slug.split("-", 1)[0])
+    return numbered and bool(stem) and slug in {slugify(name, fallback=""), slugify(stem, fallback="")}
+
 
 __all__ = ["Candidate", "IngestResult", "Librarian", "NoteDraft", "Prepared", "Route", "Source"]
 
@@ -112,10 +149,43 @@ class Librarian:
                 log.warning("summarize failed (%s): the note keeps the source text", e)
                 self.ctx.decide("summarize", "code", "verbatim")
                 cand = steps_classic._verbatim(read, self.cfg.classifier.state_chars)
+        if self.local_writer and self.cfg.summarize:  # a small writer copies the file name or the reply format
+            if _unusable_title(cand.title, read):
+                heading = _first_heading(read.text)[:120]
+                if heading and not _unusable_title(heading, read):
+                    log.warning("summarize: the title %r is the file name or empty: %r from the text instead", cand.title, heading)
+                    cand = replace(cand, title=heading)
+            if not any(c.isalnum() for c in cand.summary or ""):  # a placeholder summary ("..."): the opening of the body
+                cand = replace(cand, summary=_first_line(cand.body or read.text)[:200])
+            cand = self._own_title_and_summary(cand, read)
         return Prepared(source, cand, used, list(self.ctx.decisions))
 
-    def file(self, prepared: Prepared) -> IngestResult:
-        """The rest: from a fresh `load()` to the log. The caller holds the wiki's lock."""
+    def _own_title_and_summary(self, cand: Candidate, read: Source) -> Candidate:
+        """A title or summary made only of words of the summarize prompts ("<a specific title written from the content>",
+        "Take notes from a source") gives way to the source's own first heading and first line, which routing and folder
+        names read instead."""
+        prompts = self.ctx.prompts
+
+        def mine(text: str) -> bool:
+            return bool(text) and not echo.copied(text, prompts, echo.SUMMARIZE_PROMPTS)
+
+        if echo.copied(cand.title, prompts, echo.SUMMARIZE_PROMPTS):
+            lines = (_first_heading(read.text)[:120], _first_line(read.text)[:120], _first_line(cand.body)[:120])
+            title = next((t for t in lines if mine(t) and not _unusable_title(t, read)), "")
+            if title:
+                log.warning("summarize: the title %r is copied from the prompt: %r from the text instead", cand.title, title)
+                cand = replace(cand, title=title)
+        if echo.copied(cand.summary, prompts, echo.SUMMARIZE_PROMPTS):
+            summary = next((t for t in (_first_line(cand.body)[:200], _first_line(read.text)[:200]) if mine(t)), "")
+            if summary:
+                log.warning("summarize: the summary %r is copied from the prompt: %r instead", cand.summary[:80], summary[:80])
+                cand = replace(cand, summary=summary)
+        return cand
+
+    def file(self, prepared: Prepared, planned: str | None = None) -> IngestResult:
+        """The rest: from a fresh `load()` to the log. The caller holds the wiki's lock.
+
+        `planned`, a folder label, is where the batch plan put the document's group: it is filed there and not routed."""
         steps, ctx = self.steps, self.ctx
         source, cand = prepared.source, prepared.candidate
         read = _read(source)  # what the steps read; the raw copy keeps `source` whole
@@ -124,7 +194,12 @@ class Librarian:
         ctx.decisions = list(prepared.decisions)
         with ctx.llm.usage.span() as used:
             root = self.store.load()
-            route = check_route(steps.route(ctx, root, cand), root, self.cfg)
+            placed = root.find(planned.strip("/")) if planned else None
+            if placed is not None:
+                ctx.decide("route", "code", placed.label)
+                route = Route(placed, False, [placed])
+            else:
+                route = check_route(steps.route(ctx, root, cand), root, self.cfg)
             pool = unique_objects(n for f in [*route.candidates, route.folder] for n in f.notes)
             match = check_match(steps.match(ctx, pool, cand), pool)
             created: list[str] = []
@@ -163,17 +238,29 @@ class Librarian:
                         folder, is_new = self.store.create_folder(folder, name, description)
                         created += [folder.label] if is_new else []
                 elif route.new and ctx.can_create(folder):
+                    failed: Exception | None = None
                     try:
                         name, description = check_name_folder(steps.name_folder(ctx, folder, cand))
                     except (ReplyInvalid, StepError) as e:  # a local writer that cannot name it: named after the note
                         if not self.local_writer:
                             raise
+                        name, description, failed = "", "", e
+                    # a small writer's name copied from the prompt ("engineering" for a coffee roaster) or from the
+                    # parent's path is no name of the note: named after the note too
+                    shown = ctx.state(cand)
+                    own = echo.own_name(name, shown, folder.label.replace("/", "-").split("-")) if self.local_writer else name
+                    if not own:
                         stem = (read.title or "").rsplit("/", 1)[-1].rsplit(".", 1)[0]
-                        words = next((w for w in map(_name_words, (cand.title, cand.summary, stem)) if w), [])
-                        name, description = " ".join(words) or "notes", cand.summary
-                        log.warning("name_folder failed (%s): the folder is named after the note, %r", e, name)
-                        ctx.decide("name_folder", "code", name)
-                    folder, is_new = self.store.create_folder(folder, name, description)
+                        texts = (cand.title, cand.summary, stem)
+                        # the first four words, leading counts left out, and never a cut made only of prompt words
+                        cuts = [_name_words(t) for t in texts]
+                        words = next((c for c in cuts if c and not echo.copied(" ".join(c), ctx.prompts, _FALLBACK_PROMPTS)), [])
+                        own = " ".join(words) or "notes"
+                        log.warning("name_folder %s: the folder is named after the note, %r", failed or f"gave {name!r}", own)
+                        ctx.decide("name_folder", "code", own)
+                    if failed or (self.local_writer and not echo.own_text(description, shown, ctx.prompts, "librarian/name_folder")):
+                        description = cand.summary
+                    folder, is_new = self.store.create_folder(folder, own, description)
                     created += [folder.label] if is_new else []
                 raw, ref = self.save_source(source, cand)
                 note = self.store.write_note(
@@ -241,11 +328,3 @@ def _read(source: Source) -> Source:
     """The source as the steps read it: a spreadsheet sheet by its first rows, the note catalogues it (`sheets.brief`)."""
     text = brief(source.text)
     return source if text is source.text else replace(source, text=text)
-
-
-def _name_words(text: str | None) -> list[str]:
-    """The first four words of a text for a folder named after its note, a leading count ("8", "26.") left out."""
-    words = (text or "").split()
-    while words and not slugify(words[0].strip(".,;:()"), fallback="").replace("-", "").isalpha():
-        words.pop(0)
-    return words[:4] if slugify(" ".join(words[:4]), max_len=40, fallback="") else []

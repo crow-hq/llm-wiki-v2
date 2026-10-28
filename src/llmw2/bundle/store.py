@@ -322,6 +322,21 @@ class WikiStore:
         write_atomic(self.root / RAW / f"{slug}.md", OKFDocument(fm, text).serialize())
         return f"/{RAW}/{slug}.md"
 
+    def source_text(self, note: Note, bodies: dict[str, str] | None = None) -> str:
+        """The text of the raw copies a note cites, as ingested; the note's own text when it cites none still there.
+        `bodies`: the raw copies already read, by resource, filled as they are read (a raw copy never changes)."""
+        texts = []
+        for resource in _raw_sources(note):
+            if bodies is not None and resource in bodies:
+                texts.append(bodies[resource])
+                continue
+            path = self.root / resource.lstrip("/")
+            with contextlib.suppress(OSError, OKFDocumentError):
+                texts.append(OKFDocument.read(path).body)
+                if bodies is not None:
+                    bodies[resource] = texts[-1]
+        return "\n\n".join(texts) or note.full_text()
+
     def find_origin(self, key: str) -> OriginRecord | None:
         """The latest raw copy with this origin key that a note cites, and the notes citing any of its copies.
 

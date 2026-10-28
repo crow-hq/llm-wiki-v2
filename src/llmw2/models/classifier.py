@@ -105,11 +105,12 @@ class Classifier(HttpModel):
         return result
 
     def _nouls(self, state: str, batch: dict[str, str], op: str) -> dict[str, float]:
-        """One batch. A server that takes fewer questions per request than the batch holds (the local one takes 64) gets it in halves."""
+        """One batch. A server that refuses it for more questions than it takes (the local one takes 64), or for a context
+        it exceeds (characters are a guess at tokens), gets it in halves."""
         try:
             answers = self.ask(state, {k: {"type": "noul", "instructions": q} for k, q in batch.items()}, op=op)
         except ModelError as e:
-            if len(batch) < 2 or not _too_many_questions(e):
+            if len(batch) < 2 or not (_too_many_questions(e) or "context size has been exceeded" in str(e).lower()):
                 raise
             keys = list(batch)
             half = len(keys) // 2

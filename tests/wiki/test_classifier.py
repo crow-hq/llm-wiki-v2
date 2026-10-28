@@ -380,3 +380,29 @@ def test_probe_asks_one_noul_and_returns_its_probability(tracker: UsageTracker) 
 
     # ASSERT
     assert answer == 0.9 and len(requests) == 1 and tracker.snapshot().by_model["classifier:" + MODEL].calls == 1
+
+
+def test_nouls_a_server_whose_context_a_batch_exceeds_gets_it_in_halves(tracker: UsageTracker) -> None:
+    # characters are only a guess at tokens: Ollama answers 500 "Context size has been exceeded" for a batch too long
+    def reply(request: httpx.Request) -> httpx.Response:
+        questions = json.loads(request.content)["questions"]
+        if len(questions) > 2:
+            return httpx.Response(500, json={"error": "Context size has been exceeded."})
+        return answered({k: {"type": "noul", "noul": 0.5} for k in questions})
+
+    questions = {f"n{i}": f"Statement number {i}." for i in range(5)}
+    clf, requests = make_classifier(tracker, reply)
+
+    assert clf.nouls("state", questions, op="match") == {f"n{i}": 0.5 for i in range(5)}
+    assert max(len(json.loads(r.content)["questions"]) for r in requests if json.loads(r.content)["questions"]) >= 1
+
+
+def test_nouls_a_single_question_that_exceeds_the_context_still_raises(tracker: UsageTracker) -> None:
+    clf, _ = make_classifier(tracker, always_response(httpx.Response(500, json={"error": "Context size has been exceeded."})))
+
+    with pytest.raises(ModelError):
+        clf.nouls("state", {"n0": "One statement."}, op="match")
+
+
+def always_response(response: httpx.Response) -> Handler:
+    return lambda request: response

@@ -209,7 +209,9 @@ custom one:
 - **plan**: before each batch window of `ingest_many` (and so `sync`), when two or more of its
   documents are to be filed. An empty wiki gets its folders from the documents' titles and
   openings; a wiki that has folders gets only the new ones (`plan_more`: it never renames,
-  moves or re-describes a folder, and moves no note).
+  moves or re-describes a folder, and moves no note). With `plan` set to `groups` (`OKF_PLAN`; default `writer`, the model's plan),
+  a batch that began on a wiki with no folders is planned by groups instead (`plan_groups`, in code): the
+  documents of a group go to its folder without calling `route`, which sees only the others.
 - **split**: after a document filed alone (`ingest`, `ingest_file`, a window with one document),
   when its folder holds 12 or more notes directly and a new multiple of 12 since the last attempt:
   it opens subfolders and moves notes into them (links follow).

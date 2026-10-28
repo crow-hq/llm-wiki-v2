@@ -23,7 +23,7 @@ from llmw2.agents.data import Candidate, Route
 from llmw2.agents.state import source_state
 from llmw2.agents.steps_classic import CONSOLIDATE_SOURCE_MAX, HERE, MODIFY, NEW, NEW_NOTE, NONE, FallbackRoute
 from llmw2.bundle.tree import Folder, Note
-from llmw2.errors import ModelError
+from llmw2.errors import ModelError, ReplyInvalid
 from llmw2.models.classifier import MAX_OPTIONS, ChoiceAnswer
 
 if TYPE_CHECKING:
@@ -123,7 +123,7 @@ def _route_by_levels(ctx: StepContext, root: Folder, cand: Candidate) -> Route:
         return classic.route(ctx, root, cand)
     best = max(finished, key=lambda p: p.score, default=None)
     if best is None or best.score < crow.tau_path:
-        return _route_fallback(ctx, root, visited, cand, best.score if best else None)
+        return _route_fallback(ctx, root, visited, cand, best.score if best else None, best.folders[-1] if best else None)
     candidates = unique_objects(f for p in finished for f in p.folders)
     ctx.decide("route", "classifier", f"{best.folders[-1].label} ({best.end})", best.score)
     return Route(best.folders[-1], best.end == NEW, candidates)
@@ -314,15 +314,28 @@ def _route_fallback(
     visited: list[Folder],
     cand: Candidate,
     score: float | None,
+    guess: Folder | None = None,
 ) -> Route:
-    """§5.3: the LLM chooses among the folders the classifier explored, or opens a new one."""
-    out = ctx.ask_json(
-        "librarian/route_fallback",
-        FallbackRoute,
-        folders=_fallback_menu(ctx, root, visited),
-        note=routing_state(ctx, cand),
-        reply_chars=classic.DECIDE_CHARS,
-    )
+    """§5.3: the LLM chooses among the folders the classifier explored, or opens a new one.
+
+    A writer on Ollama whose reply fails (see `Librarian.local_writer`) does not stop the ingest: the note goes where the
+    classifier's best path ends (`guess`), or into a new top-level folder when there is none."""
+    try:
+        out = ctx.ask_json(
+            "librarian/route_fallback",
+            FallbackRoute,
+            folders=_fallback_menu(ctx, root, visited),
+            note=routing_state(ctx, cand),
+            reply_chars=classic.DECIDE_CHARS,
+        )
+    except ModelError as e:
+        if ctx.cfg.llm.provider != "ollama" or not isinstance(e, ReplyInvalid):
+            raise
+        folder = guess or root
+        new = folder.is_root and ctx.can_create(folder)
+        log.warning("route_fallback failed (%s): the classifier's best path decides, %s", e, folder.label)
+        ctx.decide("route", "code", f"{folder.label} ({NEW if new else HERE})", score, fallback=True)
+        return Route(folder, new, folder.ancestors())
     folder, unmade = _deepest(ctx, root, out.folder)
     # A path not made yet ("/finance/pricing" with no pricing) asks for a new subfolder of the deepest one that is.
     new = (out.action == "create" or unmade or folder.is_root) and ctx.can_create(folder)  # the root holds no notes

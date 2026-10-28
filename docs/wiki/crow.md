@@ -20,7 +20,7 @@ under `src/llmw2/agents/prompts/`.
 | Step | Classic decider | CROW decider | Primitive | Threshold | Fallback |
 |---|---|---|---|---|---|
 | 0 summarize | LLM `librarian/summarize`. A source longer than one call (`OKF_LLM_READ_CHARS` less 6000 characters for the prompt) is read in parts: `librarian/summarize_part` takes notes on each block of it, in turn, and `librarian/summarize_combine` writes the note from them. | same LLM step. `OKF_SUMMARIZE=false` files the source verbatim. | - | - | - |
-| 1 route | LLM `librarian/route`, one level at a time | `classifier/route_direct`: one Choice among every folder of the tree (the option is the folder's path, its text the folder's description) and `None of these`. The folder with the highest probability is the route. If that probability is under `tau_route` and another folder ranks second, that folder's branch joins the folders step 2 looks in. When one request cannot hold every folder (255 options for Jev, or the `request_chars` of a classifier with a smaller context), the options are the folders a BM25 ranking against the note puts first, as many as fit (decision `route_cut`); `None of these` is always offered. In an empty wiki, on `None of these` or on a classifier error the per-level routing decides (`route_direct` in the decisions). The per-level routing is `classifier/route` at each level. Options are the subfolders, `Here` (not at the root, which holds no notes: in an empty wiki `New subfolder` is the one way and nothing is asked), `New subfolder` (below `OKF_MAX_DEPTH`) and `None of these` (not at the root). A path's score is the geometric mean of its edge probabilities. With `votes` above 1, a level whose confidence is within `vote_band` of `tau_route`, or whose top two options are closer than that, is asked `votes` times and the averaged answer decides; if the best path then scores within `vote_band` of `tau_path`, the beam runs once more with every level averaged. With `strict_new_folders` (the default) a `New subfolder` under `tau_route` cannot end a path: its probability goes to `Here` (at the root the other options are renormalised) and the adjusted probabilities rank the options, score the edge and, with the answer's confidence, decide how many are kept; `Here` and `New subfolder` are asked as "the folder's description covers the note" and "neither the description nor a subfolder covers it". `strict_new_folders = false` (`OKF_STRICT_NEW_FOLDERS`) keeps 0.3.0's routing and its prompt, `classifier/route_open`. | Choice | `tau_route` (second branch of the pool; per-level routing); `beam`, `tau_path`, `votes`, `vote_band` (per-level routing only) | On a classifier error, the per-level routing. In it, LLM `librarian/route_fallback`, when no path finishes or the best score is below `tau_path`. Its menu is the folders the classifier visited; with `fallback_menu` set to `tree` (an extension of the paper, as `relate` is) it also lists the other folders of the wiki, up to 8000 characters, the visited ones first. On error, LLM `librarian/route`. An LLM that picks the root opens a new folder there instead. It may name a folder the classifier did not visit; a path that does not exist yet (`/finance/pricing` with no `pricing`) opens a new subfolder in the deepest folder of it that does. |
+| 1 route | LLM `librarian/route`, one level at a time | `classifier/route_direct`: one Choice among every folder of the tree (the option is the folder's path, its text the folder's description) and `None of these`. The folder with the highest probability is the route. If that probability is under `tau_route` and another folder ranks second, that folder's branch joins the folders step 2 looks in. When one request cannot hold every folder (255 options for Jev, or the `request_chars` of a classifier with a smaller context), the options are the folders a BM25 ranking against the note puts first, as many as fit (decision `route_cut`); `None of these` is always offered. In an empty wiki, on `None of these` or on a classifier error the per-level routing decides (`route_direct` in the decisions). The per-level routing is `classifier/route` at each level. Options are the subfolders, `Here` (not at the root, which holds no notes: in an empty wiki `New subfolder` is the one way and nothing is asked), `New subfolder` (below `OKF_MAX_DEPTH`) and `None of these` (not at the root). A path's score is the geometric mean of its edge probabilities. With `votes` above 1, a level whose confidence is within `vote_band` of `tau_route`, or whose top two options are closer than that, is asked `votes` times and the averaged answer decides; if the best path then scores within `vote_band` of `tau_path`, the beam runs once more with every level averaged. With `strict_new_folders` (the default) a `New subfolder` under `tau_route` cannot end a path: its probability goes to `Here` (at the root the other options are renormalised) and the adjusted probabilities rank the options, score the edge and, with the answer's confidence, decide how many are kept; `Here` and `New subfolder` are asked as "the folder's description covers the note" and "neither the description nor a subfolder covers it". `strict_new_folders = false` (`OKF_STRICT_NEW_FOLDERS`) keeps 0.3.0's routing and its prompt, `classifier/route_open`. A document of a group (`plan_groups`, with `plan` set to `groups`) is not routed: it goes to its group's folder (decision `route` by `code`). | Choice | `tau_route` (second branch of the pool; per-level routing); `beam`, `tau_path`, `votes`, `vote_band` (per-level routing only) | On a classifier error, the per-level routing. In it, LLM `librarian/route_fallback`, when no path finishes or the best score is below `tau_path`. Its menu is the folders the classifier visited; with `fallback_menu` set to `tree` (an extension of the paper, as `relate` is) it also lists the other folders of the wiki, up to 8000 characters, the visited ones first. On error, LLM `librarian/route`; with a writer on Ollama, a `route_fallback` reply that stays invalid sends the note where the classifier's best path ended, or to a new top-level folder (decision `route` by `code`). An LLM that picks the root opens a new folder there instead. It may name a folder the classifier did not visit; a path that does not exist yet (`/finance/pricing` with no `pricing`) opens a new subfolder in the deepest folder of it that does. |
 | 2 relevance | LLM `librarian/find_match` | `classifier/note_relevance`: one Noul per note in the candidate folders, batched. The best note wins if its probability is above `tau_ing`. | Noul | `tau_ing` | Below `tau_ing`: no match. On error, LLM `librarian/find_match`. |
 | 3 consolidation | LLM `librarian/consolidate` | `classifier/consolidate`: a Choice between `Modify` and `New note`. It reads the source state (as routing does) when the source is at most twice `note_chars` long, else the candidate's compact form. The note is merged only if the choice is `Modify` with confidence at least `tau_cons`. | Choice | `tau_cons` | When unsure, a new note is written. On error, LLM `librarian/consolidate`. |
 | write | LLM `librarian/merge` or `librarian/name_folder`. A merge reads the existing note and the incoming note (the candidate that step 0 wrote, with the source's title and location), not the whole source; what does not fit in the call is cut and logged. If the draft is unchanged, or drops more than half of the new codes, numbers and names of the incoming text, the merge is asked once more from the source with `librarian/merge_source`. | same LLM step | - | - | - |
@@ -33,7 +33,7 @@ and after a route fallback, they are the chosen folder and its ancestors.
 
 The LLM lays out the folders; the classifier files the notes in them. Three LLM
 calls that are not steps (they live in `Wiki`, see [customizable steps](../library/steps.md))
-make the folders in CROW mode:
+make the folders in CROW mode, and with `plan` set to `groups` groups made in code:
 
 - **`plan`** (`librarian/plan`) lays out the folders of an empty wiki from the titles and
   openings of a batch window of documents, down to three levels (never below `OKF_MAX_DEPTH`):
@@ -41,6 +41,16 @@ make the folders in CROW mode:
 - **`plan_more`** (`librarian/plan_more`) does the same for a wiki that has folders, with
   the existing ones in view: it adds only new folders, and never renames, moves or
   re-describes one. It moves no note.
+- **Groups** (`Wiki.plan_groups`, no model call) replace `plan` when `plan` is `groups`
+  (`OKF_PLAN`; the default is `writer`, the model's own plan), on a
+  wiki that had no folders when the batch began: the documents of a window that share a
+  subject (TF-IDF over their whole text, cosine similarity, average-linkage clustering) are
+  grouped; a group goes to the folder whose notes' sources it resembles, or else to a new
+  top-level folder named after the two words that weigh most in its documents and described
+  by the titles of its first three. Its documents are filed there without routing; a
+  document in no group is routed as usual. A small writer plans a tree poorly, and a small
+  classifier routes poorly among many folders: set `groups` for a small local writer (about 1B
+  parameters or less). A capable writer plans better than the groups do, on any provider.
 - **`split`** (`librarian/split`) runs after a document filed alone, when its folder holds
   12 notes directly (then 24, 36 and so on). It opens subfolders for the subjects that at
   least two of those notes share and moves those notes into them; notes that share nothing
@@ -66,7 +76,7 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 | `tau_route` | `OKF_TAU_ROUTE` | 0.6 | 0.6 | If the top probability of the Choice among every folder is below this, the match pool also takes the second folder's branch. In the per-level routing: if Choice confidence is below this, keep the top `beam` options instead of 1 |
 | `tau_path` | `OKF_TAU_PATH` | 0.5 | 0.65 | If the best path score is below this, the LLM routes |
 | `tau_ing` | `OKF_TAU_ING` | 0.5 | 0.45 | Best note probability must be above this to count as a match |
-| `tau_cons` | `OKF_TAU_CONS` | 0.6 | 0.26 | `Modify` confidence must be at least this to merge |
+| `tau_cons` | `OKF_TAU_CONS` | 0.6 | 0.26 (0.7 for a model that is not Laya's) | `Modify` confidence must be at least this to merge |
 | `tau_fold` | `OKF_TAU_FOLD` | 0.08 | 0.15 | Folder probability must be above this to explore the folder |
 | `tau_ret` | `OKF_TAU_RET` | 0.1 | 0.2 | Note probability must be above this to read the note |
 | `tau_link` | `OKF_TAU_LINK` | 0.6 | 0.5 | Relatedness must be above this to add a See-also link |
@@ -91,7 +101,8 @@ than Jev. Measured on 25 sample notes, it never picks `New subfolder` and scores
 routes it gets wrong at 0.61 at most, so with Jev's 0.5 an undecided note goes where
 the classifier leans; at 0.65 the LLM routes it instead. It answers `Modify` to almost every
 consolidation, with a confidence of 0.23–0.40 for a real follow-up and at most 0.25 for a
-related but distinct note, hence 0.26.
+related but distinct note, hence 0.26. A `custom` model that is not one of Laya's checkpoints
+(a small classifier on Ollama, such as tev1) merges at 0.7, the value it was measured with.
 
 A Choice's confidence is computed by the library from the probabilities, the same way on
 every server, on the scale the thresholds are calibrated on; the confidence a server sends is
@@ -189,8 +200,9 @@ changes or the wiki grows.
   at least `min_filed` (5) notes were filed and (new subfolders + fallbacks) / filed is over `max_share` (0.3): a folder
   that keeps needing subfolders or the LLM, so its description or the thresholds deserve a look.
 - **Batches are filed in windows of 50.** `ingest_many` (and so `sync`) takes the documents in windows of 50 and, per
-  window, reads them, plans the folders (`plan`, or `plan_more` on a wiki that has folders) when two or more are to
-  be filed, then summarizes and files them in order. A plan that fails (a model error, a reply that is no plan) is
+  window, reads them, plans the folders (`plan`, or `plan_more` on a wiki that has folders; groups with `plan` set to
+  `groups`, on a wiki that had no folders when the batch began) when two or more are to be filed, then summarizes and
+  files them in order. A plan that fails (a model error, a reply that is no plan) is
   logged as a warning and the window goes on with the folders there are. A window with one document to file (the
   rest unchanged) makes no plan and goes as a single document.
 - **Split only after single documents.** `ingest`, `ingest_file` (each sheet of a spreadsheet counts as one), the

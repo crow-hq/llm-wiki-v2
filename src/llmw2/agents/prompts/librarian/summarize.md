@@ -10,4 +10,4 @@ Source location: {{source_resource}}
 </source>
 
 Reply with JSON:
-{"title": "...", "summary": "...", "tags": ["..."], "body": "..."}
+{"title": "<a specific title written from the content>", "summary": "<one sentence: what the note answers>", "tags": ["<topic word>"], "body": "<the note in Markdown>"}
