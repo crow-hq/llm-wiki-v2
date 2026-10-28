@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-28
+
 ### Added
 
 - The wiki is the long-term memory of Claude Code, Codex or any MCP client, documents already filed included, with the `mcp` extra (`pip install 'llmwiki2[mcp]'`; the Docker image has it): the server answers at `/mcp` (Streamable HTTP, stateless, plain JSON replies, through the official MCP SDK). `recall` answers from the wiki as **Ask** does, citing its notes; `remember` files a text like a note written on the page, through CROW (routed, merged and linked); `read_note` reads one note. It is off by default: **Memory** in the page's header starts and stops it (the setting `mcp`, or `OKF_MCP=1`) and shows the `claude mcp add` and `codex mcp add` lines to copy. While it is off, its tools answer how to turn it on, so a client added before Start needs no reconnecting. `/mcp` sits behind the server's guard (a loopback Host when bound to localhost, no cross-site request); without the extra, it answers 501 with what to install, and the page says the same.
@@ -214,6 +216,7 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[0.7.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.7.0
 [0.6.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.6.0
 [0.5.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.5.0
 [0.4.4]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.4.4
