@@ -265,7 +265,7 @@ def test_setup_tests_the_model_then_saves(
 
     assert cli.main(["setup"]) == 0
 
-    assert asked[0] == "Provider (openrouter, openai, gemini, ollama, custom) [openrouter]: "
+    assert asked[0] == "Provider (openrouter, openai, gemini, modelgo, ollama, custom) [openrouter]: "
     assert asked[2] == "Model (e.g. gemini-3.8-flash, gemini-3.5-flash, gemini-3.5-flash-lite) [gemini-3.8-flash]: "
     assert asked[3].startswith("CROW classifier key")
     assert (built[0].llm.provider, built[0].llm.api_key, built[0].mode) == ("gemini", "g-key-0123456789", "crow")

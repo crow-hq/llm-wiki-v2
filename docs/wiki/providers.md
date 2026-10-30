@@ -43,7 +43,7 @@ changes. An OpenRouter key saved for either model serves both, at OpenRouter's
 own address.
 
 Settings that leave a needed key out are refused, saying which key and where it
-goes: the LLM's when its provider takes one (OpenRouter, OpenAI, Gemini), and in
+goes: the LLM's when its provider takes one (OpenRouter, OpenAI, Gemini, ModelGo), and in
 CROW mode the classifier's unless it runs on a local server. The same message
 stops an ingest or a question when a key is still missing (an older settings
 file), or when the classifier's provider refuses its key: the wiki never falls
@@ -62,7 +62,7 @@ fall back to the LLM, one decision at a time.
 | `OKF_LLM_SEED` | — | sent with every request when set |
 | `OKF_LLM_PIN_PROVIDER` | — | OpenRouter only, comma-separated: only these providers answer, in order, with no fallback |
 | `OKF_LLM_TIMEOUT` | `120` | seconds per request |
-| `OKF_LLM_READ_CHARS` | by provider | characters one request may hold, text and rules together (at least 8000): 100000 on OpenRouter, OpenAI and Gemini, 16000 on Ollama and custom. Longer sources are read in parts. With Ollama, set the model's `num_ctx` to hold it (about 3.5 characters a token): testing the model in the settings page warns when it is smaller |
+| `OKF_LLM_READ_CHARS` | by provider | characters one request may hold, text and rules together (at least 8000): 100000 on OpenRouter, OpenAI and Gemini, 16000 on ModelGo, Ollama and custom. Longer sources are read in parts. With Ollama, set the model's `num_ctx` to hold it (about 3.5 characters a token): testing the model in the settings page warns when it is smaller |
 | `OKF_LLM_EXTRA_BODY` | — | JSON merged into every request, e.g. OpenRouter provider pinning |
 
 | Provider | Base URL | Key variable | Default model |
@@ -70,6 +70,7 @@ fall back to the LLM, one decision at a time.
 | `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `google/gemini-3.8-flash` |
 | `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `gpt-6-luna` |
 | `gemini` | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `gemini-3.8-flash` |
+| `modelgo` | `https://api.modelgo.ai/v1` | `MODELGO_API_KEY` | `gpt-6-luna` |
 | `ollama` | `http://localhost:11434/v1` | none | `gemma4` |
 | `custom` | `OKF_LLM_BASE_URL` | `OKF_LLM_API_KEY`, if it wants one | `OKF_LLM_MODEL` |
 
@@ -78,6 +79,27 @@ llama.cpp's server, a gateway such as LiteLLM or Bifrost if you run one.
 Presets live in `PROVIDERS` in `src/llmw2/config.py`; adding one is one line.
 Their models are only defaults and suggestions: the settings page also lists
 the models the provider offers right now (`GET {base_url}/models`).
+
+For ModelGo, use an international account key and select a model available to that
+account. `gpt-6-luna` is a suggestion, not a guarantee of availability or support
+for every request parameter. The preset uses a conservative 16000-character
+input budget and sends no provider-specific reasoning fields; adjust
+`OKF_LLM_READ_CHARS` and `OKF_LLM_EXTRA_BODY` for the selected model if needed.
+If a ModelGo model explicitly rejects `temperature` with HTTP 400, the client
+retries once without it and omits it for later calls to that model instance.
+Other errors still fail normally, and other models keep the configured temperature.
+For example, in `.env` (keep the key private):
+
+```dotenv
+OKF_LLM_PROVIDER=modelgo
+MODELGO_API_KEY=your-international-key
+OKF_LLM_MODEL=gpt-6-luna
+OKF_MODE=classic
+```
+
+ModelGo is an LLM preset only. To use CROW, choose `OKF_MODE=crow` and configure
+a separate System One classifier below with its own key. The ModelGo key is
+never shared with that classifier.
 
 The client sends `POST {base_url}/chat/completions` (up to 3 attempts on 408,
 429, 500, 502-504, 529) and asks once more if a JSON reply does not validate.

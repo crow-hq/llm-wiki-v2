@@ -14,7 +14,7 @@
 
 Give it your documents. It files them into a tidy wiki of Markdown notes and
 answers your questions, citing the notes it used. It runs on your computer,
-with any AI provider: OpenRouter, OpenAI, Gemini, Ollama (free and local) or
+with any AI provider: OpenRouter, OpenAI, Gemini, ModelGo, Ollama (free and local) or
 any OpenAI-compatible server. It works in **CROW** mode by default: a small
 classifier decides where things go, so the wiki stays fast and cheap as it grows.
 
@@ -367,10 +367,10 @@ list is in [.env.example](https://github.com/crow-hq/llm-wiki-v2/blob/main/.env.
 |---|---|---|
 | `OKF_BUNDLE` | `~/llm-wiki` for the CLI (`/data/wiki` in Docker) | wiki folder |
 | `OKF_MODE` | `crow` | `crow` (a typed classifier decides, needs its key or a local server) or `classic` (the LLM decides) |
-| `OKF_LLM_PROVIDER` | `openrouter` | `openrouter`, `openai`, `gemini`, `ollama` or `custom` |
+| `OKF_LLM_PROVIDER` | `openrouter` | `openrouter`, `openai`, `gemini`, `modelgo`, `ollama` or `custom` |
 | `OKF_LLM_MODEL` | the provider's default | e.g. `google/gemini-3.8-flash` on OpenRouter |
 | `OKF_LLM_BASE_URL` | the provider's | any OpenAI-compatible API (required for `custom`) |
-| `OPENROUTER_API_KEY` · `OPENAI_API_KEY` · `GEMINI_API_KEY` | — | the provider's key (`OKF_LLM_API_KEY` wins); OpenRouter's also serves the classifier |
+| `OPENROUTER_API_KEY` · `OPENAI_API_KEY` · `GEMINI_API_KEY` · `MODELGO_API_KEY` | — | the provider's key (`OKF_LLM_API_KEY` wins); OpenRouter's also serves the classifier |
 | `OKF_CLASSIFIER_PROVIDER` | `openrouter` | where the CROW classifier runs, apart from the LLM: `openrouter`, `typesafe` (both Jev) or `custom` (any System One server, such as Laya on this computer; starts from the Laya thresholds preset) |
 | `TYPESAFE_API_KEY` | — | the classifier's key on `typesafe` (`OKF_CLASSIFIER_API_KEY` wins) |
 | `OKF_CLASSIFIER_MODEL` | `typesafe/jev-1.13` | CROW classifier, pinned |
@@ -385,7 +385,7 @@ list is in [.env.example](https://github.com/crow-hq/llm-wiki-v2/blob/main/.env.
 | `OKF_MCP_MODELS` | `wiki` | whose models do the memory's work: `wiki` (the ones above) or `client` (the MCP client's, on its own plan) |
 | `OKF_CONCURRENCY` | `4` | documents read and summarized at once by `sync`, the web page and `Wiki.ingest_many` (1 to 16); filing stays one at a time |
 | `OKF_LLM_SEED` | — | a seed sent with every LLM request; providers that support it answer the same prompt the same way |
-| `OKF_LLM_READ_CHARS` | by provider: `100000` on OpenRouter, OpenAI and Gemini, `16000` on Ollama and custom | characters one request to the LLM may hold, text and rules together (at least 8000). A source that does not fit is summarized in parts, and an incoming note that does not fit what is left of a merge call after the existing note is added to it as a section, with no model call |
+| `OKF_LLM_READ_CHARS` | by provider: `100000` on OpenRouter, OpenAI and Gemini, `16000` on ModelGo, Ollama and custom | characters one request to the LLM may hold, text and rules together (at least 8000). A source that does not fit is summarized in parts, and an incoming note that does not fit what is left of a merge call after the existing note is added to it as a section, with no model call |
 | `OKF_NOTE_CHARS` | `10000`, and at most half of what one request holds | about how many characters a note body may have (at least 1000): asked of the model, not enforced; a body over 1.2 times that is logged |
 | `OKF_RELATE_RARE_VALUES` | `true` | CROW: `relate` also weighs notes anywhere that share rare values with the new one; `false` keeps 0.3.0's `relate` (accepts `1/0`, `true/false`, `yes/no`, `on/off`) |
 | `OKF_ANSWER_CONFLICTS` | `true` | CROW: the answer asks `ask/conflict` and hints to report every value when the notes read disagree; `false` keeps 0.3.0's answer input (same values as above) |

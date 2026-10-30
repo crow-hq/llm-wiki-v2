@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from llmw2.config import WikiConfig
+from llmw2.config import WikiConfig, missing_keys
 
 
 def env_for(bundle: Path, **variables: str) -> dict[str, str]:
@@ -173,6 +173,40 @@ def test_the_provider_fills_base_url_model_and_key(tmp_path: Path) -> None:
 
     assert llm.base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
     assert (llm.model, llm.api_key) == ("gemini-3.8-flash", "g-key")
+
+
+def test_modelgo_uses_its_own_key_and_keeps_the_classifier_separate(tmp_path: Path) -> None:
+    config = WikiConfig.from_env(env_for(
+        tmp_path, OKF_LLM_PROVIDER="modelgo", MODELGO_API_KEY="modelgo-test", OPENROUTER_API_KEY="or-test",
+    ))
+
+    assert (config.llm.base_url, config.llm.model, config.llm.api_key) == (
+        "https://api.modelgo.ai/v1", "gpt-6-luna", "modelgo-test",
+    )
+    assert (config.classifier.provider, config.classifier.api_key) == ("openrouter", "or-test")
+    assert config.effective_read_chars == 16_000
+
+
+def test_modelgo_allows_an_explicit_model_and_key(tmp_path: Path) -> None:
+    config = WikiConfig.from_env(env_for(
+        tmp_path, OKF_LLM_PROVIDER="modelgo", MODELGO_API_KEY="modelgo-test",
+        OKF_LLM_API_KEY="override-test", OKF_LLM_MODEL="account-model",
+    ))
+
+    assert (config.llm.model, config.llm.api_key) == ("account-model", "override-test")
+    assert config.classifier.api_key == ""
+    assert "CROW mode needs a key" in missing_keys(config)[0]
+
+
+def test_modelgo_key_is_required_and_is_not_used_by_other_providers(tmp_path: Path) -> None:
+    config = WikiConfig.from_env(env_for(tmp_path, OKF_LLM_PROVIDER="modelgo", OPENROUTER_API_KEY="or-test"))
+    assert not config.llm.ready
+    assert missing_keys(config)[0].startswith("ModelGo needs an API key")
+
+    config = WikiConfig.from_env(env_for(tmp_path, MODELGO_API_KEY="modelgo-test"))
+    assert config.llm.provider == "openrouter" and config.llm.api_key == ""
+    with pytest.raises(ValueError, match="unknown classifier provider 'modelgo'"):
+        WikiConfig(bundle=tmp_path, classifier={"provider": "modelgo"})
 
 
 @pytest.mark.parametrize(("variable", "model"), [("OKF_LLM_API_KEY", "llm"), ("OKF_CLASSIFIER_API_KEY", "classifier")])

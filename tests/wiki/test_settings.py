@@ -81,6 +81,22 @@ def test_a_key_never_follows_the_wiki_to_another_provider() -> None:
     }
 
 
+def test_modelgo_settings_keep_the_key_at_its_provider_and_address() -> None:
+    settings = Settings({})
+    cfg = settings.save({"provider": "modelgo", "api_key": KEY, "model": "account-model", "mode": "classic"})
+    assert (cfg.llm.base_url, cfg.llm.model) == ("https://api.modelgo.ai/v1", "account-model")
+    assert cfg.classifier.api_key == ""
+    assert KEY not in json.dumps(settings.view())
+
+    cfg = settings.save({"provider": "ollama", "api_key": ""})
+    assert cfg.llm.api_key == ""
+    cfg = settings.save({"provider": "modelgo", "api_key": ""})
+    assert (cfg.llm.api_key, cfg.llm.model) == (KEY, "account-model")
+
+    with pytest.raises(ValueError, match="ModelGo needs an API key"):
+        settings.save({"base_url": "https://other.test/v1", "api_key": ""})
+
+
 def test_save_when_the_llm_switches_provider_and_back_then_its_key_and_model_come_back() -> None:
     # ARRANGE
     settings = Settings({})
