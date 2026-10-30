@@ -82,7 +82,7 @@ def test_remember_files_the_text_as_a_note_and_read_note_reads_it_back(classic_w
 def test_recall_on_a_wiki_with_nothing_relevant_says_so_without_writing_an_answer(crow_wiki: Wiki, llm: FakeLLM) -> None:
     found = call(crow_wiki, "recall", {"question": "What did we decide about pricing?"})
 
-    assert not found.is_error and found.structured_content == {"answer": NO_ANSWER, "notes": []}
+    assert not found.is_error and found.structured_content == {"answer": NO_ANSWER, "notes": [], "titles": {}}
     assert llm.ops == []
 
 
@@ -129,7 +129,7 @@ def test_while_the_memory_is_off_a_client_connects_and_the_tools_work_from_the_c
 
     # ASSERT
     assert off.is_error and OFF in text(off) and unread.is_error and OFF in text(unread)
-    assert not on.is_error and on.structured_content == {"answer": NO_ANSWER, "notes": []}  # the same client: no reconnecting
+    assert not on.is_error and on.structured_content == {"answer": NO_ANSWER, "notes": [], "titles": {}}  # the same client: no reconnecting
 
 
 @pytest.mark.parametrize("on", [True, False])
@@ -226,7 +226,12 @@ def test_with_the_clients_models_remember_and_recall_go_through_requests_and_cro
     # ASSERT
     assert kept.structured_content == {"status": "done", "action": "created", "note": NOTE, "folder": "/finance", "related": []}
     assert [r["step"] for r in writing] == ["librarian/summarize", "librarian/name_folder"]  # an empty wiki: one way only
-    assert found.structured_content == {"status": "done", "answer": f"Revenue is booked on delivery [{NOTE}].", "notes": [NOTE]}
+    assert found.structured_content == {
+        "status": "done",
+        "answer": f"Revenue is booked on delivery [{NOTE}].",
+        "notes": [NOTE],
+        "titles": {NOTE: "Revenue recognition"},
+    }
     assert {r["kind"] for r in asking} == {"decide", "write"} and asking[-1]["step"] == "researcher/answer"  # CROW, not classic
     assert (llm.ops, classifier.ops) == ([], [])
     assert ", mcp-client)" in (bundle / "log.md").read_text(encoding="utf-8")  # the provenance names the client's models

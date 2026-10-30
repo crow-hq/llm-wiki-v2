@@ -245,7 +245,7 @@ class Librarian:
                         if not self.local_writer:
                             raise
                         name, description, failed = "", "", e
-                    # a small writer's name copied from the prompt ("engineering" for a coffee roaster) or from the
+                    # a small writer's name copied from the prompt ("suppliers" for a coffee roaster) or from the
                     # parent's path is no name of the note: named after the note too
                     shown = ctx.state(cand)
                     own = echo.own_name(name, shown, folder.label.replace("/", "-").split("-")) if self.local_writer else name

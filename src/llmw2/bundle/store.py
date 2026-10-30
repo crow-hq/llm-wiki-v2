@@ -46,10 +46,12 @@ from llmw2.bundle.tree import (
     SOURCE_TYPE,
     Folder,
     Note,
+    dead_links_to_text,
     drop_links,
     join_see_also,
     note_dir,
     parse_index,
+    refresh_entries,
     rel_link,
     rewrite_links,
     slugify,
@@ -220,6 +222,7 @@ class WikiStore:
         slug = self.unique_slug(folder, slugify(title))
         path = folder.path / f"{slug}.md"
         rel = f"{folder.rel}/{slug}.md" if folder.rel else f"{slug}.md"
+        body = self._without_dead_links(body, rel)
         note_body = body.rstrip() + "\n"
         frontmatter: dict[str, Any] = {
             "type": NOTE_TYPE,
@@ -255,6 +258,7 @@ class WikiStore:
         `fields` are added to the note's own (new keys win). `previous_version`: the archived copy of the body it replaces.
         """
         fm = note.frontmatter
+        was = (note.title, note.summary)
         fm["title"], fm["description"] = title.strip(), summary.strip()
         fm["tags"] = list(dict.fromkeys([*note.tags, *tags]))
         if previous_version:
@@ -266,12 +270,34 @@ class WikiStore:
         if fields:
             old = fm.get("fields")
             fm["fields"] = {**(old if isinstance(old, dict) else {}), **fields}
-        note.body = join_see_also(body, split_see_also(note.body)[1])
+        note.body = join_see_also(self._without_dead_links(body, note.rel), split_see_also(note.body)[1])
         fm["generated"] = {"by": self.actor, "at": now_iso(), "body_hash": body_hash(split_see_also(note.body)[0])}
         self._save(note)
         if note.folder is not None:
             self.write_index(note.folder)
+        if (note.title, note.summary) != was:
+            self._refresh_see_also(note)
         return note
+
+    def _without_dead_links(self, body: str, rel: str) -> str:
+        """The body of the note at `rel` with the links that lead nowhere in the wiki written as text."""
+        return dead_links_to_text(body, rel, lambda target: (self.root / target).is_file())
+
+    def _refresh_see_also(self, note: Note) -> None:
+        """Show the note's title and summary in the See-also entries that link to it, in the notes of the tree.
+
+        Only the entries change, and their link stays; archived versions are not touched.
+        """
+        top = note.folder
+        while top is not None and top.parent is not None:
+            top = top.parent
+        for other in top.all_notes() if top is not None else self.load().all_notes():
+            if other is note or other.rel == note.rel:
+                continue
+            body = refresh_entries(other.body, other.rel, note.rel, lambda link: _entry(note.title, link, note.summary))
+            if body != other.body:
+                other.body = body
+                self._save(other)
 
     def archive_note(self, note: Note) -> str:
         """Keep a copy of a note as it is, in the hidden archive; returns its bundle path ("/.archive/…").
@@ -359,6 +385,25 @@ class WikiStore:
             removed=latest.removed,
             notes=sorted(newest, key=lambda rel: (newest[rel], rel)),
         )
+
+    def adopt_raw(self, origin: Origin, text: str) -> bool:
+        """Give `origin` to a raw copy saved without one, when a note cites it and its text is `text`; False if none is.
+
+        Only the frontmatter changes: the copy's text and hash stay, so the copy is still the text as ingested.
+        """
+        copies = self._origins.unclaimed(content_hash(text))
+        newest = self._origins.citing([f"/{RAW}/{c.name}" for c in copies])
+        if not newest:
+            return False
+        path = self.root / RAW / copies[max(newest.values())].name
+        raw = path.read_text(encoding="utf-8")
+        fm = OKFDocument.parse(raw).frontmatter
+        fm["origin"] = origin.to_dict()
+        fm["seq"] = 1 + max((c.seq for c in self._origins.copies(origin.key)), default=0)
+        end = raw.index(f"\n{DELIMITER}\n", len(DELIMITER))  # a saved copy always has a frontmatter block
+        head = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).rstrip()
+        write_atomic(path, f"{DELIMITER}\n{head}{raw[end:]}")
+        return True
 
     def origin_keys(self, prefix: str) -> set[str]:
         """The origin keys of raw copies starting with `prefix`."""

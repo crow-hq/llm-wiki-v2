@@ -198,7 +198,7 @@ class Memory:
 
 
 def answered(answer: Answer) -> dict[str, Any]:
-    return {"answer": answer.text, "notes": answer.citations}
+    return {"answer": answer.text, "notes": answer.citations, "titles": answer.titles}
 
 
 def filed(result: IngestResult) -> dict[str, Any]:

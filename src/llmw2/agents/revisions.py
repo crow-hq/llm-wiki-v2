@@ -290,4 +290,4 @@ def revise(ctx: StepContext, note: Note, source: Source) -> NoteDraft | None:
     kept = kept_sentences(ctx, note.main_body(), source.text, body, removed_strings(old, source.text))
     if kept:
         body += "\n\n## From the previous version\n\n" + "\n".join("- " + _LIST_MARK.sub("", s) for s in kept)
-    return NoteDraft(title=note.title, summary=cand.summary, tags=list(cand.tags), body=body, fields=dict(cand.fields))
+    return NoteDraft(title=cand.title, summary=cand.summary, tags=list(cand.tags), body=body, fields=dict(cand.fields))

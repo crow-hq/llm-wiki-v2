@@ -318,12 +318,13 @@ class Wiki:
                     single = next(i for i, r in enumerate(reads) if r is filing[0])
                 elif filing:
                     documents = [(r.source.title, r.source.text) for r in filing if r.source is not None]
+                    shown = [(s.label if s.file_name else s.title, s.text) for s in (r.source for r in filing) if s is not None]
                     try:
                         if fresh:
                             at = [i for i, r in enumerate(reads) if isinstance(r, Read) and r.known is None and r.source is not None]
                             placed.update({at[j]: label for j, label in self.plan_groups(documents, seen).items()})
                         else:
-                            self.plan(documents)
+                            self.plan(shown)
                     except Exception as e:
                         log.warning("the plan of %d documents failed, they are filed in the folders there are: %s", len(documents), e)
             try:
@@ -359,7 +360,8 @@ class Wiki:
                     assert item.fetch is not None  # an Item holds exactly one of text, data and fetch
                     data = item.fetch()
                 text = check_extract(self.steps.extract(ctx, data, item.filename))
-            return Source(text, title_of(item.filename), link, item.origin, dict(item.fields))
+            name = PurePath(item.filename).name if item.text is None else None  # a sheet or a text is shown as before
+            return Source(text, title_of(item.filename), link, item.origin, dict(item.fields), name)
 
         return source
 
@@ -430,7 +432,7 @@ class Wiki:
                 raise InputError("nothing to ingest: the source is empty")
             self._require_classifier()
             self.store.init()
-            if src.origin is not None and (known := self._unchanged(src.origin, src.text)) is not None:
+            if src.origin is not None and (known := self._unchanged(src.origin, src.text) or self._adopt(src.origin, src.text)):
                 return Read(librarian, used, known=known)
         return Read(librarian, used, src)
 
@@ -475,6 +477,16 @@ class Wiki:
             for sheet in sorted(self.store.origin_keys(key + "#")) if is_spreadsheet(key) else []:
                 record = self.store.mark_origin_removed(sheet) or record
             return record
+
+    def _adopt(self, origin: Origin, text: str) -> IngestResult | None:
+        """The result of an origin no raw copy has, when a copy with this text was filed without one (a single ingest).
+
+        The copy takes the origin, so the next sync recognises it: nothing is filed again.
+        """
+        with self.store.lock():
+            if self.store.find_origin(origin.key) is None and self.store.adopt_raw(origin, text):
+                return self._unchanged(origin, text)
+        return None
 
     def _unchanged(self, origin: Origin, text: str) -> IngestResult | None:
         """The result to give back when this origin is already filed with the same content or version."""

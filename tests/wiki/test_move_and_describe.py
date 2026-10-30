@@ -64,6 +64,7 @@ def filed(classic_wiki: Wiki) -> Filed:
     def note(folder: Any, title: str, body: str, source: dict[str, Any] = other) -> Any:
         return store.write_note(folder, title=title, summary=f"About {title.lower()}.", body=body, tags=["tea"], source=source)
 
+    price_list = note(pricing, "Price list", "Prices.")  # before the note that links to it
     tea = note(
         finance,
         "Tea sourcing",
@@ -71,7 +72,6 @@ def filed(classic_wiki: Wiki) -> Filed:
         ref,
     )
     budget = note(finance, "Budget", "Spend. Tea is covered in [tea](tea-sourcing.md).")
-    price_list = note(pricing, "Price list", "Prices.")
     runbook = note(ops, "Runbook", "Steps. Tea details in [tea](../finance/tea-sourcing.md#x).")
     plan = note(root, "Plan", "What we do. Read [the tea note](finance/tea-sourcing.md) first.")
     suppliers = note(sourcing, "Suppliers", "Who sells.")

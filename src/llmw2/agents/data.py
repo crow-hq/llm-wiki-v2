@@ -21,6 +21,12 @@ class Source:
     resource: str | None = None  # URL or path of the original, if any
     origin: Origin | None = None  # where the original lives at its source, if it has one
     fields: dict[str, Any] = field(default_factory=dict)  # user data, uninterpreted by the core
+    file_name: str | None = None  # the file it was read from, when `title` is only made from that name
+
+    @property
+    def label(self) -> str:
+        """The line that shows the source to the writer: by its file name when `title` is made from it."""
+        return f"File name: {self.file_name}" if self.file_name else f"Source title: {self.title or '(none)'}"
 
 
 @dataclass

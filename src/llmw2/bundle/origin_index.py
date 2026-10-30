@@ -30,7 +30,7 @@ class Copy:
     """What the index keeps of a raw copy with an origin."""
 
     name: str  # file name in raw/
-    key: str
+    key: str  # "" for a copy saved without an origin
     seq: int  # save order among the copies of its key (0 for copies saved without one)
     at: str  # generated.at
     hash: str | None
@@ -56,7 +56,14 @@ class OriginIndex:
         """The origin keys starting with `prefix` (the sheets of one spreadsheet: "<key>#")."""
         with self._lock:
             self._refresh()
-            return {c.key for _, c in self._raws.values() if c is not None and c.key.startswith(prefix)}
+            return {c.key for _, c in self._raws.values() if c is not None and c.key and c.key.startswith(prefix)}
+
+    def unclaimed(self, hash: str) -> list[Copy]:
+        """The copies saved without an origin whose text has this hash, oldest first."""
+        with self._lock:
+            self._refresh()
+            found = [c for _, c in self._raws.values() if c is not None and not c.key and c.hash == hash]
+        return sorted(found, key=lambda c: (c.at, Path(c.name).stem))
 
     def citing(self, raws: list[str]) -> dict[str, int]:
         """The notes citing any of `raws` ("/raw/…md"), each with the highest position in `raws` it cites."""
@@ -121,16 +128,16 @@ def _parse_copy(name: str, entry: os.DirEntry[str]) -> Copy | None:
         origin = Origin.from_dict(fm["origin"]) if isinstance(fm.get("origin"), dict) else None
     except (OKFDocumentError, InputError):
         return None
-    if origin is None:
+    if origin is None and "origin" in fm:  # one that is no origin: not a copy to adopt either
         return None
     seq, generated = fm.get("seq"), fm.get("generated")
     return Copy(
         name=name,
-        key=origin.key,
+        key=origin.key if origin else "",
         seq=seq if isinstance(seq, int) else 0,
         at=str(generated.get("at", "")) if isinstance(generated, dict) else "",
         hash=str(fm["hash"]) if fm.get("hash") else None,
-        version=origin.version or None,
+        version=(origin.version or None) if origin else None,
         removed=bool(fm.get("removed")),
     )
 

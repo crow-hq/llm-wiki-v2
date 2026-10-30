@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from llmw2.bundle.document import OKFDocument, OKFDocumentError
-from llmw2.bundle.tree import INDEX, LOG, RAW, parse_index, subfolder_of
+from llmw2.bundle.tree import CODE, INDEX, LOG, RAW, parse_index, subfolder_of
 
 _LINK = re.compile(r"\]\(([^)\s#]+\.md)(?:#[^)]*)?\)")
 _DAY = re.compile(r"^## (\d{4}-\d{2}-\d{2})$")
@@ -62,7 +62,7 @@ def _check_doc(root: Path, path: Path, rel: str, ids: dict[str, str], *, links: 
         return []
     problems = [
         Problem(rel, f"broken link to {link}")
-        for link in _LINK.findall(doc.body)
+        for link in _LINK.findall(CODE.sub(" ", doc.body))
         if "://" not in link and not _resolve(root, path, link).exists()
     ]
     if (note_id := doc.frontmatter.get("id")) is not None:

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `Answer.citations` (and so `/ask` and the MCP `recall`) now counts every note path in a bracket that holds several, separated by `;` or `,`: `[a/x.md; b/y.md]` cites both. A bracket with any other word is still no citation. `Answer` gains `titles`, each cited path with the note's title, which `/ask` and `recall` carry; in the page each path of such a bracket is its own link, labelled with the note's title.
+- With `revisions: replace`, a note takes the title written for the new version of its document, as it already took the summary. Its file keeps its path.
+- A source that came from a file is shown to the writer by its file name, on a line `File name: q3-board-minutes.md`, in the prompts that summarize it and in the plan of a batch, instead of a `Source title` made from that name. A text given a title by the caller is shown as before, and `Source.title` keeps its value (revisions and fallback folder names read it). Spreadsheet sheets are shown as before.
+- The prompt that names a new folder no longer gives example names for the top level, so a writer has none to copy; the rule (the broad area, never the specific topic) stays.
+- A note's links that lead nowhere become plain text when the note is written: `[text](x.md)` to a file that is not in the wiki folder becomes `text (x.md)`, and `[[name]]`, `[[name|label]]` and `![[name]]` become the name or the label. Links that resolve, web and mail links, code and raw copies are left as they are.
+
+### Fixed
+
+- When a merge or a revision changes a note's title or summary, the See-also entries of the other notes that link to it show the new ones; the links and the rest of those notes stay as they were.
+- A sync now recognises a file that was filed on its own (`ingest_file`, or `ingest` of a file on the command line): when its text is the text of a raw copy with no origin that a note cites, the copy takes the sync's origin and the file counts as unchanged, instead of being filed again as a second note. Its text and hash stay.
+- `check` no longer reports a broken link written inside a fenced code block (```` ``` ```` or `~~~`) or inline code.
+
 ## [0.7.0] - 2026-10-28
 
 ### Added

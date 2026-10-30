@@ -1,6 +1,6 @@
 Take notes on one part of a long source. The notes of all its parts will be combined into one wiki note.
 
-Source title: {{source_title}}
+{{source_title}}
 This is part {{part}} of {{parts}}, starting in: {{heading}}
 
 How to take the notes:

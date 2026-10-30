@@ -25,8 +25,8 @@ def build(tmp_path: Path) -> WikiStore:
     a, _ = store.create_folder(root, "a", "Folder a.")
     b, _ = store.create_folder(root, "b", "Folder b.")
     src = {"resource": "/raw/x.md"}
-    n1 = store.write_note(a, title="One", summary="s1", body="See [two](two.md#x) and [raw](../raw/x.md).", tags=[], source=src)
     n2 = store.write_note(a, title="Two", summary="s2", body="Body two.", tags=[], source=src)
+    n1 = store.write_note(a, title="One", summary="s1", body="See [two](two.md#x) and [raw](../raw/x.md).", tags=[], source=src)
     store.write_note(b, title="Three", summary="s3", body="See [one](../a/one.md).", tags=[], source=src)
     store.link(n1, n2)
     return store
