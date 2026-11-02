@@ -3,8 +3,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from llmw2.bundle import document
 from llmw2.bundle.document import OKFDocument, OKFDocumentError
 
 NOTE = (
@@ -92,3 +95,37 @@ def test_characters_splitlines_breaks_on_stay_in_the_body(separator: str) -> Non
     body = f"Page one.{separator}Page two.\n"
 
     assert OKFDocument.parse(OKFDocument({"type": "Note"}, body).serialize()).body == body.rstrip("\n")
+
+
+def test_a_file_being_replaced_by_another_process_is_read_once_it_is_there(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "note.md"
+    path.write_bytes(NOTE.replace("\n", "\r\n").encode("utf-8"))
+    real, refused = Path.read_bytes, []
+
+    def read_bytes(self: Path) -> bytes:
+        if len(refused) < 2:  # Windows refuses to open a file while another process replaces it
+            refused.append(self)
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    monkeypatch.setattr(document.time, "sleep", lambda _: None)
+
+    doc = OKFDocument.read(path)
+
+    assert len(refused) == 2
+    assert (doc.frontmatter["title"], doc.body) == ("Refund policy", "# Refund policy\n\nAcme refunds orders within 30 days.")
+
+
+def test_a_file_that_stays_refused_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "note.md"
+    path.write_text(NOTE, encoding="utf-8")
+
+    def read_bytes(self: Path) -> bytes:
+        raise PermissionError(13, "Permission denied", str(self))
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    monkeypatch.setattr(document.time, "sleep", lambda _: None)
+
+    with pytest.raises(PermissionError):
+        OKFDocument.read(path)

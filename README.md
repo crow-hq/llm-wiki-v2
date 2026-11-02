@@ -69,6 +69,7 @@ so you can add to it or delete it. To try it without installing anything but uv:
 | **See the brain** | A live map of your folders, notes and links. |
 | **Delete** | Hover a note or folder in the sidebar and press the bin, or **Delete note** at the foot of a note. Links to it go from the other notes. **Empty the wiki** on the home page starts over. |
 | **Move and describe** | **Move** at the foot of a note files it in another folder; every link to and from it follows. The pencil beside a folder in the sidebar edits its description, the line the librarian routes by. |
+| **Areas** | **Areas** at the top: create a top-level folder, confirm or dismiss the areas proposed to the wiki, rename one or merge it into another. The wiki never opens or proposes an area by itself. |
 | **Keep your files** | Plain Markdown in `~/llm-wiki`: open it in any editor, keep it in git. |
 
 ## Claude's memory (MCP)
@@ -88,7 +89,7 @@ codex mcp add llm-wiki --url http://127.0.0.1:8000/mcp
 ```
 
 The client gets its tools: `recall` answers from your notes and documents, citing them; `remember` files what it
-learns, in the right folder, merged and linked like any note (CROW); `read_note` reads a note in full. Which models
+learns, in the right folder, merged and linked like any note (CROW); `read_note` reads a note in full; `rebuild` (with `confirm`) files every note again on the same folders, from the memory's own raw copies. Which models
 do the work is a choice under Memory:
 
 - **This wiki's settings** (the default). OpenRouter or a local model, with Jev or Laya deciding, file the memories; the
@@ -203,6 +204,7 @@ curl -X POST localhost:8000/ask -H 'content-type: application/json' \
 The wiki is plain Markdown files you can read, edit and keep in git (`./wiki`
 with Docker). With Docker the CLI runs in the same image: `docker compose run --rm wiki llmwiki2 check`.
 To file a note elsewhere or reword a folder's description from the terminal: `llmwiki2 move finance/pricing.md /sourcing` and `llmwiki2 describe /finance "Money in and out."`.
+`llmwiki2 rebuild [folder] --yes` deletes every note, raw copy and archived version and files the documents again on the folders the wiki has (the documents of `folder`, or with no folder the wiki's own raw copies), with no plan and no new folder; without `--yes` it only says what it would do and exits with 2. A note the limit on top-level folders sent to the likeliest existing folder instead of a new one is marked `overflow` in its frontmatter, logged in `log.md` as "Deviated note", and listed with the root it went to and its probabilities by `sync`, `ingest` and `rebuild`.
 In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes the classifier would file in another branch today (it asks the same single choice among every folder, and proposes only a move to another branch, never deeper into the note's own folder and never up; no LLM call; it moves them only with `--apply`; `--min-confidence` is compared with that choice's top probability, a scale that has not been recalibrated), and `llmwiki2 health [--min-filed 5] [--max-share 0.3]` shows, from `log.md`, the folders that keep needing new subfolders or the LLM fallback (folders laid out by a plan or a split are not counted as new subfolders). Every new note carries a stable `id` in its frontmatter (`wiki.find_note(id)`).
 
 | Endpoint | What it does |
@@ -214,12 +216,16 @@ In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes 
 | `GET /tree` · `GET /note?path=…` | folder tree · one note (frontmatter and Markdown body) |
 | `GET /check` · `GET /graph` | lint problems · the wiki as nodes and links (JSON) |
 | `POST /note/move` `{path, folder}` · `POST /folder/describe` `{path, description}` | move a note to another folder, links following (returns the note as `GET /note`) · change a folder's description |
+| `GET /proposals?status=open\|all` · `POST /proposals` `{label, description, notes}` · `POST /proposals/{id}/confirm` `{over_limit?}` · `POST /proposals/{id}/dismiss` | the queue of top-level areas users propose · propose one · open it and move its notes · close it |
+| `POST /areas` `{name, description, over_limit?}` · `POST /folder/rename` `{path, name}` · `POST /folder/merge` `{source, target}` | create a top-level folder, refused over `max_top_folders` unless `over_limit` · rename one · move all of one into another and delete it (links following) |
 | `POST /audit` `{min_confidence?, apply?}` · `GET /taxonomy` | CROW: notes the classifier would file in another branch (moved if `apply`) · per folder and month, new subfolders and fallbacks (from the log; folders laid out by a plan or a split not counted) |
 | `DELETE /note?path=…` · `DELETE /folder?path=/…` · `DELETE /wiki` | delete a note · a folder with all it holds · everything; links to them go, and raw copies no remaining note cites |
 | `GET /usage` · `GET /health` | token totals per ledger and model · status |
 | `GET /settings` · `POST /settings` · `POST /settings/test` | provider, model and key (masked) · save them · try them; changes from this machine only |
-| `POST /mcp` | the wiki as an MCP memory (Streamable HTTP; `recall`, `remember`, `read_note`, `reply`), with the `mcp` extra. Its tools work while the settings turn it on (`OKF_MCP`, or **Memory** → **Start**), and say how to turn it on otherwise; without the extra, 501 and what to install |
+| `POST /mcp` | the wiki as an MCP memory (Streamable HTTP; `recall`, `remember`, `read_note`, `rebuild`, `reply`, `create_area`, `propose_area`, `proposals`, `confirm_area`), with the `mcp` extra. Its tools work while the settings turn it on (`OKF_MCP`, or **Memory** → **Start**), and say how to turn it on otherwise; without the extra, 501 and what to install |
 | `POST /settings/memory` `{mcp?, mcp_models?}` | turn the memory on or off, and choose whose models do its work; no key needed, from this machine only |
+
+Every request that changes the wiki may carry an `X-Author` header: the lines it adds to `log.md` end with ` · by <author>`. The author is declared, not verified: there is no authentication, so behind a reverse proxy that authenticates your users, have the proxy set the header. The CLI declares your login name.
 
 </details>
 
@@ -273,7 +279,30 @@ print(report.to_dict())                                      # created, merged, 
 
 A connector for another service is any object with `name`, `account`,
 `changes(cursor) -> ChangeBatch` and `fetch(change) -> bytes` (`SourceConnector`);
-the cursor of the last sync is kept in `.llmw2/sync/` inside the wiki.
+the cursor of the last sync is kept in `.llmw2/sync/` inside the wiki. A folder is handed over in pages of 200 changes and the
+cursor is saved after each page, so a sync of thousands of documents that stops resumes where its last page ended.
+
+For a wiki you rebuild or audit often, `classifier.cache` (`OKF_CLASSIFIER_CACHE=true`) keeps the classifier's answers in the
+bundle, as hashes and answers only: a rebuild, a resumed sync or a repeated audit then asks it nothing it was asked before. It
+does not save anything on a sync of new documents. See the [library guide](docs/library/index.md).
+
+**Your own top-level areas.** Make them with `create_folder` before the first sync, each with a description (the
+classifier routes by it); to keep it idempotent, `if wiki.tree().find("/finance") is None: wiki.create_folder("/", "finance", "...")`.
+Folders made by hand count in `max_top_folders`: set it to the number of your areas and the wiki is closed (no new
+top-level folder, the notes go to the likeliest area); a higher value leaves it open. `delete_folder` deletes the notes
+in it. For different permissions, use one wiki per domain.
+
+The wiki never opens or proposes an area by itself: proposals come from you, and the list of deviated notes helps you
+compose them. `propose_area(label, description, notes)` queues one (the notes by id or path; the queue is kept in the
+wiki, in `.llmw2/proposals.json`, and nothing moves yet), `proposals()` lists the open ones, `dismiss_proposal(id)` closes one,
+and `confirm_proposal(id, over_limit=False)` opens the root (counted in the limit: refused when the wiki has as many, unless
+`over_limit`) and moves into it only the proposed notes still there, each with `moved_from` (the folder it came from) and
+without its `overflow` mark, with no rebuild and no other note touched. `rename_root(path, new_name)` renames a top-level
+folder and `merge_roots(source, target)` moves all of one into another and deletes it; links follow, descriptions stay,
+and each is one line of `log.md`. The same from the terminal (`llmwiki2 proposals [add|confirm|dismiss]`, `rename-root`,
+`merge-roots`), the HTTP API and the **Areas** page (create an area, confirm or dismiss the open proposals, rename, merge;
+proposals are added through the API, the CLI or the memory, not from the page), and from chat with the memory tools
+`create_area`, `propose_area`, `proposals` and `confirm_area(id, yes)`.
 
 Every step of the ingest and ask flows (summarize, route, match, merge, select, answer…)
 is a function you can replace: with a rule, several model calls or a service of
@@ -390,6 +419,7 @@ list is in [.env.example](https://github.com/crow-hq/llm-wiki-v2/blob/main/.env.
 | `OKF_RELATE_RARE_VALUES` | `true` | CROW: `relate` also weighs notes anywhere that share rare values with the new one; `false` keeps 0.3.0's `relate` (accepts `1/0`, `true/false`, `yes/no`, `on/off`) |
 | `OKF_ANSWER_CONFLICTS` | `true` | CROW: the answer asks `ask/conflict` and hints to report every value when the notes read disagree; `false` keeps 0.3.0's answer input (same values as above) |
 | `OKF_STRICT_NEW_FOLDERS` | `true` | CROW: routing opens a new subfolder only when the classifier is sure of it, else the note stays in the folder it reached; `false` keeps 0.3.0's routing (same values as above) |
+| `OKF_MAX_TOP_FOLDERS` | `10` | CROW: top-level folders a wiki may have (at least 1): the plan makes no more, and a note whose route would open one is filed in the likeliest existing one |
 | `OKF_PLAN` | `writer` | CROW: how a batch on an empty wiki lays out its folders: `writer` is the writer's plan; `groups` makes them in code with no model call, for a small local writer (about 1B parameters or less), which plans poorly. A capable writer plans better than the groups |
 | `OKF_LLM_PIN_PROVIDER` | — | OpenRouter only: comma-separated providers that may answer, in order, with no fallback (e.g. `DeepInfra,Novita`); a call fails when none is up. Ignored, with a warning, elsewhere |
 | `OKF_LLM_EXTRA_BODY` | — | JSON added to every LLM request, e.g. `'{"provider":{"order":["together"]}}'` to pin fast OpenRouter providers |

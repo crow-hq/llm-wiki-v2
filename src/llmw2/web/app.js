@@ -3,6 +3,7 @@
 
 import { $, api, esc, fmt, md, post } from "./util.js";
 import { leaveGraph, refreshGraph, showGraph } from "./graph.js";
+import { showAreas } from "./areas.js";
 import { showMemory } from "./memory.js";
 import { enqueue, startQueue } from "./queue.js";
 import { loadSettings, showSettings } from "./settings.js";
@@ -190,6 +191,7 @@ function route() {
   }
   else if (h === "#/settings") { current = ""; highlight(); showSettings(saved); }
   else if (h === "#/memory") { current = ""; highlight(); showMemory(saved); }
+  else if (h === "#/areas") { current = ""; highlight(); showAreas(async () => { await loadTree(); refreshGraph(); }); }
   else if (h !== "#/ask") home();
 }
 
@@ -354,6 +356,7 @@ $("#ask").onsubmit = (e) => { e.preventDefault(); const q = $("#q").value.trim()
 
 $("#gear").onclick = () => (location.hash = "#/settings");
 $("#memory").onclick = () => (location.hash = "#/memory");
+$("#areas").onclick = () => (location.hash = "#/areas");
 
 // -- start -------------------------------------------------------------------
 async function loadModels() {

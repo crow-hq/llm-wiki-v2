@@ -16,8 +16,8 @@ from dataclasses import asdict, dataclass, field, replace
 from functools import cached_property
 from typing import Any, Literal
 
-from llmw2.agents import echo, linking, revisions, steps_classic
-from llmw2.agents.base import Decision, clean_tags, unique_objects
+from llmw2.agents import echo, linking, revisions, steps_classic, steps_crow
+from llmw2.agents.base import Decision, clean_tags, fields_conflict, unique_objects
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.steps import (
@@ -95,6 +95,8 @@ class IngestResult:
     decisions: list[Decision]
     usage: UsageReport = field(default_factory=UsageReport)
     parts: list[IngestResult] = field(default_factory=list)  # the other sheets of a spreadsheet, filed with this one
+    # set when the limit on top-level folders sent this new note to the likeliest root: p_none and p_root (absent when BM25 chose)
+    overflow: dict[str, float] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {**asdict(self), "usage": self.usage.to_dict(), "parts": [p.to_dict() for p in self.parts]}
@@ -114,12 +116,20 @@ class Librarian:
     """One instance serves one ingest, so its trace of decisions is never shared."""
 
     def __init__(
-        self, store: WikiStore, llm: LLM, prompts: Prompts, cfg: WikiConfig, steps: Steps, classifier: Classifier | None = None
+        self,
+        store: WikiStore,
+        llm: LLM,
+        prompts: Prompts,
+        cfg: WikiConfig,
+        steps: Steps,
+        classifier: Classifier | None = None,
+        *,
+        fixed: bool = False,
     ) -> None:
         self.store = store
         self.cfg = cfg
         self.steps = steps
-        self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="librarian/system")
+        self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="librarian/system", fixed=fixed)
 
     @property
     def local_writer(self) -> bool:
@@ -200,14 +210,23 @@ class Librarian:
                 route = Route(placed, False, [placed])
             else:
                 route = check_route(steps.route(ctx, root, cand), root, self.cfg)
+                if self.cfg.mode == "crow":  # at most `cfg.max_top_folders` top-level folders, whoever opened one
+                    route = steps_crow.keep_folders(ctx, root, cand, route)  # a rebuild opens none at all
+                    route = steps_crow.cap_roots(ctx, root, cand, route)
             pool = unique_objects(n for f in [*route.candidates, route.folder] for n in f.notes)
-            match = check_match(steps.match(ctx, pool, cand), pool)
+            theirs = {**read.fields, **cand.fields}  # the document's fields: its own, and what the summary made of them
+            mergeable = [n for n in pool if not fields_conflict(n.frontmatter.get("fields"), theirs)]
+            if len(mergeable) < len(pool):  # a note whose fields differ from the document's on a shared key is not merged into
+                ctx.decide("match", "code", f"{len(pool) - len(mergeable)} excluded by fields")
+            match = check_match(steps.match(ctx, mergeable, cand), mergeable)
             created: list[str] = []
             merging = match is not None and check_consolidate(steps.consolidate(ctx, match, cand))
             revised, archived = False, ""
+            deviated: dict[str, float] | None = None
             if match is not None and merging:
                 draft = revisions.revise(ctx, match, read) if self.cfg.revisions == "replace" else None
                 if draft is not None:
+                    self.store.check_unchanged(match)  # the revision was made from the note as read: not over a hand edit
                     archived = self.store.archive_note(match)
                     revised = True
                 else:
@@ -219,6 +238,7 @@ class Librarian:
                         log.warning("merge into %s failed (%s): the incoming note is added as a section", match.rel, e)
                         ctx.decide("merge", "code", "appended")
                         draft = steps_classic._appended(match, match.main_body(), cand, read)
+                self.store.check_unchanged(match)  # the draft merges what was read: a note edited since is left as it is
                 raw, ref = self.save_source(source, cand)
                 note = self.store.update_note(
                     match,
@@ -227,7 +247,7 @@ class Librarian:
                     body=draft.body,
                     tags=clean_tags(draft.tags),
                     source=ref,
-                    fields=draft.fields,
+                    fields={**read.fields, **draft.fields},
                     previous_version=archived or None,
                 )
                 action: Literal["created", "merged"] = "merged"
@@ -270,8 +290,10 @@ class Librarian:
                     body=cand.body,
                     tags=clean_tags(cand.tags),
                     source=ref,
-                    fields=cand.fields,
+                    fields=theirs,
+                    overflow=route.overflow,
                 )
+                deviated = route.overflow
                 action = "created"
             others = [n for n in unique_objects([*pool, *note.folder.notes]) if n is not note] if note.folder else pool
             if ctx.classifier is not None and self.cfg.relate_rare_values:
@@ -297,6 +319,8 @@ class Librarian:
             routed = ", routed by fallback" if fallback else ""
             text = f"from {raw} ({steps.name} {self.hash}, {self.cfg.llm.model}{via}){kept}{routed}"
             self.store.append_log(verb, text, note.rel, note.title)
+            if deviated is not None:
+                self.store.append_log("Deviated note", _overflow_text(note.rel, deviated, self.cfg.max_top_folders), note.rel, note.title)
         total = prepared.usage.copy()
         total.merge(used)
         return IngestResult(
@@ -308,6 +332,7 @@ class Librarian:
             [r.rel for r in related],
             ctx.decisions,
             total,
+            overflow=deviated,
         )
 
     def save_source(self, source: Source, cand: Candidate) -> tuple[str, dict[str, Any]]:
@@ -322,6 +347,12 @@ class Librarian:
             ref["origin"] = source.origin.to_dict()
         ref["steps"] = {"name": self.steps.name, "hash": self.hash}
         return raw, ref
+
+
+def _overflow_text(rel: str, overflow: dict[str, float], limit: int) -> str:
+    """The log line of a note the limit on top-level folders deviated: the root it went to and the probabilities that chose it."""
+    odds = f"p_none {overflow['p_none']}, p_root {overflow['p_root']}" if "p_root" in overflow else "chosen by words, no probabilities"
+    return f"filed in /{rel.split('/', 1)[0]} ({odds}): no new top-level folder could be opened (limit of {limit})"
 
 
 def _read(source: Source) -> Source:

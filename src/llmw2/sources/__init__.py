@@ -7,6 +7,6 @@ from __future__ import annotations
 
 from llmw2.sources.base import Change, ChangeBatch, SourceConnector
 from llmw2.sources.local import LocalFolderSource
-from llmw2.sources.sync import SyncReport, sync
+from llmw2.sources.sync import SyncReport, documents, estimate, sync
 
-__all__ = ["Change", "ChangeBatch", "LocalFolderSource", "SourceConnector", "SyncReport", "sync"]
+__all__ = ["Change", "ChangeBatch", "LocalFolderSource", "SourceConnector", "SyncReport", "documents", "estimate", "sync"]

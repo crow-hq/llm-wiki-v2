@@ -22,7 +22,7 @@ from llmw2.agents.base import unique_objects
 from llmw2.agents.data import Candidate, Route
 from llmw2.agents.state import source_state
 from llmw2.agents.steps_classic import CONSOLIDATE_SOURCE_MAX, HERE, MODIFY, NEW, NEW_NOTE, NONE, FallbackRoute
-from llmw2.bundle.tree import Folder, Note
+from llmw2.bundle.tree import Folder, Note, slugify
 from llmw2.errors import ModelError, ReplyInvalid
 from llmw2.models.classifier import MAX_OPTIONS, ChoiceAnswer
 
@@ -83,6 +83,58 @@ def route(ctx: StepContext, root: Folder, cand: Candidate) -> Route:
     return Route(best, False, candidates)
 
 
+def cap_roots(ctx: StepContext, root: Folder, cand: Candidate, route: Route) -> Route:
+    """A route that opens a top-level folder when the wiki has `cfg.max_top_folders` of them files the note in the likeliest one.
+
+    Whatever step made the route (the per-level walk, its fallback, `name_folder` for a new folder, a custom step's
+    `create`): the limit is the wiki's, not the step's. The folder is the top-level one the flat Choice gives most
+    probability to, None of these left out (the same classifier, no LLM); the BM25 rank of the top-level folders
+    against the note when the classifier fails or names no folder. A `create` that starts with a top-level folder
+    there is already opens nothing.
+    """
+    if not (route.folder.is_root and (route.new or route.create)) or len(root.subfolders) < ctx.cfg.max_top_folders:
+        return route
+    if route.create and any(f.name == slugify(route.create[0][0], max_len=40, fallback="") for f in root.subfolders):
+        return route
+    best, overflow = _likeliest_root(ctx, root, cand)
+    ctx.decide("route", "code", f"{best.label} ({HERE})", fallback=True)
+    return Route(best, False, [best], overflow=overflow)
+
+
+def keep_folders(ctx: StepContext, root: Folder, cand: Candidate, route: Route) -> Route:
+    """In a rebuild (`ctx.fixed`) a route that would open a folder files the note in the one it stands in.
+
+    Whatever step made the route, as for `cap_roots`. At the root, which holds no notes, the likeliest top-level folder
+    takes it; a tree with no folder is left to the route, as there is nothing to file in.
+    """
+    if not (ctx.fixed and (route.new or route.create)):
+        return route
+    if not route.folder.is_root:
+        return Route(route.folder, False, route.candidates)
+    if not root.subfolders:
+        return route
+    best, overflow = _likeliest_root(ctx, root, cand)
+    ctx.decide("route", "code", f"{best.label} ({HERE})", fallback=True)
+    return Route(best, False, [best], overflow=overflow)
+
+
+def _likeliest_root(ctx: StepContext, root: Folder, cand: Candidate) -> tuple[Folder, dict[str, float]]:
+    """The top-level folder a note goes to when its route opened none, and the probabilities that chose it: None of these
+    (`p_none`) and the folder (`p_root`, its likeliest folder's). Empty when BM25 chose."""
+    try:
+        flat = _flat_choice(ctx, root, cand)
+    except ModelError as e:
+        log.warning("classifier failed choosing among the top-level folders, BM25 decides: %s", e)
+        flat = None
+    if flat is not None:
+        for option, p in sorted(flat.answer.probabilities.items(), key=lambda kv: kv[1], reverse=True):
+            folder = root.find(option.strip("/")) if option != NONE else None
+            if folder is not None and not folder.is_root:
+                return folder.ancestors()[1], {"p_none": round(flat.answer.probabilities.get(NONE, 0.0), 3), "p_root": round(p, 3)}
+    docs = {f.name: f"{f.name.replace('-', ' ')} {f.description}" for f in root.subfolders}
+    return next(f for f in root.subfolders if f.name == lexical.rank(routing_state(ctx, cand), docs)[0]), {}
+
+
 @dataclass(frozen=True)
 class _Flat:
     answer: ChoiceAnswer
@@ -123,10 +175,19 @@ def _route_by_levels(ctx: StepContext, root: Folder, cand: Candidate) -> Route:
         return classic.route(ctx, root, cand)
     best = max(finished, key=lambda p: p.score, default=None)
     if best is None or best.score < crow.tau_path:
+        if ctx.fixed and root.subfolders:  # a rebuild: the best path's folder, no LLM; the likeliest top-level one when there is none
+            overflow = None
+            if best and not best.folders[-1].is_root:
+                folder = best.folders[-1]
+            else:
+                folder, overflow = _likeliest_root(ctx, root, cand)
+            ctx.decide("route", "classifier", f"{folder.label} ({HERE})", best.score if best else None, fallback=True)
+            return Route(folder, False, folder.ancestors(), overflow=overflow)
         return _route_fallback(ctx, root, visited, cand, best.score if best else None, best.folders[-1] if best else None)
     candidates = unique_objects(f for p in finished for f in p.folders)
-    ctx.decide("route", "classifier", f"{best.folders[-1].label} ({best.end})", best.score)
-    return Route(best.folders[-1], best.end == NEW, candidates)
+    end = HERE if ctx.fixed and best.end == NEW and not best.folders[-1].is_root else best.end  # a rebuild opens no folder
+    ctx.decide("route", "classifier", f"{best.folders[-1].label} ({end})", best.score)
+    return Route(best.folders[-1], end == NEW, candidates)
 
 
 def _decide_paths(ctx: StepContext, root: Folder, state: str) -> tuple[list[_Path], list[Folder]]:

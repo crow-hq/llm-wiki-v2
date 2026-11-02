@@ -20,6 +20,7 @@ import httpx
 
 from llmw2.config import NAMES, ClassifierConfig
 from llmw2.errors import ConfigError, ModelError
+from llmw2.models.cache import AnswerCache, cache_key
 from llmw2.models.client import HttpModel, reported_cost
 from llmw2.models.usage import UsageTracker
 
@@ -43,11 +44,14 @@ def confidence(probabilities: dict[str, float], n: int) -> float:
 class Classifier(HttpModel):
     kind = "classifier"
 
-    def __init__(self, cfg: ClassifierConfig, usage: UsageTracker, *, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self, cfg: ClassifierConfig, usage: UsageTracker, *, client: httpx.Client | None = None, cache: AnswerCache | None = None
+    ) -> None:
         super().__init__(cfg.base_url, cfg.model, usage, api_key=cfg.api_key, needs_key=not cfg.ready, timeout=cfg.timeout, client=client)
         self.request_chars = cfg.request_chars
         self.attempts = cfg.attempts
         self.provider = NAMES.get(cfg.provider, cfg.provider)
+        self.cache = cache  # answers kept by the hash of the request; neither text nor errors are stored
 
     def require_key(self) -> None:
         """ConfigError, not ModelError, when the key is missing: every caller falls back to the LLM on a ModelError,
@@ -60,6 +64,10 @@ class Classifier(HttpModel):
 
     def ask(self, state: str, questions: dict[str, dict[str, Any]], *, op: str = "") -> dict[str, dict[str, Any]]:
         """One request: every question is answered against the same state."""
+        key = cache_key(self.base_url, self.model, state, questions) if self.cache is not None else ""
+        if self.cache is not None and (hit := self.cache.get(key)) is not None and set(hit) == set(questions):
+            self.usage.serve("classifier", self.model, op)
+            return hit
         self.require_key()
         start = time.perf_counter()
         try:
@@ -85,6 +93,8 @@ class Classifier(HttpModel):
         # A wrong base URL can answer 200 with an HTML page; check the shape, not the status.
         if not isinstance(answers, dict) or set(answers) != set(questions):
             raise ModelError(f"classifier answered without the expected answers (check base_url {self.base_url})")
+        if self.cache is not None:
+            self.cache.put(key, answers)
         return answers
 
     def choice(self, state: str, instructions: str, options: dict[str, str], *, op: str = "") -> ChoiceAnswer:

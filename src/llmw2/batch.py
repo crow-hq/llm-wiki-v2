@@ -5,13 +5,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
 from llmw2.agents.librarian import IngestResult
 from llmw2.bundle.origin import Origin
-from llmw2.errors import InputError
+from llmw2.errors import InputError, NoteChanged
 
 
 @dataclass(frozen=True)
@@ -35,14 +35,43 @@ class Item:
             raise InputError(f"{self.filename}: give exactly one of text, data or fetch")
 
 
+def deviations(results: Iterable[IngestResult]) -> list[dict[str, Any]]:
+    """The notes the limit on top-level folders deviated, among `results` (and the sheets they hold): for each, the note's
+    path, the root it was filed in and the probabilities that chose it (None when the words chose, not the classifier)."""
+    found: list[dict[str, Any]] = []
+    for result in results:
+        if result.overflow is not None:
+            root = "/" + result.folder.strip("/").split("/")[0]
+            odds = {"p_none": result.overflow.get("p_none"), "p_root": result.overflow.get("p_root")}
+            found.append({"note": result.note, "root": root, **odds})
+        found += deviations(result.parts)
+    return found
+
+
+def deviation_line(d: dict[str, Any]) -> str:
+    """One deviation as a line of text: `path -> /root (p_none 0.4, p_root 0.3)`."""
+    odds = f"p_none {d['p_none']}, p_root {d['p_root']}" if d.get("p_root") is not None else "chosen by words"
+    return f"{d['note']} -> {d['root']} ({odds})"
+
+
 @dataclass
 class BatchReport:
     results: list[tuple[Item, IngestResult | Exception]] = field(default_factory=list)  # in filing order; an InputError is a result
     not_done: list[Item] = field(default_factory=list)  # never filed: the batch stopped before them
     stopped: str | None = None  # why it stopped, None when it ran to the end
 
+    @property
+    def conflicts(self) -> int:
+        """The documents not filed because a note they needed changed on disk meanwhile (`NoteChanged`): the next run files them."""
+        return sum(isinstance(r, NoteChanged) for _, r in self.results)
+
+    @property
+    def deviations(self) -> list[dict[str, Any]]:
+        """The notes the limit on top-level folders sent to the likeliest root (see `deviations`)."""
+        return deviations(r for _, r in self.results if isinstance(r, IngestResult))
+
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "results": [
                 {"filename": item.filename, **({"error": str(r)} if isinstance(r, Exception) else {"result": r.to_dict()})}
                 for item, r in self.results
@@ -50,3 +79,8 @@ class BatchReport:
             "not_done": [item.filename for item in self.not_done],
             "stopped": self.stopped,
         }
+        if self.conflicts:
+            out["conflicts"] = self.conflicts
+        if found := self.deviations:  # only when there are any
+            out |= {"deviated": len(found), "deviations": found}
+        return out

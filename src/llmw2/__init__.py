@@ -18,9 +18,9 @@ from llmw2.audit import AUDIT_MIN, FolderHealth, RouteProposal
 from llmw2.batch import BatchReport, Item
 from llmw2.bundle.origin import Origin
 from llmw2.config import WikiConfig
-from llmw2.errors import ConfigError, InputError, ModelError, ReplyInvalid, StepError, WikiError
-from llmw2.sources import Change, ChangeBatch, LocalFolderSource, SourceConnector, SyncReport, sync
-from llmw2.wiki import Wiki
+from llmw2.errors import ConfigError, InputError, ModelError, ReplyInvalid, SpendingCap, StepError, WikiError
+from llmw2.sources import Change, ChangeBatch, LocalFolderSource, SourceConnector, SyncReport, estimate, sync
+from llmw2.wiki import Purged, Wiki
 
 __all__ = [
     "AUDIT_MIN",
@@ -38,11 +38,13 @@ __all__ = [
     "ModelError",
     "NoteDraft",
     "Origin",
+    "Purged",
     "ReplyInvalid",
     "Route",
     "RouteProposal",
     "Source",
     "SourceConnector",
+    "SpendingCap",
     "StepContext",
     "StepError",
     "Steps",
@@ -51,5 +53,6 @@ __all__ = [
     "WikiConfig",
     "WikiError",
     "__version__",
+    "estimate",
     "sync",
 ]

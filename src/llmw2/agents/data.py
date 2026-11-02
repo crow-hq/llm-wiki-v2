@@ -52,6 +52,9 @@ class Route:
     candidates: list[Folder]  # folders whose notes are checked for consolidation
     # (name, description) per level to open below `folder`, reusing a subfolder of the same name; the note goes in the last one
     create: list[tuple[str, str]] = field(default_factory=list)
+    # set when the limit on top-level folders sent the note to the likeliest one: the probabilities that made it, written to
+    # the note's frontmatter as `overflow` (the likeliest existing root took it instead of a new one); None for a note filed as routed
+    overflow: dict[str, float] | None = None
 
 
 class PlannedFolder(BaseModel):
@@ -71,6 +74,11 @@ class SplitFolder(BaseModel):
 
 class SplitPlan(BaseModel):
     folders: list[SplitFolder]  # required, as in FolderPlan
+
+
+class GrownArea(BaseModel):
+    name: str
+    description: str
 
 
 class NoteDraft(BaseModel):

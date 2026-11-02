@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from llmw2.bundle.origin import Origin
 
@@ -16,6 +16,7 @@ class Change:
     kind: Literal["upsert", "remove"]
     origin: Origin  # with `version` set when the source knows it, so unchanged items are not fetched
     filename: str  # decides the file type and the title: "minutes.pdf", "notes.md"
+    fields: dict[str, Any] = field(default_factory=dict)  # the document's `fields`, chosen by whoever runs the connector
 
 
 @dataclass(frozen=True)

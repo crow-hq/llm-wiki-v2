@@ -66,6 +66,9 @@ class Note:
     frontmatter: dict[str, Any]
     body: str
     folder: Folder | None = field(default=None, repr=False)
+    # the file as the store last read or wrote it (modification time, size, inode): None for a note not on disk yet.
+    # The store writes a note only if its file still has this stamp (see `WikiStore._save`)
+    stamp: tuple[int, int, int] | None = field(default=None, repr=False)
 
     @property
     def slug(self) -> str:
@@ -161,6 +164,26 @@ class Folder:
             "notes": [{"path": n.rel, "title": n.title, "summary": n.summary} for n in self.notes],
             "subfolders": [f.to_dict() for f in self.subfolders],
         }
+
+
+def matching(root: Folder, where: dict[str, Any]) -> Folder:
+    """A copy of the tree with only the notes whose `fields` hold every key of `where` (compared as strings).
+
+    The folders are new and the notes the same objects, so the tree it is made from, which a session shares, is not touched.
+    A folder with no such note, itself or below, is left out.
+    """
+
+    def keep(note: Note) -> bool:
+        fields = note.frontmatter.get("fields")
+        return isinstance(fields, dict) and all(k in fields and str(fields[k]) == str(v) for k, v in where.items())
+
+    def copy(folder: Folder, parent: Folder | None) -> Folder:
+        out = Folder(folder.path, folder.rel, folder.description, parent=parent)
+        out.notes = [n for n in folder.notes if keep(n)]
+        out.subfolders = [s for s in (copy(sub, out) for sub in folder.subfolders) if s.notes or s.subfolders]
+        return out
+
+    return copy(root, None)
 
 
 def split_see_also(body: str) -> tuple[str, list[str]]:

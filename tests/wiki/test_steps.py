@@ -634,10 +634,14 @@ def test_candidate_fields_are_written_under_the_fields_key_and_absent_when_empty
     assert read(bundle / SEED).frontmatter.get("fields") is None
 
 
-def test_a_candidate_without_fields_leaves_no_fields_key(offline: Callable[[Steps], Wiki], bundle: Path) -> None:
-    result = offline(OFFLINE).ingest("Text.", fields={"given": "by the caller"})  # the default does not copy source.fields
+def test_a_document_without_fields_has_no_fields_key_and_one_with_fields_keeps_them(offline: Callable[[Steps], Wiki], bundle: Path) -> None:
+    wiki = offline(OFFLINE)
 
-    assert "fields" not in read(bundle / result.note).frontmatter
+    plain = wiki.ingest("Text.")
+    given = wiki.ingest("Other text.", title="Other", fields={"given": "by the caller"})  # the core writes the document's fields
+
+    assert "fields" not in read(bundle / plain.note).frontmatter
+    assert read(bundle / given.note).frontmatter["fields"] == {"given": "by the caller"}
 
 
 def test_a_merge_updates_the_existing_fields_with_the_draft_ones(offline: Callable[[Steps], Wiki], bundle: Path) -> None:
@@ -925,7 +929,7 @@ def test_a_patent_note_keeps_what_was_known_in_its_frontmatter(patents: Wiki, bu
     fm = read(bundle / first.note).frontmatter
 
     assert fm["title"] == "EP100 Catalyst process" and fm["description"] == "A catalyst." and fm["tags"] == ["chemistry"]
-    assert fm["fields"] == {"number": "EP100", "category": "chemistry", "applicant": "Acme"}
+    assert fm["fields"] == {"number": "EP100", "category": "chemistry", "applicant": "Acme", "summary": "A catalyst."}
     assert fm["sources"][0]["steps"] == {"name": "patents", "hash": decision_hash(PATENTS, patents.cfg, patents.prompts)}
     assert len(raws(bundle)) == 5
 

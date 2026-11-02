@@ -37,12 +37,12 @@ PROVIDERS = [
 def spy_on_groups(wiki: Wiki, monkeypatch: pytest.MonkeyPatch) -> list[int]:
     """Replace `plan_groups` by a no-op that records the number of documents of each window."""
     calls: list[int] = []
-    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None: calls.append(len(documents)) or {})
+    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None, made=None: calls.append(len(documents)) or {})
     return calls
 
 
 def forbid_groups(wiki: Wiki, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None: pytest.fail("this batch is not planned by groups"))
+    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None, made=None: pytest.fail("this batch is not planned by groups"))
 
 
 # -- the setting ----------------------------------------------------------------------

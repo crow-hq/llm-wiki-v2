@@ -28,8 +28,9 @@ CLASSIFIER_TOKENS = (50, 0)
 class FakeLLM(LLM):
     """Replies are queued per op (the prompt name, e.g. "librarian/route"); dicts are sent as JSON."""
 
-    def __init__(self, usage: UsageTracker, replies: dict[str, list[Any]] | None = None) -> None:
+    def __init__(self, usage: UsageTracker, replies: dict[str, list[Any]] | None = None, *, cost: float | None = None) -> None:
         super().__init__(LLMConfig(model="fake/llm"), usage)
+        self.cost = cost  # what each call reports it cost (USD); None: the provider reports none
         self.replies: dict[str, list[Any]] = {op: list(r) for op, r in (replies or {}).items()}
         self.calls: list[tuple[str, list[dict[str, str]]]] = []
 
@@ -38,8 +39,9 @@ class FakeLLM(LLM):
         return self
 
     def chat(self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
+        self.usage.check()  # as the real client does before each request
         self.calls.append((op, [dict(m) for m in messages]))
-        self.usage.record("llm", self.model, *LLM_TOKENS, op=op)
+        self.usage.record("llm", self.model, *LLM_TOKENS, op=op, cost=self.cost)
         if not self.replies.get(op):
             raise AssertionError(f"FakeLLM: no scripted reply left for {op!r}")
         reply = self.replies[op].pop(0)
@@ -67,8 +69,10 @@ class FakeClassifier(Classifier):
         *,
         choices: dict[str, list[tuple[str, dict[str, float], float]]] | None = None,
         nouls: dict[str, Noul] | None = None,
+        cost: float | None = None,
     ) -> None:
         super().__init__(ClassifierConfig(model="fake/jev", api_key="fake-key"), usage)
+        self.cost = cost  # what each call reports it cost (USD); None: the provider reports none
         self.choices = {op: list(c) for op, c in (choices or {}).items()}
         self.noul_scores: dict[str, Noul] = dict(nouls or {})
         self.calls: list[tuple[str, str, dict[str, dict[str, Any]]]] = []
@@ -78,8 +82,9 @@ class FakeClassifier(Classifier):
         return self
 
     def ask(self, state: str, questions: dict[str, dict[str, Any]], *, op: str = "") -> dict[str, dict[str, Any]]:
+        self.usage.check()
         self.calls.append((op, state, questions))
-        self.usage.record("classifier", self.model, *CLASSIFIER_TOKENS, op=op)
+        self.usage.record("classifier", self.model, *CLASSIFIER_TOKENS, op=op, cost=self.cost)
         answers: dict[str, dict[str, Any]] = {}
         for key, question in questions.items():
             if question["type"] == "choice":
@@ -115,8 +120,11 @@ class ContentLLM(LLM):
     A source containing one of `fail_on`'s keys makes its summarize call fail with that error.
     """
 
-    def __init__(self, usage: UsageTracker, *, fail_on: dict[str, Exception] | None = None, jitter: float = 0.0) -> None:
+    def __init__(
+        self, usage: UsageTracker, *, fail_on: dict[str, Exception] | None = None, jitter: float = 0.0, cost: float | None = None
+    ) -> None:
         super().__init__(LLMConfig(model="fake/llm"), usage)
+        self.cost = cost  # what each call reports it cost (USD); None: the provider reports none
         self.calls: list[tuple[str, list[dict[str, str]]]] = []
         self.fail_on = fail_on or {}
         self.jitter = jitter  # up to this many seconds of delay per call, picked from the prompt: shuffles who finishes first
@@ -127,10 +135,11 @@ class ContentLLM(LLM):
 
     def chat(self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
         user = messages[1]["content"]
+        self.usage.check()
         self.calls.append((op, [dict(m) for m in messages]))
         if self.jitter:
             time.sleep(self.jitter * (zlib.crc32(user.encode()) % 7) / 6)
-        self.usage.record("llm", self.model, *LLM_TOKENS, op=op)
+        self.usage.record("llm", self.model, *LLM_TOKENS, op=op, cost=self.cost)
         if op == "librarian/summarize":
             for key, error in self.fail_on.items():
                 if key in user:

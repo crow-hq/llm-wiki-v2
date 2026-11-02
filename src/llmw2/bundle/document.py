@@ -16,6 +16,7 @@ A document without a leading `---` line has no frontmatter and is all body.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from llmw2.errors import WikiError
 
 DELIMITER = "---"
 REQUIRED_KEYS = ("type",)
+READ_ATTEMPTS = 6  # about 0.3 s in all: long enough for another process to finish replacing the file
 
 
 class OKFDocumentError(WikiError, ValueError):
@@ -45,6 +47,28 @@ _Loader.yaml_implicit_resolvers = {
     for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
 }
 
+if hasattr(yaml, "CSafeLoader"):  # libyaml's parser: the same events, many times faster than the pure-Python one
+
+    class _FastLoader(yaml.CSafeLoader):
+        """_Loader on libyaml."""
+
+    _FastLoader.yaml_implicit_resolvers = _Loader.yaml_implicit_resolvers
+    _FRONTMATTER_LOADER: type = _FastLoader
+else:
+    _FRONTMATTER_LOADER = _Loader
+
+
+def read_bytes(path: Path) -> bytes:
+    """A file's bytes, waiting a moment for a file another process is replacing (Windows refuses to open it meanwhile)."""
+    for attempt in range(READ_ATTEMPTS):
+        try:
+            return path.read_bytes()
+        except PermissionError:
+            if attempt == READ_ATTEMPTS - 1:
+                raise
+            time.sleep(0.01 * 2**attempt)
+    raise AssertionError("not reached")
+
 
 @dataclass
 class OKFDocument:
@@ -54,11 +78,12 @@ class OKFDocument:
     @classmethod
     def read(cls, path: Path) -> OKFDocument:
         """The document in a file; OKFDocumentError for one that is not UTF-8 text (an editor saved it as Latin-1)."""
+        data = read_bytes(path)
         try:
-            text = path.read_text(encoding="utf-8")
+            text = data.decode("utf-8")
         except UnicodeDecodeError as e:
             raise OKFDocumentError(f"not UTF-8 text (byte {e.start}): save it as UTF-8") from e
-        return cls.parse(text)
+        return cls.parse(text.replace("\r\n", "\n").replace("\r", "\n"))  # the line ends `read_text` turned into "\n"
 
     @classmethod
     def parse(cls, text: str) -> OKFDocument:
@@ -71,7 +96,7 @@ class OKFDocument:
         if end is None:
             raise OKFDocumentError("Unterminated YAML frontmatter block")
         try:
-            frontmatter = yaml.load("\n".join(lines[1:end]), Loader=_Loader) or {}
+            frontmatter = yaml.load("\n".join(lines[1:end]), Loader=_FRONTMATTER_LOADER) or {}
         except yaml.YAMLError as e:
             raise OKFDocumentError(f"Invalid YAML in frontmatter: {e}") from e
         if not isinstance(frontmatter, dict):

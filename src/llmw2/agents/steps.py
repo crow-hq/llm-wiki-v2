@@ -73,6 +73,7 @@ class StepContext:
     source: Source | None = None  # the source being ingested (None while asking)
     candidate: Candidate | None = None  # the note `summarize` wrote from it (None while asking and while summarizing)
     decisions: list[Decision] = field(default_factory=list)
+    fixed: bool = False  # a rebuild: the folders are the ones there are, so no step opens one or asks the LLM where to file
 
     def ask_json(self, prompt: str, schema: type[T], *, reply_chars: int | None = None, **values: object) -> T:
         """Render `prompt` with `values` and ask for a JSON reply.
@@ -173,7 +174,7 @@ class Steps:
     select: SelectStep = classic.select
     answer: AnswerStep = classic.answer
 
-    @property
+    @functools.cached_property  # the set is frozen and its source does not change while it runs
     def hash(self) -> str:
         """First 8 hex chars of a sha256 over the source of the ten functions, to tell sets apart in provenance.
 

@@ -136,6 +136,9 @@ class ClassifierConfig(BaseModel):
     attempts: int = Field(1, gt=0)  # every caller falls back to the LLM, so a retry only makes the ingest wait (paper: 3)
     state_chars: int = Field(6_000, gt=0)  # compact state: title, summary and opening passage
     request_chars: int = Field(90_000, gt=0)  # state + questions per request (~32k tokens on OpenRouter)
+    # Keep the answers in the bundle (.llmw2/cache), under a hash of the request: a rebuild, a resumed sync or a repeated
+    # audit then asks the classifier nothing it was already asked. A sync of new documents asks only new questions.
+    cache: bool = False
 
     @model_validator(mode="after")
     def _fill_from_provider(self) -> ClassifierConfig:
@@ -202,8 +205,10 @@ def crow_preset(classifier_provider: str) -> str:
 
 # WikiConfig fields read from OKF_<NAME>; the nested models are read by prefix (OKF_LLM_*, OKF_CLASSIFIER_*).
 _TOP_LEVEL_ENV = (
-    "bundle", "mode", "summarize", "max_depth", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency", "usage_log",
-    "prompts_dir", "note_chars", "note_length", "revisions", "plan", "relate_rare_values", "answer_conflicts", "strict_new_folders",
+    "bundle", "mode", "summarize", "max_depth", "max_top_folders", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency",
+    "usage_log",
+    "prompts_dir", "note_chars", "note_length", "revisions", "plan", "relate_rare_values", "answer_conflicts",
+    "strict_new_folders",
     "mcp", "mcp_models",
 )
 _BOOL_FIELDS = ("relate_rare_values", "answer_conflicts", "strict_new_folders", "mcp")  # OKF_<NAME> read as on or off
@@ -215,6 +220,9 @@ class WikiConfig(BaseModel):
     mode: Literal["classic", "crow"] = "crow"
     summarize: bool = True  # CROW step 0; False files the source verbatim
     max_depth: int = Field(4, ge=0)  # deepest folder level the librarian may reach or create
+    # CROW: top-level folders a wiki may have: `plan` and `plan_groups` make no more, routing opens no more (OKF_MAX_TOP_FOLDERS);
+    # folders made by hand count: as many as the limit closes the wiki to new top-level folders
+    max_top_folders: int = Field(10, ge=1)
     max_steps: int = Field(12, gt=0)  # classic researcher: folders it may open per question
     max_links: int = Field(5, ge=0)  # See-also links added per ingest
     max_notes: int = Field(8, gt=0)  # classic researcher and CROW's fallback: notes read per question (CROW uses crow.k)

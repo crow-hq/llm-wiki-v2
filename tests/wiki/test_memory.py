@@ -26,6 +26,7 @@ from llmw2.models.relay import Relay
 from llmw2.server import create_app
 from llmw2.settings import Settings
 from tests.wiki.fakes import FakeClassifier, FakeLLM
+from tests.wiki.test_managed_roots import Built
 from tests.wiki.test_server import NOTE, script_ingest
 from tests.wiki.test_server_settings import LOCAL
 
@@ -62,7 +63,10 @@ def test_the_memory_offers_recall_remember_and_read_note_with_the_readers_marked
 
     # ASSERT
     read_only = {t.name: bool(t.annotations and t.annotations.read_only_hint) for t in tools}
-    assert read_only == {"recall": True, "remember": False, "reply": False, "read_note": True}
+    assert read_only == {
+        "recall": True, "remember": False, "reply": False, "read_note": True, "rebuild": False,
+        "create_area": False, "propose_area": False, "proposals": True, "confirm_area": False,
+    }
     assert "recall" in instructions and "Never store secrets" in instructions
 
 
@@ -99,6 +103,32 @@ def test_a_tool_the_wiki_refuses_tells_the_client_why(crow_wiki: Wiki, tool: str
     result = call(crow_wiki, tool, arguments)
 
     assert result.is_error and said in text(result)
+
+
+def test_a_client_creates_proposes_and_settles_areas_and_the_limit_refuses(classic_wiki: Wiki) -> None:
+    # ARRANGE
+    built = Built(classic_wiki)
+    classic_wiki.cfg.max_top_folders = 4
+
+    # ACT
+    created = call(classic_wiki, "create_area", {"name": "suppliers", "description": "Who we buy from."})
+    full = call(classic_wiki, "create_area", {"name": "more", "description": "One too many."})
+    proposed = call(classic_wiki, "propose_area", {"name": "partners", "description": "Who we work with.", "notes": ["finance/tea.md"]})
+    other = call(classic_wiki, "propose_area", {"name": "vendors", "description": "Others.", "notes": ["legal/terms.md"]})
+    listed = call(classic_wiki, "proposals", {})
+    refused = call(classic_wiki, "confirm_area", {"id": proposed.structured_content["id"], "yes": True})
+    no = call(classic_wiki, "confirm_area", {"id": other.structured_content["id"], "yes": False})
+    classic_wiki.cfg.max_top_folders = 5
+    yes = call(classic_wiki, "confirm_area", {"id": proposed.structured_content["id"], "yes": True})
+
+    # ASSERT
+    assert created.structured_content == {"folder": "/suppliers", "description": "Who we buy from."}
+    assert full.is_error and "max_top_folders" in text(full)
+    assert [p["label"] for p in listed.structured_content["result"]] == ["partners", "vendors"]
+    assert refused.is_error and "max_top_folders" in text(refused)
+    assert no.structured_content["status"] == "dismissed" and built.note("Terms").rel == "legal/terms.md"
+    assert yes.structured_content["moved"] == ["partners/tea.md"] and built.note("Tea").rel == "partners/tea.md"
+    assert call(classic_wiki, "proposals", {}).structured_content["result"] == []
 
 
 # -- /mcp on the server ----------------------------------------------------------------
@@ -142,7 +172,9 @@ def test_mcp_speaks_the_protocol_whether_the_memory_is_on_or_off(bundle: Any, ll
 
     # ASSERT
     assert (started.status_code, started.json()["result"]["serverInfo"]["name"]) == (200, "llm-wiki")
-    assert [t["name"] for t in listed.json()["result"]["tools"]] == ["recall", "remember", "reply", "read_note"]
+    assert [t["name"] for t in listed.json()["result"]["tools"]] == [
+        "recall", "remember", "rebuild", "reply", "read_note", "create_area", "propose_area", "proposals", "confirm_area"
+    ]
 
 
 def test_mcp_is_behind_the_servers_guard(bundle: Any, llm: FakeLLM, classifier: FakeClassifier) -> None:

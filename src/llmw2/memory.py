@@ -10,6 +10,9 @@ Its tools are served over Streamable HTTP, at /mcp of the wiki's own server:
 - `recall`: a question, answered with the notes the answer cites;
 - `remember`: a text, filed like any note;
 - `read_note`: one note in full;
+- `rebuild`: every note filed again on the same folders, from the wiki's own raw copies (destructive, asks for a confirmation);
+- `create_area`, `propose_area`, `proposals` and `confirm_area`: the top-level folders. The memory never opens or proposes
+  one itself; the user does, in chat, and a proposal is confirmed (or dismissed) with a yes or a no;
 - `reply`: the client's replies, when its models do the memory's work.
 
 Whose models do that work is the setting `mcp_models`:
@@ -36,6 +39,7 @@ from dataclasses import asdict
 from typing import Annotated, Any, TypeVar
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
@@ -47,9 +51,11 @@ from starlette.types import Receive, Scope, Send
 from llmw2 import __version__
 from llmw2.agents.librarian import IngestResult
 from llmw2.agents.researcher import Answer
+from llmw2.batch import BatchReport, deviations
 from llmw2.errors import WikiError
 from llmw2.models.relay import Relay, RelayClassifier, RelayLLM, relayed
 from llmw2.models.usage import UsageTracker
+from llmw2.sources import SyncReport
 from llmw2.wiki import Wiki
 
 T = TypeVar("T")
@@ -84,6 +90,7 @@ WAIT = 50.0  # seconds a tool waits for the work's next requests: under the 60 s
 KEEP = 600.0  # seconds a job's result waits after its end for a client to come back for it
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 WRITES = ToolAnnotations(read_only_hint=False, destructive_hint=False)  # files and merges notes, never deletes
+DELETES = ToolAnnotations(read_only_hint=False, destructive_hint=True)  # `rebuild`: the notes go before they are filed again
 OFF = "the memory is off: press Start under Memory in the wiki's page, or set OKF_MCP=1 where it runs"
 NO_LIFESPAN = "the memory needs the server's lifespan: run the wiki's app itself, not mounted inside another"
 
@@ -102,20 +109,42 @@ class Memory:
 
         # Plain functions: the SDK runs them in a thread, as the wiki's calls block.
         @server.tool(annotations=READ_ONLY)
-        def recall(question: Annotated[str, Field(description="What to look up, as a question")]) -> dict[str, Any]:
+        def recall(
+            question: Annotated[str, Field(description="What to look up, as a question")],
+            where: Annotated[
+                dict[str, str] | None, Field(description="Only notes whose fields have all these values, e.g. {\"team\": \"ops\"}")
+            ] = None,
+        ) -> dict[str, Any]:
             """Answer a question from the long-term memory, with the notes the answer cites."""
-            return self.run(lambda wiki: answered(wiki.ask(question)))
+            return self.run(lambda wiki: answered(wiki.ask(question, where)))
 
         @server.tool(annotations=WRITES)
         def remember(
             text: Annotated[str, Field(description="What to keep, self-contained; Markdown is fine")],
             title: Annotated[str | None, Field(description="A short title; empty: the memory names it")] = None,
+            ctx: Context | None = None,
         ) -> dict[str, Any]:
             """Keep something in the long-term memory.
 
             It is filed in the right folder, or merged into the note on the same subject, and linked to related notes.
             """
-            return self.run(lambda wiki: filed(wiki.ingest(text, title=title or None)))
+            by = author_of(ctx)
+            return self.run(lambda wiki: filed(wiki.ingest(text, title=title or None, author=by)))
+
+        @server.tool(annotations=DELETES)
+        def rebuild(
+            confirm: Annotated[bool, Field(description="true to really do it: every note is deleted, then filed again")] = False,
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """File every note again on the same folders, from the memory's own raw copies. Destructive, and slow.
+
+            Every note, raw copy and archived version is deleted and the documents are filed again with no new plan:
+            the folders stay with their descriptions and none is opened. A rebuild that stops can be run again.
+            """
+            if confirm is not True:
+                raise ToolError("rebuild deletes every note and files the documents again: call it with confirm=true to go on")
+            by = author_of(ctx)
+            return self.run(lambda wiki: rebuilt(wiki.rebuild(wiki.raw_items(), author=by)))
 
         @server.tool(annotations=WRITES)
         def reply(
@@ -136,6 +165,44 @@ class Memory:
                 return guarded(lambda: self.live().store.read(path)).full_text()
             except FileNotFoundError as e:
                 raise ToolError(f"no note at {path}") from e
+
+        @server.tool(annotations=WRITES)
+        def create_area(
+            name: Annotated[str, Field(description="The top-level folder's name, e.g. suppliers")],
+            description: Annotated[str, Field(description="One line: what belongs in it")],
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """Open a new top-level folder for the user, who asked for it. Refused when the memory has as many as its limit."""
+            folder = guarded(lambda: self.live().create_area(name, description, author=author_of(ctx)))
+            return {"folder": folder.label, "description": folder.description}
+
+        @server.tool(annotations=WRITES)
+        def propose_area(
+            name: Annotated[str, Field(description="The top-level folder's name")],
+            description: Annotated[str, Field(description="One line: what belongs in it")],
+            notes: Annotated[list[str], Field(description="The notes it would hold, by path (finance/pricing.md) or id")],
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """Propose a top-level folder the user described, with its notes. Nothing moves until `confirm_area`."""
+            return guarded(lambda: self.live().propose_area(name, description, notes, author=author_of(ctx))).to_dict()
+
+        @server.tool(annotations=READ_ONLY)
+        def proposals() -> list[dict[str, Any]]:
+            """The open proposals of top-level folders, to put to the user as a yes or a no."""
+            return [p.to_dict() for p in self.live().proposals()]
+
+        @server.tool(annotations=WRITES)
+        def confirm_area(
+            id: Annotated[str, Field(description="The proposal's id")],
+            yes: Annotated[bool, Field(description="true: open the folder and move its notes; false: dismiss the proposal")],
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """Settle a proposal with the user's answer. A yes opens the folder; refused when the memory has as many as its limit."""
+            by = author_of(ctx)
+            if not yes:
+                return guarded(lambda: self.live().dismiss_proposal(id, author=by)).to_dict()
+            proposal, moved = guarded(lambda: self.live().confirm_proposal(id, author=by))
+            return {**proposal.to_dict(), "moved": moved}
 
     def run(self, work: Callable[[Wiki], dict[str, Any]]) -> dict[str, Any]:
         """The work's result with this wiki's own models; with the client's, its first requests (see models.relay)."""
@@ -197,12 +264,43 @@ class Memory:
             await self.app(scope, receive, send)
 
 
+def author_of(ctx: Context | None) -> str | None:
+    """Who a tool call is for, as the client declares it: the `X-Author` header (a reverse proxy's), else the client's name.
+
+    The name is the handshake's `clientInfo.name` when the session kept it. The memory answers statelessly, so a call
+    seldom has it (the handshake was another request); then the `User-Agent` product is what there is. Declared, not verified.
+    """
+    if ctx is None:
+        return None
+    try:
+        headers = ctx.headers or {}
+        info = getattr(ctx.session, "client_params", None)
+        name = info.client_info.name if info is not None else None
+        return headers.get("x-author") or name or (headers.get("user-agent") or "").split(" ")[0].split("/")[0] or None
+    except Exception:  # no request in flight (a tool called directly): no author
+        return None
+
+
 def answered(answer: Answer) -> dict[str, Any]:
     return {"answer": answer.text, "notes": answer.citations, "titles": answer.titles}
 
 
 def filed(result: IngestResult) -> dict[str, Any]:
-    return {"action": result.action, "note": result.note, "folder": result.folder, "related": result.related}
+    out: dict[str, Any] = {"action": result.action, "note": result.note, "folder": result.folder, "related": result.related}
+    return {**out, **deviated([result])}
+
+
+def rebuilt(done: BatchReport) -> dict[str, Any]:
+    """What a rebuild did, as a sync reports it: counts, errors, why it stopped, and the notes the limit deviated."""
+    report = SyncReport()
+    report.add(done)
+    return report.to_dict()
+
+
+def deviated(results: list[IngestResult]) -> dict[str, Any]:
+    """The notes the limit on top-level folders sent to the likeliest root, as `deviated` (count) and `deviations`; empty when none."""
+    found = deviations(results)
+    return {"deviated": len(found), "deviations": found} if found else {}
 
 
 def guarded(call: Callable[[], T]) -> T:

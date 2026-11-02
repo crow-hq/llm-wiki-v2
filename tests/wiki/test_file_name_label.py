@@ -163,18 +163,18 @@ def test_the_title_made_from_the_stem_is_still_what_the_note_and_raw_copy_record
 # -- the plan prompts ---------------------------------------------------------------------------------------
 
 
-def test_the_plan_prompt_shows_the_file_name_of_a_document_that_came_from_a_file(bundle: Path) -> None:
+def test_the_plan_prompt_shows_the_stem_title_of_a_document_that_came_from_a_file(bundle: Path) -> None:
     wiki, llm = make_crow(bundle)
 
     wiki.ingest_many([item(n) for n in range(3)])
 
     [prompt] = user_prompts(llm, PLAN)
     for n in range(3):
-        assert f"File name: doc-{n:03d}.md" in prompt
-    assert "doc 000" not in prompt  # the title made from the stem
+        assert f"doc {n:03d}: " in prompt
+    assert "File name:" not in prompt and "doc-000.md" not in prompt
 
 
-def test_the_plan_more_prompt_shows_the_file_name_of_a_document_that_came_from_a_file(bundle: Path) -> None:
+def test_the_plan_more_prompt_shows_the_stem_title_of_a_document_that_came_from_a_file(bundle: Path) -> None:
     wiki, llm = make_crow(bundle)
     add_folder(wiki, "/", "red", "Red things.")
     llm.plan_more_reply = folders_json(("/blue", "Blue things."))
@@ -184,8 +184,8 @@ def test_the_plan_more_prompt_shows_the_file_name_of_a_document_that_came_from_a
     assert plans(llm) == [PLAN_MORE]
     [prompt] = user_prompts(llm, PLAN_MORE)
     for n in range(3):
-        assert f"File name: doc-{n:03d}.md" in prompt
-    assert "doc 000" not in prompt
+        assert f"doc {n:03d}: " in prompt
+    assert "File name:" not in prompt and "doc-000.md" not in prompt
 
 
 DOCS = [("Acme terms", "New terms for the year."), ("Other memo", "Something else entirely.")]
@@ -211,3 +211,13 @@ def test_the_plan_more_prompt_shows_a_title_given_by_the_caller_as_today(crow_wi
     assert "Acme terms" in prompt and "Other memo" in prompt
     assert "File name:" not in prompt
 
+
+
+def test_the_plan_prompt_lists_the_documents_exactly_as_v0_7_0_does(bundle: Path) -> None:
+    wiki, llm = make_crow(bundle)
+
+    wiki.ingest_many([item(n) for n in range(3)])
+
+    [prompt] = user_prompts(llm, PLAN)
+    listing = "\n".join(f"- doc {n:03d}: topic: red-{n} line of document {n}." for n in range(3))
+    assert listing in prompt

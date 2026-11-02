@@ -20,7 +20,7 @@ from llmw2.agents.steps import StepContext, Steps, check_answer, check_select
 from llmw2.bundle.document import OKFDocumentError
 from llmw2.bundle.sheets import SHEET_CHARS, rows_for
 from llmw2.bundle.store import WikiStore
-from llmw2.bundle.tree import Note
+from llmw2.bundle.tree import Note, matching
 from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import InputError, ModelError
 from llmw2.models.classifier import Classifier
@@ -71,10 +71,13 @@ class Researcher:
         self.steps = steps
         self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="researcher/system")
 
-    def ask(self, question: str) -> Answer:
+    def ask(self, question: str, where: dict[str, Any] | None = None) -> Answer:
+        """`where` (field -> value) keeps the notes whose `fields` have all of them: a filter, not an access control."""
         ctx = self.ctx
         with ctx.llm.usage.span() as used:
             root = self.store.load()
+            if where:
+                root = matching(root, where)
             notes = check_select(self.steps.select(ctx, root, question), root)
             notes, past = self._with_history(question, notes)
             asked = f"{question}\n\n{revisions.HISTORY_HINT}" if past else question

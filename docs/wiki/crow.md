@@ -56,6 +56,13 @@ make the folders in CROW mode, and with `plan` set to `groups` groups made in co
   least two of those notes share and moves those notes into them; notes that share nothing
   stay.
 
+A batch of more than one window plans every window before filing the first. No note exists
+yet, so a plan is shown how full each folder would be: the folder BM25 ranks first for each
+document of the windows already planned (its title and opening against the folders' names
+and descriptions, no model call). When a batch ends, finished or stopped, the folders its
+plans made that are still empty are removed ("Removed folder" in `log.md`); a folder with a
+note, or one that was there before, stays.
+
 Jev then assigns every note to a folder with the one Choice above. The batch window
 (50 documents), the split limit (12 notes) and the plan's limits are constants of
 the code, not settings, and there is no switch for them: all three run in CROW mode
@@ -89,8 +96,31 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 | `max_notes` | `OKF_MAX_NOTES` | 8 | Classic retrieval and CROW's navigation fallback: notes read per question |
 
 The batch window (`PLAN_BATCH`, 50), the split limit (`SPLIT_AT`, 12) and the plan's
-limits (`PLAN_*`: ten top-level folders, three levels, a 220-character opening per
-document) are constants in `wiki.py`, not thresholds you can set.
+limits (`PLAN_*`: three levels, a 220-character opening per document) are constants
+in `wiki.py`, not thresholds you can set. The top-level folders a wiki may have are
+`max_top_folders` (`OKF_MAX_TOP_FOLDERS`, 10).
+
+**Notes the limit deviated.** A note filed in the likeliest existing top-level folder because its route would open one over the
+limit (in a rebuild, because no folder is opened at all) is never silent: its frontmatter has `overflow: {p_none, p_root, at}`
+(the classifier's probabilities for None of these and for that folder; only `at` when the folder's words chose), `log.md` has
+a "Deviated note" line, and the reports of `ingest`, `sync` and `rebuild` and the MCP `remember` list it with the root.
+
+**Your own top-level areas.** Make them with `create_folder` before the first sync, each with a description (the
+classifier routes by it); run `if wiki.tree().find("/finance") is None: wiki.create_folder("/", "finance", "...")`
+at every start to keep it idempotent. Folders made by hand count in `max_top_folders`: set it to the number of your
+areas and the wiki is closed (`plan` is told the top-level areas are fixed, no new one is opened, a note whose route would
+open one goes to the likeliest area); a higher value leaves it open. `delete_folder` deletes the notes in it. For
+different permissions, use one wiki per domain.
+
+The wiki never opens or proposes an area by itself: proposals come from you, and the notes listed as deviated help you
+compose them. `Wiki.propose_area(label, description, notes)` queues a top-level folder with the notes it would hold (kept in
+`.llmw2/proposals.json`; nothing moves); `confirm_proposal(id)` opens it, counted in `max_top_folders` (refused at the limit
+unless `over_limit=True`), and moves into it only the proposed notes still there, each with `moved_from` and without its
+`overflow` mark, with no rebuild and no other note touched; `dismiss_proposal(id)` closes it. `rename_root(path, new_name)`
+and `merge_roots(source, target)` rename a top-level folder and fold one into another, links following. They are also
+`llmwiki2 proposals`, `rename-root` and `merge-roots`, endpoints of the API, the **Areas** section of the page and, from chat,
+the memory tools `create_area`, `propose_area`, `proposals` and `confirm_area(id, yes)`. See the
+[library guide](../library/index.md).
 
 Each classifier starts from a preset: Jev's on OpenRouter and TypeSafe, Laya's on a
 `custom` server. The settings page
@@ -103,6 +133,12 @@ the classifier leans; at 0.65 the LLM routes it instead. It answers `Modify` to 
 consolidation, with a confidence of 0.23–0.40 for a real follow-up and at most 0.25 for a
 related but distinct note, hence 0.26. A `custom` model that is not one of Laya's checkpoints
 (a small classifier on Ollama, such as tev1) merges at 0.7, the value it was measured with.
+
+**Answer cache.** `classifier.cache` (`OKF_CLASSIFIER_CACHE`, off by default) keeps the classifier's answers in the bundle
+(`.llmw2/cache/classifier.sqlite`), under a hash of the request; only hashes and answers are stored. A repeated request is
+served from the file and shown as `served` in the usage, with no call and no cost. It pays on a rebuild, on a sync resumed
+after a stop and on a repeated audit, and it freezes the answers, so a second rebuild decides as the first did. It does not
+pay on a sync of new documents, whose requests have never been asked. See the [library guide](../library/index.md).
 
 A Choice's confidence is computed by the library from the probabilities, the same way on
 every server, on the scale the thresholds are calibrated on; the confidence a server sends is
@@ -205,6 +241,20 @@ changes or the wiki grows.
   files them in order. A plan that fails (a model error, a reply that is no plan) is
   logged as a warning and the window goes on with the folders there are. A window with one document to file (the
   rest unchanged) makes no plan and goes as a single document.
+- **Removals.** A document removed at its source is marked, its notes stay (`mark_removed`); `purge` (or `sync --purge-removed`) deletes it with its raw copies, archived versions and notes, and files the other documents of a fused note again from their raw copies on the same folders. The phrases of the document are gone because everything written from it is deleted, not because a check looked for them.
+- **A batch is one session of the store.** `ingest_many` (so `sync` and `rebuild`) reads the tree whole once and then, per
+  document, only the folders whose modification time changed (and `raw/`, and the index of origins, the same way), so the
+  library's time per document stays almost the same as the wiki grows. What this means for hands and other programs: a
+  note edited, added or moved by hand while a batch runs is respected, never overwritten. A note added or moved is seen
+  by the next document; the content of a note edited in place counts for routing and comparisons from the next batch.
+  The store writes a note only if its file is as it read or wrote it: the See-also links, the refresh of titles in
+  See-also entries and the rewriting of links read the file again and apply to what is there. A document that must merge
+  into a note changed in the meantime is not filed (no raw copy, no note): it is a `NoteChanged` result, counted as
+  `conflicts` in the batch report and listed in the errors of a sync, and the next run files it. Rare values for `relate`
+  are an inverted index kept between documents. `log.md` is rewritten whole at each line (newest first), so it grows linearly per line.
+  The session follows the files' modification times, so do not put the bundle in a folder a client synchronizes
+  (OneDrive, Dropbox, Google Drive) or on a network disk while a batch writes: those can change or round the times.
+  The source can be there; the bundle should not (see "Keeping a wiki in step with a source" in the [library guide](../library/index.md)).
 - **Split only after single documents.** `ingest`, `ingest_file` (each sheet of a spreadsheet counts as one), the
   server's `/ingest` and `/upload`, and a window with one document: when the document is created or merged in a folder
   that is at the first or second level (not the root, and only where its subfolders stay within `max_depth`) and holds 12 notes or more directly, with a multiple of 12 not tried
