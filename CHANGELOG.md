@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0] - 2026-11-03
 
+### Upgrading from 0.7.0
+
+The API only gains optional arguments, but some defaults change what a wiki does:
+
+- A wiki has at most 10 top-level folders (`max_top_folders`, `OKF_MAX_TOP_FOLDERS`). A wiki that already has as many opens no new one: a note that would open one is filed in the likeliest existing top-level folder and marked `overflow`. To keep opening areas, set a higher limit.
+- At the end of a CROW batch, a planned folder left with one note gives it to its parent, and a planned top-level folder with no note of its own and a single subfolder takes the subfolder's place.
+- Links to files that are not in the wiki become plain text when a note is written.
+- A note edited by hand during a batch is never overwritten: a document that must merge into it is counted in `BatchReport.conflicts` and filed by the next run.
+- On Windows the wiki holds a lock file, `.llmw2/lock`.
+
 ### Added
 
 - `Wiki.purge(key, *, author=None, dry_run=False)` and `llmwiki2 purge KEY --yes` (without `--yes` it says what it would delete and exits with 2) take a document out for good: its raw copies (a spreadsheet's sheets with it), their archived versions and every note citing them go. A note fused from several documents is deleted whole and the other documents it held are filed again from their raw copies, as `rebuild` does (no plan, no new folder), so the guarantee for paraphrased phrases lies in the construction (delete, then file again from the raw copies), not in a check of the text. The links to the notes deleted go from the others, index.md is written again, the lines of log.md that name a deleted note or raw copy keep their verb and author and say "[purged]", and a "Purged" line without the document's title is added. `sync(..., purge_removed=False)` and `llmwiki2 sync --purge-removed` purge what was removed at the source instead of marking it. No MCP tool, no keeping for a time in the code (the docs give a few lines to do it), and the classifier cache, which holds hashes and labels only, is not touched.
