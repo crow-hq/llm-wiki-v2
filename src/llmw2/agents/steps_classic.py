@@ -121,7 +121,7 @@ def summarize(ctx: StepContext, source: Source) -> Candidate:
         draft = ctx.ask_json(
             "librarian/summarize",
             NoteDraft,
-            source_title=source.title or "(none)",
+            source_title=source.label,
             source_resource=source.resource or "(none)",
             source_text=source.text,
             length_rule="",  # one call reads the whole source: no length rule (the output cap only stops runaways)
@@ -158,7 +158,7 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
         reply_chars = max(MIN_PART, math.ceil(PART_REPLY_FACTOR * cap))  # close to what is kept; `cut_notes` trims below
         try:
             args: dict[str, Any] = {
-                "source_title": source.title or "(none)",
+                "source_title": source.label,
                 "part": k,
                 "parts": n,
                 "heading": heading,
@@ -185,7 +185,7 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
     draft = ctx.ask_json(
         "librarian/summarize_combine",
         NoteDraft,
-        source_title=source.title or "(none)",
+        source_title=source.label,
         source_resource=source.resource or "(none)",
         part_notes=part_notes,
         note_chars=target,

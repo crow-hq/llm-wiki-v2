@@ -175,7 +175,7 @@ def test_a_local_writers_split_proposal_named_after_its_folder_is_left_out(
     assert [f.label for f in wiki.store.load().find("/sales").subfolders] == ["/sales/renewals"]  # type: ignore[union-attr]
 
 
-@pytest.mark.parametrize(("provider", "folder"), [("ollama", "/cupping-evening-checklist"), ("openrouter", "/engineering")])
+@pytest.mark.parametrize(("provider", "folder"), [("ollama", "/cupping-evening-checklist"), ("openrouter", "/suppliers")])
 def test_a_local_writers_folder_name_copied_from_the_prompt_is_replaced_by_the_notes(
     bundle: Path, llm: FakeLLM, classifier: FakeClassifier, provider: str, folder: str
 ) -> None:
@@ -183,7 +183,7 @@ def test_a_local_writers_folder_name_copied_from_the_prompt_is_replaced_by_the_n
         return Route(root, True, [])
 
     def naming(ctx: StepContext, parent: Folder, cand: Candidate) -> tuple[str, str]:
-        return "engineering", "Engineering documents."
+        return "suppliers", "Supplier documents."
 
     wiki = Wiki(config(bundle, provider, mode="classic"), llm=llm, steps=replace(OFFLINE, route=new_at_root, name_folder=naming))
     wiki.init()

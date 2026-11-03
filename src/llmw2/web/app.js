@@ -3,6 +3,7 @@
 
 import { $, api, esc, fmt, md, post } from "./util.js";
 import { leaveGraph, refreshGraph, showGraph } from "./graph.js";
+import { showAreas } from "./areas.js";
 import { showMemory } from "./memory.js";
 import { enqueue, startQueue } from "./queue.js";
 import { loadSettings, showSettings } from "./settings.js";
@@ -160,8 +161,11 @@ async function ask(question) {
   show(`<div class="crumbs">question</div><div class="question">${esc(question)}</div><span class="spin"></span> <span class="crumbs">the researcher is reading…</span>`);
   try {
     const a = await post("/ask", { question });
-    const label = (p) => { const s = p.split("/").pop().replace(/\.md$/, ""); return s.length > 32 ? s.slice(0, 31) + "…" : s; };
-    const text = a.text.replace(/\[([^\[\]\s]+\.md)\]/g, (_, p) => `[${label(p)}](#/note/${p} "${p}")`);
+    const label = (p) => { const s = ((a.titles || {})[p] || p.split("/").pop().replace(/\.md$/, "")).replace(/[\[\]]/g, ""); return s.length > 32 ? s.slice(0, 31) + "…" : s; };
+    const text = a.text.replace(/\[([^\[\]]+)\]/g, (m, inside) => {
+      const paths = inside.trim().split(/\s*[;,]\s*/); // "[a/x.md; b/y.md]": one link each
+      return paths.every((p) => /^[^\s\[\];,]+\.md$/.test(p)) ? paths.map((p) => `[${label(p)}](#/note/${p} "${p}")`).join(" ") : m;
+    });
     const u = a.usage;
     show(`<div class="crumbs">question</div><div class="question">${esc(question)}</div>
       <div class="md" id="answer">${md(text)}</div>
@@ -187,6 +191,7 @@ function route() {
   }
   else if (h === "#/settings") { current = ""; highlight(); showSettings(saved); }
   else if (h === "#/memory") { current = ""; highlight(); showMemory(saved); }
+  else if (h === "#/areas") { current = ""; highlight(); showAreas(async () => { await loadTree(); refreshGraph(); }); }
   else if (h !== "#/ask") home();
 }
 
@@ -351,6 +356,7 @@ $("#ask").onsubmit = (e) => { e.preventDefault(); const q = $("#q").value.trim()
 
 $("#gear").onclick = () => (location.hash = "#/settings");
 $("#memory").onclick = () => (location.hash = "#/memory");
+$("#areas").onclick = () => (location.hash = "#/areas");
 
 // -- start -------------------------------------------------------------------
 async function loadModels() {

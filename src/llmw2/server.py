@@ -5,6 +5,8 @@
 
 POST /ingest, POST /upload (a .txt/.md/.pdf file), POST /ask, POST /folder (one made by hand), POST /note/move, POST /folder/describe,
 POST /audit (CROW: notes the classifier would file elsewhere), GET /taxonomy (new subfolders and fallbacks, from the log),
+GET /proposals, POST /proposals, POST /proposals/{id}/confirm and /dismiss (top-level areas users propose),
+POST /areas, POST /folder/rename and POST /folder/merge (top-level folders),
 GET /tree, GET /note,
 GET /graph, GET /usage, GET /check, GET /health; DELETE /note, DELETE /folder and
 DELETE /wiki (empty it); GET /settings, POST /settings,
@@ -42,6 +44,7 @@ from llmw2 import __version__
 from llmw2.audit import AUDIT_MIN, HEALTH_MAX_SHARE, HEALTH_MIN_FILED
 from llmw2.bundle.files import READABLE, SUFFIXES
 from llmw2.bundle.origin import Origin
+from llmw2.bundle.store import authored
 from llmw2.bundle.tree import graph
 from llmw2.config import WikiConfig, missing_keys
 from llmw2.errors import ConfigError, InputError, ModelError
@@ -75,6 +78,7 @@ class IngestRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
+    where: dict[str, str] | None = None
 
 
 class FolderRequest(BaseModel):
@@ -91,6 +95,32 @@ class MoveRequest(BaseModel):
 class DescribeRequest(BaseModel):
     path: str
     description: str
+
+
+class ProposalRequest(BaseModel):
+    label: str
+    description: str
+    notes: list[str]
+
+
+class ConfirmRequest(BaseModel):
+    over_limit: bool = False
+
+
+class AreaRequest(BaseModel):
+    name: str
+    description: str
+    over_limit: bool = False
+
+
+class RenameRequest(BaseModel):
+    path: str
+    name: str
+
+
+class MergeRequest(BaseModel):
+    source: str
+    target: str
 
 
 class AuditRequest(BaseModel):
@@ -218,7 +248,9 @@ def create_app(
         size = request.headers.get("content-length", "")
         if size.isdigit() and int(size) > max_bytes():
             return JSONResponse({"detail": f"too large: the limit is {current().cfg.upload_mb} MB"}, status_code=413)
-        return await call_next(request)
+        # who a change is made for, by the header a reverse proxy sets after it has authenticated: declared, not verified
+        with authored(None if request.method in SAFE_METHODS else request.headers.get("x-author")):
+            return await call_next(request)
 
     # The two failures every model-backed route shares: bad input is the caller's (422), a failing model is upstream (502).
     @app.exception_handler(InputError)
@@ -285,7 +317,7 @@ def create_app(
 
     @app.post("/ask")
     def ask(req: AskRequest) -> dict[str, Any]:
-        return current().ask(req.question).to_dict()
+        return current().ask(req.question, req.where).to_dict()
 
     @app.get("/tree")
     def tree() -> dict[str, Any]:
@@ -361,6 +393,41 @@ def create_app(
                 return current().create_folder(req.parent, req.name, req.description).to_dict()
             except FileNotFoundError as e:
                 raise HTTPException(404, f"no folder at {req.parent}") from e
+
+    @app.post("/areas")
+    def create_area(req: AreaRequest) -> dict[str, Any]:
+        with write_lock:
+            return current().create_area(req.name, req.description, req.over_limit).to_dict()
+
+    @app.post("/folder/rename")
+    def rename_folder(req: RenameRequest) -> dict[str, Any]:
+        with write_lock:
+            return current().rename_root(req.path, req.name).to_dict()
+
+    @app.post("/folder/merge")
+    def merge_folders(req: MergeRequest) -> dict[str, Any]:
+        with write_lock:
+            return current().merge_roots(req.source, req.target).to_dict()
+
+    @app.get("/proposals")
+    def proposals(status: str | None = "open") -> list[dict[str, Any]]:
+        return [p.to_dict() for p in current().proposals(None if status == "all" else status)]
+
+    @app.post("/proposals")
+    def propose(req: ProposalRequest) -> dict[str, Any]:
+        with write_lock:
+            return current().propose_area(req.label, req.description, req.notes).to_dict()
+
+    @app.post("/proposals/{proposal_id}/confirm")
+    def confirm_proposal(proposal_id: str, req: ConfirmRequest | None = None) -> dict[str, Any]:
+        with write_lock:
+            proposal, moved = current().confirm_proposal(proposal_id, (req or ConfirmRequest()).over_limit)
+        return {**proposal.to_dict(), "moved": moved}
+
+    @app.post("/proposals/{proposal_id}/dismiss")
+    def dismiss_proposal(proposal_id: str) -> dict[str, Any]:
+        with write_lock:
+            return current().dismiss_proposal(proposal_id).to_dict()
 
     @app.delete("/folder")
     def delete_folder(path: str) -> dict[str, Any]:

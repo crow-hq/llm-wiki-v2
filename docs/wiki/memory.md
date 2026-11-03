@@ -50,9 +50,14 @@ approval_mode = "approve"
 
 | Tool | What it does | Returns |
 |---|---|---|
-| `recall(question)` | Answers from the wiki, as **Ask** does: the classifier picks the folders and notes, and the LLM answers from them. Read-only. | `{"answer", "notes"}`: the answer cites its notes as `[path.md]` |
-| `remember(text, title?)` | Files the text like a note written on the page. It goes in the right folder, or is merged into the note on the same subject, and is linked to related notes. | `{"action", "note", "folder", "related"}` |
+| `recall(question, where?)` | Answers from the wiki, as **Ask** does: the classifier picks the folders and notes, and the LLM answers from them. `where` (field to value) keeps only the notes whose `fields` have all of them; it is a filter, not an access control. Read-only. | `{"answer", "notes"}`: the answer cites its notes as `[path.md]` |
+| `remember(text, title?)` | Files the text like a note written on the page. It goes in the right folder, or is merged into the note on the same subject, and is linked to related notes. | `{"action", "note", "folder", "related"}`, and `deviated` (a count) with `deviations` (each note, the root it went to, `p_none`, `p_root`) when the limit on top-level folders sent the note to the likeliest existing folder instead of a new one |
 | `read_note(path)` | One note in full: title, summary and body. Read-only. | the note's text |
+| `rebuild(confirm)` | Deletes every note, raw copy and archived version and files the raw copies again on the same folders, with no new plan and no new folder. Destructive and slow: it does nothing unless `confirm` is `true`. It runs as a job like the others when the client does the model work. | the counts (`created`, `merged`, `unchanged`, `errors`, `stopped`) and the deviations |
+| `create_area(name, description)` | Opens a new top-level folder the user asked for. Refused when the wiki already has `max_top_folders` of them. The memory never opens or proposes an area on its own. | `{"folder", "description"}` |
+| `propose_area(name, description, notes)` | Queues a top-level folder the user described, with the notes (paths or ids) it would hold. Nothing moves until it is confirmed. | the proposal (`id`, `label`, `description`, `notes`, `status`…) |
+| `proposals()` | The open proposals, to put to the user as a yes or a no. Read-only. | a list of proposals |
+| `confirm_area(id, yes)` | The user's answer: `yes` true opens the folder and moves only the proposed notes still there into it (each with `moved_from`); false dismisses the proposal. A yes is refused at the limit of top-level folders. | the proposal, and `moved` (the notes' new paths) for a yes |
 | `reply(job, replies)` | Hands over the client's replies to the memory's requests, when the client does its model work (below). | the next requests, or the result |
 
 The server tells the client's model how to use them:
@@ -97,10 +102,41 @@ a model that does not answer would. While a memory is filed, the wiki is held fo
 waits for the client meanwhile. `log.md` names `mcp-client` as the model of the notes the client filed. The CROW
 thresholds stay the wiki's own, as in **Settings**.
 
+The lines the memory writes in `log.md` end with ` · by <name>`: the `X-Author` header of the request if there is one (a
+reverse proxy that authenticates your users can set it), else the client's name from the handshake (`clientInfo.name`),
+else the product in its `User-Agent`. The memory answers statelessly, so the handshake is another request and its name
+is seldom there when a tool is called: expect the `User-Agent`. The name is **declared, not verified**; it is a record,
+not a login.
+
 A memory takes a few round trips: about a minute. The client's tool calls and subagents run on its own plan.
 
 The page's own filing (files dropped on it) keeps using the wiki's own models, as no client is there to ask. The memory
 files through CROW whichever models do it.
+
+## More than one wiki
+
+Each wiki is its own bundle with its own server, and there is no search across wikis. To have a client consult several,
+run one server per wiki on different ports, with the memory on, and add each to the same client under its own name:
+
+```bash
+OKF_MCP=1 llmwiki2 --bundle ./wiki-a serve --port 8001
+OKF_MCP=1 llmwiki2 --bundle ./wiki-b serve --port 8002
+
+claude mcp add --transport http --scope user wiki-a http://127.0.0.1:8001/mcp   # Claude Code
+claude mcp add --transport http --scope user wiki-b http://127.0.0.1:8002/mcp
+codex mcp add wiki-a --url http://127.0.0.1:8001/mcp                            # Codex
+codex mcp add wiki-b --url http://127.0.0.1:8002/mcp
+```
+
+The client's model then calls `recall` on each wiki and puts the answers together itself, so the merge is its work and
+not the wiki's. Limits:
+- there is no common ranking between wikis: each `recall` ranks only its own notes, and the client decides which
+  answer to trust;
+- there is no permission model between wikis: a client added to both can read both (and `remember` into either), so
+  add a wiki only to the clients that may read it;
+- `where` filters on `fields` inside one wiki; it is not an access control (see the table above).
+
+To do the same from code, see "Asking several wikis" in the [library guide](../library/index.md#asking-several-wikis).
 
 ## Docker
 

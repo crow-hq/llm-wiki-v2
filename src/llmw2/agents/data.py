@@ -21,6 +21,12 @@ class Source:
     resource: str | None = None  # URL or path of the original, if any
     origin: Origin | None = None  # where the original lives at its source, if it has one
     fields: dict[str, Any] = field(default_factory=dict)  # user data, uninterpreted by the core
+    file_name: str | None = None  # the file it was read from, when `title` is only made from that name
+
+    @property
+    def label(self) -> str:
+        """The line that shows the source to the writer: by its file name when `title` is made from it."""
+        return f"File name: {self.file_name}" if self.file_name else f"Source title: {self.title or '(none)'}"
 
 
 @dataclass
@@ -46,6 +52,9 @@ class Route:
     candidates: list[Folder]  # folders whose notes are checked for consolidation
     # (name, description) per level to open below `folder`, reusing a subfolder of the same name; the note goes in the last one
     create: list[tuple[str, str]] = field(default_factory=list)
+    # set when the limit on top-level folders sent the note to the likeliest one: the probabilities that made it, written to
+    # the note's frontmatter as `overflow` (the likeliest existing root took it instead of a new one); None for a note filed as routed
+    overflow: dict[str, float] | None = None
 
 
 class PlannedFolder(BaseModel):
@@ -65,6 +74,11 @@ class SplitFolder(BaseModel):
 
 class SplitPlan(BaseModel):
     folders: list[SplitFolder]  # required, as in FolderPlan
+
+
+class GrownArea(BaseModel):
+    name: str
+    description: str
 
 
 class NoteDraft(BaseModel):

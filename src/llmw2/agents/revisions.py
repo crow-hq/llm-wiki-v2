@@ -10,6 +10,7 @@ two typed questions, one of identity and one per kept sentence, guard it; classi
 
 from __future__ import annotations
 
+import contextvars
 import difflib
 import logging
 import re
@@ -263,8 +264,9 @@ def kept_sentences(ctx: StepContext, old_body: str, source_text: str, new_body: 
             except ModelError:
                 return False
 
-        with ThreadPoolExecutor(max_workers=KEPT_WORKERS) as pool:
-            candidates = [s for s, keep in zip(candidates, pool.map(still, candidates), strict=True) if keep]
+        with ThreadPoolExecutor(max_workers=KEPT_WORKERS) as pool:  # each in a copy of the context: the usage spans and the cap follow
+            kept_flags = pool.map(lambda s: contextvars.copy_context().run(still, s), candidates)
+            candidates = [s for s, keep in zip(candidates, kept_flags, strict=True) if keep]
     kept: list[str] = []
     used = 0
     for sentence in candidates:
@@ -290,4 +292,4 @@ def revise(ctx: StepContext, note: Note, source: Source) -> NoteDraft | None:
     kept = kept_sentences(ctx, note.main_body(), source.text, body, removed_strings(old, source.text))
     if kept:
         body += "\n\n## From the previous version\n\n" + "\n".join("- " + _LIST_MARK.sub("", s) for s in kept)
-    return NoteDraft(title=note.title, summary=cand.summary, tags=list(cand.tags), body=body, fields=dict(cand.fields))
+    return NoteDraft(title=cand.title, summary=cand.summary, tags=list(cand.tags), body=body, fields=dict(cand.fields))

@@ -18,6 +18,11 @@ class InputError(WikiError, ValueError):
     """The caller's input cannot be used: an empty source or question, a file type we cannot read, invalid settings."""
 
 
+class NoteChanged(InputError):
+    """A note changed on disk after the store read it, so the store did not overwrite it. A document that needed that note
+    is not filed (nothing is written for it) and the next run files it again."""
+
+
 class ConfigError(WikiError, ValueError):
     """The configuration itself is broken: an unreadable settings file, a malformed environment variable."""
 
@@ -28,6 +33,14 @@ class ModelError(WikiError, RuntimeError):
     def __init__(self, message: str, *, status: int | None = None) -> None:
         super().__init__(message)
         self.status = status  # the provider's HTTP status, when it answered with an error
+
+
+class SpendingCap(WikiError):
+    """The spending cap of a run was reached (`sync(max_cost=...)`): no model is called any more, and the run stops.
+
+    It is not a `ModelError` on purpose: the steps that tolerate a failing model (a fallback, a note without links) must
+    not take the cap for one, or a document would be filed with a worse decision and never redone.
+    """
 
 
 class ReplyInvalid(ModelError):

@@ -340,7 +340,7 @@ def test_ingest_of_a_pdf_reads_its_text_layer(
 
     assert capsys.readouterr().out == f"created: {NOTE} (new folders: /finance)\n"
     prompt = llm.calls[0][1][-1]["content"]
-    assert "Revenue is booked on delivery." in prompt and "Source title: board minutes" in prompt
+    assert "Revenue is booked on delivery." in prompt and "File name: board-minutes.pdf" in prompt
 
 
 def test_ingest_of_an_unsupported_file_exits_2(

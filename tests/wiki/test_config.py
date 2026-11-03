@@ -33,6 +33,7 @@ def env_for(bundle: Path, **variables: str) -> dict[str, str]:
         ("OKF_CLASSIFIER_ATTEMPTS", "3", "classifier.attempts", 3),
         ("OKF_UPLOAD_MB", "5", "upload_mb", 5),
         ("OKF_CONCURRENCY", "4", "concurrency", 4),
+        ("OKF_MAX_TOP_FOLDERS", "3", "max_top_folders", 3),
         ("OKF_PLAN", "groups", "plan", "groups"),
         ("OKF_PLAN", "writer", "plan", "writer"),
         ("OKF_MCP", "1", "mcp", True),
@@ -50,6 +51,11 @@ def test_from_env_when_a_variable_is_set_then_its_field_takes_the_value(
 
     # ASSERT
     assert attrgetter(field)(config) == expected
+
+
+def test_from_env_when_max_top_folders_is_below_one_then_it_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="max_top_folders"):
+        WikiConfig.from_env(env_for(tmp_path, OKF_MAX_TOP_FOLDERS="0"))
 
 
 def test_from_env_ignores_empty_variables(tmp_path: Path) -> None:

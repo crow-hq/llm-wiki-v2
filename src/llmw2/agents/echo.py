@@ -4,7 +4,7 @@
 """Folder names and descriptions a writer copied from its prompt instead of writing them from the documents, in code.
 
 A small writer copies what its prompt shows: the reply format ("/area/subject", "1 to 3 lowercase words joined by
-hyphens"), the head of a listing ("title: opening"), the examples of the folder rules ("engineering", "suppliers"), the
+hyphens"), the head of a listing ("title: opening"), the examples of the folder rules ("suppliers"), the
 codes of the file names ("a13a14a20"). A name is the writer's own when one of its words is a content word of the
 documents it was shown: three letters or more, not a word that only says how to name or lay out a folder.
 """

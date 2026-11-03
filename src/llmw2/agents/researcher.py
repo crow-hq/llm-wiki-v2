@@ -20,7 +20,7 @@ from llmw2.agents.steps import StepContext, Steps, check_answer, check_select
 from llmw2.bundle.document import OKFDocumentError
 from llmw2.bundle.sheets import SHEET_CHARS, rows_for
 from llmw2.bundle.store import WikiStore
-from llmw2.bundle.tree import Note
+from llmw2.bundle.tree import Note, matching
 from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import InputError, ModelError
 from llmw2.models.classifier import Classifier
@@ -30,7 +30,8 @@ from llmw2.models.usage import UsageReport
 log = logging.getLogger(__name__)
 
 NO_ANSWER = "The wiki has no notes relevant to this question."
-_CITATION = re.compile(r"\[([^\[\]\s]+\.md)\]")
+_BRACKET = re.compile(r"\[([^\[\]]+)\]")
+_NOTE_PATH = re.compile(r"[^\s\[\];,]+\.md")
 
 
 @dataclass
@@ -40,9 +41,23 @@ class Answer:
     notes: list[str]  # bundle paths given to the answering LLM
     decisions: list[Decision]
     usage: UsageReport = field(default_factory=UsageReport)
+    titles: dict[str, str] = field(default_factory=dict)  # each cited path -> the note's title when the answer was written
 
     def to_dict(self) -> dict[str, Any]:
         return {**asdict(self), "usage": self.usage.to_dict()}
+
+
+def _cited(text: str) -> list[str]:
+    """The note paths in the brackets of `text`: "[a/x.md]", "[a/x.md; b/y.md]" or "[a/x.md, b/y.md]".
+
+    A bracket with any other word cites nothing.
+    """
+    found: list[str] = []
+    for bracket in _BRACKET.findall(text):
+        parts = [p.strip() for p in re.split(r"[;,]", bracket)]
+        if all(_NOTE_PATH.fullmatch(p) for p in parts):
+            found += parts
+    return found
 
 
 class Researcher:
@@ -56,10 +71,13 @@ class Researcher:
         self.steps = steps
         self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="researcher/system")
 
-    def ask(self, question: str) -> Answer:
+    def ask(self, question: str, where: dict[str, Any] | None = None) -> Answer:
+        """`where` (field -> value) keeps the notes whose `fields` have all of them: a filter, not an access control."""
         ctx = self.ctx
         with ctx.llm.usage.span() as used:
             root = self.store.load()
+            if where:
+                root = matching(root, where)
             notes = check_select(self.steps.select(ctx, root, question), root)
             notes, past = self._with_history(question, notes)
             asked = f"{question}\n\n{revisions.HISTORY_HINT}" if past else question
@@ -67,8 +85,9 @@ class Researcher:
                 asked = f"{asked}\n\n{conflicts.CONFLICT_HINT}"
             text = check_answer(self.steps.answer(ctx, asked, self._with_rows(question, notes))) if notes else NO_ANSWER
         read = {n.rel for n in notes}
-        citations = [c for c in dict.fromkeys(_CITATION.findall(text)) if c in read]
-        return Answer(text, citations, [n.rel for n in notes], ctx.decisions, used)
+        citations = [c for c in dict.fromkeys(_cited(text)) if c in read]
+        titles = {n.rel: n.title for n in notes if n.rel in citations}
+        return Answer(text, citations, [n.rel for n in notes], ctx.decisions, used, titles={c: titles[c] for c in citations})
 
     def _with_rows(self, question: str, notes: list[Note]) -> list[Note]:
         """The notes as the answer reads them: a spreadsheet sheet's note gets the rows of its sources the question needs.

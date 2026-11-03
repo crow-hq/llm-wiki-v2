@@ -21,6 +21,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from llmw2.errors import SpendingCap
+
 log = logging.getLogger(__name__)
 
 Kind = Literal["llm", "classifier"]
@@ -35,6 +37,7 @@ class Usage:
     seconds: float = 0.0  # time spent waiting for the model
     cost_usd: float = 0.0  # cost the provider reported (OpenRouter does); 0 when it reports none
     cached_tokens: int = 0  # input tokens the provider served from its prompt cache (billed less)
+    served: int = 0  # answers served from the classifier's answer cache: no call was made, so they are not in `calls`
 
     def add(
         self,
@@ -62,7 +65,10 @@ class Usage:
             setattr(self, f.name, getattr(self, f.name) + getattr(other, f.name))
 
     def to_dict(self) -> dict[str, float]:
-        return {**asdict(self), "total_tokens": self.total_tokens}
+        out = {**asdict(self), "total_tokens": self.total_tokens}
+        if not self.served:  # only a wiki with the answer cache on reports it
+            del out["served"]
+        return out
 
 
 @dataclass
@@ -115,12 +121,15 @@ class UsageReport:
 
     def summary(self) -> str:
         def one(name: str, u: Usage) -> str:
-            return f"{name} {u.calls} calls {u.input_tokens:,} in / {u.output_tokens:,} out"
+            served = f" + {u.served} from the cache" if u.served else ""
+            return f"{name} {u.calls} calls{served} {u.input_tokens:,} in / {u.output_tokens:,} out"
 
         return f"{one('llm', self.llm)} | {one('classifier', self.classifier)}"
 
 
 _open_spans: contextvars.ContextVar[tuple[UsageReport, ...]] = contextvars.ContextVar("llmw2_spans", default=())
+_filing: contextvars.ContextVar[bool] = contextvars.ContextVar("llmw2_filing", default=False)
+_limits: contextvars.ContextVar[tuple[tuple[UsageReport, float], ...]] = contextvars.ContextVar("llmw2_limits", default=())
 
 
 class UsageTracker:
@@ -173,6 +182,58 @@ class UsageTracker:
                 }
                 with self._log_path.open("a", encoding="utf-8") as f:
                     f.write(json.dumps(line) + "\n")
+
+    def spent(self) -> float:
+        """USD the providers reported so far, both ledgers (0 for a provider that reports none, like Ollama)."""
+        with self._lock:
+            return self._total.llm.cost_usd + self._total.classifier.cost_usd
+
+    def check(self) -> None:
+        """Raise `SpendingCap` when a `limit` is open and its cap is reached. Called before each model request.
+
+        Not while a document is being filed (`filing`): it ends with all its decisions and links.
+        """
+        if _filing.get():
+            return
+        for report, cap in _limits.get():
+            with self._lock:
+                spent = report.llm.cost_usd + report.classifier.cost_usd
+            if spent >= cap:
+                raise SpendingCap(f"spending cap reached: ${spent:.4f} spent against a cap of ${cap:.4f}")
+
+    @contextmanager
+    def filing(self) -> Iterator[None]:
+        """Inside the block (in this thread/task) `check` does not raise: a document being filed is not interrupted halfway."""
+        token = _filing.set(True)
+        try:
+            yield
+        finally:
+            _filing.reset(token)
+
+    @contextmanager
+    def limit(self, max_cost: float | None) -> Iterator[None]:
+        """Cap what the block spends at `max_cost` USD: once reached, `check` raises. None: no cap.
+
+        Only the calls made inside the block (in this thread/task, as for `span`) count and are stopped: other work on the
+        same tracker goes on. A call already on its way is paid, so the cap is passed by at most the calls in flight.
+        """
+        if max_cost is None:
+            yield
+            return
+        with self.span() as report:
+            token = _limits.set((*_limits.get(), (report, max_cost)))
+            try:
+                yield
+            finally:
+                _limits.reset(token)
+
+    def serve(self, kind: Kind, model: str, op: str = "") -> None:
+        """Count an answer served from a cache: no call, no tokens, no cost."""
+        with self._lock:
+            for report in (self._total, *_open_spans.get()):
+                getattr(report, kind).served += 1
+                report.by_model.setdefault(f"{kind}:{model}", Usage()).served += 1
+                report.by_op.setdefault(f"{kind}:{op or '?'}", Usage()).served += 1
 
     @contextmanager
     def span(self) -> Iterator[UsageReport]:

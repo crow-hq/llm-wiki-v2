@@ -5,9 +5,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 from llmw2.bundle.tree import Folder, Note, slugify
 
@@ -49,3 +49,10 @@ def unique_objects(items: Iterable[T]) -> list[T]:
 
 def clean_tags(tags: list[str]) -> list[str]:
     return list(dict.fromkeys(t for t in (slugify(t, max_len=30, fallback="") for t in tags) if t))[:6]
+
+
+def fields_conflict(a: Mapping[str, Any] | None, b: Mapping[str, Any] | None) -> bool:
+    """Whether two `fields` have a key in common with different values: such a note and document are never merged."""
+    if not isinstance(a, Mapping) or not isinstance(b, Mapping):
+        return False
+    return any(a[k] != b[k] for k in a.keys() & b.keys())

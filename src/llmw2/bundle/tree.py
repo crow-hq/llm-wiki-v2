@@ -26,6 +26,14 @@ OKF_VERSION = "0.2"
 
 _ENTRY = re.compile(r"^[*-]\s+\[(?P<title>[^\]]*)\]\((?P<link>[^)\s]+)\)\s*(?:-\s*(?P<text>.*))?$")
 _LINK = re.compile(r"\[(?P<text>[^\]]*)\]\((?P<link>[^)\s]+)\)")
+_MD_LINK = re.compile(r"\[(?P<text>[^\]]*)\]\((?P<link>[^)\s#:]+\.md(?:#[^)\s]*)?)\)")
+_WIKI_LINK = re.compile(r"!?\[\[(?P<name>[^\]|]+)(?:\|(?P<label>[^\]]*))?\]\]")
+# a fenced block (``` or ~~~, to its closing fence or the end) or an inline code span (not across a blank line)
+CODE = re.compile(
+    r"^ {0,3}(?P<fence>`{3,}|~{3,}).*?(?:^ {0,3}(?P=fence)[`~]*[ \t]*$|\Z)"
+    r"|(?P<ticks>`+)(?!`)(?:[^\n]|\n(?!\s*\n))*?(?<!`)(?P=ticks)(?!`)",
+    re.MULTILINE | re.DOTALL,
+)
 
 
 def slugify(text: str, *, max_len: int = 60, fallback: str = "note") -> str:
@@ -58,6 +66,9 @@ class Note:
     frontmatter: dict[str, Any]
     body: str
     folder: Folder | None = field(default=None, repr=False)
+    # the file as the store last read or wrote it (modification time, size, inode): None for a note not on disk yet.
+    # The store writes a note only if its file still has this stamp (see `WikiStore._save`)
+    stamp: tuple[int, int, int] | None = field(default=None, repr=False)
 
     @property
     def slug(self) -> str:
@@ -155,6 +166,26 @@ class Folder:
         }
 
 
+def matching(root: Folder, where: dict[str, Any]) -> Folder:
+    """A copy of the tree with only the notes whose `fields` hold every key of `where` (compared as strings).
+
+    The folders are new and the notes the same objects, so the tree it is made from, which a session shares, is not touched.
+    A folder with no such note, itself or below, is left out.
+    """
+
+    def keep(note: Note) -> bool:
+        fields = note.frontmatter.get("fields")
+        return isinstance(fields, dict) and all(k in fields and str(fields[k]) == str(v) for k, v in where.items())
+
+    def copy(folder: Folder, parent: Folder | None) -> Folder:
+        out = Folder(folder.path, folder.rel, folder.description, parent=parent)
+        out.notes = [n for n in folder.notes if keep(n)]
+        out.subfolders = [s for s in (copy(sub, out) for sub in folder.subfolders) if s.notes or s.subfolders]
+        return out
+
+    return copy(root, None)
+
+
 def split_see_also(body: str) -> tuple[str, list[str]]:
     """(body before "# See also", its list lines).
 
@@ -184,6 +215,18 @@ def join_see_also(main: str, entries: list[str]) -> str:
     if not entries:
         return main + "\n"
     return f"{main}\n\n{SEE_ALSO}\n\n" + "\n".join(entries) + "\n"
+
+
+def refresh_entries(body: str, from_rel: str, target: str, entry: Callable[[str], str]) -> str:
+    """`body` of the document at `from_rel` with each See-also entry that links to `target` replaced by `entry(link)`.
+
+    The rest of the body stays as it is, byte for byte.
+    """
+    for old in split_see_also(body)[1]:
+        m = _ENTRY.match(old.strip())
+        if m and link_target(from_rel, m["link"]) == target:
+            body = body.replace(old, entry(m["link"]))
+    return body
 
 
 def link_target(from_rel: str, link: str) -> str | None:
@@ -236,6 +279,28 @@ def rewrite_links(body: str, from_rel: str, to_rel: str, remap: Callable[[str], 
     kept = [fix_entry(e) for e in entries]
     text = _LINK.sub(lambda m: m[0][: m.start("link") - m.start()] + fix(m["link"]) + ")", main)
     return body if kept == entries and text == main else join_see_also(text, kept)
+
+
+def dead_links_to_text(body: str, from_rel: str, exists: Callable[[str], bool]) -> str:
+    """`body` of the note at `from_rel` with the links that lead nowhere written as plain text; code is left as it is.
+
+    "[text](x.md)" whose file is not in the bundle (`exists` is asked for a path inside it) becomes "text (x.md)", or
+    "x.md" when the text is the same; "[[name]]", "[[name|label]]" and "![[name]]" become the name or the label.
+    """
+
+    def md(m: re.Match[str]) -> str:
+        target = link_target(from_rel, m["link"])
+        if target is not None and not target.startswith("..") and exists(target):
+            return m[0]
+        return m["link"] if m["text"] == m["link"] else f"{m['text']} ({m['link']})"
+
+    def convert(text: str, pattern: re.Pattern[str], fix: Callable[[re.Match[str]], str]) -> str:
+        """Fix the matches of `pattern` unless one lies wholly in code: code inside a link's text does not protect it."""
+        spans = [(c.start(), c.end()) for c in CODE.finditer(text)]
+        return pattern.sub(lambda m: m[0] if any(a <= m.start() and m.end() <= b for a, b in spans) else fix(m), text)
+
+    body = convert(body, _WIKI_LINK, lambda m: m["label"] or m["name"])
+    return convert(body, _MD_LINK, md)
 
 
 def graph(root: Folder) -> dict[str, list[dict[str, Any]]]:

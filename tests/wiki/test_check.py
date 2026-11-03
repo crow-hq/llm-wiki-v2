@@ -97,7 +97,8 @@ def test_a_broken_relative_link_in_a_note_is_reported(store: WikiStore, bundle: 
     finance, _ = store.create_folder(root, "finance", "Money.")
     _note(store, root, "Target")
     body = "See [ok](../target.md), [anchored](../target.md#top), [absolute](/target.md) and [gone](../gone.md)."
-    _note(store, finance, "Revenue", body=body)
+    revenue = _note(store, finance, "Revenue")  # a note written with a link to nowhere has it turned into text: write the link after
+    _put(revenue.path, f"---\ntype: Note\ntitle: Revenue\n---\n\n{body}\n")
     assert _problems(bundle) == ["finance/revenue.md: broken link to ../gone.md"]
 
 

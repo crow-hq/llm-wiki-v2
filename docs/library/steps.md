@@ -194,7 +194,7 @@ def route(ctx, root, cand):
 
 def summarize(ctx, source):
     cand = steps_classic.summarize(ctx, source)
-    cand.fields.update(source.fields)
+    cand.fields["kind"] = "memo"
     return cand
 ```
 
@@ -226,10 +226,11 @@ other (see [prompts](../wiki/prompts.md)). Classic mode runs none of them.
 ### Fields
 
 `Source.fields` is a dict of your own data, given to `wiki.ingest(..., fields=...)`.
-The core does not interpret it; steps read it as `ctx.source.fields`. To keep it
-with the note, put it in `Candidate.fields` (new notes) or `NoteDraft.fields`
-(merged notes): it is written to the note's frontmatter under `fields:`. When
-a note is merged, the new keys are laid over the note's existing ones. Values
+The core does not interpret it; steps read it as `ctx.source.fields`. The
+document's fields are written to its note's frontmatter under `fields:` (a new
+note), and laid over the note's existing ones when it is merged; a step can add
+more in `Candidate.fields` or `NoteDraft.fields`. A document is never merged into a
+note with a different value for a key they share. Values
 must be something YAML can write (strings, numbers, booleans, lists, dicts).
 A later `select` can read it back as `note.frontmatter["fields"]`.
 

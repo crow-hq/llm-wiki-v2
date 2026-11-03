@@ -2,7 +2,7 @@ Write the wiki note for a long source from the notes taken on each of its parts,
 
 {{shared/note_rules}}
 
-Source title: {{source_title}}
+{{source_title}}
 Source location: {{source_resource}}
 
 <notes>

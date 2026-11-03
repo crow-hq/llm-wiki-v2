@@ -5,8 +5,9 @@ Lay out its folders before the first one is filed, so that every document finds 
 
 {{shared/folder_rules}}
 
-- At most {{top}} top-level folders: the broad areas these documents belong to.
+- At most {{top}} top-level folders: the broad areas these documents belong to. A single client, supplier, project or product is never a top-level folder, however many documents are about it: it is a subfolder of the broad area it belongs to.
 - A subfolder only for a specific subject that at least 2 of these documents share (one client, one supplier, a project, a product line, a recurring kind of document such as weekly meetings); at most {{depth}} levels in all.
+- A folder that has subfolders has at least two, and together they hold all of its documents; a subject with no second subject beside it stays in its parent.
 - Names: 1 to 3 lowercase words joined by hyphens, letters a-z and digits only, in the language of the documents; a plural noun for collections.
 
 Reply with JSON, parents before their subfolders:

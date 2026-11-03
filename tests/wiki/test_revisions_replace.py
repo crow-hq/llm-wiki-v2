@@ -974,7 +974,7 @@ def test_revise_builds_the_new_body_from_the_summary_the_changes_and_the_kept_se
     draft = revisions.revise(ctx, note, source)
 
     assert isinstance(draft, NoteDraft)
-    assert draft.title == note.title  # the existing note's title
+    assert draft.title == cand.title  # the title written for the new version
     assert (draft.summary, draft.tags, draft.fields) == (cand.summary, cand.tags, cand.fields)
     changes = revisions.changes_section(OLD, source.text)
     assert draft.body.startswith(cand.body + "\n\n" + changes)
@@ -1085,7 +1085,7 @@ def check_replaced(wiki: Wiki, bundle: Path, result: Any, rel: str) -> OKFDocume
     assert "NEWSUMMARYMARKER" in note.body and "OLDBODYMARKER" not in note.body
     assert "## Changes from the previous version" in note.body
     assert "**AB-5678**" in note.body and "(previously: AB-1234)" in note.body
-    assert note.frontmatter["title"] == TITLE  # the existing note's title
+    assert note.frontmatter["title"] == "Wholesale programme review 2026 rev 2"  # the title written for the new version
     assert note.frontmatter["description"] == "What Wholesale programme review 2026 rev 2 says."
     assert "topic" in note.frontmatter["tags"]
     assert len(note.frontmatter["sources"]) == 2

@@ -367,7 +367,7 @@ def test_upload_catalogues_a_text_file(client: TestClient, llm: FakeLLM, bundle:
     response = client.post("/upload", params={"filename": "q3-memo.txt"}, content=b"Revenue is booked on delivery.")
 
     assert response.status_code == 200 and response.json()["note"] == NOTE
-    assert "Source title: q3 memo" in llm.calls[0][1][-1]["content"]
+    assert "File name: q3-memo.txt" in llm.calls[0][1][-1]["content"]
 
 
 def test_upload_catalogues_a_pdf(client: TestClient, llm: FakeLLM) -> None:

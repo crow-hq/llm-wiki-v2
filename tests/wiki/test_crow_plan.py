@@ -33,9 +33,10 @@ These documents are about to be filed (title: opening):
 <documents>
 
 Lay out only the NEW folders these documents need: a new top-level area only for a broad area none of the existing ones
-covers, a new subfolder only for a specific subject (one client, one supplier, a project, a product line, a recurring kind
-of document) that at least 2 of these documents share and no existing folder covers. Never repeat, rename or move an
-existing folder. At most <depth> levels in all. Names: 1 to 3 lowercase words joined by hyphens, letters a-z and digits.
+covers (never a single client, supplier, project or product: that is a subfolder of the broad area it belongs to), a new
+subfolder only for a specific subject (one client, one supplier, a project, a product line, a recurring kind of document)
+that at least 2 of these documents share and no existing folder covers. Never repeat, rename or move an existing folder.
+At most <depth> levels in all. Names: 1 to 3 lowercase words joined by hyphens, letters a-z and digits.
 It is fine to answer with no folders.
 
 Reply with JSON, parents before their subfolders:
@@ -453,7 +454,7 @@ def test_batch_on_a_wiki_with_folders_asks_plan_more(bundle: Path) -> None:
     assert filed_all(report, 3)
     assert plans(llm) == [PLAN_MORE]
     assert llm.ops.index(PLAN_MORE) < llm.ops.index(SUMMARIZE)
-    assert "/blue" in [f.label for f in wiki.store.load().walk()]
+    assert "/blue" not in [f.label for f in wiki.store.load().walk()]  # made by the plan, no document went there: taken back
     assert [line.endswith(", by plan_more") for line in log_lines(wiki, "Created folder")[:1]] == [True]
 
 
@@ -463,7 +464,7 @@ def test_a_batch_on_an_empty_wiki_with_plan_groups_is_planned_by_groups_in_every
     # ARRANGE
     wiki, llm = make_crow(bundle, llm=OLLAMA, plan="groups")
     calls: list[int] = []
-    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None: calls.append(len(documents)) or {})
+    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None, made=None: calls.append(len(documents)) or {})
 
     # ACT
     report = wiki.ingest_many([item(n) for n in range(52)])
@@ -502,7 +503,7 @@ def test_a_hosted_writers_batch_with_plan_groups_is_planned_by_groups(bundle: Pa
     # ARRANGE
     wiki, llm = make_crow(bundle, plan="groups")
     calls: list[int] = []
-    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None: calls.append(len(documents)) or {})
+    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None, made=None: calls.append(len(documents)) or {})
 
     # ACT
     report = wiki.ingest_many([item(n) for n in range(3)])
@@ -519,7 +520,7 @@ def test_a_batch_on_an_empty_wiki_gets_the_writers_plan_not_groups_by_default(
 ) -> None:
     # ARRANGE
     wiki, llm = make_crow(bundle, **writer)
-    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None: pytest.fail("the default plan is the writer's"))
+    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None, made=None: pytest.fail("the default plan is the writer's"))
 
     # ACT
     report = wiki.ingest_many([item(n) for n in range(3)])
@@ -536,7 +537,7 @@ def test_a_batch_with_plan_groups_on_a_wiki_with_folders_gets_the_writers_plan_n
     wiki, llm = make_crow(bundle, llm=OLLAMA, plan="groups")
     add_folder(wiki, "/", "red", "Red things.")
     llm.plan_more_reply = {"folders": []}
-    monkeypatch.setattr(wiki, "plan_groups", lambda documents, seen=None: pytest.fail("a wiki with folders is not planned by groups"))
+    monkeypatch.setattr(wiki, "plan_groups", lambda *_: pytest.fail("a wiki with folders is not planned by groups"))
 
     # ACT
     report = wiki.ingest_many([item(n) for n in range(3)])
@@ -558,8 +559,8 @@ def test_a_window_of_fifty_documents_is_one_plan_and_the_next_window_plans_again
     assert filed_all(report, 52)
     assert plans(llm) == [PLAN, PLAN_MORE]
     first, second = (i for i, op in enumerate(llm.ops) if op in (PLAN, PLAN_MORE))
-    assert llm.ops[:second].count(SUMMARIZE) == 50  # the second plan comes when the first window is filed
-    assert llm.ops[first:second].count(SUMMARIZE) == 50
+    assert SUMMARIZE not in llm.ops[:second]  # both plans come before the first document is summarized and filed
+    assert first == 0 and llm.ops[second:].count(SUMMARIZE) == 52
     first_text, second_text = (user_text(c) for c in llm.calls if c[0] in (PLAN, PLAN_MORE))
     assert first_text.count("line of document") == 50 and "line of document 50." not in first_text
     assert second_text.count("line of document") == 2 and "line of document 50." in second_text and "line of document 51." in second_text

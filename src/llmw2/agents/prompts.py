@@ -21,14 +21,17 @@ _PACKAGE = resources.files("llmw2.agents") / "prompts"
 class Prompts:
     def __init__(self, override_dir: Path | None = None) -> None:
         self.override_dir = override_dir
+        self._packaged: dict[str, str] = {}  # the prompts that ship with the package never change while it runs
 
     def load(self, name: str, /) -> str:
         if self.override_dir and (path := self.override_dir / f"{name}.md").is_file():
             return path.read_text(encoding="utf-8")
-        resource = _PACKAGE.joinpath(*f"{name}.md".split("/"))
-        if not resource.is_file():
-            raise FileNotFoundError(f"no prompt named {name!r}")
-        return resource.read_text(encoding="utf-8")
+        if (text := self._packaged.get(name)) is None:
+            resource = _PACKAGE.joinpath(*f"{name}.md".split("/"))
+            if not resource.is_file():
+                raise FileNotFoundError(f"no prompt named {name!r}")
+            text = self._packaged[name] = resource.read_text(encoding="utf-8")
+        return text
 
     def fingerprint(self) -> str:
         """First 12 hex chars of a sha256 over the text of every template as `load` resolves it (overrides included)."""

@@ -67,6 +67,7 @@ class HttpModel:
         headers = {**self.headers, **({"Authorization": f"Bearer {self.api_key}"} if self.api_key else {})}
         url = f"{self.base_url}{path}"
         for attempt in range(1, self.attempts + 1):
+            self.usage.check()  # a spending cap stops every request, a retry too; an answer from a cache never gets here
             backoff = wait = self.backoff * 2 ** (attempt - 1)
             try:
                 response = self.client.post(url, json=payload, headers=headers)
