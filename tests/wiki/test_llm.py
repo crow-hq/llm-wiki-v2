@@ -86,6 +86,70 @@ def test_complete_posts_system_and_user_messages(tracker: UsageTracker) -> None:
     }
 
 
+def test_modelgo_posts_to_the_international_endpoint_with_the_selected_model(tracker: UsageTracker) -> None:
+    client, requests = serve(completion("Hello.", {"prompt_tokens": 12, "completion_tokens": 3}))
+    cfg = LLMConfig(provider="modelgo", model="account-model", api_key="modelgo-test")
+
+    assert LLM(cfg, tracker, client=client).complete("Be terse.", "Say hello.") == "Hello."
+
+    [request] = requests
+    assert request.method == "POST"
+    assert str(request.url) == "https://api.modelgo.ai/v1/chat/completions"
+    assert request.headers["authorization"] == "Bearer modelgo-test"
+    assert sent(request) == {
+        "model": "account-model",
+        "messages": [{"role": "system", "content": "Be terse."}, {"role": "user", "content": "Say hello."}],
+        "temperature": 0.1,
+    }
+    assert tracker.snapshot().llm.total_tokens == 15
+    assert tracker.snapshot().classifier.calls == 0
+
+
+def test_modelgo_omits_temperature_only_after_the_model_explicitly_refuses_it(tracker: UsageTracker) -> None:
+    refused = httpx.Response(400, json={"error": {"message": "Unsupported parameter: 'temperature' is not supported"}})
+    llm, requests = make_llm(tracker, refused, completion("ok"), provider="modelgo")
+
+    assert llm.complete("system", "user") == "ok"
+    assert llm.complete("system", "again") == "ok"
+
+    first, retry, later = map(sent, requests)
+    assert first["temperature"] == 0.3
+    assert "temperature" not in retry and "temperature" not in later
+    assert {k: v for k, v in first.items() if k != "temperature"} == retry
+    assert tracker.snapshot().llm.calls == 2
+    other, others = make_llm(tracker, completion("ok"), provider="modelgo")
+    other.complete("system", "user")
+    assert sent(others[0])["temperature"] == 0.3
+
+
+@pytest.mark.parametrize(
+    ("provider", "status", "message"),
+    [
+        ("modelgo", 400, "temperature must be between 0 and 2"),
+        ("modelgo", 401, "Unsupported parameter: 'temperature' is not supported"),
+        ("modelgo", 400, "Unsupported parameter: 'seed' is not supported"),
+        ("openrouter", 400, "Unsupported parameter: 'temperature' is not supported"),
+    ],
+)
+def test_other_parameter_errors_do_not_drop_temperature(
+    tracker: UsageTracker, provider: str, status: int, message: str
+) -> None:
+    llm, requests = make_llm(tracker, httpx.Response(status, json={"error": {"message": message}}), provider=provider)
+
+    with pytest.raises(ModelError):
+        llm.complete("system", "user")
+    assert len(requests) == 1
+    assert sent(requests[0])["temperature"] == 0.3
+
+
+def test_modelgo_temperature_fallback_retries_only_once(tracker: UsageTracker) -> None:
+    refused = httpx.Response(400, json={"error": {"message": "Unsupported parameter: 'temperature' is not supported"}})
+    llm, requests = make_llm(tracker, refused, provider="modelgo")
+    with pytest.raises(ModelError):
+        llm.complete("system", "user")
+    assert len(requests) == 2
+
+
 @pytest.mark.parametrize(
     ("provider", "api_key", "authorization"), [("openrouter", "sk-test", "Bearer sk-test"), ("ollama", "", None)]
 )

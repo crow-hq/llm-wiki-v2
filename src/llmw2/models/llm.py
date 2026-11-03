@@ -35,6 +35,7 @@ REASONING_ROOM = 32_000  # tokens added to the cap when the model may think: the
 
 _CAP_REFUSED = ("max_tokens", "max_completion_tokens", "context length", "maximum context", "max_model_len")
 _LOOPED = "token repeat limit"  # Ollama's 500 when it stops a model that keeps repeating itself: a bad reply, not an outage
+_TEMPERATURE_REFUSED = re.compile(r"unsupported parameter[:\s]+['\"]temperature['\"]|['\"]temperature['\"] is not supported")
 
 
 def reply_tokens(chars: int) -> int:
@@ -110,6 +111,8 @@ class LLM(HttpModel):
         self.seed = cfg.seed
         self.pin = cfg.pin_provider if cfg.provider == "openrouter" else []
         self._openrouter = cfg.provider == "openrouter"
+        self._modelgo = cfg.provider == "modelgo"
+        self._omit_temperature = False  # learned per model instance, only after an explicit ModelGo 400
         self._json_mode = True  # retries ask for response_format json_object, until the provider refuses it
         # Ollama holds a retry to the reply's schema (constrained decoding)
         self._schema_retry = cfg.provider == "ollama"
@@ -136,6 +139,7 @@ class LLM(HttpModel):
         reasoning_resent = False  # each request resends at most once for reasoning
         while True:
             built_switched = self._least_applied  # whether this request's body carries the least-reasoning fields
+            built_temperature = not self._omit_temperature
             try:
                 data = self._post("/chat/completions", self._body(messages, json_mode, max_tokens))
                 break
@@ -143,6 +147,9 @@ class LLM(HttpModel):
                 text = str(e).lower()
                 if e.status == 400 and "reasoning" in text and not reasoning_resent and self._switch_reasoning(built_switched):
                     reasoning_resent = True
+                elif self._modelgo and built_temperature and e.status == 400 and _TEMPERATURE_REFUSED.search(text):
+                    log.info("%s refuses temperature: sending requests without it from now on", self.model)
+                    self._omit_temperature = True
                 elif max_tokens is not None and self._cap and e.status in (400, 404) and any(w in text for w in _CAP_REFUSED):
                     log.info("%s refuses the output cap: sending requests without it from now on", self.model)
                     self._cap = False
@@ -166,7 +173,7 @@ class LLM(HttpModel):
             cost=reported_cost(usage),
             cached=(usage.get("prompt_tokens_details") or {}).get("cached_tokens"),
             provider=data["provider"] if isinstance(data.get("provider"), str) else None,
-            temperature=self.temperature,
+            temperature=None if self._omit_temperature else self.temperature,
             seed=self.seed,
             finish_reason=finish,
         )
@@ -202,6 +209,8 @@ class LLM(HttpModel):
         pin = {"provider": {"order": self.pin, "allow_fallbacks": False, "require_parameters": True}} if self.pin else {}
         seed = {"seed": self.seed} if self.seed is not None else {}
         body = {**pin, **seed, **self.extra_body, "model": self.model, "messages": messages, "temperature": self.temperature}
+        if self._omit_temperature:
+            body.pop("temperature")
         if json_mode:
             body["response_format"] = (
                 {"type": "json_schema", "json_schema": {"name": "reply", "schema": json_mode}}

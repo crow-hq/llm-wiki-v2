@@ -44,7 +44,7 @@ def test_settings_show_masked_values_and_readiness(local: TestClient) -> None:
 
     assert (body["ready"], body["editable"], body["managed"]) == (False, True, [])
     assert body["values"]["provider"] == "openrouter" and body["values"]["api_key"] == ""
-    assert set(body["providers"]) == {"openrouter", "openai", "gemini", "ollama", "custom"}
+    assert set(body["providers"]) == {"openrouter", "openai", "gemini", "modelgo", "ollama", "custom"}
     assert set(body["classifier_providers"]) == {"openrouter", "typesafe", "custom"}
     assert body["classifier_providers"]["custom"]["crow_preset"] == "laya" and body["crow_presets"]["laya"]["tau_path"] == 0.65
     assert (body["values"]["temperature"], body["values"]["timeout"], body["values"]["classifier_attempts"]) == (0.1, 120.0, 1)

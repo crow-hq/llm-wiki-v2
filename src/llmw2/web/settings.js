@@ -7,11 +7,12 @@ const HELP = {
   openrouter: 'One key for hundreds of models, and for the CROW classifier too. Create it at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>.',
   openai: 'Create a key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a>.',
   gemini: 'Create a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.',
+  modelgo: 'Use your international <a href="https://modelgo.ai" target="_blank" rel="noopener">ModelGo</a> key and choose a model available to your account. CROW mode needs a separate classifier (Advanced); choose classic to use only the LLM.',
   ollama: 'Free and local, no key: install <a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama</a>, then run <code>ollama pull gemma4</code>. CROW mode also needs a classifier (Advanced): an OpenRouter or TypeSafe key, or a local server. Or choose classic there.',
   custom: "Any OpenAI-compatible server: vLLM, LM Studio, llama.cpp, a gateway. The key is optional.",
 };
-const TAGLINE = { openrouter: "one key, every model", openai: "GPT models", gemini: "Google AI Studio", ollama: "free · local · no key", custom: "vLLM, LM Studio…" };
-const NAME = { openrouter: "OpenRouter", openai: "OpenAI", gemini: "Gemini", ollama: "Ollama", custom: "Custom" };
+const TAGLINE = { openrouter: "one key, every model", openai: "GPT models", gemini: "Google AI Studio", modelgo: "international API", ollama: "free · local · no key", custom: "vLLM, LM Studio…" };
+const NAME = { openrouter: "OpenRouter", openai: "OpenAI", gemini: "Gemini", modelgo: "ModelGo", ollama: "Ollama", custom: "Custom" };
 // Where the CROW classifier runs: its own provider, whatever the model's is.
 const CLF_HELP = {
   openrouter: "Jev on OpenRouter. With OpenRouter as the provider above, its key serves the classifier too; otherwise paste an OpenRouter key.",
@@ -25,7 +26,7 @@ const LLM_PARAMS = [
   ["seed", "Seed", "A number sent with every request: providers that support it answer the same prompt the same way. Empty: none.", ""],
   ["pin_provider", "Providers (OpenRouter)", "Comma-separated, such as DeepInfra, Novita: only these answer, in this order, and a call fails when none is up. Empty: OpenRouter chooses.", "", "text"],
   ["timeout", "Timeout (seconds)", "How long to wait for one reply before it fails. Raise it for a slow local model.", 'min="1"'],
-  ["read_chars", "Characters per call", "Most characters one request to the model may hold, text and rules together. A longer document is read in parts. Empty: automatic, by provider (100000 on OpenRouter, OpenAI and Gemini; 16000 on Ollama and custom servers).", 'min="8000"'],
+  ["read_chars", "Characters per call", "Most characters one request to the model may hold, text and rules together. A longer document is read in parts. Empty: automatic, by provider (100000 on OpenRouter, OpenAI and Gemini; 16000 on ModelGo, Ollama and custom servers).", 'min="8000"'],
 ];
 const CLF_PARAMS = [
   ["classifier_timeout", "Timeout (seconds)", "How long to wait for one decision; a slower one is dropped and the LLM decides.", 'min="0.5"'],

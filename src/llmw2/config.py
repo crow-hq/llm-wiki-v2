@@ -49,6 +49,9 @@ PROVIDERS: dict[str, Provider] = {
         ("gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"),
         read_chars=100_000,
     ),
+    # ModelGo's international OpenAI-compatible endpoint. Model ids are suggestions;
+    # keep the conservative context cap and no provider-specific reasoning fields.
+    "modelgo": Provider("https://api.modelgo.ai/v1", "MODELGO_API_KEY", ("gpt-6-luna",)),
     "ollama": Provider(
         "http://localhost:11434/v1", "", ("gemma4", "qwen3.8"),
         {"reasoning_effort": "none"},  # without it every capped reply gets the reasoning room, and a runaway small model writes it all
@@ -77,7 +80,8 @@ CLASSIFIER_PROVIDERS: dict[str, Provider] = {
 
 # How the settings page and the errors name each provider.
 NAMES = {
-    "openrouter": "OpenRouter", "openai": "OpenAI", "gemini": "Gemini", "ollama": "Ollama", "typesafe": "TypeSafe", "custom": "your server",
+    "openrouter": "OpenRouter", "openai": "OpenAI", "gemini": "Gemini", "modelgo": "ModelGo",
+    "ollama": "Ollama", "typesafe": "TypeSafe", "custom": "your server",
 }
 
 
