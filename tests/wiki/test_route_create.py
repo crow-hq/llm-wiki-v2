@@ -13,6 +13,7 @@ import pytest
 
 from llmw2 import CLASSIC, Candidate, Route, StepContext, StepError, Steps, Wiki, WikiConfig
 from llmw2.bundle.document import OKFDocument
+from llmw2.bundle.store import LOCK_FILE
 from llmw2.bundle.tree import Folder, Note
 from tests.wiki.fakes import FakeLLM
 
@@ -23,7 +24,8 @@ def read(path: Path) -> OKFDocument:
 
 def snapshot(bundle: Path) -> dict[str, bytes]:
     """Every file of the bundle, to prove a failed operation wrote nothing."""
-    return {str(p.relative_to(bundle)): p.read_bytes() for p in sorted(bundle.rglob("*")) if p.is_file()}
+    files = [p for p in sorted(bundle.rglob("*")) if p.is_file() and p.relative_to(bundle).as_posix() != LOCK_FILE]
+    return {str(p.relative_to(bundle)): p.read_bytes() for p in files}
 
 
 def o_summarize(ctx: StepContext, source: Any) -> Candidate:

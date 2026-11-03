@@ -208,7 +208,7 @@ def test_at_max_depth_routing_is_decided_by_rule(bundle: Path, llm: FakeLLM) -> 
     assert llm.ops == [SUMMARIZE]
     assert [(d.step, d.decider) for d in result.decisions] == [("route", "rule")]
     assert (result.folder, result.note, result.created_folders) == ("/", "q3-revenue.md", [])
-    assert sorted(p.name for p in bundle.iterdir() if p.is_dir()) == ["finance", "raw"]
+    assert sorted(p.name for p in bundle.iterdir() if p.is_dir() and p.name[0] != ".") == ["finance", "raw"]
 
 
 def test_name_folder_reuses_existing_sibling(classic_wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
@@ -219,7 +219,7 @@ def test_name_folder_reuses_existing_sibling(classic_wiki: Wiki, llm: FakeLLM, b
     result = classic_wiki.ingest("Revenue grew.")
 
     assert (result.created_folders, result.note) == ([], "finance/q3-revenue.md")
-    assert sorted(p.name for p in bundle.iterdir() if p.is_dir()) == ["finance", "raw"]
+    assert sorted(p.name for p in bundle.iterdir() if p.is_dir() and p.name[0] != ".") == ["finance", "raw"]
     subdirs = [line for line in read(bundle / "index.md").body.splitlines() if "/index.md)" in line]
     assert subdirs == ["* [finance](finance/index.md) - Money matters."]
 
@@ -258,7 +258,7 @@ def test_match_and_modify_merges_the_note_in_place(classic_wiki: Wiki, llm: Fake
         [],
     )
     assert sorted(p.name for p in bundle.glob("*.md")) == ["acme-contracts.md", "acme-pricing.md", "index.md", "log.md"]
-    assert [p.name for p in bundle.iterdir() if p.is_dir()] == ["raw"]
+    assert [p.name for p in bundle.iterdir() if p.is_dir() and p.name[0] != "."] == ["raw"]
     note = read(bundle / "acme-pricing.md")
     assert note.frontmatter["title"] == "Acme pricing 2026"
     assert note.body.startswith("# Overview\n\nMerged facts.\n\n# See also\n")

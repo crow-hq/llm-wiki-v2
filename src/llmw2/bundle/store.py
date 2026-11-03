@@ -70,6 +70,7 @@ log = logging.getLogger(__name__)
 ARCHIVE_DIR = ".archive"  # superseded versions of notes; hidden from the tree
 SYNC_DIR = ".llmw2/sync"  # the cursors of `sync`, one file per connector and account
 CACHE_FILE = ".llmw2/cache/classifier.sqlite"  # the classifier's answers, by the hash of the request (see llmw2.models.cache)
+LOCK_FILE = ".llmw2/lock"  # the lock across processes where there is no flock (Windows)
 PROPOSALS_FILE = ".llmw2/proposals.json"  # the queue of areas users propose (see llmw2.bundle.proposals)
 REPLACE_ATTEMPTS = 6  # about 0.3 s in all: long enough for a reader to close the file it was reading
 AUTHOR_MAX = 60  # characters of an author's name in a log line
@@ -208,13 +209,16 @@ class WikiStore:
         """Hold the bundle for writing: one writer at a time across threads and processes (the CLI and a server).
 
         A lock per bundle folder within the process, shared by every store on it (the server rebuilds its wiki when
-        the settings change), then an advisory flock on the folder itself, so no lock file lands in the wiki.
+        the settings change), then an advisory flock on the folder itself, so no lock file lands in the wiki. Where
+        there is no flock (Windows) it is a byte lock on `.llmw2/lock`, retried until free; the file is hidden like the
+        rest of `.llmw2/`. The lock is not reentrant: do not nest it.
         """
         with _thread_lock(self.root):
             try:
                 import fcntl
-            except ImportError:  # Windows has no flock: there only the lock within the process holds
-                yield
+            except ImportError:
+                with self._windows_lock():
+                    yield
                 return
             fd = os.open(self.root, os.O_RDONLY)
             try:
@@ -222,6 +226,32 @@ class WikiStore:
                 yield
             finally:
                 os.close(fd)  # closing the descriptor releases the lock
+
+    @contextlib.contextmanager
+    def _windows_lock(self) -> Iterator[None]:
+        """The lock across processes where there is no flock: an exclusive lock on the first byte of `.llmw2/lock`."""
+        try:
+            import msvcrt
+        except ImportError:  # neither flock nor msvcrt: only the lock within the process holds
+            yield
+            return
+        path = self.root / LOCK_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT)
+        try:
+            while True:
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined,unused-ignore]
+                    break
+                except OSError:  # held by another process
+                    time.sleep(0.01)
+            try:
+                yield
+            finally:
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined,unused-ignore]
+        finally:
+            os.close(fd)
 
     @contextlib.contextmanager
     def session(self) -> Iterator[None]:

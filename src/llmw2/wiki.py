@@ -127,6 +127,20 @@ def _named(item: Item) -> str:
     return item.origin.key if item.origin else item.filename
 
 
+
+def _follow(report: BatchReport, moved: list[tuple[str, str]]) -> None:
+    """Point the results of `report` at where `_tidy` moved their notes: `moved` holds (path before, path after), of a
+    note or of a folder with all it holds, in the order they moved."""
+    for _, result in report.results:
+        if isinstance(result, Exception):
+            continue
+        for r in [result, *result.parts]:
+            for before, after in moved:
+                if r.note and (r.note == before or r.note.startswith(before + "/")):
+                    r.note = after + r.note[len(before) :]
+                    r.folder = "/" + r.note.rpartition("/")[0]
+
+
 def _raw_item(fm: dict[str, Any], text: str) -> Item:
     """A raw copy as an item to file again: the text as it was ingested, with its title, origin and resource."""
     filename = f"{str(fm.get('title') or 'untitled').replace('/', ' ')}.md"  # the title is title_of(filename) again
@@ -319,7 +333,9 @@ class Wiki:
         until their window is filed, but their text, which waits in files of a temporary folder (`_spill`). A batch that
         stops (a spending cap, a failing model) leaves the notes filed so far with their folders; the next run plans the
         documents it is given, on that tree. However a batch ends, it takes back the folders of its plans that are still
-        empty, the deepest first (`_drop_empty`).
+        empty, the deepest first (`_drop_empty`). A CROW batch that finished then tidies those folders (`_tidy`): one with
+        a single note and no subfolder gives the note to the folder above, and a top-level one with a single subfolder
+        and no note of its own takes the subfolder's contents; a stopped batch does not, as the next run plans on its tree.
         With `plan` False no plan is made (`rebuild`): the documents go in the folders there are.
 
         A window with one document to file (the others "unchanged") makes no plan: it goes as `ingest_file` would, with
@@ -402,6 +418,8 @@ class Wiki:
             for item, many in groups:
                 if len(many) > 1 or many[0] is not item:
                     self._after_sheets(item, many, [done.get(id(one)) for one in many])
+            if self.cfg.mode == "crow":
+                _follow(report, self._tidy(made))
         return report
 
     def _plan_window(
@@ -471,6 +489,61 @@ class Wiki:
         with self.store.lock():
             for folder in sorted(made, key=lambda f: f.rel.count("/"), reverse=True):
                 self.store.remove_empty_folder(folder.rel, "empty, planned by a batch and not used")
+
+    def _tidy(self, made: list[Folder]) -> list[tuple[str, str]]:
+        """A CROW batch that finished tidies, when it ends, the folders its plans made, the deepest first. A folder that is
+        not a top-level one, with no subfolder and a single note, is no folder worth having: the note goes to the folder
+        above (links and archived copies follow, "Moved" in `log.md`) and the folder is removed. A top-level folder with no
+        note of its own and a single subfolder, itself made by the plans, is a wrapper: the subfolder's notes and subfolders
+        go up into it and the subfolder is removed; the top-level folder keeps its name and description. A folder that was
+        there before the batch, one the routing made, and a top-level folder with one note stay. No model is asked.
+        Returns what moved, in order, as (path before, path after): a note's, or a folder's with all it holds."""
+        planned = {f.rel for f in made}
+        moved: list[tuple[str, str]] = []
+        with self.store.lock():
+            while planned:
+                root = self.store.load()
+                for rel in sorted(planned, key=lambda r: r.count("/"), reverse=True):
+                    folder = root.find(rel)
+                    if folder is None or folder.is_root:
+                        planned.discard(rel)
+                        continue
+                    try:
+                        if folder.depth >= 2 and not folder.subfolders and len(folder.notes) == 1 and folder.parent is not None:
+                            note = folder.notes[0].rel
+                            moved.append((note, self.store.move_note(note, folder.parent.rel).rel))
+                            self.store.remove_empty_folder(folder.rel, "one note, which moved to the folder above")
+                            planned.discard(rel)
+                            break
+                        if folder.depth == 1 and not folder.notes and len(folder.subfolders) == 1 and folder.subfolders[0].rel in planned:
+                            moved += self._lift(folder, folder.subfolders[0], planned)
+                            break
+                    except InputError:  # a note or a folder is gone (another program): leave this one, go on with the rest
+                        planned.discard(rel)
+                        break
+                else:
+                    return moved
+        return moved
+
+    def _lift(self, top: Folder, child: Folder, planned: set[str]) -> list[tuple[str, str]]:
+        """Move the notes and subfolders of `child` up into `top` and remove `child`, as `_tidy` says; `planned` follows
+        the folders that moved. A subfolder with the child's own name stays: the folder is not a wrapper then. Returns
+        what moved, as `_tidy` does."""
+        if any(s.name == child.name for s in child.subfolders):
+            planned.discard(top.rel)
+            return []
+        moved = [(note.rel, self.store.move_note(note.rel, top.rel).rel) for note in list(child.notes)]
+        for sub in list(child.subfolders):
+            new = f"{top.rel}/{sub.name}"
+            self.store.move_folder(sub.rel, new)
+            moved.append((sub.rel, new))
+            self.store.append_log("Moved folder", f"from {sub.label} to /{new}, out of a wrapper folder")
+            for rel in [p for p in planned if p == sub.rel or p.startswith(sub.rel + "/")]:
+                planned.discard(rel)
+                planned.add(new + rel[len(sub.rel) :])
+        self.store.remove_empty_folder(child.rel, "wrapper folder, its notes and subfolders moved up")
+        planned.discard(child.rel)
+        return moved
 
     @staticmethod
     def _spill(read: Read, folder: Path) -> None:

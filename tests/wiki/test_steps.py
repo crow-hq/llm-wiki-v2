@@ -31,6 +31,7 @@ from llmw2.agents.base import Decision
 from llmw2.agents.researcher import NO_ANSWER
 from llmw2.agents.steps import decision_hash
 from llmw2.bundle.document import OKFDocument
+from llmw2.bundle.store import LOCK_FILE
 from llmw2.bundle.tree import Folder, Note
 from llmw2.models.usage import UsageReport
 from tests.wiki.fakes import LLM_TOKENS, FakeClassifier, FakeLLM
@@ -51,7 +52,8 @@ def raws(bundle: Path) -> list[Path]:
 
 def snapshot(bundle: Path) -> dict[str, bytes]:
     """Every file of the bundle, to prove a failed operation wrote nothing."""
-    return {str(p.relative_to(bundle)): p.read_bytes() for p in sorted(bundle.rglob("*")) if p.is_file()}
+    files = [p for p in sorted(bundle.rglob("*")) if p.is_file() and p.relative_to(bundle).as_posix() != LOCK_FILE]
+    return {str(p.relative_to(bundle)): p.read_bytes() for p in files}
 
 
 def finance(root: Folder) -> Folder:

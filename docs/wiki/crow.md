@@ -38,6 +38,8 @@ make the folders in CROW mode, and with `plan` set to `groups` groups made in co
 - **`plan`** (`librarian/plan`) lays out the folders of an empty wiki from the titles and
   openings of a batch window of documents, down to three levels (never below `OKF_MAX_DEPTH`):
   broad areas, and a subfolder only for a subject that at least two of the documents share.
+  A folder gets two subfolders or more, or none: a single one would leave the rest of its
+  area's notes in the parent.
 - **`plan_more`** (`librarian/plan_more`) does the same for a wiki that has folders, with
   the existing ones in view: it adds only new folders, and never renames, moves or
   re-describes one. It moves no note.
@@ -62,6 +64,14 @@ document of the windows already planned (its title and opening against the folde
 and descriptions, no model call). When a batch ends, finished or stopped, the folders its
 plans made that are still empty are removed ("Removed folder" in `log.md`); a folder with a
 note, or one that was there before, stays.
+
+A batch that finished then tidies the folders its plans made, the deepest first, with no model
+call. A folder below the top level with one note and no subfolder gives the note to the folder
+above (links and archived copies follow, a "Moved" line in `log.md`) and is removed. A top-level
+folder with no note of its own and a single subfolder, which a plan made too, takes that
+subfolder's notes and subfolders, and the subfolder is removed; the top-level folder keeps its
+name and description. Folders that were there before the batch, those routing made and
+top-level folders with one note stay; a stopped batch does not tidy.
 
 Jev then assigns every note to a folder with the one Choice above. The batch window
 (50 documents), the split limit (12 notes) and the plan's limits are constants of
