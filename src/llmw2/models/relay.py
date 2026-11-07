@@ -175,7 +175,13 @@ class RelayLLM(LLM):
         self.relay = relay
 
     def chat(
-        self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool | dict[str, Any] = False, max_tokens: int | None = None
+        self,
+        messages: list[dict[str, str]],
+        *,
+        op: str = "",
+        json_mode: bool | dict[str, Any] = False,
+        max_tokens: int | None = None,
+        seed: int | None = None,
     ) -> str:
         """The client's reply to `messages`. What the reply must be (one JSON object, about a length) is in the prompt."""
         system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")

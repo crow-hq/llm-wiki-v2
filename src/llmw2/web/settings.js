@@ -40,13 +40,10 @@ const CROW = [
   ["tau_ing", "Same subject", "%", "Existing notes above this are candidates to merge the new note into."],
   ["tau_cons", "Merge", "%", "The classifier must be at least this sure to merge into an existing note; otherwise a new note is written."],
   ["tau_link", "See also", "%", "Notes above this get a See-also link to each other."],
-  ["tau_fold", "Search: folders", "%", "To answer a question, folders above this are opened."],
-  ["tau_ret", "Search: notes", "%", "To answer a question, notes above this are read."],
   ["votes", "Routing votes", "", "Classifier calls averaged when a routing decision is close to a threshold. 1: one call, no averaging."],
   ["vote_band", "Routing: close means within", "%", "How near a threshold, or a tie between two folders, a routing decision must be to be asked again."],
   ["fallback_menu", "Routing: LLM fallback menu", "", "Folders the LLM chooses among when the classifier is not sure: the folders it visited, or those plus the whole tree.", ["visited", "tree"]],
   ["beam", "Routing beam", "", "Folder paths followed at once when a routing choice is unsure."],
-  ["retrieval_beam", "Search beam", "", "Folders opened per level to answer a question."],
   ["k", "Notes read (top k)", "", "At most this many notes are read to write an answer."],
 ];
 const CHOICES = new Set(CROW.filter(([, , , , choices]) => choices).map(([n]) => n));

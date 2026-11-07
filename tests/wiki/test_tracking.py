@@ -323,6 +323,8 @@ def crow_variant(name: str) -> CrowConfig:
     default = CrowConfig.model_fields[name].default
     if isinstance(default, str):  # a choice: the other one
         return CrowConfig(**{name: next(c for c in get_args(CrowConfig.model_fields[name].annotation) if c != default)})
+    if isinstance(default, bool):  # a switch: the other value
+        return CrowConfig(**{name: not default})
     return CrowConfig(**{name: default + 1 if isinstance(default, int) else round(default / 2, 4)})
 
 

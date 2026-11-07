@@ -43,11 +43,16 @@ The fields you will touch most:
 | `max_notes` | `8` | notes read per question in classic mode |
 | `concurrency` | `4` | documents prepared at once by `ingest_many`, `sync` and the server (1 to 16; `OKF_CONCURRENCY`) |
 | `classifier.cache` | `False` | keep the classifier's answers in the bundle (`OKF_CLASSIFIER_CACHE`); see [The classifier's answer cache](#the-classifiers-answer-cache) |
+| `classifier.route_hints` | `False` | for small local models: when it chooses among the subfolders of a top-level area (only that level; the top-level areas and deeper subfolders are described as before) the classifier also reads each subfolder's distinctive words and example note titles, computed from the notes and never stored (`OKF_CLASSIFIER_ROUTE_HINTS`) |
+| `llm.note_language` | `False` | for small local writers that ignore "write in the language of the source": the prompts that write a note end with a line naming the source's language (Italian, French, German, Spanish or Portuguese; found by function words, no model call) when it is not English (`OKF_LLM_NOTE_LANGUAGE`) |
+| `llm.note_steps` | `False` | for small local writers (leave it off with a strong writer, whose single call writes more useful notes): `summarize` (and the final write of a long source) asks for the note body as plain text, then for its title, summary and tags from the body, instead of one JSON reply; falls back to the single call if the body is empty or the second reply is invalid; a body in another language than the source, or with a URL, e-mail address, path, code span or identifier the source does not have (after restoring a near-identical one in place), is asked for once more with another seed (one retry per note) and is the source text if it fails again; the body prompt lists up to 15 such strings of the source; tags of the prompt and an outer code fence are stripped, repeated sections removed; the metadata call sees the document's own heading and the source's proper names, and a title that carries an id from the file name, is cut, or misspells a name of the source is repaired or replaced by the heading or the file name; a summary in another language than the source becomes the first sentence of the body (`OKF_LLM_NOTE_STEPS`) |
+| `llm.note_copy_words` | `0` | with `llm.note_steps`: a source of fewer words than this is kept as the note's body, with no body call, and only its title, summary and tags are asked for; `0` writes every body (`OKF_LLM_NOTE_COPY_WORDS`) |
 | `llm.seed` | none | a seed sent with every request (`OKF_LLM_SEED`); providers that support it answer the same prompt the same way |
 | `llm.pin_provider` | none | OpenRouter only (`OKF_LLM_PIN_PROVIDER`, comma-separated): the providers that may answer, in order, with no fallback to others. Another provider logs a warning and ignores it. `llm.extra_body["provider"]` wins |
 | `note_length` | `proportional` | how long a note grows (`OKF_NOTE_LENGTH`): `proportional` about a quarter of its source, `fixed` about `note_chars` (0.3.0's length); see [Note length](#note-length-proportional-or-fixed) |
 | `relate_rare_values` | `True` | CROW: `relate` also weighs notes that share rare values (`OKF_RELATE_RARE_VALUES`); `False` keeps 0.3.0's `relate` |
 | `answer_conflicts` | `True` | CROW: the answer is asked with a hint when the notes read disagree (`OKF_ANSWER_CONFLICTS`); `False` keeps 0.3.0's answer input |
+| `crow.rerank` | `True` | CROW: after `ask` finds its notes with the search (`search`'s own ranking), the classifier reorders all but the first (`OKF_RERANK`, or `crow_rerank` in the settings); `False` reads them in the search's order and asks the classifier nothing. Turn it off for a small local classifier on a wiki where the reordering does not help |
 | `strict_new_folders` | `True` | CROW: a new subfolder only when the classifier is sure of it (`OKF_STRICT_NEW_FOLDERS`); `False` keeps 0.3.0's routing |
 | `plan` | `writer` | CROW: how a batch on an empty wiki lays out its folders (`OKF_PLAN`): `writer` is the writer's `plan`; `groups` makes them in code with no model call, for a small local writer (about 1B parameters or less), which plans poorly. A capable writer plans better than the groups |
 | `llm`, `classifier`, `crow` | | the models and the CROW thresholds |
@@ -113,7 +118,8 @@ have it set `X-Author`, and the log then says who, as far as the proxy does.
 | `ingest_many(items, *, concurrency, on_result)` | file a batch, preparing several documents at once; returns a `BatchReport` (see below) |
 | `rebuild(items, *, concurrency, on_result)` | file the documents again on the folders the wiki has (see below); returns a `BatchReport`. Cannot be undone |
 | `raw_items()` | the wiki's own raw copies as `Item`s for `rebuild`: an origin from its latest copy, a copy with no origin once per text |
-| `ask(question, where=None)` | answer from the notes; returns an `Answer`. `where` (a dict, field to value) restricts it to the notes whose `fields` hold all of them, compared as text (use scalar values) |
+| `ask(question, where=None)` | answer from the notes, found by `search` (the first 16, reordered by the CROW classifier unless `crow.rerank` is off) and read up to `crow.k`; returns an `Answer`. `where` (a dict, field to value) restricts it to the notes whose `fields` hold all of them, compared as text (use scalar values) |
+| `search(query, k=3, where=None)` | the best `k` notes, with no model call of the library; returns a list of `Hit` (`path`, `title`, `summary`, `rank`). `where` restricts it as in `ask`; an empty query raises `InputError`; see [Search without a model](#search-without-a-model) |
 | `tree()` | the folder tree, read from disk: `Folder` objects with `.notes` and `.subfolders` |
 | `create_folder(parent, name, description)` | make a folder by hand; `parent` is `"/"` or `"/finance"` |
 | `move_note(path, folder)` · `describe_folder(path, description)` | move a note to another folder (its links, and links to it, are rewritten; archived copies follow) · change a folder's one-line description |
@@ -152,6 +158,30 @@ confidence) and `usage` (the tokens spent by this ingest).
 `Answer`: `text`, `citations` (the notes cited in the text, as `[path.md]`),
 `notes` (every note given to the answering model), `decisions` and `usage`.
 Both have `to_dict()`.
+
+### Search without a model
+
+`wiki.search("refund deadline", k=3)` returns the best notes for a query, with no call to a language model and nothing
+run at ingest. Each note is read whole (title, summary and body, without its See also section) and ranked by BM25;
+notes with none of the query's words are left out. The words of a note are counted once and kept while its text is
+the same, so a search at thousands of notes reads only the lists of the query's words.
+
+Give `Wiki` an `embedder` and the search also goes by meaning. It is any callable from a list of texts to a list of
+vectors (the library has no model, provider or dependency for it), and it is called with the query and with the notes
+that have no vector yet, 64 texts at a time. A note is embedded as its title, its summary and the first 3000
+characters of its body. The result is built from slots: the `k - 1` nearest notes by cosine, then the best by BM25
+if it is not among them, then the next nearest to fill up to `k`; no note twice, no threshold, no weights.
+
+```python
+wiki = Wiki(cfg, embedder=lambda texts: my_model.encode(texts))
+for hit in wiki.search("how long do customers have to ask for a refund?", k=3, where={"team": "ops"}):
+    print(hit.rank, hit.path, hit.title, hit.summary)
+```
+
+The vectors are kept in `.llmw2/cache/embeddings.sqlite` of the bundle, under the hash of the note's text, so a search
+embeds only the notes that are new or changed; the vectors of text that no longer exists are dropped. A vector of
+another size than the query's is embedded again. The file does not say which embedder made its vectors: if you change
+the embedder for one with the same size, delete the file. `wiki.clear()` deletes it.
 
 ### Asking several wikis
 

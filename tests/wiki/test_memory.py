@@ -264,7 +264,7 @@ def test_with_the_clients_models_remember_and_recall_go_through_requests_and_cro
         "notes": [NOTE],
         "titles": {NOTE: "Revenue recognition"},
     }
-    assert {r["kind"] for r in asking} == {"decide", "write"} and asking[-1]["step"] == "researcher/answer"  # CROW, not classic
+    assert [r["step"] for r in asking] == ["researcher/answer"]  # the search finds the one note: nothing to reorder
     assert (llm.ops, classifier.ops) == ([], [])
     assert ", mcp-client)" in (bundle / "log.md").read_text(encoding="utf-8")  # the provenance names the client's models
 

@@ -46,15 +46,15 @@ def test_shared_fragments_are_not_placeholders() -> None:
 
 
 def test_a_missing_value_raises_key_error() -> None:
-    with pytest.raises(KeyError, match="summary"):
-        Prompts().render("classifier/retrieval_note", title="Pricing")
+    with pytest.raises(KeyError, match="passage"):
+        Prompts().render("classifier/retrieval_note", title="Pricing", summary="Plans")
 
 
-def test_the_name_placeholder_is_a_value_not_the_prompt_name() -> None:
-    text = Prompts().render("classifier/retrieval_folder", name="finance", description="money matters")
+def test_the_retrieval_note_prompt_ends_with_the_passage() -> None:
+    text = Prompts().render("classifier/retrieval_note", title="Pricing", summary="Plans", passage="Three tiers.")
 
     assert text == (
-        'Is the folder "finance", described as "money matters", likely to contain notes that help answer the question?'
+        'Does the note titled "Pricing", summarized as "Plans", help answer the question? It contains: "Three tiers."'
     )
 
 
@@ -94,6 +94,8 @@ def test_render_sections_splits_the_consolidate_prompt() -> None:
 
 
 def test_values_are_inserted_literally_not_rendered_again() -> None:
-    text = Prompts().render("classifier/retrieval_note", title="{{summary}}", summary="{{shared/untrusted}}")
+    text = Prompts().render("classifier/retrieval_note", title="{{summary}}", summary="{{shared/untrusted}}", passage="{{title}}")
 
-    assert text == 'Does the note titled "{{summary}}", summarized as "{{shared/untrusted}}", help answer the question?'
+    assert text == (
+        'Does the note titled "{{summary}}", summarized as "{{shared/untrusted}}", help answer the question? It contains: "{{title}}"'
+    )

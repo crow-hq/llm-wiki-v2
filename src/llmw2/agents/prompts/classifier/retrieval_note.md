@@ -1,1 +1,1 @@
-Does the note titled "{{title}}", summarized as "{{summary}}", help answer the question?
+Does the note titled "{{title}}", summarized as "{{summary}}", help answer the question? It contains: "{{passage}}"

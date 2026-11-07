@@ -111,13 +111,13 @@ def test_crow_ingests_create_link_and_merge(crow_wiki: Wiki, llm: FakeLLM, class
 
 def test_each_result_counts_only_its_own_calls(crow_wiki: Wiki, llm: FakeLLM, classifier: FakeClassifier) -> None:
     results = ingest_crow(crow_wiki, llm, classifier)
-    classifier.noul_scores.update(retrieve_folder={"finance": 0.9}, retrieve_note={"Pricing tiers": 0.9})
+    classifier.noul_scores.update(retrieve_note={"Pricing tiers": 0.9})
     llm.add("researcher/answer", "Three tiers.")
-    answer = crow_wiki.ask("What are the price tiers?")
+    answer = crow_wiki.ask("What are the price tiers and the revenue?")
 
     # (llm calls, classifier calls): summarize+name_folder | none (an empty wiki: one way);
     # summarize | route x3 (the flat Choice, then two levels), match, relate;
-    # summarize+merge | route x3, match, consolidate, relate; answer | retrieve_folder, retrieve_note.
+    # summarize+merge | route x3, match, consolidate, relate; answer | retrieve_note, conflict.
     per_op = [(r.usage.llm.calls, r.usage.classifier.calls) for r in [*results, answer]]
     assert per_op == [(2, 0), (1, 5), (2, 6), (1, 2)]
     assert answer.usage.llm.input_tokens == 100 and answer.usage.classifier.input_tokens == 100

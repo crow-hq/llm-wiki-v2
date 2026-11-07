@@ -49,8 +49,7 @@ passage). `notes` lists notes as `- path: Title — summary`, and
 | `classifier/consolidate` | `steps_crow.consolidate` | none | Choice: `instructions`, `Modify`, `New note` |
 | `classifier/note_relevance` | `steps_crow.match` | `title`, `summary` | Noul question |
 | `classifier/relate` | `steps_crow.relate` | `title`, `summary` | Noul question |
-| `classifier/retrieval_folder` | `steps_crow.select` | `name`, `description` | Noul question |
-| `classifier/retrieval_note` | `steps_crow.select` | `title`, `summary` | Noul question |
+| `classifier/retrieval_note` | `steps_crow.select` | `title`, `summary`, `passage` | Noul question |
 
 ## Syntax
 

@@ -114,9 +114,9 @@ CROW keeps it that way as the wiki grows. In [Karpathy's LLM Wiki](https://gist.
 the model finds pages by reading an index, which works at moderate scale (about a
 hundred sources); beyond that the gist suggests adding search, hybrid lexical and
 vector. In CROW a small classifier works with the folders instead: filing picks the
-folder among every folder of the wiki in one choice, and answering walks the folders
-level by level, so the wiki can grow without vectors and stay something a person can
-read. The LLM lays out the folders: in a batch, before its documents are filed, and
+folder among every folder of the wiki in one choice, and answering finds the notes by
+search and lets the classifier reorder them, so the wiki can grow without vectors and stay
+something a person can read. The LLM lays out the folders: in a batch, before its documents are filed, and
 for a document filed alone, by splitting a folder that has grown. In the [paper](https://doi.org/10.5281/zenodo.22898752), retrieval kept its
 accuracy across a twentyfold growth of the wiki. A separate test on a private wiki
 of about 500 notes pointed the same way: with CROW the right note was found nearly
@@ -319,7 +319,7 @@ and runnable programs, some with no key, in [examples/](https://github.com/crow-
 ```
 ingest:  summarize → route → find match → merge or (new folder →) write → relate → link, index, log
          (CROW: before a batch window of 50, a plan of its folders; after a single document, a split of a folder that grew)
-ask:     select notes (navigate the tree) → answer from them, with [path.md] citations
+ask:     select notes (search; CROW reorders them with the classifier) → answer from them, with [path.md] citations
 ```
 
 | Step | Classic mode (`OKF_MODE=classic`) | CROW mode (`OKF_MODE=crow`) |

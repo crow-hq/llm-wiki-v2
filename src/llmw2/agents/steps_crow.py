@@ -1,7 +1,7 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""The CROW steps: the typed classifier takes the decisions (CROW §5.1 ingest, §5.2 retrieval).
+"""The CROW steps: the typed classifier takes the decisions (CROW §5.1 ingest; retrieval reorders the search).
 
 Routing is one Choice among every folder of the tree; the paper's per-level walk (a Choice per level, with a beam) only
 decides where that Choice has no folder to name. Each step falls back to the LLM (the classic step) where the paper
@@ -14,9 +14,10 @@ import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from llmw2.agents import lexical
+from llmw2.agents import lexical, route_hints
 from llmw2.agents import steps_classic as classic
 from llmw2.agents.base import unique_objects
 from llmw2.agents.data import Candidate, Route
@@ -25,12 +26,16 @@ from llmw2.agents.steps_classic import CONSOLIDATE_SOURCE_MAX, HERE, MODIFY, NEW
 from llmw2.bundle.tree import Folder, Note, slugify
 from llmw2.errors import ModelError, ReplyInvalid
 from llmw2.models.classifier import MAX_OPTIONS, ChoiceAnswer
+from llmw2.search import NoteSearch, VectorCache
 
 if TYPE_CHECKING:
     from llmw2.agents.steps import StepContext
 
 log = logging.getLogger(__name__)
 
+SEARCH_K = 16  # notes the search offers to the retrieval Noul (the first stays in place, the other 15 are reordered)
+PASSAGE_CHARS = 600  # the passage of a note's body that the retrieval Noul reads
+PASSAGE_STEP = 300  # passages start every this many characters
 FALLBACK_MENU_CHARS = 8000  # most characters of the folder menu the routing fallback shows the LLM
 ROUTE_PROMPT = "classifier/route"  # the routing Choice; with `strict_new_folders` off, 0.3.0's text:
 ROUTE_PROMPT_OPEN = "classifier/route_open"
@@ -293,7 +298,11 @@ def _expand(
         placement[NEW] = text[NEW]
     if not folder.is_root:
         placement[NONE] = text[NONE]
-    subfolders = {f.name: f.description or f.name for f in ctx.children(folder)}
+    children = ctx.children(folder)
+    if ctx.cfg.classifier.route_hints and folder.depth == route_hints.HINT_DEPTH:  # what each subfolder holds, for small models
+        subfolders = route_hints.option_texts(folder, children)
+    else:
+        subfolders = {f.name: f.description or f.name for f in children}
     options = _fitting(ctx, folder, state, text["instructions"], subfolders, placement) | placement
     if len(options) == 1:  # one way only (a new folder in an empty wiki, or Here at max_depth 0): nothing to decide
         return [_Path(path.folders, path.probs, next(iter(options)))]
@@ -515,46 +524,48 @@ def relate(ctx: StepContext, note: Note, others: list[Note]) -> list[Note]:
 
 
 def select(ctx: StepContext, root: Folder, question: str) -> list[Note]:
-    """§5.2: a Noul per folder, a Noul per note, top-k; classic navigation when nothing clears its threshold."""
-    ctx.need_classifier("select")
-    try:
-        notes = _retrieve(ctx, root, question)
-    except ModelError as e:
-        log.warning("classifier failed on retrieval, the LLM navigates: %s", e)
-        notes = []
-    if not notes:
-        ctx.decide("select", "llm", "classic navigation", fallback=True)
-        return classic.select(ctx, root, question)
-    return notes
-
-
-def _retrieve(ctx: StepContext, root: Folder, question: str) -> list[Note]:
-    classifier = ctx.need_classifier("select")
+    """Retrieval: the notes `Wiki.search` finds (BM25, and the embedder if there is one), the first kept in place and the
+    others reordered by one batched Noul each (`crow.rerank`), the first `crow.k` read by the answer."""
     crow = ctx.cfg.crow
-    explored, level = [root], [root]
-    while level:  # step 1: at each level, explore up to b folders above tau_fold
-        subs = [s for f in level for s in f.subfolders]
-        if not subs:
-            break
-        questions = {
-            f"f{i}": ctx.prompts.render("classifier/retrieval_folder", name=s.name, description=s.description or "no description")
-            for i, s in enumerate(subs)
-        }
-        probs = classifier.nouls(question, questions, op="retrieve_folder")
-        ranked = sorted(((probs[f"f{i}"], s) for i, s in enumerate(subs)), key=lambda x: x[0], reverse=True)
-        level = [s for p, s in ranked if p > crow.tau_fold][: crow.retrieval_beam]
-        explored += level
-        scores = {s.label: p for p, s in ranked}
-        ctx.decide("retrieve_folder", "classifier", ", ".join(s.label for s in level) or "none", scores=scores)
-    candidates = [n for f in explored for n in f.notes]
-    if not candidates:
-        return []
+    if crow.rerank:
+        ctx.need_classifier("select")
+    found = _found(ctx, root, question)
+    if crow.rerank and len(found) > 1:
+        found = found[:1] + _reordered(ctx, found[1:], question)
+    return found[: crow.k]
+
+
+def _found(ctx: StepContext, root: Folder, question: str) -> list[Note]:
+    if ctx.search is not None:
+        return ctx.search(question, SEARCH_K)
+    notes = root.all_notes()  # a context built without the wiki's search: BM25 alone
+    return NoteSearch(VectorCache(Path())).search(notes, notes, question, SEARCH_K)
+
+
+def _reordered(ctx: StepContext, notes: list[Note], question: str) -> list[Note]:
+    """`notes` by the probability that each helps answer the question, one classifier call; their order when it fails."""
+    classifier = ctx.need_classifier("select")
     questions = {
-        f"n{i}": ctx.prompts.render("classifier/retrieval_note", title=n.title, summary=n.summary) for i, n in enumerate(candidates)
+        f"n{i}": ctx.prompts.render("classifier/retrieval_note", title=n.title, summary=n.summary, passage=passage(n, question))
+        for i, n in enumerate(notes)
     }
-    probs = classifier.nouls(question, questions, op="retrieve_note")  # step 2: score the notes
-    notes = sorted(((probs[f"n{i}"], n) for i, n in enumerate(candidates)), key=lambda x: x[0], reverse=True)
-    top = [n for p, n in notes if p > crow.tau_ret][: crow.k]  # step 3 reads these k notes
-    scores = {n.rel: p for p, n in notes}
-    ctx.decide("retrieve_note", "classifier", ", ".join(n.rel for n in top) or "none", scores=scores)
-    return top
+    try:
+        probs = classifier.nouls(question, questions, op="retrieve_note")
+    except ModelError as e:
+        log.warning("classifier failed on retrieval, the order of the search is kept: %s", e)
+        ctx.decide("retrieve_note", "classifier", "error", fallback=True)
+        return notes
+    ranked = sorted(((probs[f"n{i}"], n) for i, n in enumerate(notes)), key=lambda x: x[0], reverse=True)
+    ctx.decide("retrieve_note", "classifier", ", ".join(n.rel for _, n in ranked), scores={n.rel: p for p, n in ranked})
+    return [n for _, n in ranked]
+
+
+def passage(note: Note, question: str) -> str:
+    """The `PASSAGE_CHARS` of the note's body (without See also) that match the question best by BM25; windows start every
+    `PASSAGE_STEP` characters, spaces normalised."""
+    body = " ".join(note.main_body().split())
+    starts = list(range(0, max(len(body) - PASSAGE_CHARS, 0) + 1, PASSAGE_STEP))
+    if starts[-1] + PASSAGE_CHARS < len(body):  # the last window ends where the body ends
+        starts.append(len(body) - PASSAGE_CHARS)
+    windows = {str(i): body[i : i + PASSAGE_CHARS] for i in starts}
+    return windows[lexical.rank(question, windows)[0]]

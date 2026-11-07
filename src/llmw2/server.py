@@ -150,15 +150,13 @@ class SettingsChanges(BaseModel):
     crow_tau_path: str | None = None
     crow_tau_ing: str | None = None
     crow_tau_cons: str | None = None
-    crow_tau_fold: str | None = None
-    crow_tau_ret: str | None = None
     crow_tau_link: str | None = None
     crow_votes: str | None = None
     crow_vote_band: str | None = None
     crow_fallback_menu: str | None = None  # "visited" or "tree"
     crow_beam: str | None = None
-    crow_retrieval_beam: str | None = None
     crow_k: str | None = None
+    crow_rerank: str | None = None  # "true" or "false"
     # How each model is called (a number as text, "" for the default)
     temperature: str | None = None
     seed: str | None = None

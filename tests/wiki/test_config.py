@@ -29,7 +29,7 @@ def env_for(bundle: Path, **variables: str) -> dict[str, str]:
         ("OKF_CLASSIFIER_STATE_CHARS", "1000", "classifier.state_chars", 1000),
         ("OKF_TAU_ROUTE", "0.8", "crow.tau_route", 0.8),
         ("OKF_BEAM", "3", "crow.beam", 3),
-        ("OKF_RETRIEVAL_BEAM", "4", "crow.retrieval_beam", 4),
+        ("OKF_RERANK", "false", "crow.rerank", False),
         ("OKF_CLASSIFIER_ATTEMPTS", "3", "classifier.attempts", 3),
         ("OKF_UPLOAD_MB", "5", "upload_mb", 5),
         ("OKF_CONCURRENCY", "4", "concurrency", 4),
@@ -66,13 +66,13 @@ def test_from_env_ignores_empty_variables(tmp_path: Path) -> None:
     assert config.crow.beam == 2
 
 
-def test_from_env_when_nothing_is_set_then_retrieval_uses_the_calibrated_defaults(tmp_path: Path) -> None:
+def test_from_env_when_nothing_is_set_then_retrieval_uses_the_defaults(tmp_path: Path) -> None:
     # ACT
     config = WikiConfig.from_env(env_for(tmp_path))
 
     # ASSERT
     crow = config.crow
-    assert (crow.tau_fold, crow.tau_ret, crow.retrieval_beam, crow.k, crow.beam) == (0.08, 0.1, 6, 8, 2)
+    assert (crow.rerank, crow.k, crow.beam) == (True, 8, 2)
     assert (config.max_notes, config.classifier.attempts, config.classifier.timeout) == (8, 1, 8.0)
 
 
@@ -259,7 +259,7 @@ def test_invalid_extra_body_names_the_variable(tmp_path: Path) -> None:
     "fields",
     [
         {"crow": {"tau_route": 1.5}},
-        {"crow": {"tau_ret": -0.1}},
+        {"crow": {"tau_link": -0.1}},
         {"crow": {"beam": 0}},
         {"crow": {"k": 0}},
         {"upload_mb": 0},

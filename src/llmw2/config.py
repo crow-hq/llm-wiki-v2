@@ -98,6 +98,15 @@ class LLMConfig(BaseModel):
     read_chars: int | None = Field(None, ge=8_000)
     # Thinking before answering made filing 5-40x slower in our runs (hidden tokens) and no better: off where the provider can.
     reasoning: bool = False
+    # For small local writers, which ignore "write in the language of the source": the prompts that write a note end with a
+    # line naming the source's language when it is not English (found by function words, no model call).
+    note_language: bool = False
+    # For small local writers: the note is written in two calls, its body as plain text and then its title, summary and tags
+    # from the body, instead of one JSON reply (`summarize` and the final write of a long source).
+    note_steps: bool = False
+    # With `note_steps`: a source of fewer words than this is its own body, and only the title, summary and tags are asked
+    # for. 0: every body is written.
+    note_copy_words: int = Field(0, ge=0)
     # Extra JSON fields for every request. OpenRouter example:
     # {"provider": {"order": ["together", "coreweave"]}} to pin faster providers.
     extra_body: dict[str, Any] = Field(default_factory=dict)
@@ -139,6 +148,10 @@ class ClassifierConfig(BaseModel):
     # Keep the answers in the bundle (.llmw2/cache), under a hash of the request: a rebuild, a resumed sync or a repeated
     # audit then asks the classifier nothing it was already asked. A sync of new documents asks only new questions.
     cache: bool = False
+    # In a top-level area, show the classifier what each subfolder holds (its distinctive words and example titles,
+    # computed from the notes, never stored) after its description. For small local models; a good description needs none.
+    # Only the choice among an area's subfolders: the top-level areas and deeper subfolders read the descriptions alone.
+    route_hints: bool = False
 
     @model_validator(mode="after")
     def _fill_from_provider(self) -> ClassifierConfig:
@@ -160,25 +173,22 @@ class ClassifierConfig(BaseModel):
 class CrowConfig(BaseModel):
     """Thresholds of the CROW paper (§5.3). Calibrate them on a labelled sample of your wiki.
 
-    Ingestion values are the paper's package defaults (never calibrated, Table 2). Retrieval values
-    are the paper's calibrated ones (§8.4): at 0.5 most right notes were cut before ranking could act.
+    Ingestion values are the paper's package defaults (never calibrated, Table 2). Retrieval has no threshold:
+    the search finds the notes, the classifier reorders them (`rerank`) and `k` of them are read.
     """
 
     tau_route: float = Field(0.6, ge=0, le=1)  # routing Choice confidence below which the beam splits
     tau_path: float = Field(0.5, ge=0, le=1)  # best path score below which routing falls back to the LLM
     tau_ing: float = Field(0.5, ge=0, le=1)  # note-relevance probability for consolidation candidates
     tau_cons: float = Field(0.6, ge=0, le=1)  # create-or-modify confidence below which a new note is created
-    tau_fold: float = Field(0.08, ge=0, le=1)  # retrieval: folder probability to explore it (paper default 0.5)
-    tau_ret: float = Field(0.1, ge=0, le=1)  # retrieval: note probability to read it (paper default 0.5)
     tau_link: float = Field(0.6, ge=0, le=1)  # extension: relatedness probability for a See-also link
     votes: int = Field(1, ge=1, le=9)  # classifier calls averaged per borderline routing decision (1: one call, no averaging)
     vote_band: float = Field(0.05, ge=0, le=1)  # how close to tau_route, tau_path or a tie counts as borderline
     # extension: the folders the routing fallback shows the LLM: those the classifier visited, or those and the rest of the tree
     fallback_menu: Literal["visited", "tree"] = "visited"
     beam: int = Field(2, gt=0)  # b at ingestion: paths kept per uncertain routing step
-    # b at retrieval: folders explored per level; with low thresholds the beam, not tau_fold, bounds exploration
-    retrieval_beam: int = Field(6, gt=0)
     k: int = Field(8, gt=0)  # CROW retrieval: notes passed to the answer (paper default 5)
+    rerank: bool = True  # CROW retrieval: the classifier reorders the search's notes after the first (False: the search's order)
 
 
 # CROW thresholds per classifier: Jev's (OpenRouter, TypeSafe) are CrowConfig's defaults, the paper's; a custom
@@ -189,11 +199,10 @@ class CrowConfig(BaseModel):
 # its merge confidence is 0.23-0.40 for a real follow-up and at most 0.25 for a related but distinct note (measured as
 # 0.04-0.12 and 0.044 on Laya's own scale, 1 - normalised entropy; the client now computes Jev's, see
 # classifier.confidence, and 0.26 is the old 0.05 on it: the same merges for two options); linked
-# notes score 0.5 or more, unrelated ones at most 0.49; the folder and the note that answer a question score at least
-# 0.17 and 0.21, the others mostly under 0.18 and 0.20.
+# notes score 0.5 or more, unrelated ones at most 0.49.
 CROW_PRESETS: dict[str, dict[str, float | int]] = {
     "jev": {},
-    "laya": {"tau_path": 0.65, "tau_ing": 0.45, "tau_cons": 0.26, "tau_fold": 0.15, "tau_ret": 0.2, "tau_link": 0.5, "k": 5},
+    "laya": {"tau_path": 0.65, "tau_ing": 0.45, "tau_cons": 0.26, "tau_link": 0.5, "k": 5},
 }
 SMALL_CLASSIFIER: dict[str, float | int] = {"tau_cons": 0.7}  # over Laya's preset, for a custom model that is not Laya's
 

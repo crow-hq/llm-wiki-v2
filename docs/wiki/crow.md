@@ -82,8 +82,8 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 
 | Step | Classic decider | CROW decider | Primitive | Threshold | Fallback |
 |---|---|---|---|---|---|
-| folder routing | LLM `researcher/navigate`. It opens folders from a frontier, at most `OKF_MAX_STEPS` (12), and stops once it has `OKF_MAX_NOTES` (8) notes, or says it is done after selecting at least one (a "done" with nothing selected only closes that folder). | `classifier/retrieval_folder`: one Noul per subfolder, level by level. At each level it keeps the top `retrieval_beam` above `tau_fold`. | Noul | `tau_fold`, `retrieval_beam` | LLM navigation (`steps_classic.select`) when no note is selected, or on error |
-| note scoring | same `navigate` call, which also selects notes | `classifier/retrieval_note`: one Noul per note in the explored folders (including the root). It keeps the top `k` above `tau_ret`. | Noul | `tau_ret`, `k` | LLM navigation when no note clears `tau_ret`, or on error |
+| note finding | LLM `researcher/navigate`. It opens folders from a frontier, at most `OKF_MAX_STEPS` (12), and stops once it has `OKF_MAX_NOTES` (8) notes, or says it is done after selecting at least one (a "done" with nothing selected only closes that folder). | `Wiki.search` (BM25, and the embedder if there is one) finds 16 notes, with no model call. The tree is not walked. | none (code) | - | - |
+| note reordering | same `navigate` call, which also selects notes | `classifier/retrieval_note`: the search's first note stays first; one batched Noul for each of the other 15 (the note's title, summary and the 600-character passage of its body that best matches the question by BM25) reorders them. The first `k` are read. Off with `rerank`: the search's order. | Noul | `rerank`, `k` | the search's order, on error |
 | answer | LLM `researcher/answer`, citing `[path.md]` | same LLM step | - | - | - |
 
 ## Thresholds
@@ -94,15 +94,13 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 | `tau_path` | `OKF_TAU_PATH` | 0.5 | 0.65 | If the best path score is below this, the LLM routes |
 | `tau_ing` | `OKF_TAU_ING` | 0.5 | 0.45 | Best note probability must be above this to count as a match |
 | `tau_cons` | `OKF_TAU_CONS` | 0.6 | 0.26 (0.7 for a model that is not Laya's) | `Modify` confidence must be at least this to merge |
-| `tau_fold` | `OKF_TAU_FOLD` | 0.08 | 0.15 | Folder probability must be above this to explore the folder |
-| `tau_ret` | `OKF_TAU_RET` | 0.1 | 0.2 | Note probability must be above this to read the note |
 | `tau_link` | `OKF_TAU_LINK` | 0.6 | 0.5 | Relatedness must be above this to add a See-also link |
 | `votes` | `OKF_VOTES` | 1 | 1 | Per-level routing only: classifier calls averaged on a borderline decision (1: off). The Choice among every folder is asked once |
 | `vote_band` | `OKF_VOTE_BAND` | 0.05 | 0.05 | Routing: how close to `tau_route`, `tau_path` or a tie between two options counts as borderline |
 | `fallback_menu` | `OKF_FALLBACK_MENU` | visited | visited | Routing fallback: folders the LLM chooses among, `visited` (those the classifier explored) or `tree` (those and the rest of the wiki); `tree` is an extension of the paper |
 | `beam` | `OKF_BEAM` | 2 | 2 | Ingestion: paths kept per uncertain routing step |
-| `retrieval_beam` | `OKF_RETRIEVAL_BEAM` | 6 | 6 | Retrieval: folders explored per level |
 | `k` | `OKF_K` | 8 | 5 | CROW retrieval: notes passed to the answer |
+| `rerank` | `OKF_RERANK` | true | true | CROW retrieval: the classifier reorders the search's notes after the first; `false` keeps the search's order, with no classifier call. For a small local classifier, on a wiki where the reordering does not help |
 | `max_notes` | `OKF_MAX_NOTES` | 8 | Classic retrieval and CROW's navigation fallback: notes read per question |
 
 The batch window (`PLAN_BATCH`, 50), the split limit (`SPLIT_AT`, 12) and the plan's
@@ -182,7 +180,7 @@ choice, confidence, fallback)`. You can read it from
 | `split` | `"/folder: k opened"`, or `"/folder: error"` with `fallback: true` (a document filed alone) | | |
 | `match` | note path, or `none` | best note probability | `tau_ing` |
 | `consolidate` | `modify` or `new` | Choice confidence | `tau_cons` |
-| `relate`, `retrieve_folder`, `retrieve_note` | the paths chosen | per-item probabilities in `scores` | `tau_link`, `tau_fold`, `tau_ret` |
+| `relate`, `retrieve_note` | the paths chosen (`retrieve_note`: every note after the first, reordered) | per-item probabilities in `scores` | `tau_link` |
 
 A `route` decision is the Choice among every folder's when its choice is a plain path, and the per-level
 routing's when it ends in `(Here)` or `(New subfolder)`. `plan` and `plan_more` are not per document: they
@@ -198,14 +196,9 @@ To calibrate:
 3. For each step, pick the lowest threshold at which the accepted decisions are
    right as often as you need. Set it with the matching `OKF_TAU_*` variable.
 
-For retrieval, the paper's procedure (§8.4): write one question per sampled document
-and take the note that cites it as the right note; split them into a calibration and a
-held-out set; ask the calibration questions with `OKF_TAU_FOLD=0 OKF_TAU_RET=0` and a wide
-`OKF_RETRIEVAL_BEAM`, reading the right folders' and right note's probabilities from
-`scores`; set `tau_fold` and `tau_ret` just below a low quantile of them, `retrieval_beam`
-to the smallest beam that keeps the right folder, and `k` to the smallest count that holds
-the right note; check on the held-out questions, and repeat when the classifier version
-changes or the wiki grows.
+For retrieval, write one question per sampled document, take the note that cites it as the right note, and
+compare the rank of that note with `OKF_RERANK` on and off; set `k` to the smallest count that holds the right note,
+and check on held-out questions, and again when the classifier version changes or the wiki grows.
 
 ## Good to know
 

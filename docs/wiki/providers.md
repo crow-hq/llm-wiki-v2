@@ -164,7 +164,7 @@ for the classifier.
 
 - `op` is the prompt name for LLM calls (e.g. `librarian/route`), and the step
   for classifier calls (`route`, `match`, `consolidate`, `relate`,
-  `retrieve_folder`, `retrieve_note`).
+  `retrieve_note`).
 - One call is one successful HTTP response: a re-asked JSON reply counts twice,
   and Noul questions split into batches count once per batch.
 - `missing` counts calls whose response had no `usage` block (for example, a

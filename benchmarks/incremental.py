@@ -102,11 +102,25 @@ class Calls:
         """Route the models' calls through the log (call it after `Replay.wrap`, so the log sees what the cache served)."""
         chat = llm.chat
 
-        def logged_chat(messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
+        def logged_chat(
+            messages: list[dict[str, str]],
+            *,
+            op: str = "",
+            json_mode: bool = False,
+            max_tokens: int | None = None,
+            seed: int | None = None,
+        ) -> str:
+            fixed = {} if seed is None else {"seed": seed}
             key = digest(
-                {"model": llm.model, "temperature": llm.temperature, "seed": llm.seed, "json_mode": json_mode, "messages": messages}
+                {
+                    "model": llm.model,
+                    "temperature": llm.temperature,
+                    "seed": llm.seed if seed is None else seed,
+                    "json_mode": json_mode,
+                    "messages": messages,
+                }
             )
-            return str(self._call("llm", op, key, lambda: chat(messages, op=op, json_mode=json_mode, max_tokens=max_tokens)))
+            return str(self._call("llm", op, key, lambda: chat(messages, op=op, json_mode=json_mode, max_tokens=max_tokens, **fixed)))
 
         llm.chat = logged_chat  # type: ignore[method-assign]
         if classifier is not None:
@@ -148,7 +162,14 @@ def fake_models(tracker: UsageTracker) -> tuple[LLM, Classifier]:
     """Models that answer like the real ones, from the prompt alone and without the network (a CROW dry run)."""
 
     class FakeLLM(LLM):
-        def chat(self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
+        def chat(
+            self, messages: list[dict[str, str]],
+            *,
+            op: str = "",
+            json_mode: bool = False,
+            max_tokens: int | None = None,
+            seed: int | None = None,
+        ) -> str:
             self.usage.record("llm", self.model, 100, 10, op=op, seconds=0.0, provider="dry", cost=0.0001)
             user = messages[-1]["content"]
             h = int(hashlib.sha256(user.encode()).hexdigest(), 16)

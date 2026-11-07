@@ -19,6 +19,7 @@ from llmw2.batch import BatchReport, Item
 from llmw2.bundle.origin import Origin
 from llmw2.config import WikiConfig
 from llmw2.errors import ConfigError, InputError, ModelError, ReplyInvalid, SpendingCap, StepError, WikiError
+from llmw2.search import Hit
 from llmw2.sources import Change, ChangeBatch, LocalFolderSource, SourceConnector, SyncReport, estimate, sync
 from llmw2.wiki import Purged, Wiki
 
@@ -32,6 +33,7 @@ __all__ = [
     "ChangeBatch",
     "ConfigError",
     "FolderHealth",
+    "Hit",
     "InputError",
     "Item",
     "LocalFolderSource",

@@ -69,13 +69,14 @@ from llmw2.bundle.files import is_spreadsheet, sheet_sources, title_of
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.proposals import CONFIRMED, DISMISSED, OPEN, Proposal, notes_count, read_proposals, write_proposals
 from llmw2.bundle.store import CACHE_FILE, Deleted, WikiStore, authored, current_author, raw_sources, read_utf8_or_latin1
-from llmw2.bundle.tree import INDEX, LOG, Folder, Note, slugify
+from llmw2.bundle.tree import INDEX, LOG, Folder, Note, matching, slugify
 from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import ConfigError, InputError, NoteChanged, ReplyInvalid, SpendingCap
 from llmw2.models.cache import SqliteCache
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport, UsageTracker
+from llmw2.search import VECTORS_FILE, Embedder, Hit, NoteSearch, VectorCache
 
 PLAN_DEPTH = 3  # levels `plan` may lay out (and never below max_depth)
 PLAN_OPENING = 220  # characters of each document's opening `plan` reads
@@ -202,6 +203,7 @@ class Wiki:
         classifier: Classifier | None = None,
         steps: Steps | None = None,
         author: str | None = None,
+        embedder: Embedder | None = None,
     ) -> None:
         """Models are built from `cfg` unless given; given ones must share one UsageTracker.
 
@@ -209,6 +211,8 @@ class Wiki:
 
         `author` is who the changes are made for: every log line a changing method writes ends with ` · by <author>`.
         A method's own `author=` wins. Declared, not verified. None writes the log as it always was.
+
+        `embedder` (texts -> one vector each) is yours, and only `search` calls it: without it `search` is BM25 alone.
         """
         self.cfg = cfg
         self.author = author
@@ -220,6 +224,7 @@ class Wiki:
         self.prompts = Prompts(cfg.prompts_dir)
         self.llm = llm or LLM(cfg.llm, self.tracker)
         self.classifier = classifier
+        self._search = NoteSearch(VectorCache(cfg.bundle / VECTORS_FILE), embedder)
         self._preparing = threading.BoundedSemaphore(cfg.concurrency)
         if cfg.mode == "crow" and classifier is None:
             cache = SqliteCache(cfg.bundle / CACHE_FILE) if cfg.classifier.cache else None
@@ -247,7 +252,7 @@ class Wiki:
 
     def researcher(self) -> Researcher:
         """A fresh Researcher for one question, running this wiki's steps."""
-        return Researcher(self.store, self.llm, self.prompts, self.cfg, self.steps, self.classifier)
+        return Researcher(self.store, self.llm, self.prompts, self.cfg, self.steps, self.classifier, self._search)
 
     def init(self) -> None:
         self.store.init()
@@ -809,6 +814,20 @@ class Wiki:
             raise InputError("empty question")
         self._require_classifier()
         return self.researcher().ask(question, where)
+
+    def search(self, query: str, k: int = 3, where: dict[str, Any] | None = None) -> list[Hit]:
+        """The best `k` notes for `query`, with no model call of the library. `where` restricts it as in `ask`.
+
+        BM25 on each note (title, summary and body, without See also). With an `embedder` the first `k - 1` come from the
+        nearest by meaning and one from BM25, no note twice, the rest filled in the order of meaning; the vectors are kept
+        in the bundle under the hash of the note, so a search embeds only the notes new or changed since.
+        """
+        if not query.strip():
+            raise InputError("empty question")
+        root = self.store.load()
+        notes = (matching(root, where) if where else root).all_notes()
+        found = self._search.search(notes, root.all_notes() if where else notes, query, k)
+        return [Hit(n.rel, n.title, n.summary, i) for i, n in enumerate(found, 1)]
 
     def _require_classifier(self) -> None:
         """In CROW mode, a classifier without its key stops here, before any model call or file."""
