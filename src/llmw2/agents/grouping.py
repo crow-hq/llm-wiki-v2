@@ -25,18 +25,13 @@ ATTACH_CUT = 0.1  # average similarity a group needs to an existing folder's not
 def vectors(texts: list[str], words: Callable[[str], list[str]] = lexical.words) -> list[dict[str, float]]:
     """Unit TF-IDF vectors; words in one text only, or in more than half of them (two, among few), carry no weight.
     `words` splits a text (`lexical.words`; a caller that splits the same texts again passes one that remembers)."""
-    return weigh([Counter(words(t)) for t in texts])
-
-
-def weigh(counts: list[Counter[str]]) -> list[dict[str, float]]:
-    """`vectors` of texts already counted word by word (a caller that keeps the counts of its texts weighs them again
-    without splitting them again)."""
-    n = len(counts)
-    df = Counter(w for c in counts for w in c)
+    tokens = [words(t) for t in texts]
+    n = len(tokens)
+    df = Counter(w for ws in tokens for w in set(ws))
     common = max(2.5, 0.5 * n)
     out = []
-    for tf in counts:
-        weights = {w: (1 + math.log(c)) * math.log((n + 1) / df[w]) for w, c in tf.items() if 1 < df[w] < common}
+    for ws in tokens:
+        weights = {w: (1 + math.log(c)) * math.log((n + 1) / df[w]) for w, c in Counter(ws).items() if 1 < df[w] < common}
         norm = math.sqrt(sum(x * x for x in weights.values())) or 1.0
         out.append({w: x / norm for w, x in weights.items()})
     return out

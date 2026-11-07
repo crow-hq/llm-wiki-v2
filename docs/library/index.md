@@ -43,7 +43,6 @@ The fields you will touch most:
 | `max_notes` | `8` | notes read per question in classic mode |
 | `concurrency` | `4` | documents prepared at once by `ingest_many`, `sync` and the server (1 to 16; `OKF_CONCURRENCY`) |
 | `classifier.cache` | `False` | keep the classifier's answers in the bundle (`OKF_CLASSIFIER_CACHE`); see [The classifier's answer cache](#the-classifiers-answer-cache) |
-| `classifier.route_hints` | `False` | for small local models: when it chooses among the subfolders of a top-level area (only that level; the top-level areas and deeper subfolders are described as before) the classifier also reads each subfolder's distinctive words and example note titles, computed from the notes and never stored (`OKF_CLASSIFIER_ROUTE_HINTS`) |
 | `llm.note_language` | `False` | for small local writers that ignore "write in the language of the source": the prompts that write a note end with a line naming the source's language (Italian, French, German, Spanish or Portuguese; found by function words, no model call) when it is not English (`OKF_LLM_NOTE_LANGUAGE`) |
 | `llm.note_steps` | `False` | for small local writers (leave it off with a strong writer, whose single call writes more useful notes): `summarize` (and the final write of a long source) asks for the note body as plain text, then for its title, summary and tags from the body, instead of one JSON reply; falls back to the single call if the body is empty or the second reply is invalid; a body in another language than the source, or with a URL, e-mail address, path, code span or identifier the source does not have (after restoring a near-identical one in place), is asked for once more with another seed (one retry per note) and is the source text if it fails again; the body prompt lists up to 15 such strings of the source; tags of the prompt and an outer code fence are stripped, repeated sections removed; the metadata call sees the document's own heading and the source's proper names, and a title that carries an id from the file name, is cut, or misspells a name of the source is repaired or replaced by the heading or the file name; a summary in another language than the source becomes the first sentence of the body (`OKF_LLM_NOTE_STEPS`) |
 | `llm.note_copy_words` | `0` | with `llm.note_steps`: a source of fewer words than this is kept as the note's body, with no body call, and only its title, summary and tags are asked for; `0` writes every body (`OKF_LLM_NOTE_COPY_WORDS`) |
@@ -55,7 +54,8 @@ The fields you will touch most:
 | `crow.rerank` | `True` | CROW: after `ask` finds its notes with the search (`search`'s own ranking), the classifier reorders all but the first (`OKF_RERANK`, or `crow_rerank` in the settings); `False` reads them in the search's order and asks the classifier nothing. Turn it off for a small local classifier on a wiki where the reordering does not help |
 | `strict_new_folders` | `True` | CROW: a new subfolder only when the classifier is sure of it (`OKF_STRICT_NEW_FOLDERS`); `False` keeps 0.3.0's routing |
 | `plan` | `writer` | CROW: how a batch on an empty wiki lays out its folders (`OKF_PLAN`): `writer` is the writer's `plan`; `groups` makes them in code with no model call, for a small local writer (about 1B parameters or less), which plans poorly. A capable writer plans better than the groups |
-| `llm`, `classifier`, `crow` | | the models and the CROW thresholds |
+| `embedder` | none | the embedder of `search` and `ask`: `provider` (`openai` for any `/embeddings` server, or `ollama`), `base_url`, `model`, `api_key`, `timeout` (`OKF_EMBEDDER_*`); see [Search without a model](#search-without-a-model) |
+| `llm`, `classifier`, `crow`, `embedder` | | the models and the CROW thresholds |
 
 ### Note length: proportional or fixed
 
@@ -164,9 +164,14 @@ Both have `to_dict()`.
 `wiki.search("refund deadline", k=3)` returns the best notes for a query, with no call to a language model and nothing
 run at ingest. Each note is read whole (title, summary and body, without its See also section) and ranked by BM25;
 notes with none of the query's words are left out. The words of a note are counted once and kept while its text is
-the same, so a search at thousands of notes reads only the lists of the query's words.
+the same, so a search at thousands of notes reads only the lists of the query's words. A query that quotes something
+(text in double quotes, «», “” or backticks) or holds a code-like token (`AB-1001`, `getUser`, `v2.1`) brings first the
+notes that hold it, unless it is in more than 3 of the best 16.
 
-Give `Wiki` an `embedder` and the search also goes by meaning. It is any callable from a list of texts to a list of
+Give `Wiki` an `embedder` and the search also goes by meaning, and so does `ask` in CROW mode, which finds its notes with
+this search. Set it in the configuration (`OKF_EMBEDDER_PROVIDER=ollama`, `OKF_EMBEDDER_MODEL=...`, plus
+`OKF_EMBEDDER_BASE_URL` and `OKF_EMBEDDER_API_KEY` if needed; `openai` is any server with `/embeddings`) and the
+command line, the server and the memory MCP use it; or pass a callable, which wins. A callable is any callable from a list of texts to a list of
 vectors (the library has no model, provider or dependency for it), and it is called with the query and with the notes
 that have no vector yet, 64 texts at a time. A note is embedded as its title, its summary and the first 3000
 characters of its body. The result is built from slots: the `k - 1` nearest notes by cosine, then the best by BM25
@@ -257,6 +262,12 @@ The same operations are in the CLI (`llmwiki2 proposals`, `proposals add LABEL -
 [--over-limit]`, `proposals dismiss ID`, `rename-root`, `merge-roots`), the HTTP API (`GET/POST /proposals`,
 `POST /proposals/{id}/confirm` and `/dismiss`, `POST /areas`, `POST /folder/rename`, `POST /folder/merge`), the page's **Areas** section
 (no proposing from the page) and the memory's tools.
+
+## Upgrading: removed retrieval settings
+
+`crow.tau_fold`, `crow.tau_ret` and `crow.retrieval_beam` (`OKF_TAU_FOLD`, `OKF_TAU_RET`, `OKF_RETRIEVAL_BEAM`, and
+`crow_tau_fold` and the like in a settings file) no longer exist: `ask` finds its notes with the search and `crow.rerank`
+and `crow.k` tune the rest. They are ignored with one `DeprecationWarning`; delete them from your environment and settings.
 
 ## Filing many documents
 

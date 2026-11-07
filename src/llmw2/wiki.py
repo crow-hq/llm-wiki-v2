@@ -74,6 +74,7 @@ from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import ConfigError, InputError, NoteChanged, ReplyInvalid, SpendingCap
 from llmw2.models.cache import SqliteCache
 from llmw2.models.classifier import Classifier
+from llmw2.models.embedder import HttpEmbedder
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport, UsageTracker
 from llmw2.search import VECTORS_FILE, Embedder, Hit, NoteSearch, VectorCache
@@ -212,7 +213,9 @@ class Wiki:
         `author` is who the changes are made for: every log line a changing method writes ends with ` · by <author>`.
         A method's own `author=` wins. Declared, not verified. None writes the log as it always was.
 
-        `embedder` (texts -> one vector each) is yours, and only `search` calls it: without it `search` is BM25 alone.
+        `embedder` (texts -> one vector each) is yours, and `search` and, in CROW mode, `ask` (which finds its notes with
+        the search) call it. Without it, the one that `cfg.embedder` describes (`OKF_EMBEDDER_*`) is built; with neither,
+        the search is BM25 alone.
         """
         self.cfg = cfg
         self.author = author
@@ -224,6 +227,9 @@ class Wiki:
         self.prompts = Prompts(cfg.prompts_dir)
         self.llm = llm or LLM(cfg.llm, self.tracker)
         self.classifier = classifier
+        self._embedder: HttpEmbedder | None = None  # the one built from the settings, closed with the wiki
+        if embedder is None and cfg.embedder.enabled:
+            embedder = self._embedder = HttpEmbedder(cfg.embedder, self.tracker)
         self._search = NoteSearch(VectorCache(cfg.bundle / VECTORS_FILE), embedder)
         self._preparing = threading.BoundedSemaphore(cfg.concurrency)
         if cfg.mode == "crow" and classifier is None:
@@ -235,6 +241,8 @@ class Wiki:
         self.llm.close()
         if self.classifier is not None:
             self.classifier.close()
+        if self._embedder is not None:
+            self._embedder.close()
 
     def __enter__(self) -> Self:
         return self

@@ -224,10 +224,14 @@ def _in_two_calls(
         return None
     if body != source.text and (why := problem(body)):
         log.warning("summarize: %s: asking for it once more", why)
+        ctx.decide("note_retry", "code", why)  # counted by whoever reads the trace (`IngestResult.decisions`)
         again = write((ctx.cfg.llm.seed or 0) + 1)
         # Wrong twice: the source as it is, in its own language, beats a note the reader cannot trust
-        body = again if again and not problem(again) else source.text
-        log.debug("summarize: retry %s", "kept the source text" if body == source.text else "fixed the body")
+        fixed = bool(again) and not problem(again)
+        body = again if fixed else source.text
+        log.debug("summarize: retry %s", "fixed the body" if fixed else "kept the source text")
+        if not fixed:
+            ctx.decide("note_source", "code", "the body is the source text", fallback=True)
     try:
         meta = ctx.ask_json(
             "librarian/summarize_meta",

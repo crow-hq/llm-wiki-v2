@@ -240,3 +240,32 @@ def test_echoes_finds_the_request_copied_into_the_note() -> None:
     assert nc.echoes(leaked, request, "Project Overview: 2026-10-19")
     assert not nc.echoes("- Project Overview: 2026-10-19, previously 2026-10-12", request, "Project Overview: 2026-10-19")
     assert not nc.echoes("keep each of them in the existing note", request, "please keep each of them in the existing note")
+
+
+def test_a_retry_and_a_fallback_to_the_source_are_decisions_of_the_trace() -> None:
+    ctx, llm = context()
+    broken = IT + " Vedi https://other.test/zzz."
+    llm.add("librarian/summarize_body", broken, broken).add("librarian/summarize_meta", META)
+
+    classic.summarize(ctx, Source(text=SOURCE, title="Nota"))
+
+    steps = [(d.step, d.fallback) for d in ctx.decisions]
+    assert steps == [("note_retry", False), ("note_source", True)]
+
+
+def test_a_retry_that_fixes_the_body_is_one_decision_and_no_fallback() -> None:
+    ctx, llm = context()
+    llm.add("librarian/summarize_body", IT + " Vedi https://other.test/zzz.", SOURCE).add("librarian/summarize_meta", META)
+
+    classic.summarize(ctx, Source(text=SOURCE, title="Nota"))
+
+    assert [d.step for d in ctx.decisions] == ["note_retry"]
+
+
+def test_a_note_with_no_problem_leaves_no_decision() -> None:
+    ctx, llm = context()
+    llm.add("librarian/summarize_body", SOURCE).add("librarian/summarize_meta", META)
+
+    classic.summarize(ctx, Source(text=SOURCE, title="Nota"))
+
+    assert ctx.decisions == []

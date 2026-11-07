@@ -14,10 +14,9 @@ import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from llmw2.agents import lexical, route_hints
+from llmw2.agents import lexical
 from llmw2.agents import steps_classic as classic
 from llmw2.agents.base import unique_objects
 from llmw2.agents.data import Candidate, Route
@@ -26,7 +25,7 @@ from llmw2.agents.steps_classic import CONSOLIDATE_SOURCE_MAX, HERE, MODIFY, NEW
 from llmw2.bundle.tree import Folder, Note, slugify
 from llmw2.errors import ModelError, ReplyInvalid
 from llmw2.models.classifier import MAX_OPTIONS, ChoiceAnswer
-from llmw2.search import NoteSearch, VectorCache
+from llmw2.search import NoteSearch
 
 if TYPE_CHECKING:
     from llmw2.agents.steps import StepContext
@@ -299,10 +298,7 @@ def _expand(
     if not folder.is_root:
         placement[NONE] = text[NONE]
     children = ctx.children(folder)
-    if ctx.cfg.classifier.route_hints and folder.depth == route_hints.HINT_DEPTH:  # what each subfolder holds, for small models
-        subfolders = route_hints.option_texts(folder, children)
-    else:
-        subfolders = {f.name: f.description or f.name for f in children}
+    subfolders = {f.name: f.description or f.name for f in children}
     options = _fitting(ctx, folder, state, text["instructions"], subfolders, placement) | placement
     if len(options) == 1:  # one way only (a new folder in an empty wiki, or Here at max_depth 0): nothing to decide
         return [_Path(path.folders, path.probs, next(iter(options)))]
@@ -539,7 +535,7 @@ def _found(ctx: StepContext, root: Folder, question: str) -> list[Note]:
     if ctx.search is not None:
         return ctx.search(question, SEARCH_K)
     notes = root.all_notes()  # a context built without the wiki's search: BM25 alone
-    return NoteSearch(VectorCache(Path())).search(notes, notes, question, SEARCH_K)
+    return NoteSearch(None).search(notes, notes, question, SEARCH_K)
 
 
 def _reordered(ctx: StepContext, notes: list[Note], question: str) -> list[Note]:

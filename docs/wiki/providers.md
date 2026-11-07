@@ -146,6 +146,21 @@ kept per provider like its key and model.
 Keep the same model version on every route (thresholds belong to it); if an
 endpoint rejects the `typesafe/` prefix, set the bare id in `OKF_CLASSIFIER_MODEL`.
 
+## The embedder (optional)
+
+`Wiki.search`, and `ask` in CROW mode, can also go by meaning. Without an embedder they use BM25 alone.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OKF_EMBEDDER_PROVIDER` | none | `openai`: any server with `POST {base_url}/embeddings` (OpenAI, a gateway, vLLM, LM Studio, llama.cpp); `ollama`: `POST {base_url}/api/embed` |
+| `OKF_EMBEDDER_BASE_URL` | the provider's | `https://api.openai.com/v1` for `openai` (include `/v1`), `http://localhost:11434` for `ollama` (without `/v1`) |
+| `OKF_EMBEDDER_MODEL` | none | required with a provider |
+| `OKF_EMBEDDER_API_KEY` | none | optional bearer key |
+| `OKF_EMBEDDER_TIMEOUT` | 60 | seconds per request |
+
+The texts go 16 to a request; Ollama's request asks to truncate a text longer than the model's window. The settings file
+takes the same keys in an `embedder` object. A callable passed as `Wiki(..., embedder=)` wins over these settings.
+
 ## Token accounting
 
 `UsageTracker` keeps two ledgers, `llm` (writing) and `classifier` (deciding),

@@ -233,6 +233,12 @@ def moves_of(entries: list[tuple[str, str]]) -> list[dict[str, Any]]:
     return out
 
 
+def note_retries(result: Any) -> dict[str, int]:
+    """How often the writer's note was asked for again (`note_retry`) and fell back to the source text (`note_source`)."""
+    decisions = [] if isinstance(result, Exception) else result.decisions
+    return {"retries": sum(d.step == "note_retry" for d in decisions), "sources": sum(d.step == "note_source" for d in decisions)}
+
+
 def row_of(name: str, order: int, result: Any, seconds: float, log_seq: int) -> dict[str, Any]:
     """One document of the run: what its ingest returned, or the error."""
     row: dict[str, Any] = {"doc": name, "order": order, "log_seq": log_seq}
@@ -340,8 +346,12 @@ def main(argv: list[str] | None = None) -> int:
     stopped = None
     order = {f.name: n for n, f in enumerate(files)}
     log = (a.out / "docs.jsonl").open("w", encoding="utf-8")
+    noted: dict[str, dict[str, int]] = {}  # per document, the retries of its note and the times it kept the source text
 
     def filed(name: str, result: Any, t0: float) -> None:
+        counts = note_retries(result)
+        if counts["retries"] or counts["sources"]:
+            noted[name] = counts
         log.write(json.dumps(row_of(name, order[name], result, time.perf_counter() - t0, len(log_entries(bundle)))) + "\n")
         log.flush()
         replay.save()
@@ -378,9 +388,13 @@ def main(argv: list[str] | None = None) -> int:
         log.close()
         calls.file.close()
     (a.out / "moves.jsonl").write_text("".join(json.dumps(m) + "\n" for m in moves_of(log_entries(bundle))), encoding="utf-8")
-    meta |= {"stopped": stopped, "spent_real_usd": round(calls.spent, 4), "cache_hit_rate": hit_rate(replay.counts)}
+    totals = {k: sum(c[k] for c in noted.values()) for k in ("retries", "sources")}
+    meta |= {"note_retries": totals, "stopped": stopped, "spent_real_usd": round(calls.spent, 4), "cache_hit_rate": hit_rate(replay.counts)}
     (a.out / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
     print(f"done: real spend ${calls.spent:.4f}, cache hit rate {meta['cache_hit_rate']}" + (f", STOPPED: {stopped}" if stopped else ""))
+    for name, c in noted.items():
+        print(f"note retries: {name}: {c['retries']} retried, {c['sources']} kept the source text")
+    print(f"note retries: {totals['retries']} retried, {totals['sources']} kept the source text, in {len(noted)} documents")
     print(f"run: {a.out}")
     return 1 if stopped else 0
 

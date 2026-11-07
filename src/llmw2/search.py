@@ -10,6 +10,7 @@ a hidden file of the bundle under the hash of the note's text, so a search embed
 from __future__ import annotations
 
 import hashlib
+import re
 import sqlite3
 import threading
 from array import array
@@ -29,6 +30,19 @@ VECTORS_FILE = ".llmw2/cache/embeddings.sqlite"  # the vectors of the embedder, 
 EMBED_BODY_CHARS = 3000
 EMBED_BATCH = 64
 _KEYS_PER_QUERY = 500
+EXACT_POOL = 16  # candidates the exact expressions of a query are looked for in
+EXACT_COMMON = 3  # an expression found in more candidates than this tells them apart no more
+_QUOTED = re.compile(r'"([^"\n]{3,60})"|«([^»\n]{3,60})»|“([^”\n]{3,60})”|`([^`\n]{3,60})`')
+_CODELIKE = re.compile(r"\b(?=[\w./:-]*(?:\d|[a-z][A-Z]|[\w][-_./:][\w]))[\w][\w./:-]{3,}\b")
+
+
+def exact_expressions(query: str) -> list[str]:
+    """What a query quotes ("...", «...», “...”, `...`) and its code-like tokens (a digit, a capital inside, or - _ . / :
+    between word characters; four characters or more), each once, in order."""
+    found = [next(g for g in m.groups() if g).strip() for m in _QUOTED.finditer(query)]
+    rest = _QUOTED.sub(" ", query)
+    found += _CODELIKE.findall(rest)
+    return list(dict.fromkeys(e for e in found if e))
 
 
 @dataclass(frozen=True)
@@ -103,7 +117,7 @@ class VectorCache:
 class NoteSearch:
     """Ranks notes for a query. Keeps the counted words and the vectors of the notes it has seen, by the hash of their text."""
 
-    def __init__(self, vectors: VectorCache, embedder: Embedder | None = None) -> None:
+    def __init__(self, vectors: VectorCache | None, embedder: Embedder | None = None) -> None:
         self.vectors = vectors
         self.embedder = embedder
         self._counts: dict[str, tuple[str, Counter[str]]] = {}  # note path -> (hash of its text, its words)
@@ -120,13 +134,28 @@ class NoteSearch:
             bm25 = self._bm25(texts, hashes)
             scores = bm25.scores(query)
             by_words = [rel for rel in bm25.rank(query) if scores[rel] > 0]
-            if self.embedder is None:
-                return [by_rel[rel] for rel in by_words[:k]]
-            by_meaning = self._by_meaning(query, by_rel, hashes, everything)
-            picked = by_meaning[: max(k - 1, 0)]
-            if by_words and by_words[0] not in picked:
-                picked.append(by_words[0])
-            picked += [rel for rel in by_meaning if rel not in picked][: k - len(picked)]
+            by_meaning = self._by_meaning(query, by_rel, hashes, everything) if self.embedder is not None else []
+
+            def order(n: int) -> list[str]:
+                if self.embedder is None:
+                    return by_words[:n]
+                picked = by_meaning[: max(n - 1, 0)]
+                if by_words and by_words[0] not in picked:
+                    picked.append(by_words[0])
+                picked += [rel for rel in by_meaning if rel not in picked][: n - len(picked)]
+                return picked[:n]
+
+            picked = order(k)
+            exact = exact_expressions(query)
+            if exact:  # the notes that hold what the query quotes come first, in the order they had
+                wide = order(max(k, EXACT_POOL))
+                pool = picked + [rel for rel in wide if rel not in picked]
+                held = {rel: texts[rel].lower() for rel in pool[: max(k, EXACT_POOL)]}
+                exact = [e for e in exact if sum(e.lower() in t for t in held.values()) <= EXACT_COMMON]
+                if exact:
+                    pool = pool[: max(k, EXACT_POOL)]
+                    hit = [rel for rel in pool if any(e.lower() in held[rel] for e in exact)]
+                    picked = hit + [rel for rel in pool if rel not in hit]
             return [by_rel[rel] for rel in picked[:k]]
 
     def _bm25(self, texts: dict[str, str], hashes: dict[str, str]) -> lexical.Bm25:
@@ -148,7 +177,8 @@ class NoteSearch:
         asked = _unit(self._embed([query])[0])
         wanted = list(dict.fromkeys(hashes.values()))
         known = {h: self._held[h] for h in wanted if h in self._held and len(self._held[h]) == len(asked)}
-        known.update({h: v for h, v in self.vectors.get([h for h in wanted if h not in known]).items() if len(v) == len(asked)})
+        stored = self.vectors.get([h for h in wanted if h not in known]) if self.vectors is not None else {}
+        known.update({h: v for h, v in stored.items() if len(v) == len(asked)})
         todo = {hashes[rel]: rel for rel in by_rel if hashes[rel] not in known}
         fresh: dict[str, array[float]] = {}
         pairs = list(todo.items())
@@ -156,7 +186,7 @@ class NoteSearch:
             chunk = pairs[i : i + EMBED_BATCH]
             vectors = self._embed([_embedded(by_rel[rel]) for _, rel in chunk])
             fresh.update({h: _unit(v) for (h, _), v in zip(chunk, vectors, strict=True)})
-        if fresh:
+        if fresh and self.vectors is not None:
             self.vectors.put(fresh, {_hash(_text_of(n)) for n in everything})
             known.update(fresh)
         self._held = known

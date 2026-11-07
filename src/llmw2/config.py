@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 import warnings
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
@@ -148,10 +148,6 @@ class ClassifierConfig(BaseModel):
     # Keep the answers in the bundle (.llmw2/cache), under a hash of the request: a rebuild, a resumed sync or a repeated
     # audit then asks the classifier nothing it was already asked. A sync of new documents asks only new questions.
     cache: bool = False
-    # In a top-level area, show the classifier what each subfolder holds (its distinctive words and example titles,
-    # computed from the notes, never stored) after its description. For small local models; a good description needs none.
-    # Only the choice among an area's subfolders: the top-level areas and deeper subfolders read the descriptions alone.
-    route_hints: bool = False
 
     @model_validator(mode="after")
     def _fill_from_provider(self) -> ClassifierConfig:
@@ -168,6 +164,48 @@ class ClassifierConfig(BaseModel):
     def ready(self) -> bool:
         """False while the provider still wants a key."""
         return bool(self.api_key or not CLASSIFIER_PROVIDERS[self.provider].key_env)
+
+
+EMBEDDER_URLS = {"openai": "https://api.openai.com/v1", "ollama": "http://localhost:11434"}
+
+
+class EmbedderConfig(BaseModel):
+    """The embedder of `Wiki.search` and `ask`: none by default. `openai` is any server with `POST {base_url}/embeddings`
+    (a gateway, vLLM, LM Studio, llama.cpp too: set base_url); `ollama` is `POST {base_url}/api/embed`."""
+
+    provider: Literal["", "openai", "ollama"] = ""  # empty: no embedder, search is BM25 alone
+    base_url: str = ""  # empty: the provider's (openai: https://api.openai.com/v1, ollama: http://localhost:11434)
+    model: str = ""
+    api_key: str = ""  # optional
+    timeout: float = Field(60.0, gt=0)
+
+    @model_validator(mode="after")
+    def _fill_from_provider(self) -> EmbedderConfig:
+        if self.provider:
+            self.base_url = self.base_url or EMBEDDER_URLS[self.provider]
+            if not self.model:
+                raise ValueError(f"embedder provider {self.provider!r} needs a model")
+        return self
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.provider)
+
+
+# Retrieval settings of CROW that no longer exist: `ask` finds its notes with the search. Seen in the environment, the
+# settings file or a caller's mapping they are ignored, with one DeprecationWarning per name and process.
+REMOVED_CROW = ("tau_fold", "tau_ret", "retrieval_beam")
+_WARNED_REMOVED: set[str] = set()
+
+
+def warn_removed_crow(names: Collection[str], where: str) -> None:
+    for name in REMOVED_CROW:
+        if name in names and name not in _WARNED_REMOVED:
+            _WARNED_REMOVED.add(name)
+            warnings.warn(
+                f"crow.{name} ({where.format(name.upper())}) was removed and is ignored: `ask` finds its notes with the search "
+                "(see crow.rerank and crow.k)", DeprecationWarning, stacklevel=2,
+            )
 
 
 class CrowConfig(BaseModel):
@@ -189,6 +227,13 @@ class CrowConfig(BaseModel):
     beam: int = Field(2, gt=0)  # b at ingestion: paths kept per uncertain routing step
     k: int = Field(8, gt=0)  # CROW retrieval: notes passed to the answer (paper default 5)
     rerank: bool = True  # CROW retrieval: the classifier reorders the search's notes after the first (False: the search's order)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_removed(cls, data: Any) -> Any:
+        if isinstance(data, Mapping):
+            warn_removed_crow(data, "in the settings or the config")
+        return data
 
 
 # CROW thresholds per classifier: Jev's (OpenRouter, TypeSafe) are CrowConfig's defaults, the paper's; a custom
@@ -264,6 +309,7 @@ class WikiConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
     crow: CrowConfig = Field(default_factory=CrowConfig)
+    embedder: EmbedderConfig = Field(default_factory=EmbedderConfig)  # none by default (OKF_EMBEDDER_*)
 
     @field_validator("bundle", "usage_log", "prompts_dir", mode="after")
     @classmethod
@@ -354,8 +400,10 @@ class WikiConfig(BaseModel):
             for f in ClassifierConfig.model_fields
             if env.get(f"OKF_CLASSIFIER_{f.upper()}")
         }
+        emb = {f: env[f"OKF_EMBEDDER_{f.upper()}"] for f in EmbedderConfig.model_fields if env.get(f"OKF_EMBEDDER_{f.upper()}")}
         crow = {f: env[f"OKF_{f.upper()}"] for f in CrowConfig.model_fields if env.get(f"OKF_{f.upper()}")}
-        data = merge(dict(base or {}), {**top, "llm": llm, "classifier": clf, "crow": crow})
+        warn_removed_crow([f for f in REMOVED_CROW if env.get(f"OKF_{f.upper()}")], "OKF_{}")
+        data = merge(dict(base or {}), {**top, "llm": llm, "classifier": clf, "crow": crow, "embedder": emb})
         # Each model's provider variable (OPENROUTER_API_KEY, …) is its key unless OKF_LLM_API_KEY / OKF_CLASSIFIER_API_KEY is set.
         for name, explicit, presets in (("llm", llm, PROVIDERS), ("classifier", clf, CLASSIFIER_PROVIDERS)):
             preset = presets.get(data[name].get("provider", "openrouter"))

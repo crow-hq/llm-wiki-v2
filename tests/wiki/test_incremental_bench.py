@@ -167,3 +167,15 @@ def test_retrieval_asks_select_on_a_copy_and_counts_hits(
     assert result["hit@1"] <= result["hit@3"] <= result["hit"]
     assert all("question" not in row for row in result["rows"])  # the results name a question by its id, never by its text
     assert before == {p: p.read_bytes() for p in (run / "wiki").rglob("*") if p.is_file()}  # the run's wiki was only read
+
+
+def test_note_retries_counts_the_retries_and_the_source_fallbacks_of_a_result() -> None:
+    from types import SimpleNamespace
+
+    from llmw2.agents.base import Decision
+
+    steps = ["note_retry", "note_retry", "note_source", "route"]
+    result = SimpleNamespace(decisions=[Decision(s, "code", "x") for s in steps])
+
+    assert load("incremental").note_retries(result) == {"retries": 2, "sources": 1}
+    assert load("incremental").note_retries(ValueError("x")) == {"retries": 0, "sources": 0}
