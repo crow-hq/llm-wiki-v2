@@ -220,6 +220,23 @@ def altered(body: str, source_text: str) -> list[str]:
     ]
 
 
+# a quotation opens after a space or a bracket and starts with a word; a straight quote also closes before a space or a mark
+_QUOTED = re.compile(
+    r'(?<![\w"])“(\w[^”\n]{10,398})”'
+    r'|(?<![\w"])"(\w[^"\n]{10,398}[^\s"])"(?=[\s.,;:!?)\]]|\Z)'
+    r'|(?<![\w"])«\s?(\w[^»\n]{10,398})»'
+)
+
+
+def misquoted(body: str, source_text: str) -> list[str]:
+    """The quotations of four words or more in the body whose words the source does not have in that order: a quote that was
+    changed, made up or moved to another speaker. Letters and digits are compared, so spacing, punctuation and quote marks
+    do not count."""
+    letters = _letters(source_text)
+    spans = (next(g for g in m.groups() if g) for m in _QUOTED.finditer(body))
+    return [q for q in spans if len(q.split()) >= 4 and _letters(q) not in letters]
+
+
 def restored(body: str, source_text: str) -> str:
     """The body with each altered item put back to the source's near-identical item (small edit distance)."""
     wrong = altered(body, source_text)
@@ -258,9 +275,22 @@ def without_repeated_sections(body: str, source_text: str) -> str:
     return "".join(kept).strip()
 
 
+_NOT_PROSE = re.compile(r"\s*(?:#|[-*+]\s|\d+[.)]\s|>|\||```|~~~|<)")
+
+
 def first_sentence(body: str) -> str:
-    """The first sentence of the body's first line that is not a heading."""
-    line = next((ln.strip() for ln in body.splitlines() if ln.strip() and not ln.lstrip().startswith("#")), "")
+    """The first sentence of the body's first line of prose (with letters; no heading, rule, list item, quote, table row, tag, code);
+    without one, of its first line that is not a heading, with the list or quote mark taken off."""
+    lines, fence = [], False
+    for ln in body.splitlines():
+        if ln.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+        elif ln.strip() and not fence:
+            lines.append(ln)
+    line = next((ln for ln in lines if not _NOT_PROSE.match(ln) and re.search(r"[^\W\d_]", ln)), "")
+    if not line:
+        line = next((ln for ln in lines if not ln.lstrip().startswith("#")), "")
+        line = re.sub(r"^\s*(?:[-*+>]|\d+[.)])\s*", "", line)
     return re.split(r"(?<=[.!?])\s", " ".join(line.split()), maxsplit=1)[0][:200]
 
 

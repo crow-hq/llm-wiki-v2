@@ -269,3 +269,41 @@ def test_a_note_with_no_problem_leaves_no_decision() -> None:
     classic.summarize(ctx, Source(text=SOURCE, title="Nota"))
 
     assert ctx.decisions == []
+
+
+# -- quotations ------------------------------------------------------------------------------
+
+QUOTED = 'Il sindaco ha detto: "Il ponte sarà riaperto entro maggio, come promesso." La giunta ha approvato.'
+
+
+def test_a_quotation_the_source_does_not_have_is_found() -> None:
+    assert nc.misquoted('Il sindaco: "Il ponte resterà chiuso fino a giugno." Fine.', QUOTED) == ["Il ponte resterà chiuso fino a giugno."]
+    assert nc.misquoted("Disse \u201cil ponte sarà riaperto entro maggio\u201d.", QUOTED) == []  # other marks, same words
+    assert nc.misquoted('Si legge "Il ponte, sarà riaperto entro maggio!" nel verbale.', QUOTED) == []  # punctuation does not count
+    assert nc.misquoted('Detto "a maggio" e basta.', QUOTED) == []  # under four words: not judged
+
+
+def test_inch_marks_and_stray_quotes_are_not_quotations() -> None:
+    assert nc.misquoted('Lo schermo da 15" pesa poco; il modello da 17" costa di più e non ha la porta.', QUOTED) == []
+
+
+def test_a_made_up_quotation_is_asked_again_then_the_source_is_kept() -> None:
+    ctx, llm = context()
+    made_up = 'Il sindaco ha detto: "Il ponte resterà chiuso fino a giugno." La giunta ha approvato.'
+    llm.add("librarian/summarize_body", made_up, made_up).add("librarian/summarize_meta", META)
+
+    cand = classic.summarize(ctx, Source(text=QUOTED, title="Nota"))
+
+    assert llm.ops == ["librarian/summarize_body", "librarian/summarize_body", "librarian/summarize_meta"]
+    assert cand.body == QUOTED
+
+
+# -- first sentence --------------------------------------------------------------------------
+
+
+def test_the_first_sentence_is_taken_from_prose_not_from_a_list_or_code() -> None:
+    body = "# Cheatsheet\n\n## Commands\n\n- Run locally: `gitlab-runner exec`\n\n```sh\nmake\n```\n\nThe commands we use most. More."
+    assert nc.first_sentence(body) == "The commands we use most."
+    assert nc.first_sentence("# T\n\n- Only a list item. Second.\n| a | b |") == "Only a list item."
+    assert nc.first_sentence("Plain first line. Second.") == "Plain first line."
+    assert nc.first_sentence("# T" + chr(10) + "----" + chr(10) + "Il testo vero. Altro.") == "Il testo vero."

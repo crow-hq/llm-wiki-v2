@@ -221,6 +221,8 @@ def _in_two_calls(
             return f"the body is in {written}, the source in {wanted}"
         if wrong := note_checks.altered(text, source.text):
             return f"the body has strings the source does not: {wrong[:3]}"
+        if wrong := note_checks.misquoted(text, source.text):
+            return f"the body quotes words the source does not have: {[q[:60] for q in wrong[:2]]}"
         return ""
 
     if not body:
