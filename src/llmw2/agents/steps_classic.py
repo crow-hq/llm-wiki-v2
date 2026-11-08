@@ -119,8 +119,9 @@ def summarize(ctx: StepContext, source: Source) -> Candidate:
     if not ctx.cfg.summarize:
         return _verbatim(source, ctx.cfg.classifier.state_chars)
     room = ctx.cfg.effective_read_chars - PROMPT_ROOM
-    # a source the note copies (`llm.note_copy_words`) is never split: the calls on its parts would be thrown away
-    copied = ctx.cfg.llm.note_steps and len(source.text.split()) < ctx.cfg.llm.note_copy_words
+    # a source the note copies (`llm.note_copy_words`, `llm.note_copy_parts`) is never split: no call on its parts
+    llm = ctx.cfg.llm
+    copied = llm.note_steps and (len(source.text.split()) < llm.note_copy_words or (llm.note_copy_parts and len(source.text) > room))
     if len(source.text) <= room or copied:
         draft = None
         if ctx.cfg.llm.note_steps:
@@ -201,7 +202,9 @@ def _in_two_calls(
     source text if it fails again. The title is written with the document's heading and names, and checked (see `note_checks`)."""
     language = lexical.language_of(source.text) or "the language of the document"
     listed = note_checks.items_rule(note_checks.exact_items(source.text, note_checks.ITEMS_MAX)) if exact else ""
-    body = source.text if len(source.text.split()) < ctx.cfg.llm.note_copy_words else ""
+    copy = len(source.text.split()) < ctx.cfg.llm.note_copy_words
+    copy = copy or (ctx.cfg.llm.note_copy_parts and len(source.text) > ctx.cfg.effective_read_chars - PROMPT_ROOM)
+    body = source.text if copy else ""
 
     def write(seed: int | None = None) -> str:
         # The librarian's system message asks for a JSON object, which a small model then answers with: this call has its own

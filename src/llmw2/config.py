@@ -107,6 +107,9 @@ class LLMConfig(BaseModel):
     # With `note_steps`: a source of fewer words than this is its own body, and only the title, summary and tags are asked
     # for. 0: every body is written.
     note_copy_words: int = Field(0, ge=0)
+    # With `note_steps`: a source too long for one call is its own body instead of being written from notes on its parts,
+    # which a small writer combines losing much of them; only the title, summary and tags are asked for.
+    note_copy_parts: bool = False
     # Extra JSON fields for every request. OpenRouter example:
     # {"provider": {"order": ["together", "coreweave"]}} to pin faster providers.
     extra_body: dict[str, Any] = Field(default_factory=dict)

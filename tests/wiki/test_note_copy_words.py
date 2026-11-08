@@ -12,6 +12,7 @@ import pytest
 from llmw2 import Source, StepContext, WikiConfig
 from llmw2.agents import steps_classic as classic
 from llmw2.agents.prompts import Prompts
+from llmw2.agents.state import split_blocks
 from llmw2.config import LLMConfig
 from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import FakeLLM
@@ -81,3 +82,47 @@ def test_part_labels_the_source_itself_has_are_kept() -> None:
     title = "Module 3 - Part 2 of 2"
 
     assert classic._without_part_labels(title, "Module 3 - Part 2 of 2 (Practice)", line=False) == title
+
+
+def _long_context(copy_parts: bool) -> tuple[StepContext, FakeLLM, str]:
+    # over the 2 000 characters of text one call holds at the smallest read_chars, and over `note_copy_words`
+    long_text = "\n\n".join(f"## Section {i}\n\n{TEXT}" for i in range(40))
+    llm = FakeLLM(UsageTracker())
+    llm_cfg = LLMConfig(model="fake/llm", note_steps=True, note_copy_words=50, note_copy_parts=copy_parts, read_chars=8_000)
+    ctx = StepContext(llm, None, Prompts(), WikiConfig(bundle=Path("wiki"), mode="classic", llm=llm_cfg), "librarian/system")
+    return ctx, llm, long_text
+
+
+def test_with_note_copy_parts_a_source_longer_than_one_call_is_its_own_body() -> None:
+    ctx, llm, long_text = _long_context(True)
+    llm.add("librarian/summarize_meta", META)
+
+    cand = classic.summarize(ctx, Source(text=long_text, title="Note"))
+
+    assert llm.ops == ["librarian/summarize_meta"] and cand.body == long_text.strip()
+
+
+def test_with_note_copy_parts_a_source_that_fits_one_call_is_still_written() -> None:
+    ctx, llm, _ = _long_context(True)
+    text = " ".join([TEXT] * 4)  # over `note_copy_words`, within one call
+    llm.add("librarian/summarize_body", "The contract.").add("librarian/summarize_meta", META)
+
+    cand = classic.summarize(ctx, Source(text=text, title="Note"))
+
+    assert llm.ops == ["librarian/summarize_body", "librarian/summarize_meta"] and cand.body == "The contract."
+
+
+def test_without_note_copy_parts_a_long_source_goes_by_parts() -> None:
+    ctx, llm, long_text = _long_context(False)
+    for _ in split_blocks(long_text, 2_000):
+        llm.add("librarian/summarize_part", "Notes.")
+    llm.add("librarian/summarize_combine_body", "The whole.").add("librarian/summarize_meta", META)
+
+    classic.summarize(ctx, Source(text=long_text, title="Note"))
+
+    assert "librarian/summarize_part" in llm.ops and "librarian/summarize_combine_body" in llm.ops
+
+
+def test_note_copy_parts_is_off_by_default_and_read_from_the_environment() -> None:
+    assert LLMConfig(model="fake/llm").note_copy_parts is False
+    assert WikiConfig.from_env({"OKF_LLM_NOTE_COPY_PARTS": "1"}, bundle=Path("w")).llm.note_copy_parts is True
