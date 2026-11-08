@@ -393,7 +393,7 @@ def name_folder(ctx: StepContext, parent: Folder, cand: Candidate) -> tuple[str,
         FolderName,
         parent=parent.label,
         parent_description=parent.description or "(root of the wiki)",
-        siblings=list_folders(parent.subfolders),
+        siblings=list_folders([f for f in parent.subfolders if f.routable]),
         note=ctx.state(cand),
         reply_chars=DECIDE_CHARS,
     )

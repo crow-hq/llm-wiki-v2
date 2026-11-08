@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import re
 import time
+from collections.abc import Callable
 
 from llmw2.agents.steps_classic import incoming_values
 from llmw2.bundle.store import RACY_NS, Stamp, body_hash
@@ -75,8 +76,12 @@ def note_values(note: Note) -> frozenset[str]:
     return values
 
 
-def rare_scores(root: Folder, note: Note, exclude: set[str]) -> list[tuple[Note, float]]:
+def rare_scores(
+    root: Folder, note: Note, exclude: set[str], allow: Callable[[Note], bool] | None = None
+) -> list[tuple[Note, float]]:
     """The notes that share rare values with `note`, with their score: best first, at most `RARE_TOP`.
+
+    `allow`, when given, keeps only the notes it accepts (so the best ones the caller may use fill the list).
 
     The values of the wiki are an inverted index kept between calls, so a call reads again only the notes that changed
     and looks only at the notes that hold a rare value of `note`.
@@ -106,7 +111,7 @@ def rare_scores(root: Folder, note: Note, exclude: set[str]) -> list[tuple[Note,
     scored: list[tuple[Note, float]] = []
     for rel, weights in hits.items():
         other = by_rel[rel]
-        if rel == note.rel or rel in exclude:
+        if rel == note.rel or rel in exclude or (allow is not None and not allow(other)):
             continue
         score = sum(weights)
         if score <= 0 or len(split_see_also(other.body)[1]) >= INDEGREE_CAP:

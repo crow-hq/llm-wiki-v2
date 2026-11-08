@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar
@@ -56,3 +57,36 @@ def fields_conflict(a: Mapping[str, Any] | None, b: Mapping[str, Any] | None) ->
     if not isinstance(a, Mapping) or not isinstance(b, Mapping):
         return False
     return any(a[k] != b[k] for k in a.keys() & b.keys())
+
+
+OMITTED_MAX = 20  # headings a note records as omitted
+_HEADING = re.compile(r"^ {0,3}#{1,3}[ \t]+(?P<text>.*?)[ \t#]*$")
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[^\W\d_]{4,}", text.lower()))
+
+
+def source_headings(text: str) -> list[str]:
+    """The Markdown headings (# to ###) of a text, in order, code blocks left out."""
+    found: list[str] = []
+    fence = ""
+    for line in text.splitlines():
+        if m := _FENCE.match(line):
+            fence = "" if fence and m[1][0] == fence[0] else fence or m[1]
+        elif not fence and (h := _HEADING.match(line)) and h["text"].strip():
+            found.append(h["text"].strip())
+    return found
+
+
+def omitted_headings(source: str, body: str, earlier: Iterable[str] = ()) -> list[str]:
+    """The headings of `source` that the note `body` leaves out: none of their words of four letters or more is in the body.
+
+    A heading with no such word is not judged. `earlier`, the headings an earlier source left out, stay when the body still
+    leaves them out. In order, once each, at most `OMITTED_MAX`. No model is asked.
+    """
+    have = _words(body)
+    wanted = [*earlier, *source_headings(source)]
+    kept = [h for h in dict.fromkeys(wanted) if (w := _words(h)) and not (w & have)]
+    return kept[:OMITTED_MAX]

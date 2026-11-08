@@ -23,7 +23,7 @@ from llmw2.agents.data import Candidate, Route
 from llmw2.agents.state import source_state
 from llmw2.agents.steps_classic import CONSOLIDATE_SOURCE_MAX, HERE, MODIFY, NEW, NEW_NOTE, NONE, FallbackRoute
 from llmw2.bundle.tree import Folder, Note, slugify
-from llmw2.errors import ModelError, ReplyInvalid
+from llmw2.errors import ModelError, ReplyInvalid, StepError
 from llmw2.models.classifier import MAX_OPTIONS, ChoiceAnswer
 from llmw2.search import NoteSearch
 
@@ -122,9 +122,30 @@ def keep_folders(ctx: StepContext, root: Folder, cand: Candidate, route: Route) 
     return Route(best, False, [best], overflow=overflow)
 
 
+def _declared_overflow(ctx: StepContext, root: Folder) -> Folder | None:
+    """The folder `overflow_folder` names, when the wiki has it; a warning, and None, when it does not."""
+    label = ctx.cfg.overflow_folder
+    if not label:
+        return None
+    folder = root.find(label.strip().strip("/"))
+    if folder is None or folder.is_root:
+        log.warning("overflow_folder %s is not a folder of the wiki: the likeliest top-level folder takes the note", label)
+        return None
+    return folder
+
+
 def _likeliest_root(ctx: StepContext, root: Folder, cand: Candidate) -> tuple[Folder, dict[str, float]]:
     """The top-level folder a note goes to when its route opened none, and the probabilities that chose it: None of these
-    (`p_none`) and the folder (`p_root`, its likeliest folder's). Empty when BM25 chose."""
+    (`p_none`) and the folder (`p_root`, its likeliest folder's). Empty when BM25 chose.
+
+    With `overflow_folder` set to a folder of the wiki, that folder, marked `declared`, and no classifier call. A top-level
+    folder closed to automatic filing is never the likeliest: StepError when there is no other.
+    """
+    if (declared := _declared_overflow(ctx, root)) is not None:
+        return declared, {"declared": 1.0}
+    roots = [f for f in root.subfolders if f.routable]
+    if not roots:
+        raise StepError("route", "no top-level folder is open to automatic filing and no new one can be opened: set overflow_folder")
     try:
         flat = _flat_choice(ctx, root, cand)
     except ModelError as e:
@@ -135,8 +156,8 @@ def _likeliest_root(ctx: StepContext, root: Folder, cand: Candidate) -> tuple[Fo
             folder = root.find(option.strip("/")) if option != NONE else None
             if folder is not None and not folder.is_root:
                 return folder.ancestors()[1], {"p_none": round(flat.answer.probabilities.get(NONE, 0.0), 3), "p_root": round(p, 3)}
-    docs = {f.name: f"{f.name.replace('-', ' ')} {f.description}" for f in root.subfolders}
-    return next(f for f in root.subfolders if f.name == lexical.rank(routing_state(ctx, cand), docs)[0]), {}
+    docs = {f.name: f"{f.name.replace('-', ' ')} {f.description}" for f in roots}
+    return next(f for f in roots if f.name == lexical.rank(routing_state(ctx, cand), docs)[0]), {}
 
 
 @dataclass(frozen=True)
@@ -152,7 +173,7 @@ def _flat_choice(ctx: StepContext, root: Folder, cand: Candidate) -> _Flat | Non
     None for a tree without folders. Raises ModelError when the classifier fails. A level wider than one request is cut
     by `_fitting` (the folders BM25 ranks first against the note), and None of these stays after them.
     """
-    folders = [f for f in root.walk() if not f.is_root]
+    folders = [f for f in root.walk() if not f.is_root and f.is_routable]  # a closed folder is no option
     if not folders:
         return None
     text = ctx.prompts.render_sections(ROUTE_DIRECT_PROMPT)
@@ -421,7 +442,7 @@ def _fallback_menu(ctx: StepContext, root: Folder, visited: list[Folder]) -> str
         seen = {f.label for f in visited}
         size = len("\n".join(lines))
         for f in root.walk():
-            if f.label in seen or f.is_root:
+            if f.label in seen or f.is_root or not f.is_routable:
                 continue
             seen.add(f.label)
             if size + 1 + len(line(f)) <= FALLBACK_MENU_CHARS:  # the visited are never omitted, the others only while they fit

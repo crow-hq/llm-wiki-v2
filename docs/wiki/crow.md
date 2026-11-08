@@ -108,6 +108,13 @@ limits (`PLAN_*`: three levels, a 220-character opening per document) are consta
 in `wiki.py`, not thresholds you can set. The top-level folders a wiki may have are
 `max_top_folders` (`OKF_MAX_TOP_FOLDERS`, 10).
 
+**Where a note goes when no folder can be opened.** With `overflow_folder` (`OKF_OVERFLOW_FOLDER`, a folder label such as
+`/inbox`) set to a folder of the wiki, a note whose route would open a top-level folder over the limit goes there instead of
+to the likeliest one, with no classifier call, marked `overflow: {declared: 1.0, at}`; a folder that does not exist logs a
+warning and the likeliest root takes the note. A folder closed to automatic filing (`create_folder(..., routable=False)`,
+`set_routable`) is never offered to the routing or the plan, and with `link_scope` (`OKF_LINK_SCOPE`) `root` the See-also links code adds
+stay in one top-level folder. See the [library guide](../library/index.md#keeping-areas-apart).
+
 **Notes the limit deviated.** A note filed in the likeliest existing top-level folder because its route would open one over the
 limit (in a rebuild, because no folder is opened at all) is never silent: its frontmatter has `overflow: {p_none, p_root, at}`
 (the classifier's probabilities for None of these and for that folder; only `at` when the folder's words chose), `log.md` has

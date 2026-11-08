@@ -53,6 +53,8 @@ The fields you will touch most:
 | `answer_conflicts` | `True` | CROW: the answer is asked with a hint when the notes read disagree (`OKF_ANSWER_CONFLICTS`); `False` keeps 0.3.0's answer input |
 | `crow.rerank` | `True` | CROW: after `ask` finds its notes with the search (`search`'s own ranking), the classifier reorders all but the first (`OKF_RERANK`, or `crow_rerank` in the settings); `False` reads them in the search's order and asks the classifier nothing. Turn it off for a small local classifier on a wiki where the reordering does not help |
 | `strict_new_folders` | `True` | CROW: a new subfolder only when the classifier is sure of it (`OKF_STRICT_NEW_FOLDERS`); `False` keeps 0.3.0's routing |
+| `link_scope` | `wiki` | the See-also links code adds (`relate`, and the notes that share rare values): `wiki` between any notes; `root` only between notes of the same top-level folder (`OKF_LINK_SCOPE`). With `root`, a note that changes area (`move_note`, a folder moved or merged, `confirm_proposal`) loses the entries that no longer fit, from both notes, and a folder closed to automatic filing gives and gets none. See [Keeping areas apart](#keeping-areas-apart) |
+| `overflow_folder` | none | CROW: the label of a folder of the wiki (`"/inbox"`, `OKF_OVERFLOW_FOLDER`) that takes a note when routing cannot open a new top-level folder (the limit `max_top_folders` is reached), in place of the likeliest existing one; the note is marked as a deviated note. A folder that does not exist logs a warning and the note goes where it would have. See [Keeping areas apart](#keeping-areas-apart) |
 | `plan` | `writer` | CROW: how a batch on an empty wiki lays out its folders (`OKF_PLAN`): `writer` is the writer's `plan`; `groups` makes them in code with no model call, for a small local writer (about 1B parameters or less), which plans poorly. A capable writer plans better than the groups |
 | `embedder` | none | the embedder of `search` and `ask`: `provider` (`openai` for any `/embeddings` server, or `ollama`), `base_url`, `model`, `api_key`, `timeout` (`OKF_EMBEDDER_*`); see [Search without a model](#search-without-a-model) |
 | `llm`, `classifier`, `crow`, `embedder` | | the models and the CROW thresholds |
@@ -96,6 +98,9 @@ Without `steps`, `cfg.mode` picks the classic or the CROW set. No key is read
 until a model is called, so a wiki whose steps call no model works with none
 (see `examples/labeled_dataset.py`).
 
+`Wiki(cfg, redact=...)` takes a function from text to text for the texts the wiki derives from a document and repeats outside
+the note's body; see [Hiding data in derived texts](#hiding-data-in-derived-texts).
+
 `Wiki` is a context manager: leaving the block closes the models' connections
 (or call `wiki.close()`).
 
@@ -118,10 +123,11 @@ have it set `X-Author`, and the log then says who, as far as the proxy does.
 | `ingest_many(items, *, concurrency, on_result)` | file a batch, preparing several documents at once; returns a `BatchReport` (see below) |
 | `rebuild(items, *, concurrency, on_result)` | file the documents again on the folders the wiki has (see below); returns a `BatchReport`. Cannot be undone |
 | `raw_items()` | the wiki's own raw copies as `Item`s for `rebuild`: an origin from its latest copy, a copy with no origin once per text |
-| `ask(question, where=None)` | answer from the notes, found by `search` (the first 16, reordered by the CROW classifier unless `crow.rerank` is off) and read up to `crow.k`; returns an `Answer`. `where` (a dict, field to value) restricts it to the notes whose `fields` hold all of them, compared as text (use scalar values) |
+| `ask(question, where=None)` | answer from the notes, found by `search` (the first 16, reordered by the CROW classifier unless `crow.rerank` is off) and read up to `crow.k`; returns an `Answer`. `where` (a dict, field to value) restricts it to the notes whose `fields` hold all of them, compared as text; a field that is a list holds a value when one of its items is equal to it |
 | `search(query, k=3, where=None)` | the best `k` notes, with no model call of the library; returns a list of `Hit` (`path`, `title`, `summary`, `rank`). `where` restricts it as in `ask`; an empty query raises `InputError`; see [Search without a model](#search-without-a-model) |
 | `tree()` | the folder tree, read from disk: `Folder` objects with `.notes` and `.subfolders` |
-| `create_folder(parent, name, description)` | make a folder by hand; `parent` is `"/"` or `"/finance"` |
+| `create_folder(parent, name, description, *, routable=True)` | make a folder by hand; `parent` is `"/"` or `"/finance"`. With `routable=False` it is closed to automatic filing |
+| `set_routable(path, value)` | close (`False`) or open (`True`) a folder to automatic filing; see [Keeping areas apart](#keeping-areas-apart) |
 | `move_note(path, folder)` · `describe_folder(path, description)` | move a note to another folder (its links, and links to it, are rewritten; archived copies follow) · change a folder's one-line description |
 | `delete_note(path)` · `delete_folder(path)` · `clear()` | delete; links to what goes are removed, and so are raw copies no remaining note cites and the archived versions of the notes deleted; `clear()` also removes the sync cursors, so the next `sync` files every document again |
 | `check()` | lint the bundle; a list of problems (OKF conformance, index drift, broken links) |
@@ -262,6 +268,50 @@ The same operations are in the CLI (`llmwiki2 proposals`, `proposals add LABEL -
 [--over-limit]`, `proposals dismiss ID`, `rename-root`, `merge-roots`), the HTTP API (`GET/POST /proposals`,
 `POST /proposals/{id}/confirm` and `/dismiss`, `POST /areas`, `POST /folder/rename`, `POST /folder/merge`), the page's **Areas** section
 (no proposing from the page) and the memory's tools.
+
+### Keeping areas apart
+
+Three settings and one folder property keep a wiki's areas (its top-level folders) from mixing.
+
+- `link_scope="root"` keeps the See-also links code adds inside one top-level folder. The candidates of `relate` (the notes of
+  the folders routing visited, and those that share rare values with the new note) are the notes of its own area; when a
+  note changes area (`move_note`, a folder moved or merged, `merge_roots`, `confirm_proposal`) the entries that no longer
+  fit are removed from both notes, and from any note that linked to it alone. Links between notes that did not move are
+  left as they are. The default `wiki` is the behaviour before the setting.
+- A folder can be closed to automatic filing: `create_folder(..., routable=False)` or `set_routable(path, False)`. It is
+  kept as a hidden file, `.closed`, in the folder, so it follows the folder when it is renamed or moved and the OKF layout
+  is unchanged. A closed folder, and the folders below it, are no option of the routing (CROW's and classic), are not shown to
+  `plan` nor joined by `plan_groups`, give no notes to merge into, and their notes are not proposed by `audit_routes`. A new
+  folder never takes the name of a closed sibling (the librarian adds a number). With `link_scope="root"`, a closed area
+  gives and gets no automatic link. A person or the code can still file there: `move_note` works, and so does an
+  `overflow_folder` that names it. If every top-level folder is closed and none can be opened, the ingest stops with a
+  `StepError` that says so.
+- `overflow_folder` names where a note goes when routing cannot open a top-level folder because the limit is reached. It is
+  marked like any deviated note (`overflow: {declared: 1.0, at}` in its frontmatter, a "Deviated note" line in `log.md`,
+  `declared` in the entries of `BatchReport.deviations`), and no classifier call is made to choose it. Together with a
+  closed folder it gives the notes the wiki is unsure of a place of their own, which a person then empties with `move_note` or
+  `propose_area`.
+
+### Sections a note leaves out
+
+A note written from a source (created, merged or revised) is compared with it in code, with no model call. The Markdown
+headings of the source (lines from `#` to `###`, code blocks left out) are looked up in the body of the note: a heading none of
+whose words of four letters or more is in the body is omitted. When there are any, the note's frontmatter has
+`omitted: [heading, ...]`, the texts of the headings in the order of the source, at most 20; when there are none, the field
+is absent. A heading with no word of four letters is not judged. Words are compared whole and without case, so the field
+is a hint, not proof: a section summarized under other words is listed. A merge keeps the headings that earlier sources left
+out and the merged note still leaves out; a revision starts again from the new source. The field changes neither the body nor
+its hash, and an app can show it ("sections not in this note") or open the source at those headings.
+
+### Hiding data in derived texts
+
+`Wiki(cfg, redact=fn)` takes a function from text to text of yours (a pattern matcher, a list of names, a model). The wiki
+passes through it the texts it derives from a document and repeats outside the note's body, before they are written: the
+note's title and summary (so also its file name, its lines in `index.md`, its entries in the See-also lists of other notes and
+the lines of `log.md`), and the names and descriptions of the folders a plan, a split or a new subfolder makes. The body of a
+note is never passed to it, nor the text a person gives (`create_folder`, `describe_folder`, `propose_area`), nor the
+document's own title kept in `sources`. A title the function empties becomes "Untitled". A function that raises stops the
+filing. Notes written before it was given are not changed. Without it, nothing changes.
 
 ## Upgrading: removed retrieval settings
 

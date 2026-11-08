@@ -69,7 +69,7 @@ from llmw2.bundle.files import is_spreadsheet, sheet_sources, title_of
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.proposals import CONFIRMED, DISMISSED, OPEN, Proposal, notes_count, read_proposals, write_proposals
 from llmw2.bundle.store import CACHE_FILE, Deleted, WikiStore, authored, current_author, raw_sources, read_utf8_or_latin1
-from llmw2.bundle.tree import INDEX, LOG, Folder, Note, matching, slugify
+from llmw2.bundle.tree import INDEX, LOG, Folder, Note, matching, slugify, within_area
 from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import ConfigError, InputError, NoteChanged, ReplyInvalid, SpendingCap
 from llmw2.models.cache import SqliteCache
@@ -205,6 +205,7 @@ class Wiki:
         steps: Steps | None = None,
         author: str | None = None,
         embedder: Embedder | None = None,
+        redact: Callable[[str], str] | None = None,
     ) -> None:
         """Models are built from `cfg` unless given; given ones must share one UsageTracker.
 
@@ -216,14 +217,23 @@ class Wiki:
         `embedder` (texts -> one vector each) is yours, and `search` and, in CROW mode, `ask` (which finds its notes with
         the search) call it. Without it, the one that `cfg.embedder` describes (`OKF_EMBEDDER_*`) is built; with neither,
         the search is BM25 alone.
+
+        `redact` (text -> text) is yours: the texts the wiki derives from a document and repeats outside the note's body go
+        through it before they are written: a note's title and summary (so also its file name, the lines of the indexes,
+        of the See-also lists and of the log), and the names and descriptions of the folders it makes. The body of a note is
+        never passed to it, nor are the texts a person gives (`create_folder`, `describe_folder`, `propose_area`). A
+        redactor that raises stops the filing. Without it, nothing changes.
         """
         self.cfg = cfg
+        self.redact = redact
         self.author = author
         self.steps = steps or (CROW if cfg.mode == "crow" else CLASSIC)
         self.tracker = llm.usage if llm else classifier.usage if classifier else UsageTracker(cfg.usage_log)
         if classifier is not None and classifier.usage is not self.tracker:
             raise ValueError("the llm and the classifier must record into the same UsageTracker")
         self.store = WikiStore(cfg.bundle, actor=cfg.actor)
+        if cfg.link_scope == "root":
+            self.store.link_reach = within_area
         self.prompts = Prompts(cfg.prompts_dir)
         self.llm = llm or LLM(cfg.llm, self.tracker)
         self.classifier = classifier
@@ -250,13 +260,16 @@ class Wiki:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
+    def _redacted(self, text: str) -> str:
+        return self.redact(text) if self.redact is not None else text
+
     @classmethod
     def from_env(cls, **overrides: Any) -> Wiki:
         return cls(WikiConfig.from_env(**overrides))
 
     def librarian(self, *, fixed: bool = False) -> Librarian:
         """A fresh Librarian for one ingest, running this wiki's steps; `fixed` for a rebuild (`StepContext.fixed`)."""
-        return Librarian(self.store, self.llm, self.prompts, self.cfg, self.steps, self.classifier, fixed=fixed)
+        return Librarian(self.store, self.llm, self.prompts, self.cfg, self.steps, self.classifier, fixed=fixed, redact=self.redact)
 
     def researcher(self) -> Researcher:
         """A fresh Researcher for one question, running this wiki's steps."""
@@ -846,17 +859,24 @@ class Wiki:
         return self.store.load()
 
     @by_author
-    def create_folder(self, parent: str, name: str, description: str, *, author: str | None = None) -> Folder:
+    def create_folder(
+        self, parent: str, name: str, description: str, *, routable: bool = True, author: str | None = None
+    ) -> Folder:
         """Create a folder by hand under `parent` ("/" or "/finance"), named and described as the librarian would.
+
+        With `routable` false the folder is closed to automatic filing: neither routing, plans nor consolidation offer it or
+        what is below it (see `set_routable`), and with `link_scope` "root" it gives and gets no automatic link.
 
         Both are required: the description is the line the librarian routes by. A top-level folder made by hand counts in
         `cfg.max_top_folders`, and is never refused for it: with as many as the limit the wiki is closed, and no other is opened.
         InputError for a missing name or description, a name already taken, or a parent at max_depth (the librarian would
         never file below it); FileNotFoundError for no parent.
         """
-        return self._create_folder(parent, name, description)
+        return self._create_folder(parent, name, description, routable=routable)
 
-    def _create_folder(self, parent: str, name: str, description: str, *, limit: bool = False, over_limit: bool = False) -> Folder:
+    def _create_folder(
+        self, parent: str, name: str, description: str, *, limit: bool = False, over_limit: bool = False, routable: bool = True
+    ) -> Folder:
         """`create_folder`, with the check on the limit of top-level folders (`limit`) made under the same lock as the creation."""
         if not slugify(name, max_len=40, fallback=""):
             raise InputError("a folder needs a name, in letters or digits")
@@ -871,10 +891,19 @@ class Wiki:
                 raise InputError(f"no folder under {at.label}: the librarian files at most {self.cfg.max_depth} levels deep (max_depth)")
             if limit:
                 self._room_for_area(over_limit)
-            folder, created = self.store.create_folder(at, name, description)
+            folder, created = self.store.create_folder(at, name, description, routable=routable)
             if not created:
                 raise InputError(f"{folder.label} already exists")
             return folder
+
+    @by_author
+    def set_routable(self, path: str, value: bool, *, author: str | None = None) -> Folder:
+        """Open (`value` true) or close a folder ("/finance") to automatic filing. A closed folder, and every folder below it,
+        is never an option of the routing (CROW and classic), of `plan` and `plan_groups`, of the audit, nor a source of
+        notes to merge into; with `link_scope` "root" its area gives and gets no automatic See-also link. A person or the code
+        can still file there (`move_note`), and `overflow_folder` may name it. InputError for the root or no such folder."""
+        with self.store.lock():
+            return self.store.set_routable(path, value)
 
     @by_author
     def plan(
@@ -912,8 +941,10 @@ class Wiki:
         if existing:
             held = counts or {}
             tree = "\n".join(
-                f"- {f.label}: {f.description or '(no description)'}; {len(f.notes) + held.get(f.label, 0)} notes" for f in existing
-            )
+                f"- {f.label}: {f.description or '(no description)'}; {len(f.notes) + held.get(f.label, 0)} notes"
+                for f in existing
+                if f.is_routable  # a closed folder is not shown, and nothing is planned under it
+            ) or "(none)"
             fixed = len(self.store.load().subfolders) >= self.cfg.max_top_folders
             plan = ctx.ask_json(
                 "librarian/plan_more",
@@ -951,9 +982,11 @@ class Wiki:
                         continue
                 parent = tree_now.find("/".join(parts[:-1]))
                 full = parent is not None and parent.is_root and len(parent.subfolders) >= self.cfg.max_top_folders
-                if parent is None or (full and parent.subfolder(parts[-1]) is None):
-                    continue  # its parent is not made, or it would be the top-level folder after the limit
-                folder, created = self.store.create_folder(parent, parts[-1], planned.description, mark)
+                if parent is None or not parent.is_routable or (full and parent.subfolder(parts[-1]) is None):
+                    continue  # its parent is not made (or is closed), or it would be the top-level folder after the limit
+                folder, created = self.store.create_folder(
+                    parent, self._redacted(parts[-1]), self._redacted(planned.description), mark
+                )
                 if created:
                     made.append(folder)
         return made
@@ -997,7 +1030,9 @@ class Wiki:
                     split[text] = lexical.words(text)
                 return split[text]
 
-            existing = {f.label: [self.store.source_text(n, bodies) for n in f.notes] for f in root.walk() if not f.is_root}
+            existing = {
+                f.label: [self.store.source_text(n, bodies) for n in f.notes] for f in root.walk() if not f.is_root and f.is_routable
+            }
             # every group against the folders there before this plan (one made below is not joined by the next group)
             joins = grouping.closest_each([[texts[i] for i in group] for group in found], existing, words=words)
             for group, label in zip(found, joins, strict=True):
@@ -1006,7 +1041,11 @@ class Wiki:
                     if not name or len(self.store.load().subfolders) >= self.cfg.max_top_folders:
                         continue  # no word to name it by, or the wiki has its top-level folders: routed as usual
                     description = "; ".join((documents[i][0] or "").strip() or " ".join(texts[i].split()[:8]) for i in group[:3])
-                    folder, created = self.store.create_folder(self.store.load(), name, description, PLAN_MARK)
+                    folder, created = self.store.create_folder(
+                        self.store.load(), self._redacted(name), self._redacted(description), PLAN_MARK
+                    )
+                    if not folder.is_routable:  # the name is that of a closed folder: routed as usual
+                        continue
                     if created and made is not None:
                         made.append(folder)
                     label = folder.label
@@ -1078,7 +1117,9 @@ class Wiki:
                     name = echo.own_name(proposed.name, listing, parent_words)
                     if not name or not echo.own_text(proposed.description, listing, ctx.prompts, "librarian/split"):
                         continue
-                sub, created = self.store.create_folder(here, name, proposed.description, SPLIT_MARK)
+                sub, created = self.store.create_folder(
+                    here, self._redacted(name), self._redacted(proposed.description), SPLIT_MARK
+                )
                 if not created:  # an existing subfolder is never moved into
                     continue
                 opened.append(sub.label)
@@ -1419,6 +1460,8 @@ class Wiki:
         root = self.store.load()
         proposals: list[RouteProposal] = []
         for note in root.all_notes():
+            if note.folder is not None and not note.folder.is_routable:  # nothing leaves a closed folder by itself
+                continue
             ctx.decisions = []
             cand = Candidate(note.title, note.summary, note.tags, note.main_body())
             routed = steps_crow.audit_route(ctx, root, cand)

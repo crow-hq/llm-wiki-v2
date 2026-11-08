@@ -12,12 +12,13 @@ output of every step is checked before it is used.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, replace
 from functools import cached_property
 from typing import Any, Literal
 
 from llmw2.agents import echo, linking, revisions, steps_classic, steps_crow
-from llmw2.agents.base import Decision, clean_tags, fields_conflict, unique_objects
+from llmw2.agents.base import Decision, clean_tags, fields_conflict, omitted_headings, unique_objects
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.steps import (
@@ -35,7 +36,7 @@ from llmw2.agents.steps import (
 from llmw2.bundle.origin import content_hash
 from llmw2.bundle.sheets import brief
 from llmw2.bundle.store import WikiStore
-from llmw2.bundle.tree import slugify
+from llmw2.bundle.tree import Folder, Note, slugify, within_area
 from llmw2.config import WikiConfig
 from llmw2.errors import ModelError, ReplyInvalid, StepError
 from llmw2.models.classifier import Classifier
@@ -125,8 +126,10 @@ class Librarian:
         classifier: Classifier | None = None,
         *,
         fixed: bool = False,
+        redact: Callable[[str], str] | None = None,
     ) -> None:
         self.store = store
+        self.redact = redact
         self.cfg = cfg
         self.steps = steps
         self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="librarian/system", fixed=fixed)
@@ -142,6 +145,18 @@ class Librarian:
     def hash(self) -> str:
         """What the provenance says decided: the steps, prompts and decision parameters (see `decision_hash`)."""
         return decision_hash(self.steps, self.cfg, self.ctx.prompts)
+
+    def shown(self, text: str) -> str:
+        """A text the wiki repeats outside the note's body (title, summary, a folder's name or description), through `redact`."""
+        return self.redact(text) if self.redact is not None else text
+
+    def _open_name(self, parent: Folder, name: str) -> str:
+        """`name`, or the first "name 2", "name 3"... that is not the name of a folder of `parent` closed to automatic filing
+        (a new folder with that name would be the closed one)."""
+        pick, n = name, 2
+        while (clash := parent.subfolder(slugify(pick, max_len=40, fallback="topics"))) is not None and not clash.routable:
+            pick, n = f"{name} {n}", n + 1
+        return pick
 
     def ingest(self, source: Source) -> IngestResult:
         return self.file(self.prepare(source))
@@ -214,6 +229,7 @@ class Librarian:
                     route = steps_crow.keep_folders(ctx, root, cand, route)  # a rebuild opens none at all
                     route = steps_crow.cap_roots(ctx, root, cand, route)
             pool = unique_objects(n for f in [*route.candidates, route.folder] for n in f.notes)
+            pool = [n for n in pool if n.folder is None or n.folder.is_routable]  # nothing is merged into a closed folder
             theirs = {**read.fields, **cand.fields}  # the document's fields: its own, and what the summary made of them
             mergeable = [n for n in pool if not fields_conflict(n.frontmatter.get("fields"), theirs)]
             if len(mergeable) < len(pool):  # a note whose fields differ from the document's on a shared key is not merged into
@@ -242,13 +258,14 @@ class Librarian:
                 raw, ref = self.save_source(source, cand)
                 note = self.store.update_note(
                     match,
-                    title=draft.title,
-                    summary=draft.summary,
+                    title=self.shown(draft.title).strip() or "Untitled",
+                    summary=self.shown(draft.summary),
                     body=draft.body,
                     tags=clean_tags(draft.tags),
                     source=ref,
                     fields={**read.fields, **draft.fields},
                     previous_version=archived or None,
+                    omitted=omitted_headings(read.text, draft.body, [] if revised else _earlier(match)),
                 )
                 action: Literal["created", "merged"] = "merged"
             else:
@@ -280,27 +297,36 @@ class Librarian:
                         ctx.decide("name_folder", "code", own)
                     if failed or (self.local_writer and not echo.own_text(description, shown, ctx.prompts, "librarian/name_folder")):
                         description = cand.summary
-                    folder, is_new = self.store.create_folder(folder, own, description)
+                    folder, is_new = self.store.create_folder(folder, self._open_name(folder, self.shown(own)), self.shown(description))
                     created += [folder.label] if is_new else []
                 raw, ref = self.save_source(source, cand)
                 note = self.store.write_note(
                     folder,
-                    title=cand.title,
-                    summary=cand.summary,
+                    title=self.shown(cand.title).strip() or "Untitled",
+                    summary=self.shown(cand.summary),
                     body=cand.body,
                     tags=clean_tags(cand.tags),
                     source=ref,
                     fields=theirs,
                     overflow=route.overflow,
+                    omitted=omitted_headings(read.text, cand.body),
                 )
                 deviated = route.overflow
                 action = "created"
             others = [n for n in unique_objects([*pool, *note.folder.notes]) if n is not note] if note.folder else pool
+
+            def in_area(other: Note) -> bool:
+                return within_area(note, other)
+
+            near = in_area if self.cfg.link_scope == "root" else None  # links stay in the note's area
             if ctx.classifier is not None and self.cfg.relate_rare_values:
-                found = linking.rare_scores(root, note, {n.rel for n in others} | {note.rel})
+                found = linking.rare_scores(root, note, {n.rel for n in others} | {note.rel}, near)
                 others = [*others, *(n for n, _ in found)]
                 if found:
                     ctx.decide("relate_candidates", "code", f"{len(found)} by rare values", scores={n.rel: round(s, 3) for n, s in found})
+            if near is not None and (apart := [n for n in others if not near(n)]):
+                others = [n for n in others if near(n)]
+                ctx.decide("relate_candidates", "code", f"{len(apart)} left out, in another area")
             try:
                 related = check_relate(steps.relate(ctx, note, others), note, others) if others else []
             except ModelError as e:  # the note is written: a failure here costs its links, not the ingest
@@ -340,7 +366,7 @@ class Librarian:
 
         Saved this late so an interrupted ingest leaves no raw copy that no note cites.
         """
-        title = source.title or cand.title
+        title = source.title or self.shown(cand.title)  # the document's own title; the note's, when it has none, as it is written
         raw = self.store.save_raw(source.text, title=title, resource=source.resource, origin=source.origin)
         ref: dict[str, Any] = {"resource": raw, "title": title, "hash": content_hash(source.text)}
         if source.origin is not None:
@@ -349,8 +375,17 @@ class Librarian:
         return raw, ref
 
 
+def _earlier(note: Note) -> list[str]:
+    """The headings an earlier source of the note left out (its `omitted`)."""
+    held = note.frontmatter.get("omitted")
+    return [str(h) for h in held] if isinstance(held, list) else []
+
+
 def _overflow_text(rel: str, overflow: dict[str, float], limit: int) -> str:
     """The log line of a note the limit on top-level folders deviated: the root it went to and the probabilities that chose it."""
+    if "declared" in overflow:
+        where = rel.rpartition("/")[0]
+        return f"filed in /{where} (the declared overflow folder): no new top-level folder could be opened (limit of {limit})"
     odds = f"p_none {overflow['p_none']}, p_root {overflow['p_root']}" if "p_root" in overflow else "chosen by words, no probabilities"
     return f"filed in /{rel.split('/', 1)[0]} ({odds}): no new top-level folder could be opened (limit of {limit})"
 

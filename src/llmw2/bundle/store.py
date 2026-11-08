@@ -43,6 +43,7 @@ from llmw2.bundle.document import DELIMITER, OKFDocument, OKFDocumentError, read
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.origin_index import OriginIndex
 from llmw2.bundle.tree import (
+    CLOSED,
     INDEX,
     LOG,
     NOTE_TYPE,
@@ -53,12 +54,14 @@ from llmw2.bundle.tree import (
     Note,
     dead_links_to_text,
     drop_links,
+    drop_see_also,
     join_see_also,
     note_dir,
     parse_index,
     refresh_entries,
     rel_link,
     rewrite_links,
+    see_also_targets,
     slugify,
     split_see_also,
     subfolder_of,
@@ -193,6 +196,9 @@ class WikiStore:
         self._held: dict[str, Note] = {}  # note path -> the note a kept folder holds
         self._loose: dict[str, list[Note | Folder]] = {}  # folder path -> what a write added at the end of its kept lists
         self._session_guard = threading.RLock()
+        # whether two notes may stay linked: set by a wiki that limits its links (`link_scope`), so that a note which changes
+        # area loses the See-also entries that no longer fit; None: every link stays
+        self.link_reach: Callable[[Note, Note], bool] | None = None
 
     # -- reading --------------------------------------------------------------
 
@@ -318,6 +324,9 @@ class WikiStore:
             entries = sorted(listing, key=lambda e: os.path.normcase(e.name))
         for entry in entries:
             name = entry.name
+            if name == CLOSED:
+                folder.routable = False
+                continue
             if name.startswith(".") or (not rel and name == RAW):
                 continue
             child_rel = f"{rel}/{name}" if rel else name
@@ -424,12 +433,13 @@ class WikiStore:
     # -- writing --------------------------------------------------------------
 
     def create_folder(
-        self, parent: Folder, name: str, description: str, mark: str = "", *, log_it: bool = True
+        self, parent: Folder, name: str, description: str, mark: str = "", *, log_it: bool = True, routable: bool = True
     ) -> tuple[Folder, bool]:
         """Create `parent/name` and list it in the parent's index; (folder, created).
 
         A sibling with the same slug is reused instead of duplicated. `mark` ends the log line (", by plan"); with
-        `log_it` false the caller writes the log line.
+        `log_it` false the caller writes the log line. With `routable` false the folder is closed to automatic filing
+        (see `set_routable`).
         """
         name = slugify(name, max_len=40, fallback="topics")
         if parent.is_root and name == RAW:
@@ -446,9 +456,34 @@ class WikiStore:
                 self._loose.setdefault(str(parent.path), []).append(folder)
         self.write_index(folder)
         self.write_index(parent)
+        if not routable:
+            self._mark_closed(folder, True)
         if log_it:
-            self.append_log("Created folder", folder.description + mark, f"{rel}/{INDEX}", folder.label)
+            closed = "" if routable else ", closed to automatic filing"
+            self.append_log("Created folder", folder.description + mark + closed, f"{rel}/{INDEX}", folder.label)
         return folder, True
+
+    def set_routable(self, rel: str, value: bool) -> Folder:
+        """Open or close a folder to automatic filing: a closed folder, and the folders below it, are never offered to the
+        routing, planning or consolidation; notes can still be moved there. InputError for the root or no folder."""
+        folder = self.load().find(rel)
+        if folder is None:
+            raise InputError(f"no folder at /{rel.strip().strip('/')}")
+        if folder.is_root:
+            raise InputError("the root folder cannot be closed")
+        if folder.routable != value:
+            self._mark_closed(folder, not value)
+            self.append_log("Reopened folder" if value else "Closed folder", "to automatic filing", f"{folder.rel}/{INDEX}", folder.label)
+        return folder
+
+    def _mark_closed(self, folder: Folder, closed: bool) -> None:
+        marker = folder.path / CLOSED
+        with self._writing(folder.path, tracked=self._holds(folder)):
+            if closed:
+                marker.touch()
+            else:
+                marker.unlink(missing_ok=True)
+        folder.routable = not closed
 
     def write_note(
         self,
@@ -461,9 +496,10 @@ class WikiStore:
         source: dict[str, Any],
         fields: dict[str, Any] | None = None,
         overflow: dict[str, float] | None = None,
+        omitted: list[str] | None = None,
     ) -> Note:
         """Write a new note in `folder`. `overflow`, when given, marks a note the limit on top-level folders deviated (filed in the
-        likeliest existing root instead of a new one)."""
+        likeliest existing root instead of a new one). `omitted`: the headings of its source that the body leaves out."""
         slug = self.unique_slug(folder, slugify(title))
         path = folder.path / f"{slug}.md"
         rel = f"{folder.rel}/{slug}.md" if folder.rel else f"{slug}.md"
@@ -482,6 +518,8 @@ class WikiStore:
             frontmatter["fields"] = dict(fields)
         if overflow is not None:
             frontmatter["overflow"] = {**overflow, "at": now_iso()}
+        if omitted:
+            frontmatter["omitted"] = omitted
         note = Note(path, rel, frontmatter, body.rstrip() + "\n", folder)
         self._save(note, add=True)
         self.write_index(folder)
@@ -498,10 +536,12 @@ class WikiStore:
         source: dict[str, Any],
         fields: dict[str, Any] | None = None,
         previous_version: str | None = None,
+        omitted: list[str] | None = None,
     ) -> Note:
         """Rewrite a note in place, keeping unknown frontmatter keys and its See-also links.
 
         `fields` are added to the note's own (new keys win). `previous_version`: the archived copy of the body it replaces.
+        `omitted`, when given, replaces the note's `omitted` headings (none: the field goes).
         """
         fm = note.frontmatter
         was = (note.title, note.summary)
@@ -517,6 +557,11 @@ class WikiStore:
             old = fm.get("fields")
             fm["fields"] = {**(old if isinstance(old, dict) else {}), **fields}
         note.body = join_see_also(self._without_dead_links(body, note.rel), split_see_also(note.body)[1])
+        if omitted is not None:
+            if omitted:
+                fm["omitted"] = omitted
+            else:
+                fm.pop("omitted", None)
         fm["generated"] = {"by": self.actor, "at": now_iso(), "body_hash": body_hash(split_see_also(note.body)[0])}
         self._save(note)
         if note.folder is not None:
@@ -859,6 +904,7 @@ class WikiStore:
             touched[target.rel] = target
         for folder in touched.values():
             self.write_index(folder)
+        self._prune_links({copy.rel for copy in moved})
         return moved
 
     def move_folder(self, rel: str, new_rel: str, *, mark: bool = False) -> Folder:
@@ -905,6 +951,7 @@ class WikiStore:
         moved.description = description
         assert moved.parent is not None
         self.write_index(moved.parent)
+        self._prune_links(inside)
         if old_parent is not None and old_parent.rel != moved.parent.rel:
             self.write_index(root.find(old_parent.rel) or root)
         return moved
@@ -931,7 +978,7 @@ class WikiStore:
         assert source_folder is not None and target_folder is not None
         plan(source_folder, target_folder)
         self.move_notes(moves, mark=True, root=root)
-        left = [p for p in (self.root / src).rglob("*") if p.is_file() and p.name != INDEX]
+        left = [p for p in (self.root / src).rglob("*") if p.is_file() and p.name not in (INDEX, CLOSED)]
         if left:  # something that is not a note: the folder stays
             raise InputError(f"/{src} still holds a file that is not a note ({left[0].name}): move or delete it by hand")
         self._stale()
@@ -940,6 +987,36 @@ class WikiStore:
         if parent is not None:
             self.write_index(parent)
         return len(moves)
+
+    def _prune_links(self, moved: Collection[str]) -> None:
+        """After notes changed place: the See-also entries `link_reach` no longer allows, between a moved note and any other,
+        go from both notes. Only the moved notes and the notes that name one of them are looked at."""
+        reach = self.link_reach
+        if reach is None or not moved:
+            return
+        notes = {n.rel: n for n in self.load().all_notes()}
+        names = {notes[r].path.name for r in moved if r in notes}
+        cut: dict[str, set[str]] = {}
+        for note in notes.values():
+            mine = note.rel in moved
+            if not mine and not any(name in note.body for name in names):
+                continue
+            for target in see_also_targets(note.body, note.rel):
+                other = notes.get(target)
+                if other is None or other is note or not (mine or target in moved) or reach(note, other):
+                    continue
+                cut.setdefault(note.rel, set()).add(target)
+                cut.setdefault(other.rel, set()).add(note.rel)
+        for rel, gone in cut.items():
+
+            def drop(one: Note, gone: set[str] = gone) -> bool:
+                body = drop_see_also(one.body, one.rel, gone.__contains__)
+                if body == one.body:
+                    return False
+                one.body = body
+                return True
+
+            self._edit(notes[rel], drop)
 
     def _relink(self, note: Note, from_rel: str, to_rel: str, remap: Callable[[str], str]) -> None:
         """Point the links in a note's body through `remap` (it is written at `to_rel`); saved if they changed."""

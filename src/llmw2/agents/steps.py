@@ -151,8 +151,8 @@ class StepContext:
         return folder.depth < self.cfg.max_depth
 
     def children(self, folder: Folder) -> list[Folder]:
-        """Subfolders a step may enter: none below max_depth."""
-        return folder.subfolders if folder.depth < self.cfg.max_depth else []
+        """Subfolders a step may enter: none below max_depth, and none closed to automatic filing."""
+        return [f for f in folder.subfolders if f.routable] if folder.depth < self.cfg.max_depth else []
 
     def state(self, cand: Candidate) -> str:
         return cand.compact(self.cfg.classifier.state_chars)
@@ -236,7 +236,8 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
     model (CROW only), temperature, seed, pinned providers, the CROW thresholds, `max_depth`, `max_links`, `mode`,
     `summarize`, the size of the state routing reads (`state_chars`, `STATE_VERSION`), how much one
     call reads and how long a note may be (`effective_read_chars`, `effective_note_chars`, and `note_length` unless fixed),
-    `SUMMARY_VERSION`, and `relate_rare_values`, `answer_conflicts` and `strict_new_folders` when switched off. Keys, addresses, timeouts,
+    `SUMMARY_VERSION`, and `relate_rare_values`, `answer_conflicts` and `strict_new_folders` when switched off, `link_scope` and
+    `overflow_folder` when set. Keys, addresses, timeouts,
     attempts, other sizes, concurrency and logs do not change the decisions: not in it.
     """
     decisive = {
@@ -267,6 +268,10 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
         decisive["answer_conflicts"] = False
     if not cfg.strict_new_folders:
         decisive["strict_new_folders"] = False
+    if cfg.link_scope != "wiki":
+        decisive["link_scope"] = cfg.link_scope
+    if cfg.overflow_folder:
+        decisive["overflow_folder"] = cfg.overflow_folder
     return hashlib.sha256(json.dumps(decisive, sort_keys=True).encode("utf-8")).hexdigest()[:8]
 
 

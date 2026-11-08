@@ -262,7 +262,7 @@ _TOP_LEVEL_ENV = (
     "bundle", "mode", "summarize", "max_depth", "max_top_folders", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency",
     "usage_log",
     "prompts_dir", "note_chars", "note_length", "revisions", "plan", "relate_rare_values", "answer_conflicts",
-    "strict_new_folders",
+    "strict_new_folders", "link_scope", "overflow_folder",
     "mcp", "mcp_models",
 )
 _BOOL_FIELDS = ("relate_rare_values", "answer_conflicts", "strict_new_folders", "mcp")  # OKF_<NAME> read as on or off
@@ -297,6 +297,14 @@ class WikiConfig(BaseModel):
     # CROW: routing opens a new subfolder only when the classifier is sure of it, and asks whether a folder's description
     # covers the note (OKF_STRICT_NEW_FOLDERS; false: 0.3.0's routing). See `steps_crow._expand`.
     strict_new_folders: bool = True
+    # See-also links added by code (`relate`, and its rare-value candidates): between any notes of the wiki ("wiki", the default),
+    # or only between notes of the same top-level folder ("root", OKF_LINK_SCOPE). With "root" a note that changes area (moved, its
+    # folder moved or merged) loses the entries that no longer fit, and a folder closed to automatic filing gives and gets none.
+    link_scope: Literal["wiki", "root"] = "wiki"
+    # CROW: the folder (label, "/inbox") a note goes to when routing cannot open a new top-level folder (the limit
+    # `max_top_folders` is reached) instead of the likeliest existing one; it is marked as a deviated note. It must exist,
+    # else a warning and the likeliest root (OKF_OVERFLOW_FOLDER). It may be closed to automatic filing.
+    overflow_folder: str | None = None
     upload_mb: int = Field(25, gt=0)  # largest request body the server reads: a big PDF fits, a runaway upload does not fill memory
     # The server answers as an MCP memory at /mcp (OKF_MCP, or Start on the page's Memory): recall, remember, read_note.
     mcp: bool = False
