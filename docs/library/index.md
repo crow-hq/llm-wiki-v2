@@ -128,7 +128,7 @@ have it set `X-Author`, and the log then says who, as far as the proxy does.
 | `tree()` | the folder tree, read from disk: `Folder` objects with `.notes` and `.subfolders` |
 | `create_folder(parent, name, description, *, routable=True)` | make a folder by hand; `parent` is `"/"` or `"/finance"`. With `routable=False` it is closed to automatic filing |
 | `set_routable(path, value)` | close (`False`) or open (`True`) a folder to automatic filing; see [Keeping areas apart](#keeping-areas-apart) |
-| `move_note(path, folder)` · `describe_folder(path, description)` | move a note to another folder (its links, and links to it, are rewritten; archived copies follow) · change a folder's one-line description |
+| `move_note(path, folder)` · `move_notes(moves)` · `describe_folder(path, description)` | move a note to another folder (its links, and links to it, are rewritten; archived copies follow) · move many, as (note, folder) pairs, in one pass · change a folder's one-line description |
 | `delete_note(path)` · `delete_folder(path)` · `clear()` | delete; links to what goes are removed, and so are raw copies no remaining note cites and the archived versions of the notes deleted; `clear()` also removes the sync cursors, so the next `sync` files every document again |
 | `check()` | lint the bundle; a list of problems (OKF conformance, index drift, broken links) |
 | `usage` | token totals so far (a property): `wiki.usage.to_dict()` |
@@ -277,7 +277,9 @@ Three settings and one folder property keep a wiki's areas (its top-level folder
   the folders routing visited, and those that share rare values with the new note) are the notes of its own area; when a
   note changes area (`move_note`, a folder moved or merged, `merge_roots`, `confirm_proposal`) the entries that no longer
   fit are removed from both notes, and from any note that linked to it alone. Links between notes that did not move are
-  left as they are. The default `wiki` is the behaviour before the setting.
+  left as they are. To reorganize, move the notes with `move_notes([(note, folder), ...])`: the entries are judged once,
+  after all the moves, so two linked notes that end in the same area stay linked; moved one by one with `move_note`, the
+  first move already cuts the link to a note that has not moved yet. The default `wiki` is the behaviour before the setting.
 - A folder can be closed to automatic filing: `create_folder(..., routable=False)` or `set_routable(path, False)`. It is
   kept as a hidden file, `.closed`, in the folder, so it follows the folder when it is renamed or moved and the OKF layout
   is unchanged. A closed folder, and the folders below it, are no option of the routing (CROW's and classic), are not shown to

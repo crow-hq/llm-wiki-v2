@@ -1141,6 +1141,20 @@ class Wiki:
             return self.store.move_note(path, folder)
 
     @by_author
+    def move_notes(self, moves: Sequence[tuple[str, str]], *, author: str | None = None) -> list[Note]:
+        """Move many notes at once, as (note path, folder) pairs, each as `move_note` does; InputError (nothing moved)
+        when a note or folder is missing or a note is already in its folder.
+
+        With `link_scope` "root" the See-also entries are judged once, after all the moves: two linked notes that end in
+        the same area stay linked, whatever the order of the pairs.
+        """
+        with self.store.lock():
+            moved = self.store.move_notes(moves)
+            for (path, _), note in zip(moves, moved, strict=True):
+                self.store.append_log("Moved", f"from /{path.strip().lstrip('/')} to /{note.rel}", note.rel, note.title)
+            return moved
+
+    @by_author
     def describe_folder(self, path: str, description: str, *, author: str | None = None) -> Folder:
         """Change the one-line description of a folder ("/finance"), the line the librarian routes by."""
         with self.store.lock():

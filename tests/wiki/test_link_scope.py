@@ -121,6 +121,27 @@ def test_moving_a_note_keeps_its_links_by_default(bundle: Path) -> None:
     assert r2 in linked(wiki, moved.rel) and moved.rel in linked(wiki, r2)
 
 
+def test_notes_moved_together_to_another_area_stay_linked(bundle: Path) -> None:
+    wiki, r1, r2, b1 = wiki_of(bundle, "root")
+    wiki.create_folder("/", "green", "Green things.")
+
+    moved = wiki.move_notes([(r1, "/green"), (r2, "/green")])
+
+    assert [n.rel for n in moved] == ["green/" + r1.split("/")[-1], "green/" + r2.split("/")[-1]]
+    assert linked(wiki, moved[0].rel) == [moved[1].rel] and linked(wiki, moved[1].rel) == [moved[0].rel]
+    assert linked(wiki, b1) == [] and (bundle / "log.md").read_text(encoding="utf-8").count("Moved") == 2
+
+
+def test_notes_moved_one_by_one_lose_the_links_the_first_move_crosses(bundle: Path) -> None:
+    wiki, r1, r2, _ = wiki_of(bundle, "root")
+    wiki.create_folder("/", "green", "Green things.")
+
+    one = wiki.move_note(r1, "/green")
+    two = wiki.move_note(r2, "/green")
+
+    assert linked(wiki, one.rel) == [] and linked(wiki, two.rel) == []
+
+
 def test_a_one_way_link_to_a_moved_note_is_cut_too(bundle: Path) -> None:
     wiki, r1, r2, _ = wiki_of(bundle, "root")
     mine = wiki.store.read(r1)
