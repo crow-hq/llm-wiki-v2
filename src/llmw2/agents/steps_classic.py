@@ -119,7 +119,9 @@ def summarize(ctx: StepContext, source: Source) -> Candidate:
     if not ctx.cfg.summarize:
         return _verbatim(source, ctx.cfg.classifier.state_chars)
     room = ctx.cfg.effective_read_chars - PROMPT_ROOM
-    if len(source.text) <= room:
+    # a source the note copies (`llm.note_copy_words`) is never split: the calls on its parts would be thrown away
+    copied = ctx.cfg.llm.note_steps and len(source.text.split()) < ctx.cfg.llm.note_copy_words
+    if len(source.text) <= room or copied:
         draft = None
         if ctx.cfg.llm.note_steps:
             body_cap = max(ctx.cfg.effective_note_chars, len(source.text))
@@ -322,7 +324,29 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
     missing = wanted - incoming_values(draft.body)
     if missing:  # only logged: nothing is asked again
         log.warning("summarize: the note of %r lacks %d of %d values of its part notes", draft.title, len(missing), len(wanted))
-    return draft
+    return draft.model_copy(
+        update={
+            "title": _without_part_labels(draft.title, source.text, line=False) or draft.title,
+            "summary": _without_part_labels(draft.summary, source.text, line=False),
+            "body": _without_part_labels(draft.body, source.text),
+        }
+    )
+
+
+# the labels the parts of a long source carry (above, and in the prompt `summarize_part`), which a small writer copies
+_PART_LINE = re.compile(r"(?im)^[ \t#>*_-]*(?:this is )?part \d+ of \d+\b.*(?:\n|\Z)")
+_DASHES = "-\u2014\u2013:"
+_PART_WORDS = re.compile(rf"(?i)\s*[{_DASHES}(]*\s*\bpart \d+ of \d+\b\)?\s*[{_DASHES}]?\s*")
+
+
+def _without_part_labels(text: str, source: str, *, line: bool = True) -> str:
+    """`text` without the "Part k of n" labels of the parts, unless the source itself has such words: in a body the whole
+    line goes (the label and the prompt's "This is part k of n, starting in: ..."), in a title or summary the words."""
+    if _PART_WORDS.search(source):
+        return text
+    if line:
+        return _PART_LINE.sub("", text).strip()
+    return _PART_WORDS.sub(" ", text).strip(" " + _DASHES)
 
 
 def cut_notes(notes: str, cap: int) -> str:
