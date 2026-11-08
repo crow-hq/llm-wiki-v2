@@ -141,6 +141,41 @@ and the share answered through the LLM fallback). The questions are written by a
 Run it from the tree of the arm whose wikis it reads. The repository holds only the prompt: for a corpus that is not
 committed, neither the questions (they quote the documents) nor the texts are, and the results name a question by its id.
 
+## Professional corpora: laws, contracts, tax manuals
+
+Three real professional corpora of 180 documents each, built from open sources by their selection scripts (table above):
+MultiEURLEX laws in Italian and in English (the same laws in both, so the language is the only difference), CUAD contracts
+and the HMRC internal manuals. Each manifest gives the reference folder of every document (the EUROVOC level-1 descriptor,
+the contract type, the manual) and the sha256 of every file.
+
+    python benchmarks/eurlex_select.py --archive multi_eurlex.tar.gz --names eurovoc_descriptors.json --out CORPORA
+    python benchmarks/cuad_select.py --zip CUAD_v1.zip --out CORPORA
+    python benchmarks/hmrc_select.py --snapshot hmrc-snapshot --out CORPORA
+
+**A run with cloud models.** The writer and the classifier come from the settings (`OKF_CONFIG` pointing at a settings file
+with the keys, or the `OKF_*` and `OPENROUTER_API_KEY` variables); nothing else is set, so the run measures the library's
+defaults:
+
+    export OKF_MODE=crow OKF_LLM_PROVIDER=openrouter OKF_LLM_MODEL=z-ai/glm-5.3-flash OKF_CLASSIFIER_PROVIDER=openrouter
+    for c in eurlex-it eurlex-en cuad hmrc; do
+      python -u benchmarks/incremental.py --corpus CORPORA/$c --out runs/branch-$c --mode crow --flow batch         --model $OKF_LLM_MODEL --cache cache/branch-$c.json --max-usd 0.5
+    done
+    python benchmarks/incremental_score.py runs/branch-hmrc --gold CORPORA/hmrc-manifest.json
+
+Compare a change by running the same loop from the tree of each version (as in the three arms above) and scoring the runs
+side by side. **Reference** of this branch, writer GLM 5.3 Flash and the Jev classifier, one run per corpus:
+
+| corpus | folders | notes below the first level | largest folder | AMI | pairwise F1 |
+|---|---|---|---|---|---|
+| HMRC manuals | 33 | 90% | 20 | 0.697 | 0.462 |
+| MultiEURLEX, Italian | 22 | 40% | 28 | 0.266 | 0.221 |
+| MultiEURLEX, English | 21 | 30% | 23 | 0.251 | 0.196 |
+| CUAD contracts | 13 | 98% | 29 | 0.671 | 0.507 |
+
+The MultiEURLEX reference keeps the first of a law's EUROVOC descriptors only, so its AMI understates a tree that files a law
+under another of its descriptors. The writer summarizes long sources, so the notes cover a part of each law or contract;
+`omitted` lists the sections a note leaves out.
+
 ## Results of 0.6.0: CROW against CROW 0.5.0 and classic
 
 The PostHog corpus above (120 pages, 30 real folders), filed into an empty wiki in one batch (`--flow batch`), with two
