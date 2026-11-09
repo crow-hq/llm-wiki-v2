@@ -35,12 +35,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -56,7 +57,7 @@ from replay import Replay, digest  # noqa: E402
 import llmw2  # noqa: E402
 from llmw2 import Item, Wiki  # noqa: E402
 from llmw2.bundle.files import title_of  # noqa: E402
-from llmw2.config import ClassifierConfig, LLMConfig  # noqa: E402
+from llmw2.config import ClassifierConfig, LLMConfig, WikiConfig  # noqa: E402
 from llmw2.models.classifier import Classifier  # noqa: E402
 from llmw2.models.llm import LLM  # noqa: E402
 from llmw2.models.usage import UsageTracker  # noqa: E402
@@ -282,6 +283,14 @@ def hit_rate(counts: dict[str, dict[str, int]]) -> float | None:
     return round(served / total, 4) if total else None
 
 
+def bench_thresholds(cfg: WikiConfig, env: Mapping[str, str] | None = None) -> None:
+    """The CROW thresholds a run uses: the package's defaults with the preset of the classifier in use and what the
+    environment sets (`OKF_TAU_CONS`, ...), whatever the local settings file says. A local classifier gets its own preset,
+    not Jev's."""
+    fresh = WikiConfig.from_env(os.environ if env is None else env, bundle=cfg.bundle, classifier=cfg.classifier.model_dump())
+    cfg.crow = fresh.crow
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="file a corpus into an empty wiki with the library of this tree")
     p.add_argument("--corpus", type=Path, required=True, help="a folder of .md files, filed in name order")
@@ -311,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
     cfg = Settings().config()
     cfg.bundle, cfg.mode, cfg.usage_log = bundle, a.mode, a.out / "usage.jsonl"
     cfg.llm.model = a.model
-    cfg.crow = type(cfg.crow)()  # the package's defaults, whatever the local settings say
+    bench_thresholds(cfg)
     tracker = UsageTracker(cfg.usage_log)
     texts = {f.name: f.read_text(encoding="utf-8") for f in files}
     classifier: Classifier | None = None

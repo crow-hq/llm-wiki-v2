@@ -179,3 +179,20 @@ def test_note_retries_counts_the_retries_and_the_source_fallbacks_of_a_result() 
 
     assert load("incremental").note_retries(result) == {"retries": 2, "sources": 1}
     assert load("incremental").note_retries(ValueError("x")) == {"retries": 0, "sources": 0}
+
+
+def test_a_run_keeps_the_preset_of_its_classifier_and_the_thresholds_of_the_environment(incremental: ModuleType) -> None:
+    from llmw2 import WikiConfig
+
+    local = {"OKF_CLASSIFIER_PROVIDER": "custom", "OKF_CLASSIFIER_MODEL": "small-local", "OKF_CLASSIFIER_BASE_URL": "http://localhost:1/v1"}
+    cfg = WikiConfig.from_env(local, bundle=Path("w"))
+    cfg.crow.tau_cons = 0.123  # what a local settings file could hold: never used by a run
+    incremental.bench_thresholds(cfg, local)
+    laya = (cfg.crow.tau_path, cfg.crow.k)
+    incremental.bench_thresholds(cfg, {**local, "OKF_TAU_CONS": "0.8"})
+    set_here = cfg.crow.tau_cons
+    cloud = WikiConfig.from_env({}, bundle=Path("w"))
+    incremental.bench_thresholds(cloud, {})
+
+    assert laya == (0.65, 5) and set_here == 0.8
+    assert (cloud.crow.tau_path, cloud.crow.k, cloud.crow.tau_cons) == (0.5, 8, 0.6)  # Jev's, as before

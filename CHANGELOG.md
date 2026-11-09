@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A source under `llm.note_copy_words` is no longer split into parts when it is longer than one call: its text is the body, and the calls on its parts (thrown away before) are not made. The note is the same.
 - A note written from the parts of a long source loses the "Part k of n" labels a small writer copies into its body, title or summary (the label line and the part prompt's "This is part k of n, starting in: ..."), unless the source itself has such words.
 
+### Fixed
+
+- `benchmarks/incremental.py` and `benchmarks/retrieval.py` kept the package's CROW thresholds whatever the classifier: a run with a local classifier (`OKF_CLASSIFIER_PROVIDER=custom`) got Jev's, and a threshold set in the environment (`OKF_TAU_CONS`) was dropped. A run now uses the preset of its classifier and the environment's thresholds, and still ignores the local settings file; runs with Jev are unchanged.
+
 ## [0.8.0] - 2026-11-03
 
 ### Upgrading from 0.7.0

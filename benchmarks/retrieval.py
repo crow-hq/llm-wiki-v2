@@ -78,7 +78,7 @@ def ask_run(
         cfg = Settings().config()
         cfg.bundle, cfg.mode, cfg.usage_log = bundle, "crow", None
         cfg.llm.model = meta["model"]
-        cfg.crow = type(cfg.crow)()  # the package's defaults, whatever the local settings say
+        incremental.bench_thresholds(cfg)
         tracker = UsageTracker(None)
         spent = [0.0]
         record = tracker.record
