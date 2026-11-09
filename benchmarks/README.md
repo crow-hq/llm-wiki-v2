@@ -216,8 +216,8 @@ calls priced at the writer's list price CROW costs 0.59 times classic's (0.42 to
 with the list prices of two other writers (GLM 5.3, DeepSeek V4.1 Flash). The cost per document grows with the wiki in both
 modes, as the folders and the notes to compare with grow: per 100 documents already filed, at the writer's list price, by
 5.5% of classic's mean cost with CROW and 12.1% with classic; as paid, by 18% and 7%, since the classifier's calls (relevance
-and links, which read more candidates as the wiki grows) are then half of CROW's cost. Where classic misses, it is mostly by opening the wrong folder and stopping there: on the contracts it filed 97 of
-180 in one broad folder and looked for them in the folders their names suggest. The gap in retrieval is the way each mode
+and links, which read more candidates as the wiki grows) are then half of CROW's cost. Classic missed 135 of the 656 questions: in 65 its walk of the folders read no note, in 70 it read other notes;
+on the contracts it filed 97 of 180 in one broad folder and looked for them in the folders their names suggest. The gap in retrieval is the way each mode
 picks the notes, not the wiki it built: CROW reads the 8 notes its search finds (classic reads 1.2 on average), and the
 search alone (BM25, `crow.rerank` off, no model call) finds the right note 99.2% of the time on the CROW wikis and 98.9% on
 the classic ones, first 92.4% and 92.1% of the time; the right note comes first with CROW's `ask` 92.4% of the time, with
