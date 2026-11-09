@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `llm.note_copy_words` (`OKF_LLM_NOTE_COPY_WORDS`, 0 by default): with `llm.note_steps`, a source of fewer words than this keeps its own text as the body, with no body call, and only the title, summary and tags are asked for. 0 leaves `note_steps` as it was.
 - `llm.note_copy_parts` (`OKF_LLM_NOTE_COPY_PARTS`, off by default): with `llm.note_steps`, a source too long for one call keeps its own text as the body instead of being written from notes on its parts, with no call on the parts; only the title, summary and tags are asked for. A small writer loses much of the parts' notes when it combines them.
 - `benchmarks/eurlex_select.py`, `cuad_select.py`, `hmrc_select.py`: three real professional corpora to measure on, built from their open sources with a pin and the sha256 of every file (MultiEURLEX laws in Italian and English, CUAD contracts, HMRC internal manuals); the texts are not committed. `benchmarks/README.md` gives the commands to build and score them with cloud models and a reference of the branch to compare a change with.
+- `benchmarks/retrieval.py --as-asked`: the notes are chosen as `ask` chooses them, each run in its own mode (a classic run: the LLM walks the folders; CROW: the wiki's search, then the classifier reorders), so CROW and classic wikis can be compared on the notes an answer would read. The banner of the README and `benchmarks/README.md` give CROW against classic measured this way on eleven corpora.
 
 ### Changed
 

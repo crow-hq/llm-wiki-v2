@@ -10,7 +10,9 @@
 
 `select` is what the library runs to answer a question: the folder beam (the classifier), the scoring of the notes of
 those folders, the top notes, and the LLM navigating the tree only when nothing clears the threshold. No answer is
-generated. `--questions` is `[{"id", "question"}]` (a null question is skipped), `--cases` is `[{"id", "doc"}]` with `doc` the
+generated. With `--as-asked` the notes are chosen as `ask` chooses them: each run in its own mode (a classic run: the
+LLM walks the folders), and CROW with the wiki's search (BM25, and the embedder of the settings if any) before the classifier
+reorders the notes. `--questions` is `[{"id", "question"}]` (a null question is skipped), `--cases` is `[{"id", "doc"}]` with `doc` the
 file name of the document the question was written from (`--make-cases` also writes the opening of the document, `text`, which
 is what the question writer reads and this script ignores).
 
@@ -45,7 +47,7 @@ import incremental  # noqa: E402  (checks that llmw2 comes from this tree)
 import incremental_score as scoring  # noqa: E402
 from replay import Replay  # noqa: E402
 
-from llmw2 import CROW, Wiki  # noqa: E402
+from llmw2 import CLASSIC, CROW, Wiki  # noqa: E402
 from llmw2.models.classifier import Classifier  # noqa: E402
 from llmw2.models.llm import LLM  # noqa: E402
 from llmw2.models.usage import UsageTracker  # noqa: E402
@@ -76,7 +78,8 @@ def ask_run(
         bundle = Path(tmp) / "wiki"
         shutil.copytree(scoring.wiki_of(run), bundle)
         cfg = Settings().config()
-        cfg.bundle, cfg.mode, cfg.usage_log = bundle, "crow", None
+        mode = meta.get("mode", "crow") if a.as_asked else "crow"
+        cfg.bundle, cfg.mode, cfg.usage_log = bundle, mode, None
         cfg.llm.model = meta["model"]
         incremental.bench_thresholds(cfg)
         tracker = UsageTracker(None)
@@ -94,7 +97,7 @@ def ask_run(
             llm, classifier = LLM(cfg.llm, tracker), Classifier(cfg.classifier, tracker)
         if replay:
             replay.wrap(llm, classifier)
-        wiki = Wiki(cfg, llm=llm, classifier=classifier, steps=CROW)
+        wiki = Wiki(cfg, llm=llm, classifier=classifier, steps=CROW if mode == "crow" else CLASSIC)
         rows, stopped = [], False
         for qid, question in questions:
             doc = doc_of.get(qid)
@@ -105,7 +108,10 @@ def ask_run(
                 print(f"  stopped: spent ${spent[0]:.3f} > ${a.max_usd}", file=sys.stderr)
                 break
             researcher = wiki.researcher()
-            got = [n.rel for n in researcher.steps.select(researcher.ctx, researcher.store.load(), question)]
+            root = researcher.store.load()
+            if a.as_asked and researcher.search is not None:  # the search `ask` gives `select` (BM25, the embedder if any)
+                researcher.ctx.search = researcher._finder(root, None)
+            got = [n.rel for n in researcher.steps.select(researcher.ctx, root, question)]
             want = final[doc]
             rows.append(
                 {
@@ -153,6 +159,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cache", type=Path, default=None, help="the replay cache file (default: retrieval-cache.json beside the first run)")
     p.add_argument("--max-usd", type=float, default=0.05, help="stop a run once the calls really made cost more (default 0.05)")
     p.add_argument("--dry-run", action="store_true", help="fake models that cost nothing, to try the script")
+    p.add_argument(
+        "--as-asked",
+        action="store_true",
+        help="select as `ask` does: each run in its own mode (classic: the LLM walks the folders), CROW with the wiki's search",
+    )
     a = p.parse_args(argv)
     if a.make_cases:
         return make_cases(a.make_cases, a.n, a.seed, a.out)

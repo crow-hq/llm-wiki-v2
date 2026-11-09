@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/crow-stats.svg" alt="An LLM wiki with no scaling limit. CROW vs classic: 89% right note read vs 62%; 2.1× faster per ingest (18.4s vs 38.6s); 68% fewer LLM tokens (5,508 vs 17,324)." width="100%">
+  <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/crow-stats.svg" alt="An LLM wiki with no scaling limit. CROW vs classic on 11 corpora (2,019 documents, 656 questions): 99.5% right note read vs 79%; 1.6× faster per ingest (18.0s vs 29.2s); 63% fewer LLM tokens (4,861 vs 13,227)." width="100%">
 </p>
 
 <p align="center">
@@ -143,6 +143,11 @@ personal documents, mostly in Italian, with one LLM and one classifier version, 
 says so among its limitations; its rates carry 95% intervals. The corpora and
 scripts behind the 0.4.0 measurements are public in [benchmarks/](https://github.com/crow-hq/llm-wiki-v2/tree/main/benchmarks),
 and every script has a `--dry-run`, so you can run them with your own models.
+The numbers of the banner come from eleven corpora (handbooks, mail, laws in two languages, contracts, tax manuals,
+Wikibooks pages and personal notes, 2,019 documents), each filed in CROW and in classic mode with the same writer, and
+656 questions written blind from single documents: the right note was read 99.5% of the time against 79.4%, filing was 1.6
+times as fast with 63% fewer LLM tokens, and the cost was the same, since the classifier's calls take what the LLM saves.
+The table per corpus is in [benchmarks/README.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/benchmarks/README.md#crow-against-classic-on-eleven-corpora).
 The filing measures of the CROW routing use, besides the repo's own synthetic coffee
 corpus, the [Enron email corpus](https://www.cs.cmu.edu/~enron/), the
 [GitLab handbook](https://gitlab.com/gitlab-com/content-sites/handbook) and the
