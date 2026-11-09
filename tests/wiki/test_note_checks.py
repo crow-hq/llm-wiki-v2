@@ -287,6 +287,72 @@ def test_inch_marks_and_stray_quotes_are_not_quotations() -> None:
     assert nc.misquoted('Lo schermo da 15" pesa poco; il modello da 17" costa di più e non ha la porta.', QUOTED) == []
 
 
+def test_an_omission_splits_a_quotation_into_parts_looked_for_on_their_own() -> None:
+    src = "Il sindaco ha detto: il ponte sarà riaperto entro maggio, come promesso dalla giunta e dal consiglio comunale."
+    assert nc.misquoted('Disse "il ponte sarà riaperto ... dalla giunta e dal consiglio".', src) == []
+    assert nc.misquoted('Disse "il ponte sarà riaperto […] entro giugno, come promesso".', src) == [
+        "il ponte sarà riaperto […] entro giugno, come promesso"
+    ]
+
+
+def test_quoted_printable_escapes_of_a_mail_are_not_words_of_the_source() -> None:
+    src = 'He called it "a very good bill that should become=\n =20law," said the senator.'
+    assert nc.misquoted('The senator called it "a very good bill that should become law".', src) == []
+
+
+def test_unquoted_takes_the_marks_off_what_the_source_does_not_have() -> None:
+    text = 'Il sindaco: "Il ponte resterà chiuso fino a giugno." Poi "il ponte sarà riaperto entro maggio".'
+    fixed, wrong = nc.unquoted(text, QUOTED)
+    assert wrong == ["Il ponte resterà chiuso fino a giugno."]
+    assert fixed == 'Il sindaco: Il ponte resterà chiuso fino a giugno. Poi "il ponte sarà riaperto entro maggio".'
+
+
+def test_a_note_written_in_one_call_loses_the_marks_of_a_made_up_quotation() -> None:
+    llm = SeedLLM(UsageTracker())
+    cfg = WikiConfig(bundle=Path("wiki"), mode="classic", llm=LLMConfig(model="fake/llm"))
+    ctx = StepContext(llm, None, Prompts(), cfg, "librarian/system")
+    made_up = 'Il sindaco ha detto: "Il ponte resterà chiuso fino a giugno." La giunta ha approvato.'
+    llm.add("librarian/summarize", {**META, "body": made_up})
+
+    cand = classic.summarize(ctx, Source(text=QUOTED, title="Nota"))
+
+    assert llm.ops == ["librarian/summarize"]
+    assert cand.body == "Il sindaco ha detto: Il ponte resterà chiuso fino a giugno. La giunta ha approvato."
+    assert [d.step for d in ctx.decisions] == ["quote_unquoted"]
+
+
+def test_a_quotation_in_markdown_emphasis_is_judged() -> None:
+    emphasis = 'Il sindaco: *"Il ponte resterà chiuso fino a giugno."* Fine.'
+    assert nc.misquoted(emphasis, QUOTED) == ["Il ponte resterà chiuso fino a giugno."]
+
+
+SAID = (
+    "Jim Dyke, a spokesman for Commerce Secretary Donald Evans, spoke at length about the industry and its long troubles.\n\n"
+    '"Factories are closing, because there is not a level playing field," Dyke said, repeating the argument.\n\n'
+    "The Commission will publish the agreement under the title "
+    '"Agreement on the supply of steel to the market" next week.'
+)
+
+
+def test_a_quotation_given_to_someone_else_is_found() -> None:
+    wrong = 'Secretary Evans stated that factories are closing because there is "not a level playing field." Then more.'
+    assert nc.misattributed(wrong, SAID) == ["not a level playing field."]
+    assert nc.misattributed('A spokesman, Dyke, said there is "not a level playing field."', SAID) == []
+    assert nc.misattributed('Officials said there is "not a level playing field" in steel.', SAID) == []  # no name in the body
+    assert nc.misattributed('Evans wants "a level playing field for all" now.', SAID) == []  # not in the source: misquoted's
+
+
+def test_a_title_or_a_clause_is_not_a_quotation_said_by_someone() -> None:
+    assert nc.misattributed('Evans signed the "Agreement on the Supply of Steel" today.', SAID) == []  # a title
+    clause = "The parties agree that the price shall be paid in full by the buyer within thirty days of delivery."
+    assert nc.misattributed('Under Section 4, Evans notes "the price shall be paid in full" on delivery.', clause) == []
+
+
+def test_a_sentence_copied_from_the_source_is_not_misattributed() -> None:
+    src = 'At the hearing, DeFazio complained that bureaucrats ignore "what it does for local reliability." DeFazio\'s staff agreed.'
+    assert nc.misattributed('At the hearing, DeFazio complained that bureaucrats ignore "what it does for local reliability."', src) == []
+
+
 def test_a_made_up_quotation_is_asked_again_then_the_source_is_kept() -> None:
     ctx, llm = context()
     made_up = 'Il sindaco ha detto: "Il ponte resterà chiuso fino a giugno." La giunta ha approvato.'

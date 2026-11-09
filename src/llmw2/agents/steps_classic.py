@@ -142,6 +142,7 @@ def summarize(ctx: StepContext, source: Source) -> Candidate:
         )
     else:
         draft = _summarize_in_parts(ctx, source, room)
+    draft = _unquoted(ctx, draft, source.text)
     state = source_state(source.title, source.text, ctx.cfg.classifier.state_chars)
     cand = Candidate(draft.title.strip(), draft.summary.strip(), clean_tags(draft.tags), draft.body.strip(), state=state)
     _warn_if_long("summarize", cand.title, cand.body, ctx.cfg.target_note_chars(len(source.text)))
@@ -223,6 +224,8 @@ def _in_two_calls(
             return f"the body has strings the source does not: {wrong[:3]}"
         if wrong := note_checks.misquoted(text, source.text):
             return f"the body quotes words the source does not have: {[q[:60] for q in wrong[:2]]}"
+        if wrong := note_checks.misattributed(text, source.text):
+            return f"the body gives a quotation to someone else than the source does: {[q[:60] for q in wrong[:2]]}"
         return ""
 
     if not body:
@@ -528,7 +531,19 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
         log.warning("merge: the draft of %s copies the prompt's own words: the incoming note is added as a section", note.rel)
         return _appended(note, existing, cand, source)
     _warn_if_long("merge", draft.title, draft.body, ctx.cfg.target_note_chars(len(source.text), len(existing)))
-    return draft
+    return _unquoted(ctx, draft, f"{existing}\n{source.text}")
+
+
+def _unquoted(ctx: StepContext, draft: NoteDraft, reference: str) -> NoteDraft:
+    """The draft with the quotation marks taken off what it quotes and `reference` (the source, and the note a merge
+    rewrites) does not have, in the body and the summary; a `quote_unquoted` decision says how many. No model call."""
+    body, wrong = note_checks.unquoted(draft.body, reference)
+    summary, wrong_summary = note_checks.unquoted(draft.summary, reference)
+    if not (wrong or wrong_summary):
+        return draft
+    log.debug("quotations the source does not have, left without quotation marks: %s", [q[:60] for q in wrong + wrong_summary])
+    ctx.decide("quote_unquoted", "code", f"{len(wrong) + len(wrong_summary)} quotations not in the source")
+    return draft.model_copy(update={"body": body, "summary": summary})
 
 
 def _appended(note: Note, existing: str, cand: Candidate | None, source: Source) -> NoteDraft:

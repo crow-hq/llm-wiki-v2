@@ -18,9 +18,12 @@ HEADING_MAX = 120
 CLOSE = 0.8  # the least similarity of two spellings of a name for one to be taken for the other
 NEAR = 0.5  # the least similarity of a title word to a name of the source with the same initial and a close length
 ITEM_CLOSE = 0.85  # the same, for an item of the body
+SPEAKER_SPAN = 40  # characters before and after a quotation where a text names who said it
+COPIED_LEAD = 30  # the fewest letters before a quotation for a sentence the same as in the source to count as its own
 _HEADING_LINE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$")
 _CAPITALIZED = re.compile(r"(?<![\w'\u2019-])[^\W\d_a-z][^\W\d_]*(?:['\u2019-][^\W\d_]+)*")
 _SENTENCE_START = re.compile(r"(?:\A|[.!?:;]|[\n\r])[\s#>*\-+\"'“”«»(\[]*\Z")
+_POSSESSIVE = re.compile("['" + chr(0x2019) + r"]s\Z")  # the ending of a possessive, straight or curly
 _CODE = re.compile(r"\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9][A-Za-z0-9_-]{2,}\b|\b[A-Z]{3,}\b")
 _ID_SUFFIX = re.compile(r"(?:[\s_-]+(?:[0-9a-f]{6,}|\d{4,}))+\Z", re.IGNORECASE)
 _HEX = re.compile(r"[0-9a-f]{6,}", re.IGNORECASE)
@@ -220,21 +223,110 @@ def altered(body: str, source_text: str) -> list[str]:
     ]
 
 
-# a quotation opens after a space or a bracket and starts with a word; a straight quote also closes before a space or a mark
+# a quotation opens after a space or a bracket and starts with a word; a straight quote also closes before a space, a mark or
+# the Markdown emphasis around it (*"..."*)
 _QUOTED = re.compile(
     r'(?<![\w"])“(\w[^”\n]{10,398})”'
-    r'|(?<![\w"])"(\w[^"\n]{10,398}[^\s"])"(?=[\s.,;:!?)\]]|\Z)'
+    r'|(?<![\w"])"(\w[^"\n]{10,398}[^\s"])"(?=[\s.,;:!?)\]*_]|\Z)'
     r'|(?<![\w"])«\s?(\w[^»\n]{10,398})»'
 )
+
+
+_ELLIPSIS = re.compile(r"\s*(?:\[\s*)?(?:\.\.\.|…)(?:\s*\])?\s*")  # an omission inside a quotation: ..., …, [...]
+_ESCAPE = re.compile(r"=[0-9A-F]{2}")  # a quoted-printable escape left in an exported mail (=20, =3D)
+
+
+def _misquoted(body: str, source_text: str) -> list[re.Match[str]]:
+    letters = _letters(_ESCAPE.sub("", source_text))
+    out = []
+    for m in _QUOTED.finditer(body):
+        q = next(g for g in m.groups() if g)
+        parts = [p for p in _ELLIPSIS.split(q) if len(p.split()) >= 2]  # each part between omissions, of two words or more
+        if len(q.split()) >= 4 and any(_letters(p) not in letters for p in parts):
+            out.append(m)
+    return out
 
 
 def misquoted(body: str, source_text: str) -> list[str]:
     """The quotations of four words or more in the body whose words the source does not have in that order: a quote that was
     changed, made up or moved to another speaker. Letters and digits are compared, so spacing, punctuation and quote marks
-    do not count."""
-    letters = _letters(source_text)
-    spans = (next(g for g in m.groups() if g) for m in _QUOTED.finditer(body))
-    return [q for q in spans if len(q.split()) >= 4 and _letters(q) not in letters]
+    do not count; an omission (`...`, `…`, `[...]`) splits a quotation into parts, each looked for on its own, and the
+    quoted-printable escapes of an exported mail (`=20`) are not part of the source's words."""
+    return [next(g for g in m.groups() if g) for m in _misquoted(body, source_text)]
+
+
+def unquoted(text: str, source_text: str) -> tuple[str, list[str]]:
+    """The text with the quotation marks taken off the quotations `misquoted` finds (their words stay, no longer presented as
+    the source's own), and those quotations. No model call: the repair of a note written in one call."""
+    found = _misquoted(text, source_text)
+    for m in reversed(found):
+        text = text[: m.start()] + next(g for g in m.groups() if g) + text[m.end() :]
+    return text, [next(g for g in m.groups() if g) for m in found]
+
+
+def _paragraph(text: str, start: int, end: int) -> tuple[int, int]:
+    lo, hi = text.rfind("\n\n", 0, start) + 1, text.find("\n\n", end)
+    return lo, len(text) if hi < 0 else hi
+
+
+def _quote_bounds(text: str, start: int, end: int) -> tuple[int, int] | None:
+    """The span of the quotation that holds text[start:end], from its opening mark to its closing one within the paragraph;
+    None when text[start:end] is not inside quotation marks there."""
+    lo, hi = _paragraph(text, start, end)
+    for opens, closes in (('"', '"'), ("“", "”"), ("«", "»")):
+        head = text[lo:start]
+        inside = head.count(opens) % 2 == 1 if opens == closes else head.rfind(opens) > head.rfind(closes)
+        closing = text.find(closes, end, hi)
+        if inside and closing >= 0:
+            return lo + head.rfind(opens), closing + 1
+    return None
+
+
+def _capitalized(text: str, lowered: set[str]) -> set[str]:
+    """The names of a text: its capitalized words of three letters or more outside quotation marks, without a possessive
+    ending, and not in `lowered` (the words a source also writes in lower case, capitalized only to open a sentence)."""
+    text = re.sub(r'"[^"\n]*"|“[^”]*”|«[^»]*»', " ", text)
+    names = (_POSSESSIVE.sub("", m.group()) for m in _CAPITALIZED.finditer(text))
+    return {w for w in names if len(w) > 2 and w.lower() not in lowered}
+
+
+def _title_like(quote: str) -> bool:
+    """Most words of four letters or more capitalized: a title or a defined term, which nobody says."""
+    long = [w for w in re.findall(r"[^\W\d_]{4,}", quote)]
+    return bool(long) and sum(w[0].isupper() for w in long) * 2 > len(long)
+
+
+def misattributed(body: str, source_text: str) -> list[str]:
+    """The quotations of the body (four words or more) that the source has, said by someone else: the names in the body's
+    sentence of the quotation, among the source's words, are none of those the source writes within `SPEAKER_SPAN` characters
+    of it (`"...," Dyke said`). Not judged: a quotation the source does not have (`misquoted`) or does not quote itself (a
+    clause copied from a contract), a title or a defined term, one the body gives in the source's own sentence, and one the
+    body or the source gives without a name."""
+    low = source_text.lower()
+    at = [k.start() for k in re.finditer(r"[^\W_]", low)]  # where each letter of `letters` is in the source
+    letters = "".join(low[i] for i in at)
+    words = set(re.findall(r"\w+", source_text))
+    lowered = {w for w in words if w.islower()}
+    out = []
+    for m in _QUOTED.finditer(body):
+        quote = next(g for g in m.groups() if g)
+        q = _letters(quote)
+        found = letters.find(q) if len(quote.split()) >= 4 and q and not _title_like(quote) else -1
+        if found < 0:
+            continue
+        line_start, line_end = body.rfind("\n", 0, m.start()) + 1, body.find("\n", m.end())
+        before = re.split(r"[.!?]\s", body[line_start : m.start()])[-1]
+        after = re.split(r"[.!?]\s", body[m.end() : line_end if line_end >= 0 else len(body)])[0]
+        if len(lead := _letters(before)) >= COPIED_LEAD and lead + q in letters:
+            continue  # the body's sentence, up to the quotation, is the source's own
+        ours = {w for w in _capitalized(f"{before} {after}", lowered) if w in words}
+        span = _quote_bounds(source_text, at[found], at[found + len(q) - 1] + 1) if ours else None
+        if span:
+            lo, hi = _paragraph(source_text, *span)
+            near = source_text[max(lo, span[0] - SPEAKER_SPAN) : span[0]] + " " + source_text[span[1] : min(hi, span[1] + SPEAKER_SPAN)]
+            if (theirs := _capitalized(near, lowered)) and not ours & theirs:
+                out.append(quote)
+    return out
 
 
 def restored(body: str, source_text: str) -> str:

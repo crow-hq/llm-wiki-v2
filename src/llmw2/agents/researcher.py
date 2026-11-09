@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
-from llmw2.agents import conflicts, revisions
+from llmw2.agents import conflicts, note_checks, revisions
 from llmw2.agents.base import Decision
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.steps import StepContext, Steps, check_answer, check_select
@@ -95,7 +95,14 @@ class Researcher:
             asked = f"{question}\n\n{revisions.HISTORY_HINT}" if past else question
             if self._conflicting(question, notes):
                 asked = f"{asked}\n\n{conflicts.CONFLICT_HINT}"
-            text = check_answer(self.steps.answer(ctx, asked, self._with_rows(question, notes))) if notes else NO_ANSWER
+            text = NO_ANSWER
+            if notes:
+                given = self._with_rows(question, notes)
+                text = check_answer(self.steps.answer(ctx, asked, given))
+                # a quotation the notes read do not have is not given as theirs: its marks go, its words stay (no call)
+                text, wrong = note_checks.unquoted(text, "\n\n".join(n.full_text() for n in given))
+                if wrong:
+                    ctx.decide("quote_unquoted", "code", f"{len(wrong)} quotations not in the notes read")
         read = {n.rel for n in notes}
         citations = [c for c in dict.fromkeys(_cited(text)) if c in read]
         titles = {n.rel: n.title for n in notes if n.rel in citations}
