@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `benchmarks/cuad_select.py` labels each contract with its official CUAD type (the folder of its PDF), not the type read from the file name, which differed for about one contract in eight; the selection and its checksums are unchanged. `--max-chars` lets a selection take the longest contracts too.
 - `benchmarks/incremental.py` and `benchmarks/retrieval.py` kept the package's CROW thresholds whatever the classifier: a run with a local classifier (`OKF_CLASSIFIER_PROVIDER=custom`) got Jev's, and a threshold set in the environment (`OKF_TAU_CONS`) was dropped. A run now uses the preset of its classifier and the environment's thresholds, and still ignores the local settings file; runs with Jev are unchanged.
 
 ## [0.8.0] - 2026-11-03
