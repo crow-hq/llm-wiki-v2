@@ -211,7 +211,12 @@ Over the 656 questions the right note is read 99.5% of the time with CROW (95% W
 classic (76.2 to 82.3); the difference, +20.1 points, has a paired bootstrap interval of +16.9 to +23.3. CROW files a
 document 1.62 times as fast and with 63% fewer LLM tokens; the classifier's calls take what the LLM saves, so the cost is
 the same. Where classic misses, it is mostly by opening the wrong folder and stopping there: on the contracts it filed 97 of
-180 in one broad folder and looked for them in the folders their names suggest. The two synthetic brains and the Italian
+180 in one broad folder and looked for them in the folders their names suggest. The gap in retrieval is the way each mode
+picks the notes, not the wiki it built: CROW reads the 8 notes its search finds (classic reads 1.2 on average), and the
+search alone (BM25, `crow.rerank` off, no model call) finds the right note 99.2% of the time on the CROW wikis and 98.9% on
+the classic ones, first 92.4% and 92.1% of the time; the right note comes first with CROW's `ask` 92.4% of the time, with
+classic's 72.6%. The wikis differ in their folders: against the reference folders of the ten corpora that have them, CROW's
+are closer (AMI 0.53 against 0.41 on average, higher in nine). The two synthetic brains and the Italian
 Wikibooks pages are not in this repository; the other corpora are built by the scripts above. Times are those of runs made
 side by side on a cloud provider; the corpora run one at a time (GitLab and the smaller brain) give 1.87 times as fast and
 69% fewer tokens.
