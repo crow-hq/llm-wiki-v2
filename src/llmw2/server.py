@@ -7,7 +7,7 @@ POST /ingest, POST /upload (a .txt/.md/.pdf file), POST /ask, POST /folder (one 
 POST /audit (CROW: notes the classifier would file elsewhere), GET /taxonomy (new subfolders and fallbacks, from the log),
 GET /proposals, POST /proposals, POST /proposals/{id}/confirm and /dismiss (top-level areas users propose),
 POST /areas, POST /folder/rename and POST /folder/merge (top-level folders),
-GET /tree, GET /note,
+GET /search (notes for a query, no model call), GET /tree, GET /note,
 GET /graph, GET /usage, GET /check, GET /health; DELETE /note, DELETE /folder and
 DELETE /wiki (empty it); GET /settings, POST /settings,
 POST /settings/test, POST /settings/models and POST /settings/memory when the app is given the settings file;
@@ -316,6 +316,11 @@ def create_app(
     @app.post("/ask")
     def ask(req: AskRequest) -> dict[str, Any]:
         return current().ask(req.question, req.where).to_dict()
+
+    @app.get("/search")
+    def search(q: str, k: int = 8) -> dict[str, Any]:
+        """The best notes for `q` with no model call (`Wiki.search`): what a search box shows as one types."""
+        return {"hits": [h.to_dict() for h in current().search(q, k=max(1, min(k, 50)))]}
 
     @app.get("/tree")
     def tree() -> dict[str, Any]:

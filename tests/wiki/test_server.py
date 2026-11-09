@@ -80,6 +80,18 @@ def test_ask_returns_the_answer_as_json(client: TestClient, classic_wiki: Wiki, 
     assert (body["text"], body["citations"], body["notes"]) == (f"On delivery [{NOTE}].", [NOTE], [NOTE])
 
 
+def test_search_returns_the_hits_with_no_model_call(client: TestClient, classic_wiki: Wiki, llm: FakeLLM) -> None:
+    script_ingest(llm)
+    classic_wiki.ingest("Booked on delivery.")
+    calls = len(llm.calls)
+
+    response = client.get("/search", params={"q": "revenue recognition", "k": 3})
+
+    assert response.status_code == 200 and [h["path"] for h in response.json()["hits"]] == [NOTE]
+    assert len(llm.calls) == calls
+    assert client.get("/search", params={"q": " "}).status_code == 422
+
+
 def test_ask_of_an_empty_question_is_a_422(client: TestClient) -> None:
     assert client.post("/ask", json={"question": " "}).status_code == 422
 

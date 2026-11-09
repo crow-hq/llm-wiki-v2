@@ -89,7 +89,7 @@ codex mcp add llm-wiki --url http://127.0.0.1:8000/mcp
 ```
 
 The client gets its tools: `recall` answers from your notes and documents, citing them; `remember` files what it
-learns, in the right folder, merged and linked like any note (CROW); `read_note` reads a note in full; `rebuild` (with `confirm`) files every note again on the same folders, from the memory's own raw copies. Which models
+learns, in the right folder, merged and linked like any note (CROW); `search` finds notes by their words with no model call; `read_note` reads a note in full; `rebuild` (with `confirm`) files every note again on the same folders, from the memory's own raw copies. Which models
 do the work is a choice under Memory:
 
 - **This wiki's settings** (the default). OpenRouter or a local model, with Jev or Laya deciding, file the memories; the
@@ -203,7 +203,7 @@ curl -X POST localhost:8000/ask -H 'content-type: application/json' \
 
 The wiki is plain Markdown files you can read, edit and keep in git (`./wiki`
 with Docker). With Docker the CLI runs in the same image: `docker compose run --rm wiki llmwiki2 check`.
-To file a note elsewhere or reword a folder's description from the terminal: `llmwiki2 move finance/pricing.md /sourcing` and `llmwiki2 describe /finance "Money in and out."`.
+To find notes with no model call: `llmwiki2 search "burner service" -k 5` (`--where KEY=VALUE`, `--json`). To file a note elsewhere or reword a folder's description from the terminal: `llmwiki2 move finance/pricing.md /sourcing` and `llmwiki2 describe /finance "Money in and out."`.
 `llmwiki2 rebuild [folder] --yes` deletes every note, raw copy and archived version and files the documents again on the folders the wiki has (the documents of `folder`, or with no folder the wiki's own raw copies), with no plan and no new folder; without `--yes` it only says what it would do and exits with 2. A note the limit on top-level folders sent to the likeliest existing folder instead of a new one is marked `overflow` in its frontmatter, logged in `log.md` as "Deviated note", and listed with the root it went to and its probabilities by `sync`, `ingest` and `rebuild`.
 In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes the classifier would file in another branch today (it asks the same single choice among every folder, and proposes only a move to another branch, never deeper into the note's own folder and never up; no LLM call; it moves them only with `--apply`; `--min-confidence` is compared with that choice's top probability, a scale that has not been recalibrated), and `llmwiki2 health [--min-filed 5] [--max-share 0.3]` shows, from `log.md`, the folders that keep needing new subfolders or the LLM fallback (folders laid out by a plan or a split are not counted as new subfolders). Every new note carries a stable `id` in its frontmatter (`wiki.find_note(id)`).
 
@@ -213,6 +213,7 @@ In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes 
 | `POST /ingest` `{text, title?, resource?, origin?}` | file a source (an `origin` `{source, account?, id, link?, version?, modified?}` makes a repeat with the same content or version return `"unchanged"`); returns the note, folders created, links and token usage |
 | `POST /upload?filename=…` (raw file body) | file a text, Markdown, PDF, Office or OpenDocument file (a spreadsheet: its other sheets in `parts`) |
 | `POST /ask` `{question}` | answer with citations; returns the notes read and token usage |
+| `GET /search?q=…&k=8` | the notes that best match a query (path, title, summary, rank), with no model call: a search box |
 | `GET /tree` · `GET /note?path=…` | folder tree · one note (frontmatter and Markdown body) |
 | `GET /check` · `GET /graph` | lint problems · the wiki as nodes and links (JSON) |
 | `POST /note/move` `{path, folder}` · `POST /folder/describe` `{path, description}` | move a note to another folder, links following (returns the note as `GET /note`) · change a folder's description |
@@ -222,7 +223,7 @@ In CROW mode, `llmwiki2 audit [--min-confidence 0.7] [--apply]` lists the notes 
 | `DELETE /note?path=…` · `DELETE /folder?path=/…` · `DELETE /wiki` | delete a note · a folder with all it holds · everything; links to them go, and raw copies no remaining note cites |
 | `GET /usage` · `GET /health` | token totals per ledger and model · status |
 | `GET /settings` · `POST /settings` · `POST /settings/test` | provider, model and key (masked) · save them · try them; changes from this machine only |
-| `POST /mcp` | the wiki as an MCP memory (Streamable HTTP; `recall`, `remember`, `read_note`, `rebuild`, `reply`, `create_area`, `propose_area`, `proposals`, `confirm_area`), with the `mcp` extra. Its tools work while the settings turn it on (`OKF_MCP`, or **Memory** → **Start**), and say how to turn it on otherwise; without the extra, 501 and what to install |
+| `POST /mcp` | the wiki as an MCP memory (Streamable HTTP; `recall`, `remember`, `search`, `read_note`, `rebuild`, `reply`, `create_area`, `propose_area`, `proposals`, `confirm_area`), with the `mcp` extra. Its tools work while the settings turn it on (`OKF_MCP`, or **Memory** → **Start**), and say how to turn it on otherwise; without the extra, 501 and what to install |
 | `POST /settings/memory` `{mcp?, mcp_models?}` | turn the memory on or off, and choose whose models do its work; no key needed, from this machine only |
 
 Every request that changes the wiki may carry an `X-Author` header: the lines it adds to `log.md` end with ` · by <author>`. The author is declared, not verified: there is no authentication, so behind a reverse proxy that authenticates your users, have the proxy set the header. The CLI declares your login name.

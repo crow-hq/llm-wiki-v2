@@ -64,7 +64,7 @@ def test_the_memory_offers_recall_remember_and_read_note_with_the_readers_marked
     # ASSERT
     read_only = {t.name: bool(t.annotations and t.annotations.read_only_hint) for t in tools}
     assert read_only == {
-        "recall": True, "remember": False, "reply": False, "read_note": True, "rebuild": False,
+        "recall": True, "remember": False, "reply": False, "search": True, "read_note": True, "rebuild": False,
         "create_area": False, "propose_area": False, "proposals": True, "confirm_area": False,
     }
     assert "recall" in instructions and "Never store secrets" in instructions
@@ -81,6 +81,17 @@ def test_remember_files_the_text_as_a_note_and_read_note_reads_it_back(classic_w
     # ASSERT
     assert not kept.is_error and kept.structured_content == {"action": "created", "note": NOTE, "folder": "/finance", "related": []}
     assert not read.is_error and text(read).startswith("Title: Revenue recognition")
+
+
+def test_search_finds_the_note_with_no_model_call(classic_wiki: Wiki, llm: FakeLLM) -> None:
+    script_ingest(llm)
+    classic_wiki.ingest("Revenue is booked on delivery.", title="Revenue recognition")
+    calls = len(llm.calls)
+
+    found = call(classic_wiki, "search", {"query": "revenue booked", "k": 3})
+
+    assert not found.is_error and [h["path"] for h in found.structured_content["result"]] == [NOTE]
+    assert len(llm.calls) == calls
 
 
 def test_recall_on_a_wiki_with_nothing_relevant_says_so_without_writing_an_answer(crow_wiki: Wiki, llm: FakeLLM) -> None:
@@ -173,7 +184,7 @@ def test_mcp_speaks_the_protocol_whether_the_memory_is_on_or_off(bundle: Any, ll
     # ASSERT
     assert (started.status_code, started.json()["result"]["serverInfo"]["name"]) == (200, "llm-wiki")
     assert [t["name"] for t in listed.json()["result"]["tools"]] == [
-        "recall", "remember", "rebuild", "reply", "read_note", "create_area", "propose_area", "proposals", "confirm_area"
+        "recall", "remember", "rebuild", "reply", "search", "read_note", "create_area", "propose_area", "proposals", "confirm_area"
     ]
 
 
