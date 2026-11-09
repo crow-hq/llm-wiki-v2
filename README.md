@@ -146,7 +146,8 @@ and every script has a `--dry-run`, so you can run them with your own models.
 The numbers of the banner come from eleven corpora (handbooks, mail, laws in two languages, contracts, tax manuals,
 Wikibooks pages and personal notes, 2,019 documents), each filed in CROW and in classic mode with the same writer, and
 656 questions written blind from single documents: the right note was read 99.5% of the time against 79.4%, filing was 1.6
-times as fast with 63% fewer LLM tokens, and the cost was the same, since the classifier's calls take what the LLM saves.
+times as fast with 63% fewer LLM tokens. The cost depends on the writer's price: on the cheapest providers, where the writer
+costs about what the classifier does, it came out the same; with the writer at its list price CROW costs 0.59 times classic's.
 The table per corpus is in [benchmarks/README.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/benchmarks/README.md#crow-against-classic-on-eleven-corpora).
 The filing measures of the CROW routing use, besides the repo's own synthetic coffee
 corpus, the [Enron email corpus](https://www.cs.cmu.edu/~enron/), the

@@ -190,27 +190,33 @@ then the classifier reorders; classic: the LLM walks the folders).
   notes read (at most 8). Questions with nothing to ask are left out before.
 - **Seconds per document**: the time of the run over the documents filed. **LLM tokens**: input and output of the writer's
   calls per document (the classifier's apart). **Cost**: CROW's cost per document as a ratio of classic's, every call
-  included (the classifier too).
+  included (the classifier too): as the runs paid it, and with the writer's calls priced at its list price.
 
-| corpus | documents | right note, CROW | right note, classic | seconds per document | LLM tokens per document | cost |
-|---|---|---|---|---|---|---|
-| GitLab handbook | 151 | 100% | 78% | 18.2 vs 32.2 | 3,913 vs 11,648 | 0.99× |
-| Synthetic personal brain (Italian) | 150 | 100% | 75% | 12.1 vs 24.7 | 2,317 vs 8,630 | 1.01× |
-| Enron mail | 171 | 100% | 76% | 9.9 vs 19.1 | 1,700 vs 7,465 | 0.80× |
-| HMRC manuals | 180 | 100% | 93% | 15.7 vs 23.6 | 2,830 vs 12,937 | 0.77× |
-| MultiEURLEX, Italian | 180 | 100% | 90% | 23.3 vs 32.6 | 8,848 vs 17,146 | 1.15× |
-| CUAD contracts | 180 | 100% | 55% | 36.8 vs 48.7 | 12,907 vs 24,487 | 0.99× |
-| MultiEURLEX, English | 180 | 100% | 95% | 18.7 vs 26.3 | 6,487 vs 13,732 | 1.20× |
-| PostHog handbook | 120 | 100% | 75% | 17.2 vs 28.5 | 3,736 vs 11,997 | 0.96× |
-| Italian Wikibooks | 260 | 100% | 85% | 23.6 vs 39.1 | 5,982 vs 16,436 | 1.02× |
-| Synthetic personal brain, larger (Italian) | 327 | 97% | 68% | 9.9 vs 22.4 | 2,080 vs 10,221 | 1.11× |
-| Coffee corpus (`t9a` + `t9b`) | 120 | 98% | 83% | 13.5 vs 21.4 | 2,573 vs 8,557 | 1.02× |
-| **all** | **2,019** | **99.5%** | **79.4%** | **18.0 vs 29.2** | **4,861 vs 13,227** | **1.02×** |
+| corpus | documents | right note, CROW | right note, classic | seconds per document | LLM tokens per document | cost, as paid | cost, writer at list price |
+|---|---|---|---|---|---|---|---|
+| GitLab handbook | 151 | 100% | 78% | 18.2 vs 32.2 | 3,913 vs 11,648 | 0.99× | 0.58× |
+| Synthetic personal brain (Italian) | 150 | 100% | 75% | 12.1 vs 24.7 | 2,317 vs 8,630 | 1.01× | 0.54× |
+| Enron mail | 171 | 100% | 76% | 9.9 vs 19.1 | 1,700 vs 7,465 | 0.80× | 0.43× |
+| HMRC manuals | 180 | 100% | 93% | 15.7 vs 23.6 | 2,830 vs 12,937 | 0.77× | 0.42× |
+| MultiEURLEX, Italian | 180 | 100% | 90% | 23.3 vs 32.6 | 8,848 vs 17,146 | 1.15× | 0.72× |
+| CUAD contracts | 180 | 100% | 55% | 36.8 vs 48.7 | 12,907 vs 24,487 | 0.99× | 0.69× |
+| MultiEURLEX, English | 180 | 100% | 95% | 18.7 vs 26.3 | 6,487 vs 13,732 | 1.20× | 0.69× |
+| PostHog handbook | 120 | 100% | 75% | 17.2 vs 28.5 | 3,736 vs 11,997 | 0.96× | 0.55× |
+| Italian Wikibooks | 260 | 100% | 85% | 23.6 vs 39.1 | 5,982 vs 16,436 | 1.02× | 0.59× |
+| Synthetic personal brain, larger (Italian) | 327 | 97% | 68% | 9.9 vs 22.4 | 2,080 vs 10,221 | 1.11× | 0.47× |
+| Coffee corpus (`t9a` + `t9b`) | 120 | 98% | 83% | 13.5 vs 21.4 | 2,573 vs 8,557 | 1.02× | 0.56× |
+| **all** | **2,019** | **99.5%** | **79.4%** | **18.0 vs 29.2** | **4,861 vs 13,227** | **1.02×** | **0.59×** |
 
 Over the 656 questions the right note is read 99.5% of the time with CROW (95% Wilson interval 98.7 to 99.8) and 79.4% with
 classic (76.2 to 82.3); the difference, +20.1 points, has a paired bootstrap interval of +16.9 to +23.3. CROW files a
-document 1.62 times as fast and with 63% fewer LLM tokens; the classifier's calls take what the LLM saves, so the cost is
-the same. Where classic misses, it is mostly by opening the wrong folder and stopping there: on the contracts it filed 97 of
+document 1.62 times as fast and with 63% fewer LLM tokens. What that saves depends on the writer's price against the
+classifier's: the runs paid the writer about a quarter of its list price (the cheapest providers), about what the classifier
+costs per token, so the classifier's calls took what the LLM saved and the cost came out the same (1.02×); with the same
+calls priced at the writer's list price CROW costs 0.59 times classic's (0.42 to 0.72 per corpus), and 0.77 and 0.82 times
+with the list prices of two other writers (GLM 5.3, DeepSeek V4.1 Flash). The cost per document grows with the wiki in both
+modes, as the folders and the notes to compare with grow: per 100 documents already filed, at the writer's list price, by
+5.5% of classic's mean cost with CROW and 12.1% with classic; as paid, by 18% and 7%, since the classifier's calls (relevance
+and links, which read more candidates as the wiki grows) are then half of CROW's cost. Where classic misses, it is mostly by opening the wrong folder and stopping there: on the contracts it filed 97 of
 180 in one broad folder and looked for them in the folders their names suggest. The gap in retrieval is the way each mode
 picks the notes, not the wiki it built: CROW reads the 8 notes its search finds (classic reads 1.2 on average), and the
 search alone (BM25, `crow.rerank` off, no model call) finds the right note 99.2% of the time on the CROW wikis and 98.9% on
