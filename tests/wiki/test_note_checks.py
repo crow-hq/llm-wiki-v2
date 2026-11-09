@@ -373,3 +373,86 @@ def test_the_first_sentence_is_taken_from_prose_not_from_a_list_or_code() -> Non
     assert nc.first_sentence("# T\n\n- Only a list item. Second.\n| a | b |") == "Only a list item."
     assert nc.first_sentence("Plain first line. Second.") == "Plain first line."
     assert nc.first_sentence("# T" + chr(10) + "----" + chr(10) + "Il testo vero. Altro.") == "Il testo vero."
+
+
+# -- a first line that is a file name --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "# ADAPTIMMUNETHERAPEUTICSPLC_04_06_2017-EX-10.11-STRATEGIC ALLIANCE AGREEMENT",
+        "DataCallTechnologies_20060918_SB-2A_EX-10.9_944510_EX-10.9_Content Licensing Agreement",
+        "CORALGOLDRESOURCES,LTD_05_28_2020-EX-4.1-CONSULTING AGREEMENT",
+        "report_v2_final.pdf",
+        "meeting-notes-2024-05-06.md",
+        "Q3_budget_draft_FINAL",
+    ],
+)
+def test_file_names_are_recognised(line: str) -> None:
+    assert nc.file_name_like(line)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "PLAN_B MEDIA AG",
+        "PAYE: what to do when an employee leaves",
+        "Regulation (EU) No 813/2012",
+        "COUNCIL DECISION",
+        "Cerus Corporation - FIRST AMENDMENT TO SUPPLY AND MANUFACTURING AGREEMENT",
+        "Contratto di fornitura 2024",
+        "Installing llmw2 on Windows",
+        "README.md",
+        "",
+    ],
+)
+def test_real_titles_are_not_file_names(line: str) -> None:
+    assert not nc.file_name_like(line)
+
+
+def test_a_file_name_line_is_no_heading() -> None:
+    text = "# ACME_04_06_2017-EX-10.11-SUPPLY AGREEMENT\n\nExhibit 10.11 The parties agree."
+    assert nc.heading_of(text) == ""
+    assert nc.heading_of(text + "\n\n## 1. Scope\n\nx") == "1. Scope"
+    assert nc.without_file_name_line(text) == "Exhibit 10.11 The parties agree."
+    assert nc.without_file_name_line("# Contratto Acme\n\ntesto") == "# Contratto Acme\n\ntesto"
+
+
+def test_metadata_prompt_leaves_out_a_file_name_first_line() -> None:
+    ctx, llm = context()
+    text = f"# ACME_04_06_2017-EX-10.11-CONTRATTO\n\n{IT} Ne ha parlato Mario Rossi con la Acme."
+    llm.add("librarian/summarize_body", "Il contratto è firmato da Mario Rossi.").add("librarian/summarize_meta", META)
+
+    classic.summarize(ctx, Source(text=text, title="doc-1234", file_name="doc-1234.md"))
+
+    sent = prompt_of(llm, 1)
+    assert "ACME_04_06_2017" not in sent
+    assert "The document is called: doc-1234.md." in sent
+
+
+def test_a_dated_title_with_a_long_hyphenated_word_is_not_a_file_name() -> None:
+    assert not nc.file_name_like("Web app deploy 2026-09-08 — c8f3e2a → tallyo-web-00006-kxm")
+    assert not nc.file_name_like("audit/perla-6-2-cleanup — implementation finished (2026-09-04)")
+
+
+def test_a_title_that_opens_like_the_source_file_counter_is_its_name() -> None:
+    name = "007 asiandragongroupinc 08 11 2005 ex 10 5 reseller agreem"
+    assert nc.copies_name("007 asiandragongroupinc inc 08 11 2005 ex 10 5 reseller agreement", name)
+    assert nc.copies_name("096 Mercatainc 03 09 2000 Ex 10 21", "096-mercatainc-03-09-2000-ex-10-21.md")
+    assert not nc.copies_name("Reseller Agreement Between Galaxy and Tech", name)
+    assert not nc.copies_name("2024 budget plan for the team", "2024-budget-plan.md")  # no counter: a year
+    assert not nc.copies_name("Contratto", None)
+
+
+def test_metadata_is_asked_once_more_without_the_name_when_the_title_copies_it() -> None:
+    ctx, llm = context()
+    text = f"# Consorzio Difesa Contratto\n\n{IT} Ne ha parlato Mario Rossi con la Acme."
+    copy = {"title": "007 consorzio difesa contratto bis", "summary": "Cosa dice il contratto.", "tags": ["contratti"]}
+    llm.add("librarian/summarize_body", "Il contratto è firmato da Mario Rossi.").add("librarian/summarize_meta", copy, META)
+
+    draft = classic.summarize(ctx, Source(text=text, title="007 consorzio difesa contratto bis uno"))
+
+    assert llm.ops == ["librarian/summarize_body", "librarian/summarize_meta", "librarian/summarize_meta"]
+    assert "The document is called: (none)." in prompt_of(llm, 2)
+    assert draft.title == "Contratto"

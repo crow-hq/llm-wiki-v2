@@ -53,15 +53,48 @@ _ITEM = re.compile("|".join(f"(?:{p})" for p in (_URL, _EMAIL, _SPAN, _PATH, _ID
 # -- title ---------------------------------------------------------------------------------
 
 
+_FILE_EXT = re.compile(r"\.(?:md|markdown|txt|pdf|docx?|html?|rtf|csv|json)\b", re.IGNORECASE)
+_FILE_DATE = re.compile(r"\d{2}_\d{2}_\d{2,4}|(?<!\d)(?:19|20)\d{6}(?!\d)")
+
+
+def file_name_like(line: str) -> bool:
+    """A line that is the name of a file as a corpus keeps it ("ACME_04_06_2017-EX-10.11-SUPPLY AGREEMENT", "report_v2_final.pdf")
+    and not a title. By form, and only when two signs agree: two or more "_" joining word characters, a token of 20 or more
+    characters with no space, a date joined by "_" or written as 8 digits, a file extension."""
+    text = line.strip().lstrip("#").strip()
+    if not text:
+        return False
+    signs = (
+        len(re.findall(r"\w_\w", text)) >= 2,
+        any(len(token) >= 20 for token in text.split()),
+        bool(_FILE_DATE.search(text)),
+        bool(_FILE_EXT.search(text)),
+    )
+    return sum(signs) >= 2
+
+
+def copies_name(title: str, name: str | None) -> bool:
+    """A title that is the name of the source's file as a small writer copies it: it opens with the same file counter
+    ("007 acme 08 11 2005 ..." for "007-acme-08-11-2005.md"), a number of up to 3 digits and the next word, whatever follows."""
+    words, named = (re.sub(r"[\W_]+", " ", t).lower().split() for t in (title, (name or "").rsplit(".", 1)[0]))
+    return len(words) >= 3 and len(named) >= 2 and words[0].isdigit() and len(words[0]) <= 3 and words[:2] == named[:2]
+
+
+def without_file_name_line(text: str) -> str:
+    """The text without its first line when that is a file name (`file_name_like`); as it is otherwise."""
+    first, _, rest = text.lstrip().partition("\n")
+    return rest.lstrip() if file_name_like(first) else text
+
+
 def heading_of(text: str) -> str:
     """The document's own heading: its first Markdown heading, else its first non-empty line when that is short enough to
-    be a title; "" when there is neither."""
+    be a title; "" when there is neither. A line that is a file name is no heading (`file_name_like`)."""
     lines = [line for line in text.splitlines() if line.strip()]
     for line in lines[:40]:
-        if m := _HEADING_LINE.match(line):
+        if (m := _HEADING_LINE.match(line)) and not file_name_like(m.group(1)):
             return m.group(1).strip()[:HEADING_MAX]
     first = lines[0].strip() if lines else ""
-    return first if 0 < len(first) <= HEADING_MAX else ""
+    return first if 0 < len(first) <= HEADING_MAX and not file_name_like(first) else ""
 
 
 def _names(text: str) -> list[str]:

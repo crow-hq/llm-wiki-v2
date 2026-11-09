@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass, field, replace
 from functools import cached_property
 from typing import Any, Literal
 
-from llmw2.agents import echo, linking, revisions, steps_classic, steps_crow
+from llmw2.agents import echo, linking, note_checks, revisions, steps_classic, steps_crow
 from llmw2.agents.base import Decision, clean_tags, fields_conflict, omitted_headings, unique_objects
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.prompts import Prompts
@@ -74,6 +74,10 @@ def _unusable_title(title: str, source: Source) -> bool:
     name = (source.title or "").rsplit("/", 1)[-1]
     stem = name.rsplit(".", 1)[0] if "." in name else name
     if not any(c.isalnum() for c in title):
+        return True
+    if note_checks.copies_name(title, name):
+        return True
+    if note_checks.file_name_like(title):  # a line of the text that is a file name, whichever the source's own
         return True
     slug = slugify(title, fallback="")
     if slug.endswith("-md") and not any(c.isspace() for c in title.strip()):  # a file name: "26-new-hire-checklist-md"

@@ -242,19 +242,26 @@ def _in_two_calls(
         log.debug("summarize: retry %s", "fixed the body" if fixed else "kept the source text")
         if not fixed:
             ctx.decide("note_source", "code", "the body is the source text", fallback=True)
-    try:
-        meta = ctx.ask_json(
+    def ask_meta(named: str) -> NoteMeta:
+        return ctx.ask_json(
             "librarian/summarize_meta",
             NoteMeta,
             language=language,
-            source_title=note_checks.heading_of(source.text) or source.file_name or source.title or "(none)",
+            source_title=named,
             hints=note_checks.title_hints(note_checks.distinctive(source.text)),
-            note_text=body[:META_CHARS],
+            note_text=note_checks.without_file_name_line(body)[:META_CHARS],
         )
+
+    try:
+        meta = ask_meta(note_checks.heading_of(source.text) or source.file_name or source.title or "(none)")
+        title = note_checks.checked_title(meta.title, source.text, source.file_name, source.title)
+        if note_checks.copies_name(title, source.file_name or source.title):  # the name it was shown: once more without it
+            log.debug("summarize: title %r is the source's name: asking once more without it", title)
+            meta = ask_meta("(none)")
+            title = note_checks.checked_title(meta.title, source.text, source.file_name, source.title)
     except ReplyInvalid as e:
         log.warning("summarize: the metadata reply is invalid (%s): one JSON call writes the note", e)
         return None
-    title = note_checks.checked_title(meta.title, source.text, source.file_name, source.title)
     if title != " ".join(meta.title.split()):
         log.debug("summarize: title %r replaced by %r", meta.title, title)
     summary = meta.summary
