@@ -25,6 +25,7 @@ The real corpora are not committed (licence and size): only the scripts that sel
 | CUAD v1 contracts (CC BY 4.0) | https://zenodo.org/records/4595826, `CUAD_v1.zip`, sha256 `88b694d99007d39777fa44cd72daf8297773d285dc3eab0091ba32078888d18e` | `cuad_select.py`: 180 of the full-contract text files (seed 9, 300 to 150 000 characters, at least a third over 20 000), labels from the official contract type folder of the CUAD PDFs, `manifest.json` with the sha256 of every file |
 | HMRC internal manuals (Open Government Licence v3.0) | https://www.gov.uk/hmrc-internal-manuals through the GOV.UK Content API; live source, so a local snapshot (its date and the sha256 of its files) is the pin | `hmrc_select.py`: builds the snapshot politely (2 requests a second), then 180 sections of 10 manuals (seed 9, 300 to 150 000 characters of text, at least a third over 20 000 if the snapshot has them), labels from the manual, `manifest.json` with the sha256 of every file |
 | Enron mail | https://www.cs.cmu.edu/~enron/, `enron_mail_20150507.tar.gz`, sha256 `b3da1b3fe0369ec3140bb4fbce94702c33b7da810ec15d718b3fadf5cd748ca7` | `t9_enron_select.py`: one mailbox, the folders its owner made, labels from the folder |
+| Enron mail, user folders across mailboxes (scale corpus) | same archive and sha256 as the Enron row above | `enron_folders_select.py`: the messages their owners filed in folders of their own (system folders left out, folders with at least 50 messages, duplicates by Message-ID or body dropped), the first N of one seeded shuffle (seed 9, N = 2 000; 1 000 is a prefix of 2 000), gold `/mailbox/folder`, `-manifest.json` with the sha256 of every file |
 | Office and OpenDocument files (2,629: NapierOne and Common Crawl `CC-MAIN-2026-39`) | per file its sha256 and source: `office/SOURCES.md` | `office/fetch.py` fetches them; `office/measure.py` compares two versions of the readers on them, free |
 
 ## Scripts
@@ -51,6 +52,7 @@ The real corpora are not committed (licence and size): only the scripts that sel
 - `incremental_score.py` — shape, cost and agreement with gold folders (AMI, pairwise F1) of the runs of `incremental.py`. Free.
 - `retrieval.py` — CROW's `select` step on the final wiki of a run, for questions written about its documents. Costs a few calls
   per question; `--make-cases` is free.
+- `growth.py` — tokens, cost and time per document of the runs of `incremental.py` as the wiki fills: slopes, blocks, fits. Free.
 
 ## Comparing with `main`: three arms, three models
 
@@ -128,13 +130,45 @@ logged after it, because folders are split and notes move after they are filed.
 It prints documents and errors, the share of notes below the first level, the largest folder, folders with one note, notes
 at the root, AMI and pairwise co-location F1 against the gold, the cost per document (original cost of every call, replayed
 ones included) and the cache hit rate. Reference: in the real folders, 30% of the PostHog pages sit in a folder that has
-subfolders.
+subfolders. Without gold it also gives the share of the notes in the largest folder, in folders of more than 50 notes, the
+90th percentile of the notes in a folder, the deepest folder, the pool of the `match` and `relate` decisions (median, 90th
+percentile, largest) and the documents whose routing was cut. `--gold-depth D` (repeatable) scores against the gold cut to its
+first D levels as well, for a gold with nested folders.
+
+**Runs that grow.** For wikis of hundreds or thousands of documents, `incremental.py` takes some more options (all work with
+`--dry-run`):
+
+    python benchmarks/incremental.py --corpus $C --out $R/grow --chunk 200 --stop-projected 1.3 --model $m
+    python benchmarks/incremental.py --corpus $C --out $R/other-order --order-seed 1 --no-plan --model $m
+
+- `--chunk N` files the documents in successive `ingest_many` of N, each on the tree the one before left, and leaves a
+  snapshot `ckpt-<documents filed>/` after each (the logs so far, `moves.jsonl`, a copy of `wiki/`, and the `digest` of the wiki
+  in its `meta.json`). `incremental_score.py` and `retrieval.py` read a snapshot like a run; a rerun with the same cache has the
+  same digests, whatever the time says.
+- `--stop-projected USD` (with `--chunk`) stops at the end of a chunk when the projected spend of the whole run, from the cost per
+  document so far and its growth, is above USD. Costs here are the original ones, replayed calls included.
+- `--order-seed S` files the documents in a seeded permutation instead of the name order; `--no-plan` files a batch with no plan
+  of the folders (the other setting of the plan, `OKF_PLAN=groups`, is the environment's). Every replica of a run needs a
+  cache of its own, or it repeats the answers of the first.
+- `calls.jsonl` has, for each call, `filed` (documents filed before it, so with one document at a time the document it
+  belongs to) and `phase` (`plan` for the calls that lay out folders). `meta.json` has the commit of the tree
+  (`git rev-parse HEAD`), `dirty` and the hash of what differs from it, the plan setting, the pin of the provider and the
+  calls per provider. A run whose `commit` is null or `dirty` is true does not name the library it measured.
+
+`growth.py` reads such runs, or any run with a `usage.jsonl`, and prints per corpus the slope of the tokens per document over
+the documents already filed (per 100), pooled over the corpora with a bootstrap interval, and with `--block N` the mean per
+block with its interval and the linear and log-log fits over the blocks:
+
+    python benchmarks/growth.py $R/C18-* $R/K18-* --block 200 --json growth.json
 
 **Retrieval.** `retrieval.py` asks the library's `select` step, on a copy of a run's final wiki, a question for each of a
 sample of its documents, and counts a hit when the document's final note is among the notes returned (also hit@1, hit@3, MRR
-and the share answered through the LLM fallback). The questions are written by a model that reads only the document:
+and the share answered through the LLM fallback; for CROW also `search@16`, the share of the questions whose note is in the 16
+the search offers before the classifier reorders them: the ceiling of the rest). The questions are written by a model that
+reads only the document:
 
     python benchmarks/retrieval.py --make-cases $C --n 60 --seed 9 --out cases.json
+    python benchmarks/retrieval.py --make-cases $C --n 120 --range 0:200 --out early.json   # only the first 200 documents
     # one question per case, with benchmarks/judgements/retrieval-questions-prompt.md, into questions.json: [{id, question}]
     python benchmarks/retrieval.py --questions questions.json --cases cases.json $R/branch-crow-batch-$n $R/main-crow-batch-$n
 

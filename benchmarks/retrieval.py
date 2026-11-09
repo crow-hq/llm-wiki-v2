@@ -4,6 +4,7 @@
 """Real retrieval: CROW's `select` step on the final wiki of runs of `incremental.py`, for questions about its documents.
 
     python benchmarks/retrieval.py --make-cases CORPUS --n 60 --seed 9 --out cases.json     # free: the documents to ask about
+    python benchmarks/retrieval.py --make-cases CORPUS --n 120 --range 0:200 --out early.json   # only the documents 0-199 of the name order
     # a model writes one question per case with judgements/retrieval-questions-prompt.md -> questions.json
     python benchmarks/retrieval.py --questions questions.json --cases cases.json RUN [RUN ...]
     python benchmarks/retrieval.py --questions questions.json --cases cases.json RUN --dry-run     # fake models, free
@@ -18,10 +19,12 @@ is what the question writer reads and this script ignores).
 
 Hit: the document's final note (followed through the moves, as `incremental_score.py` does) is among the notes `select`
 returns. Per run: hit, hit@1, hit@3, MRR, the share of questions answered through the LLM fallback, the notes returned
-and the cost of the calls really made. Questions on a document the run did not file are left out. The wiki of a run is
-copied first and the copy is read, so the run folder is not touched. Answers of the models are kept in a replay cache
-(`--cache`, one JSON file; default beside the first run), and a run stops asking once the calls really made cost more
-than `--max-usd`. The model is the one in the run's `meta.json`; the classifier is the configured one.
+and the cost of the calls really made. For a CROW run, also `search@16`: the share of the questions whose note is in the list
+the search offers (16 notes) before the classifier reorders them, which is the ceiling of `hit` (`search_rank` in each row).
+Questions on a document the run did not file are left out. The wiki of a run is copied first and the copy is read, so the run
+folder is not touched. Answers of the models are kept in a replay cache (`--cache`, one JSON file; default beside the first
+run), and a run stops asking once the calls really made cost more than `--max-usd`. The model is the one in the run's
+`meta.json`; the classifier is the configured one.
 
 The questions of a corpus that is not committed (a handbook, a mailbox) are not committed either: the repository holds
 the prompt that writes them, and what is written about a question (the results) names it by id, never by text. For the
@@ -48,6 +51,7 @@ import incremental_score as scoring  # noqa: E402
 from replay import Replay  # noqa: E402
 
 from llmw2 import CLASSIC, CROW, Wiki  # noqa: E402
+from llmw2.agents.steps_crow import _found  # noqa: E402  (the list the search gives `select`)
 from llmw2.models.classifier import Classifier  # noqa: E402
 from llmw2.models.llm import LLM  # noqa: E402
 from llmw2.models.usage import UsageTracker  # noqa: E402
@@ -56,15 +60,18 @@ from llmw2.settings import Settings  # noqa: E402
 TEXT_CHARS = 3000
 
 
-def make_cases(corpus: Path, n: int, seed: int, out: Path) -> int:
-    """`n` documents of the corpus (seeded, in name order): id, file name and the opening of the text."""
+def make_cases(corpus: Path, n: int, seed: int, out: Path, span: tuple[int, int] | None = None) -> int:
+    """`n` documents of the corpus (seeded, in name order): id, file name and the opening of the text. With `span` (A, B), only
+    from the documents at positions A to B-1 of the name order."""
     files = sorted(corpus.glob("*.md"), key=lambda f: f.name)
+    if span:
+        files = files[span[0] : span[1]]
     if not files:
-        sys.exit(f"no .md files in {corpus}")
+        sys.exit(f"no .md files in {corpus}" + (f" at positions {span[0]}:{span[1]}" if span else ""))
     pick = sorted(random.Random(seed).sample(files, min(n, len(files))), key=lambda f: f.name)
     cases = [{"id": f"q{i:03d}", "doc": f.name, "text": f.read_text(encoding="utf-8")[:TEXT_CHARS]} for i, f in enumerate(pick)]
     out.write_text(json.dumps(cases, indent=1, ensure_ascii=False), encoding="utf-8")
-    print(f"{len(cases)} cases of {len(files)} documents: {out}")
+    print(f"{len(cases)} cases of {len(files)} documents" + (f" (positions {span[0]}:{span[1]})" if span else "") + f": {out}")
     return 0
 
 
@@ -111,6 +118,7 @@ def ask_run(
             root = researcher.store.load()
             if a.as_asked and researcher.search is not None:  # the search `ask` gives `select` (BM25, the embedder if any)
                 researcher.ctx.search = researcher._finder(root, None)
+            searched = [n.rel for n in _found(researcher.ctx, root, question)] if mode == "crow" else None
             got = [n.rel for n in researcher.steps.select(researcher.ctx, root, question)]
             want = final[doc]
             rows.append(
@@ -123,11 +131,13 @@ def ask_run(
                     "rank": got.index(want) + 1 if want in got else None,
                     "fallback": any(d.decider == "llm" and d.step == "select" for d in researcher.ctx.decisions),
                 }
+                | ({} if searched is None else {"search_rank": searched.index(want) + 1 if want in searched else None})
             )
             if replay:
                 replay.save()
     n = len(rows)
     share = lambda f: sum(map(f, rows)) / n if n else None  # noqa: E731
+    searched_rows = [r for r in rows if "search_rank" in r]  # CROW only: classic has no search list
     return {
         "run": run.name,
         "questions": n,
@@ -136,6 +146,7 @@ def ask_run(
         "hit@3": share(lambda r: (r["rank"] or 99) <= 3),
         "mrr": share(lambda r: 1 / r["rank"] if r["rank"] else 0.0),
         "llm_fallback": share(lambda r: r["fallback"]),
+        "search@16": (sum(r["search_rank"] is not None for r in searched_rows) / len(searched_rows)) if searched_rows else None,
         "returned_mean": share(lambda r: len(r["got"])),
         "usd_real": round(spent[0], 4),
         "stopped": stopped,
@@ -155,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--make-cases", type=Path, metavar="CORPUS", help="write the cases file from a folder of .md files and stop")
     p.add_argument("--n", type=int, default=60, help="--make-cases: how many documents (default 60)")
     p.add_argument("--seed", type=int, default=9, help="--make-cases: the seed (default 9)")
+    p.add_argument("--range", default=None, metavar="A:B", help="--make-cases: only the documents at positions A to B-1 of the name order")
     p.add_argument("--out", type=Path, default=Path("retrieval.json"), help="where the results go as JSON (--make-cases: the cases file)")
     p.add_argument("--cache", type=Path, default=None, help="the replay cache file (default: retrieval-cache.json beside the first run)")
     p.add_argument("--max-usd", type=float, default=0.05, help="stop a run once the calls really made cost more (default 0.05)")
@@ -166,7 +178,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     a = p.parse_args(argv)
     if a.make_cases:
-        return make_cases(a.make_cases, a.n, a.seed, a.out)
+        span = None
+        if a.range:
+            try:
+                lo, hi = (int(x) for x in a.range.split(":"))
+            except ValueError:
+                p.error("--range is A:B, two integers")
+            if not 0 <= lo < hi:
+                p.error("--range A:B needs 0 <= A < B")
+            span = (lo, hi)
+        return make_cases(a.make_cases, a.n, a.seed, a.out, span)
     if not (a.runs and a.questions and a.cases):
         p.error("give --questions, --cases and at least one run (or --make-cases)")
     doc_of = {c["id"]: c["doc"] for c in json.loads(a.cases.read_text(encoding="utf-8"))}
@@ -178,9 +199,10 @@ def main(argv: list[str] | None = None) -> int:
         res = ask_run(run, questions, doc_of, a, replay)
         results[run.name] = res
         mrr = "-" if res["mrr"] is None else f"{res['mrr']:.2f}"
+        ceiling = f", search@16 {pct(res['search@16'])}" if res["search@16"] is not None else ""
         print(
             f"{run.name}: {res['questions']} questions, hit {pct(res['hit'])}, hit@1 {pct(res['hit@1'])}, hit@3 {pct(res['hit@3'])}, "
-            f"MRR {mrr}, LLM fallback {pct(res['llm_fallback'])}, real spend ${res['usd_real']}"
+            f"MRR {mrr}{ceiling}, LLM fallback {pct(res['llm_fallback'])}, real spend ${res['usd_real']}"
         )
     a.out.write_text(json.dumps({"questions": len(questions), "runs": results}, indent=1), encoding="utf-8")
     print(f"results: {a.out}")

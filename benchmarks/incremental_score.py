@@ -10,7 +10,13 @@ Free: it only reads the run folders. Per run it prints:
 - documents, errors (documents whose ingest failed), notes, folders;
 - below first level: share of the notes in a folder of depth 2 or more;
 - largest folder (notes in it, subfolders not counted), folders with one note (leaves that hold exactly one), notes at the root;
-- with `--gold`: AMI and pairwise co-location F1 against the gold folders (definitions below);
+- without gold, how the tree grows: the share of the notes in the largest folder, the share in folders that hold more than 50
+  notes directly, the 90th percentile of the notes held directly by a folder, the deepest folder; and, from the `scores` of
+  `docs.jsonl`, the pool of every `match` and `relate` decision (median, 90th percentile, largest: the notes the classifier was
+  asked about) and the share of the documents whose routing was cut (a `route_cut` decision: the options were more than one
+  request holds) among those that were routed;
+- with `--gold`: AMI and pairwise co-location F1 against the gold folders (definitions below); with `--gold-depth D` (repeatable)
+  also against the gold cut to its first D levels (`/a/b/c` becomes `/a/b` at 2; the wiki's partition stays the wiki's folders);
 - cost per document: the original cost of every call, a replayed one included, over the documents;
 - cache hit rate: calls served by the replay cache over all calls;
 - with `--baseline RUN`: the cost per document as a ratio of the baseline run's.
@@ -38,6 +44,7 @@ import re
 import statistics
 import sys
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -86,6 +93,23 @@ def final_notes(run: Path) -> dict[str, str]:
                 rel = m["to"]
         out[d["doc"]] = rel or ""
     return out
+
+
+CROWDED = 50  # a folder that holds more notes than this directly is crowded
+
+
+def cut_gold(gold: dict[str, str], depth: int) -> dict[str, str]:
+    """The gold folders cut to their first `depth` levels (a shorter path stays as it is)."""
+    return {d: "/".join([x for x in f.split("/") if x][:depth]) for d, f in gold.items()}
+
+
+def quantiles(sizes: list[int]) -> dict[str, int] | None:
+    """Median, 90th percentile and largest of `sizes` (the median is the upper one for an even count, the percentile the item at
+    90% of the sorted list), None when there are none."""
+    if not sizes:
+        return None
+    s = sorted(sizes)
+    return {"n": len(s), "median": s[len(s) // 2], "p90": s[int(0.9 * len(s))], "max": s[-1]}
 
 
 def comb2(n: int) -> int:
@@ -141,8 +165,8 @@ def load_gold(path: Path) -> dict[str, str]:
     return {d["file"]: d["folder"] for d in raw["docs"]} if isinstance(raw, dict) and isinstance(raw.get("docs"), list) else dict(raw)
 
 
-def score(run: Path, gold: dict[str, str] | None = None) -> dict[str, Any]:
-    """The measures of one run folder."""
+def score(run: Path, gold: dict[str, str] | None = None, depths: Sequence[int] = ()) -> dict[str, Any]:
+    """The measures of one run folder; with `depths`, the agreement with the gold cut to each of those levels too."""
     docs, calls = jsonl(run / "docs.jsonl"), jsonl(run / "calls.jsonl")
     n = len(docs)
     ns, folders, final = notes(wiki_of(run)), folders_of(wiki_of(run)), final_notes(run)
@@ -162,13 +186,26 @@ def score(run: Path, gold: dict[str, str] | None = None) -> dict[str, Any]:
         "usd_per_doc": cost / n if n else None,
         "cache_hit_rate": sum(c["served"] for c in calls) / len(calls) if calls else None,
         "median_folder": statistics.median([size[f] for f in folders if size.get(f)] or [0]),
+        "largest_share": max((size[f] for f in folders), default=0) / max(1, len(ns)),
+        "crowded_share": sum(size[f] for f in folders if size.get(f, 0) > CROWDED) / max(1, len(ns)),
+        "direct_notes": quantiles([size[f] for f in folders if size.get(f)]),
+        "max_depth": max((f.count("/") + 1 for f in folders), default=0),
     }
+    decisions = [(d, x) for d in docs for x in d.get("decisions", [])]
+    for step in ("match", "relate"):
+        out[f"{step}_pool"] = quantiles([len(x["scores"]) for _, x in decisions if x["step"] == step and x.get("scores")])
+    routed = sum(any(x["step"] == "route" for x in d.get("decisions", [])) for d in docs)
+    out["routed_docs"] = routed
+    out["route_cut_docs"] = sum(any(x["step"] == "route_cut" for x in d.get("decisions", [])) for d in docs)
     if gold:
         ids = [d["doc"] for d in docs if "error" not in d and final.get(d["doc"]) in ns and d["doc"] in gold]
         out["gold_docs"] = len(ids)
         if len(ids) >= 2:
             a = [ns[final[d]]["folder"] or f"<root:{d}>" for d in ids]
             out |= agreement(a, [gold[d] for d in ids])
+            for depth in depths:
+                cut = cut_gold(gold, depth)
+                out.setdefault("by_depth", {})[depth] = agreement(a, [cut[d] for d in ids]) | {"gold_folders": len({cut[d] for d in ids})}
     return out
 
 
@@ -183,9 +220,21 @@ def report(s: dict[str, Any], baseline: dict[str, Any] | None) -> str:
         f"below first level {fmt(100 * s['below_first_level'], '{:.0f}%')}, largest folder {s['largest_folder']} "
         f"(median {s['median_folder']:g}), folders with one note {s['single_note_folders']}, notes at the root {s['root_notes']}",
     ]
+    direct = s["direct_notes"] or {}
+    lines.append(
+        f"largest folder {fmt(100 * s['largest_share'], '{:.0f}%')} of the notes, folders of more than {CROWDED} notes hold "
+        f"{fmt(100 * s['crowded_share'], '{:.0f}%')}, notes in a folder: median {direct.get('median', '-')}, p90 {direct.get('p90', '-')}, "
+        f"deepest folder {s['max_depth']}"
+    )
+    pools = [f"{step} {q['median']}/{q['p90']}/{q['max']} in {q['n']}" for step in ("match", "relate") if (q := s[f"{step}_pool"])]
+    cut = f"routing cut in {s['route_cut_docs']} of {s['routed_docs']} routed documents"
+    lines.append(f"pool (median/p90/max): {', '.join(pools) or '-'}; {cut}")
     if "gold_docs" in s:
         lines.append(f"gold: {s['gold_docs']} documents, AMI {fmt(s.get('ami'))}, F1 {fmt(s.get('coloc_f1'))} "
                      f"(precision {fmt(s.get('coloc_precision'))}, recall {fmt(s.get('coloc_recall'))})")
+        for depth, m in s.get("by_depth", {}).items():
+            levels = f"{depth} level{'s' * (depth != 1)}"
+            lines.append(f"gold to {levels}: {m['gold_folders']} folders, AMI {fmt(m['ami'])}, F1 {fmt(m['coloc_f1'])}")
     per_doc = None if s["usd_per_doc"] is None else 1000 * s["usd_per_doc"]
     cost = f"cost per document {fmt(per_doc)} m$ (original cost, replayed calls included)"
     if baseline and baseline["usd_per_doc"] and s["usd_per_doc"] is not None:
@@ -198,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="measures of the runs of incremental.py")
     p.add_argument("runs", type=Path, nargs="+", help="run folders written by incremental.py")
     p.add_argument("--gold", type=Path, default=None, help="gold folders: JSON {file: folder}, or a manifest with a `docs` list")
+    p.add_argument("--gold-depth", type=int, action="append", default=[], metavar="D", help="also score against the gold cut to D levels")
     p.add_argument("--baseline", type=Path, default=None, help="a run whose cost per document the others are given as a ratio of")
     p.add_argument("--json", type=Path, default=None, help="also write the measures to this file")
     a = p.parse_args(argv)
@@ -205,8 +255,8 @@ def main(argv: list[str] | None = None) -> int:
         if not (run / "docs.jsonl").exists():
             p.error(f"{run}: no docs.jsonl (not a run of incremental.py)")
     gold = load_gold(a.gold) if a.gold else None
-    base = score(a.baseline, gold) if a.baseline else None
-    scored = [score(run, gold) for run in a.runs]
+    base = score(a.baseline, gold, a.gold_depth) if a.baseline else None
+    scored = [score(run, gold, a.gold_depth) for run in a.runs]
     print("\n\n".join(report(s, base) for s in scored))
     if a.json:
         a.json.write_text(json.dumps(scored, indent=1), encoding="utf-8")

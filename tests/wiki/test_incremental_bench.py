@@ -196,3 +196,246 @@ def test_a_run_keeps_the_preset_of_its_classifier_and_the_thresholds_of_the_envi
 
     assert laya == (0.65, 5) and set_here == 0.8
     assert (cloud.crow.tau_path, cloud.crow.k, cloud.crow.tau_cons) == (0.5, 8, 0.6)  # Jev's, as before
+
+
+# -- the additions for the runs that grow: attribution of the calls, chunks, projection, order, plan, growth ----------------
+
+
+@pytest.fixture(scope="module")
+def growth() -> ModuleType:
+    return load("growth")
+
+
+@pytest.fixture
+def corpus60(tmp_path: Path) -> Path:
+    folder = tmp_path / "corpus60"
+    folder.mkdir()
+    for i in range(60):  # more than one window of the batch (50)
+        text = f"# Doc {i}\n\nTopic: t{i % 7}-{i // 7}. Text number {i} about the topic.\n"
+        (folder / f"{i:02d}-doc.md").write_text(text, encoding="utf-8")
+    return folder
+
+
+def test_every_call_says_which_document_it_belongs_to_in_both_flows(
+    incremental: ModuleType, growth: ModuleType, corpus60: Path, tmp_path: Path
+) -> None:
+    for flow in ("batch", "single"):
+        out = tmp_path / flow
+        assert incremental.main(["--corpus", str(corpus60), "--out", str(out), "--flow", flow, "--dry-run"]) == 0
+        calls = lines(out / "calls.jsonl")
+        assert [c["filed"] for c in calls if str(c["op"]).endswith("summarize")] == list(range(60))  # each document's summary is its own
+        assert {c["phase"] for c in calls} <= {"plan", "file"}
+        assert all((c["phase"] == "plan") == (str(c["op"]).rsplit("/", 1)[-1] in {"plan", "plan_more", "split"}) for c in calls)
+        assert any(str(c["op"]).endswith("/plan") for c in calls) == (flow == "batch")  # one at a time: no plan, only splits
+        got = growth.per_doc(out)
+        parts = [*got["docs"], got["plan"], got["tail"]]
+        assert len(got["docs"]) == 60
+        assert sum(d["cost"] for d in parts) == pytest.approx(sum(c["cost"] for c in calls))  # the sum over the documents is the total
+        assert sum(d["clf"] + d["llm_dec"] + d["llm_write"] for d in parts) == sum(c["in"] + c["out"] for c in calls)
+
+
+def test_no_plan_asks_for_no_plan_and_the_default_does(incremental: ModuleType, corpus60: Path, tmp_path: Path) -> None:
+    for name, extra in (("plan", []), ("noplan", ["--no-plan"])):
+        assert incremental.main(["--corpus", str(corpus60), "--out", str(tmp_path / name), "--dry-run", *extra]) == 0
+    ops = {n: {str(c["op"]) for c in lines(tmp_path / n / "calls.jsonl")} for n in ("plan", "noplan")}
+    assert "librarian/plan" in ops["plan"]
+    assert not {o for o in ops["noplan"] if o.rsplit("/", 1)[-1] in {"plan", "plan_more"}}
+    assert json.loads((tmp_path / "noplan" / "meta.json").read_text(encoding="utf-8"))["no_plan"] is True
+    with pytest.raises(SystemExit):
+        incremental.main(["--corpus", str(corpus60), "--out", str(tmp_path / "x"), "--flow", "single", "--no-plan", "--dry-run"])
+
+
+def test_an_order_seed_files_the_documents_in_a_seeded_permutation(incremental: ModuleType, corpus: Path, tmp_path: Path) -> None:
+    runs = {}
+    for name, seed in (("a", 1), ("a2", 1), ("b", 2), ("name", None)):
+        extra = [] if seed is None else ["--order-seed", str(seed)]
+        for flow in ("batch", "single"):
+            out = tmp_path / f"{name}-{flow}"
+            assert incremental.main(["--corpus", str(corpus), "--out", str(out), "--flow", flow, "--dry-run", *extra]) == 0
+            docs = lines(out / "docs.jsonl")
+            assert [d["order"] for d in docs] == list(range(8))  # `order` is the position in filing order
+            runs[name, flow] = [d["doc"] for d in docs]
+    assert runs["a", "batch"] == runs["a", "single"] == runs["a2", "batch"]  # the same seed, the same permutation, in either flow
+    assert runs["a", "batch"] != runs["name", "batch"] and runs["a", "batch"] != runs["b", "batch"]
+    assert sorted(runs["a", "batch"]) == runs["name", "batch"] == sorted(runs["b", "batch"])
+
+
+def test_a_chunked_run_leaves_a_snapshot_after_each_chunk_that_a_rerun_reproduces(
+    incremental: ModuleType, scoring: ModuleType, retrieval: ModuleType, corpus: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cache = tmp_path / "cache.json"
+    for name in ("first", "second"):
+        out = tmp_path / name
+        args = ["--corpus", str(corpus), "--out", str(out), "--chunk", "3", "--order-seed", "4", "--cache", str(cache), "--dry-run"]
+        assert incremental.main(args) == 0
+    snaps = sorted(p.name for p in (tmp_path / "first").glob("ckpt-*"))
+    assert snaps == ["ckpt-00003", "ckpt-00006", "ckpt-00008"]
+    def digest(run: str, n: str) -> str:
+        return str(json.loads((tmp_path / run / n / "meta.json").read_text(encoding="utf-8"))["digest"])
+
+    digests = {n: [digest(r, n) for r in ("first", "second")] for n in snaps}
+    assert all(a == b for a, b in digests.values())  # the same cache gives the same wiki at each checkpoint
+    assert len({a for a, _ in digests.values()}) == 3  # and the wikis differ from one checkpoint to the next
+    for n, count in zip(snaps, (3, 6, 8), strict=True):
+        ck = tmp_path / "first" / n
+        meta = json.loads((ck / "meta.json").read_text(encoding="utf-8"))
+        assert meta["checkpoint"] == count == meta["filed"]
+        assert [d["order"] for d in lines(ck / "docs.jsonl")] == list(range(count))
+        assert len(list((ck / "wiki").rglob("*.md"))) >= count
+        assert (ck / "moves.jsonl").exists() and (ck / "usage.jsonl").exists()
+        assert max(c["filed"] for c in lines(ck / "calls.jsonl")) <= count
+    # a checkpoint is read like a run
+    capsys.readouterr()
+    assert scoring.main([str(tmp_path / "first" / "ckpt-00006")]) == 0
+    assert "documents 6, errors 0" in capsys.readouterr().out
+    cases = tmp_path / "cases.json"
+    assert retrieval.main(["--make-cases", str(corpus), "--n", "3", "--out", str(cases)]) == 0
+    questions = tmp_path / "questions.json"
+    asked = [{"id": c["id"], "question": "q"} for c in json.loads(cases.read_text(encoding="utf-8"))]
+    questions.write_text(json.dumps(asked), encoding="utf-8")
+    ck3 = str(tmp_path / "first" / "ckpt-00003")
+    assert retrieval.main(["--questions", str(questions), "--cases", str(cases), ck3, "--dry-run", "--out", str(tmp_path / "r.json")]) == 0
+
+
+def test_the_projection_follows_the_rule_and_then_the_runs_own_growth(incremental: ModuleType) -> None:
+    flat = incremental.projected_spend([(200, 20.0)], 1000, 0.18)  # c1 = 0.1: 0.1 * 1000 + 0.18 * 0.1 * (1000^2 - 200^2) / 200
+    assert flat == pytest.approx(100 + 0.18 * 0.1 * (1_000_000 - 40_000) / 200)
+    steady = incremental.projected_spend([(200, 20.0), (200, 20.0), (200, 20.0)], 1000, 0.18)  # no growth seen: s = 0
+    assert steady == pytest.approx(100.0)
+    growing = incremental.projected_spend([(200, 20.0), (200, 24.0)], 1000, 0.0)  # the cost per document rises 0.02 over 200 documents
+    assert growing == pytest.approx(100 + (100 * 0.02 / 200 / 0.1) * 0.1 * 960_000 / 200)
+    assert incremental.projected_spend([(200, 20.0), (200, 16.0)], 1000, 0.18) == pytest.approx(100.0)  # never below no growth
+
+
+def test_a_run_stops_at_the_chunk_where_its_projection_passes_the_limit(incremental: ModuleType, corpus: Path, tmp_path: Path) -> None:
+    base = ["--corpus", str(corpus), "--chunk", "3", "--dry-run"]
+    assert incremental.main([*base, "--out", str(tmp_path / "ok"), "--stop-projected", "100"]) == 0
+    assert sorted(p.name for p in (tmp_path / "ok").glob("ckpt-*")) == ["ckpt-00003", "ckpt-00006", "ckpt-00008"]
+    assert incremental.main([*base, "--out", str(tmp_path / "stop"), "--stop-projected", "0.000001"]) == 1
+    assert sorted(p.name for p in (tmp_path / "stop").glob("ckpt-*")) == ["ckpt-00003"]  # the first chunk is the first look
+    meta = json.loads((tmp_path / "stop" / "meta.json").read_text(encoding="utf-8"))
+    assert "projected spend" in meta["stopped"] and meta["stop_projected"] == 0.000001
+    assert len(lines(tmp_path / "stop" / "docs.jsonl")) == 3
+    with pytest.raises(SystemExit):
+        incremental.main(["--corpus", str(corpus), "--out", str(tmp_path / "no-chunk"), "--stop-projected", "1", "--dry-run"])
+
+
+def test_the_meta_names_the_commit_and_the_plan_and_says_when_the_tree_is_not_the_commit(
+    incremental: ModuleType, corpus: Path, tmp_path: Path
+) -> None:
+    import shutil
+    import subprocess
+
+    assert incremental.main(["--corpus", str(corpus), "--out", str(tmp_path / "run"), "--dry-run"]) == 0
+    meta = json.loads((tmp_path / "run" / "meta.json").read_text(encoding="utf-8"))
+    assert meta["plan"] == "writer" and meta["no_plan"] is False and "dirty" in meta
+    assert meta["commit"] is None or len(meta["commit"]) == 40  # the full `git rev-parse HEAD`
+    assert meta["providers"] == {"dry": len(lines(tmp_path / "run" / "usage.jsonl"))}
+    if shutil.which("git") is None:
+        pytest.skip("no git")
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-C", str(repo)]
+    for cmd in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "one"]):
+        subprocess.run([*git, *cmd], check=True, capture_output=True)
+    clean = incremental.tree_state(repo)
+    assert len(clean["commit"]) == 40 and clean["dirty"] is False and clean["diff_sha256"] is None
+    (repo / "src" / "a.py").write_text("x = 2\n", encoding="utf-8")
+    edited = incremental.tree_state(repo)
+    (repo / "src" / "b.py").write_text("y = 1\n", encoding="utf-8")
+    added = incremental.tree_state(repo)
+    assert edited["commit"] == clean["commit"] and edited["dirty"] is True
+    assert edited["diff_sha256"] and added["diff_sha256"] and edited["diff_sha256"] != added["diff_sha256"]
+    assert incremental.tree_state(tmp_path / "nowhere")["commit"] is None
+
+
+def test_the_scores_cut_the_gold_and_measure_the_tree_without_it(
+    scoring: ModuleType, incremental: ModuleType, corpus60: Path, tmp_path: Path
+) -> None:
+    assert scoring.cut_gold({"a": "/x/y/z", "b": "x", "c": ""}, 2) == {"a": "x/y", "b": "x", "c": ""}
+    assert scoring.quantiles([5, 1, 9, 3, 7, 2, 8, 4, 6, 10]) == {"n": 10, "median": 6, "p90": 10, "max": 10}
+    assert scoring.quantiles([]) is None
+    run = tmp_path / "run"
+    assert incremental.main(["--corpus", str(corpus60), "--out", str(run), "--dry-run"]) == 0
+    gold = {f"{i:02d}-doc.md": f"g{i % 3}/h{i % 5}" for i in range(60)}
+    gold_file = tmp_path / "gold.json"
+    gold_file.write_text(json.dumps(gold), encoding="utf-8")
+    s = scoring.score(run, gold, [1, 2])
+    assert set(s["by_depth"]) == {1, 2} and s["by_depth"][1]["gold_folders"] == 3 and s["by_depth"][2]["gold_folders"] == 15
+    assert s["by_depth"][2]["ami"] == pytest.approx(s["ami"])  # the gold is two levels deep
+    assert 0 < s["largest_share"] <= 1 and 0 <= s["crowded_share"] <= 1 and s["max_depth"] >= 1 and s["direct_notes"]["p90"] >= 1
+    docs = scoring.jsonl(run / "docs.jsonl")
+    for step in ("match", "relate"):
+        sizes = [len(x["scores"]) for d in docs for x in d["decisions"] if x["step"] == step and x.get("scores")]
+        assert s[f"{step}_pool"] == scoring.quantiles(sizes)
+    assert s["routed_docs"] == sum(any(x["step"] == "route" for x in d["decisions"]) for d in docs)
+    assert s["route_cut_docs"] == 0
+    text = scoring.report(s, None)
+    assert "gold to 1 level: 3 folders" in text and "gold to 2 levels: 15 folders" in text and "pool (median/p90/max)" in text
+    assert scoring.main([str(run), "--gold", str(gold_file), "--gold-depth", "1"]) == 0
+
+
+def test_the_search_ceiling_and_the_range_of_the_cases(
+    retrieval: ModuleType, incremental: ModuleType, corpus: Path, tmp_path: Path
+) -> None:
+    run = tmp_path / "run"
+    incremental.main(["--corpus", str(corpus), "--out", str(run), "--dry-run"])
+    cases = tmp_path / "cases.json"
+    assert retrieval.main(["--make-cases", str(corpus), "--n", "20", "--range", "2:6", "--out", str(cases)]) == 0
+    listed = json.loads(cases.read_text(encoding="utf-8"))
+    assert {c["doc"] for c in listed} == {f"{i:02d}-doc.md" for i in range(3, 7)}  # positions 2..5 of the name order
+    for bad in ("5", "3:3", "a:b"):
+        with pytest.raises(SystemExit):
+            retrieval.main(["--make-cases", str(corpus), "--range", bad, "--out", str(cases)])
+    asked = [{"id": c["id"], "question": f"What does {c['doc']} say?"} for c in listed]
+    questions = tmp_path / "questions.json"
+    questions.write_text(json.dumps(asked), encoding="utf-8")
+    out = tmp_path / "retrieval.json"
+    args = ["--questions", str(questions), "--cases", str(cases), str(run), "--dry-run", "--as-asked", "--out", str(out)]
+    assert retrieval.main(args) == 0
+    res = json.loads(out.read_text(encoding="utf-8"))["runs"]["run"]
+    assert all("search_rank" in r for r in res["rows"])
+    assert res["search@16"] == pytest.approx(sum(r["search_rank"] is not None for r in res["rows"]) / len(res["rows"]))
+    assert all(r["search_rank"] is not None for r in res["rows"] if r["hit"])  # what select returns the search offered first
+
+
+def test_growth_fits_the_slope_per_hundred_documents_from_the_calls_or_from_the_usage_log(growth: ModuleType, tmp_path: Path) -> None:
+    run = tmp_path / "A-corp"
+    run.mkdir()
+    calls, usage = [], []
+    for i in range(50):
+        for kind, op, tokens in (("llm", "librarian/summarize", 100), ("classifier", "route", 100 + 10 * i)):
+            calls.append({"filed": i, "phase": "file", "kind": kind, "op": op, "cost": 0.001, "in": tokens, "out": 0, "seconds": 2.0})
+            usage.append({"kind": kind, "op": op, "input_tokens": tokens, "output_tokens": 0, "cost_usd": 0.001, "seconds": 2.0})
+    calls.append({"filed": 0, "phase": "plan", "kind": "llm", "op": "librarian/plan", "cost": 0.5, "in": 7, "out": 3, "seconds": 1.0})
+    (run / "calls.jsonl").write_text("".join(json.dumps(c) + "\n" for c in calls), encoding="utf-8")
+    (run / "usage.jsonl").write_text("".join(json.dumps(u) + "\n" for u in usage), encoding="utf-8")
+    from_calls = growth.per_doc(run)
+    assert len(from_calls["docs"]) == 50 and from_calls["plan"]["cost"] == 0.5 and from_calls["source"] == "calls"
+    (run / "calls.jsonl").unlink()
+    from_usage = growth.per_doc(run)  # a run made before `filed`: documents start at their summarize call
+    assert from_usage["source"] == "usage" and from_usage["docs"] == from_calls["docs"]
+    xs = [float(i) for i in range(50)]
+    assert growth.slope(xs, [float(d["clf"]) for d in from_calls["docs"]]) == pytest.approx(1000.0)  # 10 tokens a document, per 100
+    assert growth.loglog([1, 2, 4, 8], [3, 6, 12, 24]) == pytest.approx(1.0) and growth.loglog([1, 2, 4], [5, 5, 5]) == pytest.approx(0.0)
+
+
+def test_growth_prints_the_pooled_slopes_and_the_blocks_of_a_run(
+    growth: ModuleType, incremental: ModuleType, corpus60: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for arm, mode in (("C", "crow"), ("K", "classic")):
+        assert incremental.main(["--corpus", str(corpus60), "--out", str(tmp_path / f"{arm}-corp"), "--mode", mode, "--dry-run"]) == 0
+    capsys.readouterr()
+    runs = [str(tmp_path / "C-corp"), str(tmp_path / "K-corp")]
+    assert growth.main([*runs, "--block", "20", "--boot", "50", "--json", str(tmp_path / "g.json")]) == 0
+    text = capsys.readouterr().out
+    assert "POOLED C clf" in text and "(C docs found 60)" in text and "blocks of 20" in text and "fit over the blocks" in text
+    saved = json.loads((tmp_path / "g.json").read_text(encoding="utf-8"))
+    assert len(saved["runs"]["C-corp"]["blocks"]) == 3 and "C clf" in saved["pooled"]
+    capsys.readouterr()
+    assert growth.main([*runs, "--only", "K llm_dec,C clf", "--boot", "50"]) == 0
+    only = capsys.readouterr().out
+    assert "POOLED K llm_dec" in only and "POOLED C llm_dec" not in only
+    with pytest.raises(SystemExit):
+        growth.main([*runs, "--only", "Z clf"])
