@@ -36,7 +36,7 @@ from llmw2.agents.steps import (
 from llmw2.bundle.origin import content_hash
 from llmw2.bundle.sheets import brief
 from llmw2.bundle.store import WikiStore
-from llmw2.bundle.tree import Folder, Note, slugify, within_area
+from llmw2.bundle.tree import Folder, Note, slugify, within_area, within_folder
 from llmw2.config import WikiConfig
 from llmw2.errors import ModelError, ReplyInvalid, StepError
 from llmw2.models.classifier import Classifier
@@ -316,9 +316,9 @@ class Librarian:
             others = [n for n in unique_objects([*pool, *note.folder.notes]) if n is not note] if note.folder else pool
 
             def in_area(other: Note) -> bool:
-                return within_area(note, other)
+                return within_area(note, other) if self.cfg.link_scope == "root" else within_folder(note, other)
 
-            near = in_area if self.cfg.link_scope == "root" else None  # links stay in the note's area
+            near = None if self.cfg.link_scope == "wiki" else in_area  # links stay in the note's area, or its folder
             if ctx.classifier is not None and self.cfg.relate_rare_values:
                 found = linking.rare_scores(root, note, {n.rel for n in others} | {note.rel}, near)
                 others = [*others, *(n for n, _ in found)]
@@ -326,7 +326,8 @@ class Librarian:
                     ctx.decide("relate_candidates", "code", f"{len(found)} by rare values", scores={n.rel: round(s, 3) for n, s in found})
             if near is not None and (apart := [n for n in others if not near(n)]):
                 others = [n for n in others if near(n)]
-                ctx.decide("relate_candidates", "code", f"{len(apart)} left out, in another area")
+                other = "area" if self.cfg.link_scope == "root" else "folder"
+                ctx.decide("relate_candidates", "code", f"{len(apart)} left out, in another {other}")
             try:
                 related = check_relate(steps.relate(ctx, note, others), note, others) if others else []
             except ModelError as e:  # the note is written: a failure here costs its links, not the ingest

@@ -14,7 +14,7 @@ from llmw2 import Wiki, WikiConfig
 from llmw2.agents.linking import rare_scores
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.steps import CLASSIC, decision_hash
-from llmw2.bundle.tree import area_of, drop_see_also, within_area
+from llmw2.bundle.tree import area_of, drop_see_also, within_area, within_folder
 from llmw2.models.usage import UsageTracker
 from tests.wiki.areas import STEPS, file, linked, make
 from tests.wiki.fakes import FakeLLM
@@ -83,6 +83,34 @@ def test_an_area_closed_to_automatic_filing_gives_and_gets_no_link(bundle: Path)
     file(wiki, "/blue", "Blue one")
 
     assert linked(wiki, r1) == [] and linked(wiki, r2) == []
+
+
+def test_with_scope_folder_links_stay_in_the_folder(bundle: Path) -> None:
+    wiki = make(bundle, link_scope="folder")
+    wiki.create_folder("/red", "deep", "Deeper red things.")
+    r1 = file(wiki, "/red", "Red one")
+    d1 = file(wiki, "/red/deep", "Red deep")
+    d2 = file(wiki, "/red/deep", "Red three")
+    b1 = file(wiki, "/blue", "Blue one")
+
+    assert linked(wiki, d2) == [d1] and linked(wiki, r1) == [] and linked(wiki, b1) == []
+
+
+def test_with_scope_folder_a_note_moved_to_another_folder_of_its_area_loses_its_links(bundle: Path) -> None:
+    wiki, r1, r2, _ = wiki_of(bundle, "folder")
+    wiki.create_folder("/red", "deep", "Deeper red things.")
+    assert linked(wiki, r1) == [r2]
+
+    moved = wiki.move_note(r1, "/red/deep")
+
+    assert linked(wiki, moved.rel) == [] and linked(wiki, r2) == []
+
+
+def test_within_folder_compares_the_folder() -> None:
+    root = make_root({"a/x.md": ".", "a/w.md": ".", "a/s/y.md": ".", "b/z.md": "."})
+    x, w, y, z = (find(root, r) for r in ("a/x.md", "a/w.md", "a/s/y.md", "b/z.md"))
+
+    assert within_folder(x, w) and not within_folder(x, y) and not within_folder(x, z)
 
 
 def test_within_area_compares_the_top_level_folder() -> None:
@@ -200,7 +228,7 @@ def test_renaming_an_area_keeps_its_links(bundle: Path) -> None:
     assert linked(wiki, "crimson/red-one.md") == ["crimson/red-two.md"]
 
 
-@pytest.mark.parametrize("scope", ["wiki", "root"])
+@pytest.mark.parametrize("scope", ["wiki", "root", "folder"])
 def test_the_scope_changes_the_decision_hash_only_when_set(scope: str, bundle: Path) -> None:
     base = decision_hash(CLASSIC, WikiConfig(bundle=bundle), Prompts(None))
     other = decision_hash(CLASSIC, WikiConfig(bundle=bundle, link_scope=scope), Prompts(None))  # type: ignore[arg-type]

@@ -301,9 +301,10 @@ class WikiConfig(BaseModel):
     # covers the note (OKF_STRICT_NEW_FOLDERS; false: 0.3.0's routing). See `steps_crow._expand`.
     strict_new_folders: bool = True
     # See-also links added by code (`relate`, and its rare-value candidates): between any notes of the wiki ("wiki", the default),
-    # or only between notes of the same top-level folder ("root", OKF_LINK_SCOPE). With "root" a note that changes area (moved, its
-    # folder moved or merged) loses the entries that no longer fit, and a folder closed to automatic filing gives and gets none.
-    link_scope: Literal["wiki", "root"] = "wiki"
+    # or only between notes of the same top-level folder ("root", OKF_LINK_SCOPE), or of the same folder ("folder"). With "root"
+    # or "folder" a note that changes area or folder (moved, its folder moved or merged) loses the entries that no longer fit,
+    # and a folder closed to automatic filing gives and gets none.
+    link_scope: Literal["wiki", "root", "folder"] = "wiki"
     # CROW: the folder (label, "/inbox") a note goes to when routing cannot open a new top-level folder (the limit
     # `max_top_folders` is reached) instead of the likeliest existing one; it is marked as a deviated note. It must exist,
     # else a warning and the likeliest root (OKF_OVERFLOW_FOLDER). It may be closed to automatic filing.

@@ -186,6 +186,12 @@ def within_area(a: Note, b: Note) -> bool:
     return area_of(a.rel) == area_of(b.rel) and (area is None or area.routable)
 
 
+def within_folder(a: Note, b: Note) -> bool:
+    """Whether two notes may be linked by code with `link_scope` "folder": they are in the same folder, and its area is not
+    closed."""
+    return a.rel.rpartition("/")[0] == b.rel.rpartition("/")[0] and within_area(a, b)
+
+
 def _held(value: Any, wanted: Any) -> bool:
     """A field holds `wanted` when it is equal to it as text, or, for a list, when one of its items is."""
     if isinstance(value, (list, tuple, set)):

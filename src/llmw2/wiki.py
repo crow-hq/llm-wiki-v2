@@ -69,7 +69,7 @@ from llmw2.bundle.files import is_spreadsheet, sheet_sources, title_of
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.proposals import CONFIRMED, DISMISSED, OPEN, Proposal, notes_count, read_proposals, write_proposals
 from llmw2.bundle.store import CACHE_FILE, Deleted, WikiStore, authored, current_author, raw_sources, read_utf8_or_latin1
-from llmw2.bundle.tree import INDEX, LOG, Folder, Note, matching, slugify, within_area
+from llmw2.bundle.tree import INDEX, LOG, Folder, Note, matching, slugify, within_area, within_folder
 from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import ConfigError, InputError, NoteChanged, ReplyInvalid, SpendingCap
 from llmw2.models.cache import SqliteCache
@@ -232,8 +232,8 @@ class Wiki:
         if classifier is not None and classifier.usage is not self.tracker:
             raise ValueError("the llm and the classifier must record into the same UsageTracker")
         self.store = WikiStore(cfg.bundle, actor=cfg.actor)
-        if cfg.link_scope == "root":
-            self.store.link_reach = within_area
+        if cfg.link_scope != "wiki":
+            self.store.link_reach = within_area if cfg.link_scope == "root" else within_folder
         self.prompts = Prompts(cfg.prompts_dir)
         self.llm = llm or LLM(cfg.llm, self.tracker)
         self.classifier = classifier
