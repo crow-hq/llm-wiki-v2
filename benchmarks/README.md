@@ -181,7 +181,7 @@ from one run to the next, as the plan of the folders does.
 
 The numbers of the banner at the top of the main README. Each corpus filed into an empty wiki in one batch (`--flow batch`)
 twice, in CROW mode and in classic mode, from the same tree, with the same writer (GLM 5.3 Flash), seed and classifier
-(Jev); the two modes of a corpus ran at the same time. Then 60 questions per corpus, each written blind from one document
+(Jev), one run per mode and corpus. Then 60 questions per corpus, each written blind from one document
 with `judgements/retrieval-questions-prompt.md` on the cases of `retrieval.py --make-cases --n 60 --seed 9`, asked with
 `retrieval.py --as-asked`: the notes each wiki would read to answer, chosen as `ask` chooses them (CROW: the wiki's search,
 then the classifier reorders; classic: the LLM walks the folders).
@@ -217,9 +217,9 @@ search alone (BM25, `crow.rerank` off, no model call) finds the right note 99.2%
 the classic ones, first 92.4% and 92.1% of the time; the right note comes first with CROW's `ask` 92.4% of the time, with
 classic's 72.6%. The wikis differ in their folders: against the reference folders of the ten corpora that have them, CROW's
 are closer (AMI 0.53 against 0.41 on average, higher in nine). The two synthetic brains and the Italian
-Wikibooks pages are not in this repository; the other corpora are built by the scripts above. Times are those of runs made
-side by side on a cloud provider; the corpora run one at a time (GitLab and the smaller brain) give 1.87 times as fast and
-69% fewer tokens.
+Wikibooks pages are not in this repository; the other corpora are built by the scripts above. Times are those of one run per mode on a shared
+cloud provider, with other runs alongside in varying numbers; the summary of the source, the same work in both modes, took
+a median time per output token within 0.81 to 1.09 of each other across corpora, so the load did not favour either mode.
 
 ## Results of 0.6.0: CROW against CROW 0.5.0 and classic
 
