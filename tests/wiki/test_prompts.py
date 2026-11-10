@@ -99,3 +99,31 @@ def test_values_are_inserted_literally_not_rendered_again() -> None:
     assert text == (
         'Does the note titled "{{summary}}", summarized as "{{shared/untrusted}}", help answer the question? It contains: "{{title}}"'
     )
+
+
+CANARY = "dd60f2b2-fab6-4351-826f-bc7357357178"
+
+
+@pytest.mark.parametrize("path", sorted(PROMPTS_DIR.rglob("*.md")), ids=lambda path: path.relative_to(PROMPTS_DIR).as_posix())
+def test_every_prompt_file_starts_with_the_license_header(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+
+    assert text.startswith("<!--\nSPDX-FileCopyrightText:")
+    assert CANARY in text.split("-->", 1)[0]
+
+
+@pytest.mark.parametrize("name", Prompts.names())
+def test_load_never_returns_the_license_header(name: str) -> None:
+    text = Prompts().load(name)
+
+    assert "<!--" not in text and CANARY not in text and "SPDX-" not in text
+
+
+def test_override_header_is_stripped_and_a_headerless_override_is_kept(tmp_path: Path) -> None:
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "shared" / "untrusted.md").write_text("<!--\nlicense header\n-->\nbody\n", encoding="utf-8")
+    (tmp_path / "shared" / "note_rules.md").write_text("body\n<!-- kept -->\n", encoding="utf-8")
+    prompts = Prompts(tmp_path)
+
+    assert prompts.load("shared/untrusted") == "body\n"
+    assert prompts.load("shared/note_rules") == "body\n<!-- kept -->\n"

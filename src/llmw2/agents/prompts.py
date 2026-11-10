@@ -5,6 +5,8 @@
 
 `shared/*.md` fragments can be embedded anywhere as `{{shared/<name>}}`. A
 directory passed as `override_dir` (env `OKF_PROMPTS_DIR`) wins file by file.
+The files start with a license header in an HTML comment, which `load` strips, so it never reaches the model
+and never enters the fingerprint.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from importlib import resources
 from pathlib import Path
 
 _PLACEHOLDER = re.compile(r"\{\{\s*([\w/]+)\s*\}\}")
+_HEADER = re.compile(r"\A<!--.*?-->\r?\n", re.DOTALL)
 _PACKAGE = resources.files("llmw2.agents") / "prompts"
 
 
@@ -25,12 +28,12 @@ class Prompts:
 
     def load(self, name: str, /) -> str:
         if self.override_dir and (path := self.override_dir / f"{name}.md").is_file():
-            return path.read_text(encoding="utf-8")
+            return _HEADER.sub("", path.read_text(encoding="utf-8"), count=1)
         if (text := self._packaged.get(name)) is None:
             resource = _PACKAGE.joinpath(*f"{name}.md".split("/"))
             if not resource.is_file():
                 raise FileNotFoundError(f"no prompt named {name!r}")
-            text = self._packaged[name] = resource.read_text(encoding="utf-8")
+            text = self._packaged[name] = _HEADER.sub("", resource.read_text(encoding="utf-8"), count=1)
         return text
 
     def fingerprint(self) -> str:
