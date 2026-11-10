@@ -9,7 +9,7 @@ and security reports through [SECURITY.md](SECURITY.md). Everyone here follows t
 ## Licence and CLA
 
 llm-wiki-v2 is licensed under the [GNU AGPL v3.0 or later](LICENSE). Its
-owners also offer it under commercial terms, so every contribution is accepted
+owners may also license it on other terms, so every contribution is accepted
 under the [Contributor License Agreement](CLA.md): you keep the copyright in
 your work and give the owners the right to publish it under the AGPL and under
 other terms.

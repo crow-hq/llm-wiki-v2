@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 # The modifications are licensed under the GNU Affero General Public License v3.0
-# or later (LICENSE); the Apache License 2.0 text is in LICENSES/Apache-2.0.md.
+# or later (LICENSE); the Apache License 2.0 text is in LICENSES/Apache-2.0.txt.
 
 [build-system]
 requires = ["setuptools>=77", "wheel"]

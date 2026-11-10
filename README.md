@@ -488,8 +488,8 @@ you change.
 Licensed under the [GNU Affero General Public License v3.0 or later](https://github.com/crow-hq/llm-wiki-v2/blob/main/LICENSE):
 free to use, study, change and share, including for your own business; if you
 offer a modified version to others, over a network too, you share its source
-under the same licence. Commercial licences without that obligation are
-available from the authors: open an issue to ask. Versions up to 0.2.0 were
+under the same licence. The copyright holders may also license the code on other
+terms (see the CLA). Versions up to 0.2.0 were
 released under the Apache License 2.0 and stay available under it. Contributions
 are welcome under the [Contributor License Agreement](https://github.com/crow-hq/llm-wiki-v2/blob/main/CLA.md); see
 [CONTRIBUTING.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/CONTRIBUTING.md). To cite this software, see
