@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/crow-stats.svg" alt="An LLM wiki with no scaling limit. CROW vs classic on 11 corpora (2,019 documents, 656 questions): 99.5% right note read vs 79%; 1.6× faster per ingest (18.0s vs 29.2s); 63% fewer LLM tokens (4,861 vs 13,227)." width="100%">
+  <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/crow-stats.svg" alt="An LLM wiki with no scaling limit. CROW vs classic on 11 corpora (2,019 documents, 656 questions): 99.5% right note read vs 79%; 1.6× faster per ingest (18.0s vs 29.2s); 63% fewer LLM tokens (4,861 vs 13,227); 0.59× the cost per ingest with the writer at list price." width="100%">
 </p>
 
 <p align="center">
