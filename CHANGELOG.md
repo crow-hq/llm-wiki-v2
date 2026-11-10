@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - YYYY-MM-DD
+## [1.0.0] - 2026-11-10
 
 The first stable release: from here on the library follows semantic versioning. What it covers (the API, the settings, the command line, the HTTP API, the MCP tools and the wiki on disk) and what it does not (prompt texts, models, thresholds, caches) is in [Compatibility](docs/library/index.md#compatibility).
 
