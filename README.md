@@ -144,7 +144,7 @@ probabilities can take its place. The authors have no ties to TypeSafe AI.
 **Aren't these your own benchmarks?** Yes. The paper measures one corpus of 525
 personal documents, mostly in Italian, with one LLM and one classifier version, and
 says so among its limitations; its rates carry 95% intervals. The corpora and
-scripts behind the 0.4.0 measurements are public in [benchmarks/](https://github.com/crow-hq/llm-wiki-v2/tree/main/benchmarks),
+scripts behind these measurements are public in [benchmarks/](https://github.com/crow-hq/llm-wiki-v2/tree/main/benchmarks),
 and every script has a `--dry-run`, so you can run them with your own models.
 The numbers of the banner come from eleven corpora (handbooks, mail, laws in two languages, contracts, tax manuals,
 Wikibooks pages and personal notes, 2,019 documents), each filed in CROW and in classic mode with the same writer, and
