@@ -146,6 +146,43 @@ kept per provider like its key and model.
 Keep the same model version on every route (thresholds belong to it); if an
 endpoint rejects the `typesafe/` prefix, set the bare id in `OKF_CLASSIFIER_MODEL`.
 
+## The embedder (optional)
+
+`Wiki.search`, and `ask` in CROW mode, can also go by meaning. Without an embedder they use BM25 alone.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OKF_EMBEDDER_PROVIDER` | none | `openai`: any server with `POST {base_url}/embeddings` (OpenAI, a gateway, vLLM, LM Studio, llama.cpp); `ollama`: `POST {base_url}/api/embed` |
+| `OKF_EMBEDDER_BASE_URL` | the provider's | `https://api.openai.com/v1` for `openai` (include `/v1`), `http://localhost:11434` for `ollama` (without `/v1`) |
+| `OKF_EMBEDDER_MODEL` | none | required with a provider |
+| `OKF_EMBEDDER_API_KEY` | none | optional bearer key |
+| `OKF_EMBEDDER_TIMEOUT` | 60 | seconds per request |
+
+The texts go 16 to a request; Ollama's request asks to truncate a text longer than the model's window. The settings file
+takes the same keys in an `embedder` object. A callable passed as `Wiki(..., embedder=)` wins over these settings.
+
+## Everything on your computer, with small models
+
+The library runs with no cloud at all: a writer, a classifier and, if you want search by meaning, an embedder, all
+served by Ollama on your machine. Nothing leaves the computer and nothing is paid; the price is time and some quality.
+
+- **What to install.** Ollama 0.35 or later. A writer model small enough for your graphics card; a typed classifier
+  served at `/systemone` (give it a context of at least 8192 tokens, as above); an embedder if you want `search` and
+  `ask` to go by meaning. Set the writer with `OKF_LLM_PROVIDER=ollama`, the classifier with `custom` and
+  `http://localhost:11434/v1`, the embedder with `OKF_EMBEDDER_PROVIDER=ollama`.
+- **What to expect.** Small models fit in a few GB of graphics memory; on the processor alone everything works, several
+  times slower. A small writer writes plainer notes than a large one, and copies more of the source.
+- **Give the top-level folders yourself.** A small writer plans a tree poorly and a small classifier files poorly among
+  many folders, so on an empty wiki create the main areas first (**Areas** on the page, or `Wiki.create_area`: see
+  [Your own top-level areas](../library/index.md#your-own-top-level-areas)), with a description each, and let the
+  classifier file into them.
+- **Settings made for small writers** ([library guide](../library/index.md#configuration)): `plan = "groups"` lays out
+  a batch in code instead of asking the writer for a plan; `llm.note_steps` writes a note in short steps that code
+  checks; `llm.note_language` keeps the note in the language of the source. Try them on a sample of your documents and
+  keep what helps: they are off by default because a strong writer does better without them.
+- **Check the result.** Ask a few questions whose answers you know, and look at where the notes went before filing
+  everything.
+
 ## Token accounting
 
 `UsageTracker` keeps two ledgers, `llm` (writing) and `classifier` (deciding),
@@ -164,7 +201,7 @@ for the classifier.
 
 - `op` is the prompt name for LLM calls (e.g. `librarian/route`), and the step
   for classifier calls (`route`, `match`, `consolidate`, `relate`,
-  `retrieve_folder`, `retrieve_note`).
+  `retrieve_note`).
 - One call is one successful HTTP response: a re-asked JSON reply counts twice,
   and Noul questions split into batches count once per batch.
 - `missing` counts calls whose response had no `usage` block (for example, a

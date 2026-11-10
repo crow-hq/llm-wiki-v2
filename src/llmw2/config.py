@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 import warnings
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
@@ -98,6 +98,18 @@ class LLMConfig(BaseModel):
     read_chars: int | None = Field(None, ge=8_000)
     # Thinking before answering made filing 5-40x slower in our runs (hidden tokens) and no better: off where the provider can.
     reasoning: bool = False
+    # For small local writers, which ignore "write in the language of the source": the prompts that write a note end with a
+    # line naming the source's language when it is not English (found by function words, no model call).
+    note_language: bool = False
+    # For small local writers: the note is written in two calls, its body as plain text and then its title, summary and tags
+    # from the body, instead of one JSON reply (`summarize` and the final write of a long source).
+    note_steps: bool = False
+    # With `note_steps`: a source of fewer words than this is its own body, and only the title, summary and tags are asked
+    # for. 0: every body is written.
+    note_copy_words: int = Field(0, ge=0)
+    # With `note_steps`: a source too long for one call is its own body instead of being written from notes on its parts,
+    # which a small writer combines losing much of them; only the title, summary and tags are asked for.
+    note_copy_parts: bool = False
     # Extra JSON fields for every request. OpenRouter example:
     # {"provider": {"order": ["together", "coreweave"]}} to pin faster providers.
     extra_body: dict[str, Any] = Field(default_factory=dict)
@@ -157,28 +169,83 @@ class ClassifierConfig(BaseModel):
         return bool(self.api_key or not CLASSIFIER_PROVIDERS[self.provider].key_env)
 
 
+EMBEDDER_URLS = {"openai": "https://api.openai.com/v1", "ollama": "http://localhost:11434"}
+
+
+class EmbedderConfig(BaseModel):
+    """The embedder of `Wiki.search` and `ask`: none by default. `openai` is any server with `POST {base_url}/embeddings`
+    (a gateway, vLLM, LM Studio, llama.cpp too: set base_url); `ollama` is `POST {base_url}/api/embed`."""
+
+    provider: Literal["", "openai", "ollama"] = ""  # empty: no embedder, search is BM25 alone
+    base_url: str = ""  # empty: the provider's (openai: https://api.openai.com/v1, ollama: http://localhost:11434)
+    model: str = ""
+    api_key: str = ""  # optional
+    timeout: float = Field(60.0, gt=0)
+
+    @model_validator(mode="after")
+    def _fill_from_provider(self) -> EmbedderConfig:
+        if self.provider:
+            self.base_url = self.base_url or EMBEDDER_URLS[self.provider]
+            if not self.model:
+                raise ValueError(f"embedder provider {self.provider!r} needs a model")
+        return self
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.provider)
+
+
+# Retrieval settings of CROW that no longer exist: `ask` finds its notes with the search. Seen in the environment, the
+# settings file or a caller's mapping they are ignored, with one DeprecationWarning per name and process.
+REMOVED_CROW = ("tau_fold", "tau_ret", "retrieval_beam")
+_WARNED_REMOVED: set[str] = set()
+
+
+def warn_removed_crow(names: Collection[str], where: str) -> None:
+    for name in REMOVED_CROW:
+        if name in names and name not in _WARNED_REMOVED:
+            _WARNED_REMOVED.add(name)
+            warnings.warn(
+                f"crow.{name} ({where.format(name.upper())}) was removed and is ignored: `ask` finds its notes with the search "
+                "(see crow.rerank and crow.k)", DeprecationWarning, stacklevel=2,
+            )
+
+
+def warn_removed_source_chars(names: Collection[str], where: str) -> None:
+    """`source_chars` was removed in 1.0.0: `llm.read_chars` sets the characters one prompt may hold. Ignored, with a warning."""
+    if "source_chars" in names and "source_chars" not in _WARNED_REMOVED:
+        _WARNED_REMOVED.add("source_chars")
+        warnings.warn(
+            f"source_chars ({where}) was removed and is ignored: use llm.read_chars (OKF_LLM_READ_CHARS)", DeprecationWarning, stacklevel=2
+        )
+
+
 class CrowConfig(BaseModel):
     """Thresholds of the CROW paper (§5.3). Calibrate them on a labelled sample of your wiki.
 
-    Ingestion values are the paper's package defaults (never calibrated, Table 2). Retrieval values
-    are the paper's calibrated ones (§8.4): at 0.5 most right notes were cut before ranking could act.
+    Ingestion values are the paper's package defaults (never calibrated, Table 2). Retrieval has no threshold:
+    the search finds the notes, the classifier reorders them (`rerank`) and `k` of them are read.
     """
 
     tau_route: float = Field(0.6, ge=0, le=1)  # routing Choice confidence below which the beam splits
     tau_path: float = Field(0.5, ge=0, le=1)  # best path score below which routing falls back to the LLM
     tau_ing: float = Field(0.5, ge=0, le=1)  # note-relevance probability for consolidation candidates
     tau_cons: float = Field(0.6, ge=0, le=1)  # create-or-modify confidence below which a new note is created
-    tau_fold: float = Field(0.08, ge=0, le=1)  # retrieval: folder probability to explore it (paper default 0.5)
-    tau_ret: float = Field(0.1, ge=0, le=1)  # retrieval: note probability to read it (paper default 0.5)
     tau_link: float = Field(0.6, ge=0, le=1)  # extension: relatedness probability for a See-also link
     votes: int = Field(1, ge=1, le=9)  # classifier calls averaged per borderline routing decision (1: one call, no averaging)
     vote_band: float = Field(0.05, ge=0, le=1)  # how close to tau_route, tau_path or a tie counts as borderline
     # extension: the folders the routing fallback shows the LLM: those the classifier visited, or those and the rest of the tree
     fallback_menu: Literal["visited", "tree"] = "visited"
     beam: int = Field(2, gt=0)  # b at ingestion: paths kept per uncertain routing step
-    # b at retrieval: folders explored per level; with low thresholds the beam, not tau_fold, bounds exploration
-    retrieval_beam: int = Field(6, gt=0)
     k: int = Field(8, gt=0)  # CROW retrieval: notes passed to the answer (paper default 5)
+    rerank: bool = True  # CROW retrieval: the classifier reorders the search's notes after the first (False: the search's order)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_removed(cls, data: Any) -> Any:
+        if isinstance(data, Mapping):
+            warn_removed_crow(data, "in the settings or the config")
+        return data
 
 
 # CROW thresholds per classifier: Jev's (OpenRouter, TypeSafe) are CrowConfig's defaults, the paper's; a custom
@@ -189,11 +256,10 @@ class CrowConfig(BaseModel):
 # its merge confidence is 0.23-0.40 for a real follow-up and at most 0.25 for a related but distinct note (measured as
 # 0.04-0.12 and 0.044 on Laya's own scale, 1 - normalised entropy; the client now computes Jev's, see
 # classifier.confidence, and 0.26 is the old 0.05 on it: the same merges for two options); linked
-# notes score 0.5 or more, unrelated ones at most 0.49; the folder and the note that answer a question score at least
-# 0.17 and 0.21, the others mostly under 0.18 and 0.20.
+# notes score 0.5 or more, unrelated ones at most 0.49.
 CROW_PRESETS: dict[str, dict[str, float | int]] = {
     "jev": {},
-    "laya": {"tau_path": 0.65, "tau_ing": 0.45, "tau_cons": 0.26, "tau_fold": 0.15, "tau_ret": 0.2, "tau_link": 0.5, "k": 5},
+    "laya": {"tau_path": 0.65, "tau_ing": 0.45, "tau_cons": 0.26, "tau_link": 0.5, "k": 5},
 }
 SMALL_CLASSIFIER: dict[str, float | int] = {"tau_cons": 0.7}  # over Laya's preset, for a custom model that is not Laya's
 
@@ -208,7 +274,7 @@ _TOP_LEVEL_ENV = (
     "bundle", "mode", "summarize", "max_depth", "max_top_folders", "max_steps", "max_links", "max_notes", "upload_mb", "concurrency",
     "usage_log",
     "prompts_dir", "note_chars", "note_length", "revisions", "plan", "relate_rare_values", "answer_conflicts",
-    "strict_new_folders",
+    "strict_new_folders", "link_scope", "overflow_folder",
     "mcp", "mcp_models",
 )
 _BOOL_FIELDS = ("relate_rare_values", "answer_conflicts", "strict_new_folders", "mcp")  # OKF_<NAME> read as on or off
@@ -225,9 +291,7 @@ class WikiConfig(BaseModel):
     max_top_folders: int = Field(10, ge=1)
     max_steps: int = Field(12, gt=0)  # classic researcher: folders it may open per question
     max_links: int = Field(5, ge=0)  # See-also links added per ingest
-    max_notes: int = Field(8, gt=0)  # classic researcher and CROW's fallback: notes read per question (CROW uses crow.k)
-    # Deprecated: the characters one prompt may hold, when `llm.read_chars` is not set (see `effective_read_chars`).
-    source_chars: int = Field(100_000, gt=0)
+    max_notes: int = Field(8, gt=0)  # classic researcher: notes read per question (CROW reads crow.k)
     note_chars: int | None = Field(None, ge=1_000)  # about how long a note body may be; None: automatic (see `effective_note_chars`)
     note_length: Literal["fixed", "proportional"] = "proportional"  # in proportion to its source (default), or about `note_chars` long
     # A source that revises the one document a note cites: the note replaced by the new version with the old body archived
@@ -243,6 +307,15 @@ class WikiConfig(BaseModel):
     # CROW: routing opens a new subfolder only when the classifier is sure of it, and asks whether a folder's description
     # covers the note (OKF_STRICT_NEW_FOLDERS; false: 0.3.0's routing). See `steps_crow._expand`.
     strict_new_folders: bool = True
+    # See-also links added by code (`relate`, and its rare-value candidates): between any notes of the wiki ("wiki", the default),
+    # or only between notes of the same top-level folder ("root", OKF_LINK_SCOPE), or of the same folder ("folder"). With "root"
+    # or "folder" a note that changes area or folder (moved, its folder moved or merged) loses the entries that no longer fit,
+    # and a folder closed to automatic filing gives and gets none.
+    link_scope: Literal["wiki", "root", "folder"] = "wiki"
+    # CROW: the folder (label, "/inbox") a note goes to when routing cannot open a new top-level folder (the limit
+    # `max_top_folders` is reached) instead of the likeliest existing one; it is marked as a deviated note. It must exist,
+    # else a warning and the likeliest root (OKF_OVERFLOW_FOLDER). It may be closed to automatic filing.
+    overflow_folder: str | None = None
     upload_mb: int = Field(25, gt=0)  # largest request body the server reads: a big PDF fits, a runaway upload does not fill memory
     # The server answers as an MCP memory at /mcp (OKF_MCP, or Start on the page's Memory): recall, remember, read_note.
     mcp: bool = False
@@ -255,6 +328,7 @@ class WikiConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
     crow: CrowConfig = Field(default_factory=CrowConfig)
+    embedder: EmbedderConfig = Field(default_factory=EmbedderConfig)  # none by default (OKF_EMBEDDER_*)
 
     @field_validator("bundle", "usage_log", "prompts_dir", mode="after")
     @classmethod
@@ -262,11 +336,12 @@ class WikiConfig(BaseModel):
         """`~/my-wiki` (typed on the settings page, or in .env) is the home folder's, not a folder named "~"."""
         return path.expanduser() if path is not None else None
 
-    @model_validator(mode="after")
-    def _warn_source_chars(self) -> WikiConfig:
-        if "source_chars" in self.model_fields_set:
-            warnings.warn("source_chars is deprecated: use llm.read_chars (OKF_LLM_READ_CHARS)", DeprecationWarning, stacklevel=2)
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_removed_source_chars(cls, data: Any) -> Any:
+        if isinstance(data, Mapping):
+            warn_removed_source_chars(data, "in the settings or the config")
+        return data
 
     @model_validator(mode="after")
     def _crow_preset(self) -> WikiConfig:
@@ -291,11 +366,9 @@ class WikiConfig(BaseModel):
 
     @property
     def effective_read_chars(self) -> int:
-        """Characters one prompt may hold: `llm.read_chars`, else an explicit `source_chars`, else the provider's."""
+        """Characters one prompt may hold: `llm.read_chars`, else the provider's."""
         if self.llm.read_chars is not None:
             return self.llm.read_chars
-        if "source_chars" in self.model_fields_set:
-            return self.source_chars
         return PROVIDERS[self.llm.provider].read_chars
 
     @property
@@ -345,8 +418,11 @@ class WikiConfig(BaseModel):
             for f in ClassifierConfig.model_fields
             if env.get(f"OKF_CLASSIFIER_{f.upper()}")
         }
+        emb = {f: env[f"OKF_EMBEDDER_{f.upper()}"] for f in EmbedderConfig.model_fields if env.get(f"OKF_EMBEDDER_{f.upper()}")}
         crow = {f: env[f"OKF_{f.upper()}"] for f in CrowConfig.model_fields if env.get(f"OKF_{f.upper()}")}
-        data = merge(dict(base or {}), {**top, "llm": llm, "classifier": clf, "crow": crow})
+        warn_removed_source_chars([f for f in ("source_chars",) if env.get("OKF_SOURCE_CHARS")], "OKF_SOURCE_CHARS")
+        warn_removed_crow([f for f in REMOVED_CROW if env.get(f"OKF_{f.upper()}")], "OKF_{}")
+        data = merge(dict(base or {}), {**top, "llm": llm, "classifier": clf, "crow": crow, "embedder": emb})
         # Each model's provider variable (OPENROUTER_API_KEY, …) is its key unless OKF_LLM_API_KEY / OKF_CLASSIFIER_API_KEY is set.
         for name, explicit, presets in (("llm", llm, PROVIDERS), ("classifier", clf, CLASSIFIER_PROVIDERS)):
             preset = presets.get(data[name].get("provider", "openrouter"))

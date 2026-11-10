@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -22,6 +22,14 @@ jobs:
       - run: uv run ruff check src tests
       - run: uv run mypy
       - run: uv run pytest -q -n auto --cov  # one worker per core: the Windows jobs took ~8 min in series
+
+  reuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      # Every file has its copyright and licence, in a header or in REUSE.toml.
+      - run: uvx --from "reuse[charset-normalizer]==6.3.0" reuse lint
 
   build:
     runs-on: ubuntu-latest

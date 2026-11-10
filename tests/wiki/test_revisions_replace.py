@@ -1235,7 +1235,6 @@ def priced_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier | None, *
 
 
 def retrieval(classifier: FakeClassifier, p_history: Callable[[str], float] | None) -> None:
-    classifier.noul_scores["retrieve_folder"] = {'folder "finance"': 0.9}
     classifier.noul_scores["retrieve_note"] = {f'note titled "{NOTE_TITLE}"': 0.9}
     if p_history is not None:
         classifier.noul_scores[HISTORY_OP] = p_history
@@ -1273,7 +1272,7 @@ def test_the_archived_note_follows_its_own_note_not_the_end_of_the_list(bundle: 
     classifier.noul_scores["retrieve_note"] = {f'note titled "{NOTE_TITLE}"': 0.9, 'note titled "Revenue policy"': 0.8}
     llm.add(ANSWER, "Answer.")
 
-    answer = wiki.ask(QUESTION)
+    answer = wiki.ask(f"{QUESTION} Revenue policy")  # the words that make the search find the other note too
 
     plain = [n for n in answer.notes if not n.startswith(".archive")]
     assert set(plain) == {"finance/pricing-tiers.md", "finance/revenue-policy.md"}

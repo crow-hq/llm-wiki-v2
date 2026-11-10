@@ -68,6 +68,17 @@ def load_dotenv(path: Path = Path(".env")) -> None:
             os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
 
 
+
+def _where(pairs: list[str] | None) -> dict[str, str] | None:
+    """`--where KEY=VALUE` (repeatable) as the filter of `ask` and `search`; None when there is none."""
+    where: dict[str, str] = {}
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            raise InputError(f"--where wants KEY=VALUE, not {pair!r}")
+        where[key] = value
+    return where or None
+
 def main(argv: list[str] | None = None) -> int:
     if argv is None:  # a real command line: read ./.env like docker compose does
         load_dotenv()
@@ -107,6 +118,11 @@ def main(argv: list[str] | None = None) -> int:
     ask.add_argument("question")
     ask.add_argument("--where", action="append", metavar="KEY=VALUE", help="only the notes whose fields have this value (repeatable)")
     ask.add_argument("--json", action="store_true", help="print the full answer as JSON")
+    search = sub.add_parser("search", help="find the notes for a query, with no model call")
+    search.add_argument("query")
+    search.add_argument("-k", type=int, default=8, help="how many notes (default 8)")
+    search.add_argument("--where", action="append", metavar="KEY=VALUE", help="only the notes whose fields have this value (repeatable)")
+    search.add_argument("--json", action="store_true", help="print the hits as JSON")
     move = sub.add_parser("move", help="move a note into another folder; its links follow")
     move.add_argument("note", help="the note's path, e.g. finance/pricing.md")
     move.add_argument("folder", help='the folder to file it in, e.g. /sourcing ("/" is the top level)')
@@ -345,14 +361,14 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
     elif args.command == "purge":
         return _purge(wiki, args)
     elif args.command == "ask":
-        where: dict[str, str] = {}
-        for pair in args.where or []:
-            key, sep, value = pair.partition("=")
-            if not sep or not key:
-                raise InputError(f"--where wants KEY=VALUE, not {pair!r}")
-            where[key] = value
-        answer = wiki.ask(args.question, where or None)
+        answer = wiki.ask(args.question, _where(args.where))
         print(json.dumps(answer.to_dict(), indent=2) if args.json else answer.text)
+    elif args.command == "search":
+        hits = wiki.search(args.query, k=args.k, where=_where(args.where))
+        if args.json:
+            print(json.dumps([h.to_dict() for h in hits], indent=2))
+        for h in [] if args.json else hits:
+            print(f"{h.rank}. {h.path} — {h.title}" + (f": {h.summary}" if h.summary else ""))
     elif args.command == "move":
         print(f"moved: /{wiki.move_note(args.note, args.folder).rel}")
     elif args.command == "describe":

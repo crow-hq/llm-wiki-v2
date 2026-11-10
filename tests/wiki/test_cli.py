@@ -139,6 +139,19 @@ def test_ask_prints_the_answer(
     assert capsys.readouterr().out == f"On delivery [{NOTE}].\n"
 
 
+def test_search_prints_the_hits_with_no_model_call(
+    made: list[dict[str, Any]], bundle: Path, llm: FakeLLM, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ingest_one(bundle, llm)
+    calls = len(llm.calls)
+    capsys.readouterr()
+
+    assert run(bundle, "search", "revenue booked", "-k", "3") == 0
+
+    assert capsys.readouterr().out.startswith(f"1. {NOTE} — Revenue recognition")
+    assert len(llm.calls) == calls
+
+
 def test_ask_with_json_prints_the_answer_with_citations(
     made: list[dict[str, Any]], bundle: Path, llm: FakeLLM, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -323,3 +323,14 @@ def test_note_facts_space_thousands_still_group(script: ModuleType) -> None:
 
 def test_note_facts_quarter_label_still_gives_the_year(script: ModuleType) -> None:
     assert found(script, "Q2 2026") == {"2026"}
+
+
+def test_a_merge_that_copies_the_prompt_s_example_adds_the_incoming_note_as_a_section(bundle: Path, llm: FakeLLM) -> None:
+    wiki = wiki_with(bundle, llm, LLM_MERGING)
+    copied = "# Overview\n\nSeed. As of March 2026 the limit is 40, previously 30. " + " ".join(CODES)
+    llm.add(SUMMARIZE, INCOMING).add(MERGE, draft(copied))
+
+    result = wiki.ingest(RAW, title="Memo")
+
+    body = (bundle / result.note).read_text(encoding="utf-8")
+    assert "limit is 40" not in body and "Seed." in body and all(code in body for code in CODES)

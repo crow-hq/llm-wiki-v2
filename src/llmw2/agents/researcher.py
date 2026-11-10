@@ -10,22 +10,24 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
-from llmw2.agents import conflicts, revisions
+from llmw2.agents import conflicts, note_checks, revisions
 from llmw2.agents.base import Decision
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.steps import StepContext, Steps, check_answer, check_select
 from llmw2.bundle.document import OKFDocumentError
 from llmw2.bundle.sheets import SHEET_CHARS, rows_for
 from llmw2.bundle.store import WikiStore
-from llmw2.bundle.tree import Note, matching
+from llmw2.bundle.tree import Folder, Note, matching
 from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import InputError, ModelError
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport
+from llmw2.search import NoteSearch
 
 log = logging.getLogger(__name__)
 
@@ -64,11 +66,19 @@ class Researcher:
     """One instance serves one question, so its trace of decisions is never shared."""
 
     def __init__(
-        self, store: WikiStore, llm: LLM, prompts: Prompts, cfg: WikiConfig, steps: Steps, classifier: Classifier | None = None
+        self,
+        store: WikiStore,
+        llm: LLM,
+        prompts: Prompts,
+        cfg: WikiConfig,
+        steps: Steps,
+        classifier: Classifier | None = None,
+        search: NoteSearch | None = None,
     ) -> None:
         self.store = store
         self.cfg = cfg
         self.steps = steps
+        self.search = search
         self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="researcher/system")
 
     def ask(self, question: str, where: dict[str, Any] | None = None) -> Answer:
@@ -76,6 +86,8 @@ class Researcher:
         ctx = self.ctx
         with ctx.llm.usage.span() as used:
             root = self.store.load()
+            if self.search is not None:
+                ctx.search = self._finder(root, where)
             if where:
                 root = matching(root, where)
             notes = check_select(self.steps.select(ctx, root, question), root)
@@ -83,11 +95,26 @@ class Researcher:
             asked = f"{question}\n\n{revisions.HISTORY_HINT}" if past else question
             if self._conflicting(question, notes):
                 asked = f"{asked}\n\n{conflicts.CONFLICT_HINT}"
-            text = check_answer(self.steps.answer(ctx, asked, self._with_rows(question, notes))) if notes else NO_ANSWER
+            text = NO_ANSWER
+            if notes:
+                given = self._with_rows(question, notes)
+                text = check_answer(self.steps.answer(ctx, asked, given))
+                # a quotation the notes read do not have is not given as theirs: its marks go, its words stay (no call)
+                text, wrong = note_checks.unquoted(text, "\n\n".join(n.full_text() for n in given))
+                if wrong:
+                    ctx.decide("quote_unquoted", "code", f"{len(wrong)} quotations not in the notes read")
         read = {n.rel for n in notes}
         citations = [c for c in dict.fromkeys(_cited(text)) if c in read]
         titles = {n.rel: n.title for n in notes if n.rel in citations}
         return Answer(text, citations, [n.rel for n in notes], ctx.decisions, used, titles={c: titles[c] for c in citations})
+
+    def _finder(self, root: Folder, where: dict[str, Any] | None) -> Callable[[str, int], list[Note]]:
+        """The search of the notes `where` keeps, as `Wiki.search` runs it."""
+        search = self.search
+        assert search is not None
+        everything = root.all_notes()
+        notes = matching(root, where).all_notes() if where else everything
+        return lambda query, k: search.search(notes, everything, query, k)
 
     def _with_rows(self, question: str, notes: list[Note]) -> list[Note]:
         """The notes as the answer reads them: a spreadsheet sheet's note gets the rows of its sources the question needs.

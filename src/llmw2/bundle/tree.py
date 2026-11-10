@@ -20,6 +20,7 @@ from typing import Any
 from llmw2.bundle.document import OKFDocument, OKFDocumentError
 
 INDEX, LOG, RAW = "index.md", "log.md", "raw"
+CLOSED = ".closed"  # the file that marks a folder closed to automatic filing (hidden, so the OKF layout stays as it is)
 NOTE_TYPE, SOURCE_TYPE = "Note", "Source"
 SEE_ALSO = "# See also"
 OKF_VERSION = "0.2"
@@ -112,10 +113,16 @@ class Folder:
     subfolders: list[Folder] = field(default_factory=list)
     notes: list[Note] = field(default_factory=list)
     parent: Folder | None = field(default=None, repr=False)
+    routable: bool = True  # False: the librarian files nothing here by itself (a person or the code still can); see `is_routable`
 
     @property
     def name(self) -> str:
         return self.path.name if self.rel else "/"
+
+    @property
+    def is_routable(self) -> bool:
+        """Whether automatic filing may enter this folder: it and every folder above it are open."""
+        return all(f.routable for f in self.ancestors())
 
     @property
     def label(self) -> str:
@@ -166,8 +173,35 @@ class Folder:
         }
 
 
+def area_of(rel: str) -> str:
+    """The top-level folder of a bundle path ("finance/pricing.md" and "finance/a/b.md" are in "finance"; "" for a path at the root)."""
+    return rel.split("/", 1)[0] if "/" in rel else ""
+
+
+def within_area(a: Note, b: Note) -> bool:
+    """Whether two notes may be linked by code: they are in the same top-level folder, and it is not closed."""
+    area = a.folder
+    while area is not None and area.parent is not None and area.parent.parent is not None:
+        area = area.parent
+    return area_of(a.rel) == area_of(b.rel) and (area is None or area.routable)
+
+
+def within_folder(a: Note, b: Note) -> bool:
+    """Whether two notes may be linked by code with `link_scope` "folder": they are in the same folder, and its area is not
+    closed."""
+    return a.rel.rpartition("/")[0] == b.rel.rpartition("/")[0] and within_area(a, b)
+
+
+def _held(value: Any, wanted: Any) -> bool:
+    """A field holds `wanted` when it is equal to it as text, or, for a list, when one of its items is."""
+    if isinstance(value, (list, tuple, set)):
+        return any(str(item) == str(wanted) for item in value)
+    return str(value) == str(wanted)
+
+
 def matching(root: Folder, where: dict[str, Any]) -> Folder:
-    """A copy of the tree with only the notes whose `fields` hold every key of `where` (compared as strings).
+    """A copy of the tree with only the notes whose `fields` hold every key of `where` (compared as strings; a field that
+    is a list holds a value when one of its items is equal to it).
 
     The folders are new and the notes the same objects, so the tree it is made from, which a session shares, is not touched.
     A folder with no such note, itself or below, is left out.
@@ -175,10 +209,10 @@ def matching(root: Folder, where: dict[str, Any]) -> Folder:
 
     def keep(note: Note) -> bool:
         fields = note.frontmatter.get("fields")
-        return isinstance(fields, dict) and all(k in fields and str(fields[k]) == str(v) for k, v in where.items())
+        return isinstance(fields, dict) and all(k in fields and _held(fields[k], v) for k, v in where.items())
 
     def copy(folder: Folder, parent: Folder | None) -> Folder:
-        out = Folder(folder.path, folder.rel, folder.description, parent=parent)
+        out = Folder(folder.path, folder.rel, folder.description, parent=parent, routable=folder.routable)
         out.notes = [n for n in folder.notes if keep(n)]
         out.subfolders = [s for s in (copy(sub, out) for sub in folder.subfolders) if s.notes or s.subfolders]
         return out
@@ -208,6 +242,19 @@ def split_see_also(body: str) -> tuple[str, list[str]]:
             tail = "\n".join(lines[end:]).strip()
             return (f"{main}\n\n{tail}" if main else tail) if tail else main, entries
     return body.rstrip(), []
+
+
+def see_also_targets(body: str, from_rel: str) -> list[str]:
+    """The bundle paths the See-also entries of the document at `from_rel` link to."""
+    targets = [link_target(from_rel, m["link"]) for e in split_see_also(body)[1] if (m := _ENTRY.match(e.strip()))]
+    return [t for t in targets if t is not None]
+
+
+def drop_see_also(body: str, from_rel: str, gone: Callable[[str], bool]) -> str:
+    """`body` without the See-also entries that link to a path `gone` says; inline links stay."""
+    main, entries = split_see_also(body)
+    kept = [e for e in entries if not ((m := _ENTRY.match(e.strip())) and (t := link_target(from_rel, m["link"])) is not None and gone(t))]
+    return body if kept == entries else join_see_also(main, kept)
 
 
 def join_see_also(main: str, entries: list[str]) -> str:

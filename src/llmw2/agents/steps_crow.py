@@ -1,7 +1,7 @@
 # Copyright 2026 Federico Cesarini, Marco Sassarini
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""The CROW steps: the typed classifier takes the decisions (CROW §5.1 ingest, §5.2 retrieval).
+"""The CROW steps: the typed classifier takes the decisions (CROW §5.1 ingest; retrieval reorders the search).
 
 Routing is one Choice among every folder of the tree; the paper's per-level walk (a Choice per level, with a beam) only
 decides where that Choice has no folder to name. Each step falls back to the LLM (the classic step) where the paper
@@ -23,14 +23,20 @@ from llmw2.agents.data import Candidate, Route
 from llmw2.agents.state import source_state
 from llmw2.agents.steps_classic import CONSOLIDATE_SOURCE_MAX, HERE, MODIFY, NEW, NEW_NOTE, NONE, FallbackRoute
 from llmw2.bundle.tree import Folder, Note, slugify
-from llmw2.errors import ModelError, ReplyInvalid
+from llmw2.errors import ModelError, ReplyInvalid, StepError
 from llmw2.models.classifier import MAX_OPTIONS, ChoiceAnswer
+from llmw2.search import NoteSearch
 
 if TYPE_CHECKING:
     from llmw2.agents.steps import StepContext
 
 log = logging.getLogger(__name__)
 
+SEARCH_K = 16  # notes the search offers to the retrieval Noul (the first stays in place, the other 15 are reordered)
+PASSAGE_CHARS = 600  # the passage of a note's body that the retrieval Noul reads
+PASSAGE_STEP = 300  # passages start every this many characters
+MATCH_TOP = 24  # most notes `match` asks about: the folder's own first, then the ones closest to the document by BM25
+RELATE_TOP = 24  # the same for `relate`; the notes that share rare values (linking.RARE_TOP) come on top of them
 FALLBACK_MENU_CHARS = 8000  # most characters of the folder menu the routing fallback shows the LLM
 ROUTE_PROMPT = "classifier/route"  # the routing Choice; with `strict_new_folders` off, 0.3.0's text:
 ROUTE_PROMPT_OPEN = "classifier/route_open"
@@ -118,9 +124,30 @@ def keep_folders(ctx: StepContext, root: Folder, cand: Candidate, route: Route) 
     return Route(best, False, [best], overflow=overflow)
 
 
+def _declared_overflow(ctx: StepContext, root: Folder) -> Folder | None:
+    """The folder `overflow_folder` names, when the wiki has it; a warning, and None, when it does not."""
+    label = ctx.cfg.overflow_folder
+    if not label:
+        return None
+    folder = root.find(label.strip().strip("/"))
+    if folder is None or folder.is_root:
+        log.warning("overflow_folder %s is not a folder of the wiki: the likeliest top-level folder takes the note", label)
+        return None
+    return folder
+
+
 def _likeliest_root(ctx: StepContext, root: Folder, cand: Candidate) -> tuple[Folder, dict[str, float]]:
     """The top-level folder a note goes to when its route opened none, and the probabilities that chose it: None of these
-    (`p_none`) and the folder (`p_root`, its likeliest folder's). Empty when BM25 chose."""
+    (`p_none`) and the folder (`p_root`, its likeliest folder's). Empty when BM25 chose.
+
+    With `overflow_folder` set to a folder of the wiki, that folder, marked `declared`, and no classifier call. A top-level
+    folder closed to automatic filing is never the likeliest: StepError when there is no other.
+    """
+    if (declared := _declared_overflow(ctx, root)) is not None:
+        return declared, {"declared": 1.0}
+    roots = [f for f in root.subfolders if f.routable]
+    if not roots:
+        raise StepError("route", "no top-level folder is open to automatic filing and no new one can be opened: set overflow_folder")
     try:
         flat = _flat_choice(ctx, root, cand)
     except ModelError as e:
@@ -131,8 +158,8 @@ def _likeliest_root(ctx: StepContext, root: Folder, cand: Candidate) -> tuple[Fo
             folder = root.find(option.strip("/")) if option != NONE else None
             if folder is not None and not folder.is_root:
                 return folder.ancestors()[1], {"p_none": round(flat.answer.probabilities.get(NONE, 0.0), 3), "p_root": round(p, 3)}
-    docs = {f.name: f"{f.name.replace('-', ' ')} {f.description}" for f in root.subfolders}
-    return next(f for f in root.subfolders if f.name == lexical.rank(routing_state(ctx, cand), docs)[0]), {}
+    docs = {f.name: f"{f.name.replace('-', ' ')} {f.description}" for f in roots}
+    return next(f for f in roots if f.name == lexical.rank(routing_state(ctx, cand), docs)[0]), {}
 
 
 @dataclass(frozen=True)
@@ -148,7 +175,7 @@ def _flat_choice(ctx: StepContext, root: Folder, cand: Candidate) -> _Flat | Non
     None for a tree without folders. Raises ModelError when the classifier fails. A level wider than one request is cut
     by `_fitting` (the folders BM25 ranks first against the note), and None of these stays after them.
     """
-    folders = [f for f in root.walk() if not f.is_root]
+    folders = [f for f in root.walk() if not f.is_root and f.is_routable]  # a closed folder is no option
     if not folders:
         return None
     text = ctx.prompts.render_sections(ROUTE_DIRECT_PROMPT)
@@ -293,7 +320,8 @@ def _expand(
         placement[NEW] = text[NEW]
     if not folder.is_root:
         placement[NONE] = text[NONE]
-    subfolders = {f.name: f.description or f.name for f in ctx.children(folder)}
+    children = ctx.children(folder)
+    subfolders = {f.name: f.description or f.name for f in children}
     options = _fitting(ctx, folder, state, text["instructions"], subfolders, placement) | placement
     if len(options) == 1:  # one way only (a new folder in an empty wiki, or Here at max_depth 0): nothing to decide
         return [_Path(path.folders, path.probs, next(iter(options)))]
@@ -416,7 +444,7 @@ def _fallback_menu(ctx: StepContext, root: Folder, visited: list[Folder]) -> str
         seen = {f.label for f in visited}
         size = len("\n".join(lines))
         for f in root.walk():
-            if f.label in seen or f.is_root:
+            if f.label in seen or f.is_root or not f.is_routable:
                 continue
             seen.add(f.label)
             if size + 1 + len(line(f)) <= FALLBACK_MENU_CHARS:  # the visited are never omitted, the others only while they fit
@@ -436,11 +464,37 @@ def _deepest(ctx: StepContext, root: Folder, path: str) -> tuple[Folder, bool]:
     return folder, False
 
 
+def _closest(
+    ctx: StepContext, notes: list[Note], text: str, top: int, home: str | None, step: str, given: dict[str, float] | None = None
+) -> list[Note]:
+    """At most `top` of `notes`, chosen by code: first the notes with a probability in `given`, the highest first; then
+    the notes of the folder `home`, then the others, each group in the order BM25 over a note's text ranks it against
+    `text`. The notes kept stay in their order. All of them when they fit: the request is then what it always was.
+    A cut is the decision `<step>_cut`."""
+    if len(notes) <= top:
+        return notes
+    given = given or {}
+    first = [n.rel for n in sorted((n for n in notes if n.rel in given), key=lambda n: -given[n.rel])]
+    rest = [n for n in notes if n.rel not in given]
+    order = first[:top]
+    if len(order) < top and rest:
+        ranked = lexical.rank(text, {n.rel: n.full_text() for n in rest})
+        by_rel = {n.rel: n for n in rest}
+        own = [r for r in ranked if home is not None and (folder := by_rel[r].folder) is not None and folder.rel == home]
+        taken = set(own)
+        order += (own + [r for r in ranked if r not in taken])[: top - len(order)]
+    kept = set(order)
+    how = "by match probability, then BM25" if first else "by BM25"
+    ctx.decide(f"{step}_cut", "code", f"{len(kept)} of {len(notes)} notes, {how}")
+    return [n for n in notes if n.rel in kept]
+
+
 def match(ctx: StepContext, pool: list[Note], cand: Candidate) -> Note | None:
-    """Step 2: one batched Noul per note; the best one above tau_ing is the candidate."""
+    """Step 2: one batched Noul per note; the best one above tau_ing is the candidate. A pool over `MATCH_TOP` notes is cut first."""
     classifier = ctx.need_classifier("match")
     if not pool:
         return None
+    pool = _closest(ctx, pool, ctx.state(cand), MATCH_TOP, ctx.home, "match")
     questions = {f"n{i}": ctx.prompts.render("classifier/note_relevance", title=n.title, summary=n.summary) for i, n in enumerate(pool)}
     try:
         probs = classifier.nouls(ctx.state(cand), questions, op="match")
@@ -495,8 +549,17 @@ def consolidate(ctx: StepContext, note: Note, cand: Candidate) -> bool:
 
 
 def relate(ctx: StepContext, note: Note, others: list[Note]) -> list[Note]:
-    """Correlation (an extension of the paper): one Noul per candidate, above tau_link."""
+    """Correlation (an extension of the paper): one Noul per candidate, above tau_link. Over `RELATE_TOP` candidates the
+    ones the code ranks first are asked about: those `match` gave a probability for this document (the highest first), then
+    the others by BM25; the notes that share rare values (their own group, already capped) all are asked."""
     classifier = ctx.need_classifier("relate")
+    rare = {rel for d in ctx.decisions if d.step == "relate_candidates" for rel in d.scores}
+    common = [n for n in others if n.rel not in rare]
+    if len(common) > RELATE_TOP:
+        home = note.folder.rel if note.folder is not None else None
+        matched = {rel: p for d in ctx.decisions if d.step == "match" for rel, p in d.scores.items()}  # none after a merge or a rebuild
+        common = _closest(ctx, common, note.compact(ctx.cfg.classifier.state_chars), RELATE_TOP, home, "relate", matched)
+        others = [*common, *(n for n in others if n.rel in rare)]
     questions = {f"n{i}": ctx.prompts.render("classifier/relate", title=n.title, summary=n.summary) for i, n in enumerate(others)}
     try:
         probs = classifier.nouls(note.compact(ctx.cfg.classifier.state_chars), questions, op="relate")
@@ -515,46 +578,51 @@ def relate(ctx: StepContext, note: Note, others: list[Note]) -> list[Note]:
 
 
 def select(ctx: StepContext, root: Folder, question: str) -> list[Note]:
-    """§5.2: a Noul per folder, a Noul per note, top-k; classic navigation when nothing clears its threshold."""
-    ctx.need_classifier("select")
-    try:
-        notes = _retrieve(ctx, root, question)
-    except ModelError as e:
-        log.warning("classifier failed on retrieval, the LLM navigates: %s", e)
-        notes = []
-    if not notes:
-        ctx.decide("select", "llm", "classic navigation", fallback=True)
-        return classic.select(ctx, root, question)
-    return notes
-
-
-def _retrieve(ctx: StepContext, root: Folder, question: str) -> list[Note]:
-    classifier = ctx.need_classifier("select")
+    """Retrieval: the notes `Wiki.search` finds (BM25, and the embedder if there is one), the first kept in place and the
+    others reordered by one batched Noul each (`crow.rerank`), the first `crow.k` read by the answer."""
     crow = ctx.cfg.crow
-    explored, level = [root], [root]
-    while level:  # step 1: at each level, explore up to b folders above tau_fold
-        subs = [s for f in level for s in f.subfolders]
-        if not subs:
-            break
-        questions = {
-            f"f{i}": ctx.prompts.render("classifier/retrieval_folder", name=s.name, description=s.description or "no description")
-            for i, s in enumerate(subs)
-        }
-        probs = classifier.nouls(question, questions, op="retrieve_folder")
-        ranked = sorted(((probs[f"f{i}"], s) for i, s in enumerate(subs)), key=lambda x: x[0], reverse=True)
-        level = [s for p, s in ranked if p > crow.tau_fold][: crow.retrieval_beam]
-        explored += level
-        scores = {s.label: p for p, s in ranked}
-        ctx.decide("retrieve_folder", "classifier", ", ".join(s.label for s in level) or "none", scores=scores)
-    candidates = [n for f in explored for n in f.notes]
-    if not candidates:
-        return []
+    if crow.rerank:
+        ctx.need_classifier("select")
+    found = _found(ctx, root, question)
+    if not found:  # the search matched nothing (no embedder, and no word in common): the LLM walks the folders, as in classic
+        ctx.decide("select", "llm", "the search found no note: the LLM navigates the folders", fallback=True)
+        return classic.select(ctx, root, question)[: crow.k]
+    if crow.rerank and len(found) > 1:
+        found = found[:1] + _reordered(ctx, found[1:], question)
+    return found[: crow.k]
+
+
+def _found(ctx: StepContext, root: Folder, question: str) -> list[Note]:
+    if ctx.search is not None:
+        return ctx.search(question, SEARCH_K)
+    notes = root.all_notes()  # a context built without the wiki's search: BM25 alone
+    return NoteSearch(None).search(notes, notes, question, SEARCH_K)
+
+
+def _reordered(ctx: StepContext, notes: list[Note], question: str) -> list[Note]:
+    """`notes` by the probability that each helps answer the question, one classifier call; their order when it fails."""
+    classifier = ctx.need_classifier("select")
     questions = {
-        f"n{i}": ctx.prompts.render("classifier/retrieval_note", title=n.title, summary=n.summary) for i, n in enumerate(candidates)
+        f"n{i}": ctx.prompts.render("classifier/retrieval_note", title=n.title, summary=n.summary, passage=passage(n, question))
+        for i, n in enumerate(notes)
     }
-    probs = classifier.nouls(question, questions, op="retrieve_note")  # step 2: score the notes
-    notes = sorted(((probs[f"n{i}"], n) for i, n in enumerate(candidates)), key=lambda x: x[0], reverse=True)
-    top = [n for p, n in notes if p > crow.tau_ret][: crow.k]  # step 3 reads these k notes
-    scores = {n.rel: p for p, n in notes}
-    ctx.decide("retrieve_note", "classifier", ", ".join(n.rel for n in top) or "none", scores=scores)
-    return top
+    try:
+        probs = classifier.nouls(question, questions, op="retrieve_note")
+    except ModelError as e:
+        log.warning("classifier failed on retrieval, the order of the search is kept: %s", e)
+        ctx.decide("retrieve_note", "classifier", "error", fallback=True)
+        return notes
+    ranked = sorted(((probs[f"n{i}"], n) for i, n in enumerate(notes)), key=lambda x: x[0], reverse=True)
+    ctx.decide("retrieve_note", "classifier", ", ".join(n.rel for _, n in ranked), scores={n.rel: p for p, n in ranked})
+    return [n for _, n in ranked]
+
+
+def passage(note: Note, question: str) -> str:
+    """The `PASSAGE_CHARS` of the note's body (without See also) that match the question best by BM25; windows start every
+    `PASSAGE_STEP` characters, spaces normalised."""
+    body = " ".join(note.main_body().split())
+    starts = list(range(0, max(len(body) - PASSAGE_CHARS, 0) + 1, PASSAGE_STEP))
+    if starts[-1] + PASSAGE_CHARS < len(body):  # the last window ends where the body ends
+        starts.append(len(body) - PASSAGE_CHARS)
+    windows = {str(i): body[i : i + PASSAGE_CHARS] for i in starts}
+    return windows[lexical.rank(question, windows)[0]]

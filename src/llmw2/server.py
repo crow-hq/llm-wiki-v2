@@ -7,7 +7,7 @@ POST /ingest, POST /upload (a .txt/.md/.pdf file), POST /ask, POST /folder (one 
 POST /audit (CROW: notes the classifier would file elsewhere), GET /taxonomy (new subfolders and fallbacks, from the log),
 GET /proposals, POST /proposals, POST /proposals/{id}/confirm and /dismiss (top-level areas users propose),
 POST /areas, POST /folder/rename and POST /folder/merge (top-level folders),
-GET /tree, GET /note,
+GET /search (notes for a query, no model call), GET /tree, GET /note,
 GET /graph, GET /usage, GET /check, GET /health; DELETE /note, DELETE /folder and
 DELETE /wiki (empty it); GET /settings, POST /settings,
 POST /settings/test, POST /settings/models and POST /settings/memory when the app is given the settings file;
@@ -150,15 +150,13 @@ class SettingsChanges(BaseModel):
     crow_tau_path: str | None = None
     crow_tau_ing: str | None = None
     crow_tau_cons: str | None = None
-    crow_tau_fold: str | None = None
-    crow_tau_ret: str | None = None
     crow_tau_link: str | None = None
     crow_votes: str | None = None
     crow_vote_band: str | None = None
     crow_fallback_menu: str | None = None  # "visited" or "tree"
     crow_beam: str | None = None
-    crow_retrieval_beam: str | None = None
     crow_k: str | None = None
+    crow_rerank: str | None = None  # "true" or "false"
     # How each model is called (a number as text, "" for the default)
     temperature: str | None = None
     seed: str | None = None
@@ -319,6 +317,11 @@ def create_app(
     def ask(req: AskRequest) -> dict[str, Any]:
         return current().ask(req.question, req.where).to_dict()
 
+    @app.get("/search")
+    def search(q: str, k: int = 8) -> dict[str, Any]:
+        """The best notes for `q` with no model call (`Wiki.search`): what a search box shows as one types."""
+        return {"hits": [h.to_dict() for h in current().search(q, k=max(1, min(k, 50)))]}
+
     @app.get("/tree")
     def tree() -> dict[str, Any]:
         return current().tree().to_dict()
@@ -397,7 +400,7 @@ def create_app(
     @app.post("/areas")
     def create_area(req: AreaRequest) -> dict[str, Any]:
         with write_lock:
-            return current().create_area(req.name, req.description, req.over_limit).to_dict()
+            return current().create_area(req.name, req.description, over_limit=req.over_limit).to_dict()
 
     @app.post("/folder/rename")
     def rename_folder(req: RenameRequest) -> dict[str, Any]:
@@ -421,7 +424,7 @@ def create_app(
     @app.post("/proposals/{proposal_id}/confirm")
     def confirm_proposal(proposal_id: str, req: ConfirmRequest | None = None) -> dict[str, Any]:
         with write_lock:
-            proposal, moved = current().confirm_proposal(proposal_id, (req or ConfirmRequest()).over_limit)
+            proposal, moved = current().confirm_proposal(proposal_id, over_limit=(req or ConfirmRequest()).over_limit)
         return {**proposal.to_dict(), "moved": moved}
 
     @app.post("/proposals/{proposal_id}/dismiss")

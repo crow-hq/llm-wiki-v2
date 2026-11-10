@@ -35,7 +35,7 @@ The **Memory** page shows all three, with your own address, and a button to copy
 
 Filing a memory takes 10 to 60 seconds: one call to summarize, a few classifier decisions, and one call to write or merge.
 Codex gives up on a tool after 60 seconds by default. If that happens, raise `tool_timeout_sec` under `[mcp_servers.llm-wiki]` in
-`~/.codex/config.toml`. Codex also asks before each `remember` and `reply`, since they write (`recall` and `read_note` are marked
+`~/.codex/config.toml`. Codex also asks before each `remember` and `reply`, since they write (`recall`, `search` and `read_note` are marked
 read-only). To let it go on without asking, as `codex exec` must, since it can't ask, add this:
 
 ```toml
@@ -52,6 +52,7 @@ approval_mode = "approve"
 |---|---|---|
 | `recall(question, where?)` | Answers from the wiki, as **Ask** does: the classifier picks the folders and notes, and the LLM answers from them. `where` (field to value) keeps only the notes whose `fields` have all of them; it is a filter, not an access control. Read-only. | `{"answer", "notes"}`: the answer cites its notes as `[path.md]` |
 | `remember(text, title?)` | Files the text like a note written on the page. It goes in the right folder, or is merged into the note on the same subject, and is linked to related notes. | `{"action", "note", "folder", "related"}`, and `deviated` (a count) with `deviations` (each note, the root it went to, `p_none`, `p_root`) when the limit on top-level folders sent the note to the likeliest existing folder instead of a new one |
+| `search(query, k?, where?)` | The notes that best match a query, as `Wiki.search` finds them (BM25, and the embedder when the settings have one), with no model call and no answer written: for a client that reads the notes itself with `read_note`. `k` from 1 to 50 (8). Read-only. | a list of `{"path", "title", "summary", "rank"}` |
 | `read_note(path)` | One note in full: title, summary and body. Read-only. | the note's text |
 | `rebuild(confirm)` | Deletes every note, raw copy and archived version and files the raw copies again on the same folders, with no new plan and no new folder. Destructive and slow: it does nothing unless `confirm` is `true`. It runs as a job like the others when the client does the model work. | the counts (`created`, `merged`, `unchanged`, `errors`, `stopped`) and the deviations |
 | `create_area(name, description)` | Opens a new top-level folder the user asked for. Refused when the wiki already has `max_top_folders` of them. The memory never opens or proposes an area on its own. | `{"folder", "description"}` |

@@ -219,3 +219,13 @@ def test_a_note_selected_twice_is_read_once(wiki: Wiki, llm: FakeLLM) -> None:
 
     assert answer.notes == ["overview.md"]
 
+
+
+def test_a_quotation_the_notes_read_do_not_have_loses_its_marks(wiki: Wiki, llm: FakeLLM) -> None:
+    llm.add(NAVIGATE, {"open": ["finance"]}, {"select": ["finance/revenue-policy.md"]})
+    llm.add(ANSWER, 'The policy says "revenue is always booked at the end of the year" [finance/revenue-policy.md].')
+
+    answer = wiki.ask("When is revenue booked?")
+
+    assert answer.text == "The policy says revenue is always booked at the end of the year [finance/revenue-policy.md]."
+    assert [d.step for d in answer.decisions if d.step == "quote_unquoted"] == ["quote_unquoted"]

@@ -46,15 +46,15 @@ def test_shared_fragments_are_not_placeholders() -> None:
 
 
 def test_a_missing_value_raises_key_error() -> None:
-    with pytest.raises(KeyError, match="summary"):
-        Prompts().render("classifier/retrieval_note", title="Pricing")
+    with pytest.raises(KeyError, match="passage"):
+        Prompts().render("classifier/retrieval_note", title="Pricing", summary="Plans")
 
 
-def test_the_name_placeholder_is_a_value_not_the_prompt_name() -> None:
-    text = Prompts().render("classifier/retrieval_folder", name="finance", description="money matters")
+def test_the_retrieval_note_prompt_ends_with_the_passage() -> None:
+    text = Prompts().render("classifier/retrieval_note", title="Pricing", summary="Plans", passage="Three tiers.")
 
     assert text == (
-        'Is the folder "finance", described as "money matters", likely to contain notes that help answer the question?'
+        'Does the note titled "Pricing", summarized as "Plans", help answer the question? It contains: "Three tiers."'
     )
 
 
@@ -94,6 +94,36 @@ def test_render_sections_splits_the_consolidate_prompt() -> None:
 
 
 def test_values_are_inserted_literally_not_rendered_again() -> None:
-    text = Prompts().render("classifier/retrieval_note", title="{{summary}}", summary="{{shared/untrusted}}")
+    text = Prompts().render("classifier/retrieval_note", title="{{summary}}", summary="{{shared/untrusted}}", passage="{{title}}")
 
-    assert text == 'Does the note titled "{{summary}}", summarized as "{{shared/untrusted}}", help answer the question?'
+    assert text == (
+        'Does the note titled "{{summary}}", summarized as "{{shared/untrusted}}", help answer the question? It contains: "{{title}}"'
+    )
+
+
+CANARY = "dd60f2b2-fab6-4351-826f-bc7357357178"
+
+
+@pytest.mark.parametrize("path", sorted(PROMPTS_DIR.rglob("*.md")), ids=lambda path: path.relative_to(PROMPTS_DIR).as_posix())
+def test_every_prompt_file_starts_with_the_license_header(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+
+    assert text.startswith("<!--\nSPDX-FileCopyrightText:")
+    assert CANARY in text.split("-->", 1)[0]
+
+
+@pytest.mark.parametrize("name", Prompts.names())
+def test_load_never_returns_the_license_header(name: str) -> None:
+    text = Prompts().load(name)
+
+    assert "<!--" not in text and CANARY not in text and "SPDX-" not in text
+
+
+def test_override_header_is_stripped_and_a_headerless_override_is_kept(tmp_path: Path) -> None:
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "shared" / "untrusted.md").write_text("<!--\nlicense header\n-->\nbody\n", encoding="utf-8")
+    (tmp_path / "shared" / "note_rules.md").write_text("body\n<!-- kept -->\n", encoding="utf-8")
+    prompts = Prompts(tmp_path)
+
+    assert prompts.load("shared/untrusted") == "body\n"
+    assert prompts.load("shared/note_rules") == "body\n<!-- kept -->\n"

@@ -14,8 +14,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from llmw2 import Candidate, Route, Source, StepContext, Steps, Wiki, WikiConfig
-from llmw2.bundle.tree import Folder, Note
+from llmw2 import Candidate, Folder, Note, Route, Source, StepContext, Steps, Wiki, WikiConfig
 
 DEVICES = [
     ("Pocket thermometer", "Reads body temperature in two seconds.", {"status": "active", "year": 2022}),

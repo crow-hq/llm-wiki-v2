@@ -129,15 +129,22 @@ class LLM(HttpModel):
         self._switch_lock = threading.Lock()
 
     def chat(
-        self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool | dict[str, Any] = False, max_tokens: int | None = None
+        self,
+        messages: list[dict[str, str]],
+        *,
+        op: str = "",
+        json_mode: bool | dict[str, Any] = False,
+        max_tokens: int | None = None,
+        seed: int | None = None,
     ) -> str:
-        """`json_mode`: True asks for a JSON object, a JSON schema for an object of that schema."""
+        """`json_mode`: True asks for a JSON object, a JSON schema for an object of that schema. `seed` replaces the configured one."""
+        seed = self.seed if seed is None else seed
         start = time.perf_counter()
         reasoning_resent = False  # each request resends at most once for reasoning
         while True:
             built_switched = self._least_applied  # whether this request's body carries the least-reasoning fields
             try:
-                data = self._post("/chat/completions", self._body(messages, json_mode, max_tokens))
+                data = self._post("/chat/completions", self._body(messages, json_mode, max_tokens, seed))
                 break
             except ModelError as e:
                 text = str(e).lower()
@@ -167,7 +174,7 @@ class LLM(HttpModel):
             cached=(usage.get("prompt_tokens_details") or {}).get("cached_tokens"),
             provider=data["provider"] if isinstance(data.get("provider"), str) else None,
             temperature=self.temperature,
-            seed=self.seed,
+            seed=seed,
             finish_reason=finish,
         )
         if finish == "length":
@@ -197,11 +204,15 @@ class LLM(HttpModel):
             return self._least_applied and not built_switched
 
     def _body(
-        self, messages: list[dict[str, str]], json_mode: bool | dict[str, Any] = False, max_tokens: int | None = None
+        self,
+        messages: list[dict[str, str]],
+        json_mode: bool | dict[str, Any] = False,
+        max_tokens: int | None = None,
+        seed: int | None = None,
     ) -> dict[str, Any]:
         pin = {"provider": {"order": self.pin, "allow_fallbacks": False, "require_parameters": True}} if self.pin else {}
-        seed = {"seed": self.seed} if self.seed is not None else {}
-        body = {**pin, **seed, **self.extra_body, "model": self.model, "messages": messages, "temperature": self.temperature}
+        seeded = {"seed": seed} if seed is not None else {}
+        body = {**pin, **seeded, **self.extra_body, "model": self.model, "messages": messages, "temperature": self.temperature}
         if json_mode:
             body["response_format"] = (
                 {"type": "json_schema", "json_schema": {"name": "reply", "schema": json_mode}}
@@ -215,16 +226,25 @@ class LLM(HttpModel):
         return body
 
     def complete(
-        self, system: str, user: str, *, op: str = "", max_tokens: int | None = None, keep_cut: bool = False, cut: list[str] | None = None
+        self,
+        system: str,
+        user: str,
+        *,
+        op: str = "",
+        max_tokens: int | None = None,
+        keep_cut: bool = False,
+        cut: list[str] | None = None,
+        seed: int | None = None,
     ) -> str:
         """The reply as text. With `max_tokens`, a reply cut at the limit is asked once more, shorter, then ModelError.
 
         With `keep_cut`, a reply cut at the limit is not asked again: what was written is returned, with a warning,
-        and appended to `cut` if given (so the caller knows the reply is unfinished).
+        and appended to `cut` if given (so the caller knows the reply is unfinished). `seed` replaces the configured one.
         """
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        extra: dict[str, Any] = {} if seed is None else {"seed": seed}  # only when given: a stand-in `chat` need not take it
         try:
-            return no_surrogates(self.chat(messages, op=op, max_tokens=max_tokens))
+            return no_surrogates(self.chat(messages, op=op, max_tokens=max_tokens, **extra))
         except ReplyCut as e:
             if keep_cut:
                 log.warning("%s: reply cut at the output cap: kept the %d characters written", op, len(e.text))
@@ -234,7 +254,7 @@ class LLM(HttpModel):
             if max_tokens is None:
                 raise
         messages = [messages[0], {"role": "user", "content": user + _cut_note(max_tokens)}]
-        return no_surrogates(self.chat(messages, op=op, max_tokens=max_tokens))
+        return no_surrogates(self.chat(messages, op=op, max_tokens=max_tokens, **extra))
 
     def json(self, system: str, user: str, schema: type[T], *, op: str = "", max_tokens: int | None = None) -> T:
         """Ask for one JSON object and validate it; one retry that asks for JSON mode, then ModelError.

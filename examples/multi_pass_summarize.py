@@ -26,7 +26,7 @@ intranet. Orders placed during the closure are shipped from 3 January, in the or
 
 def multi_pass(ctx: StepContext, source: Source) -> Candidate:
     system = ctx.prompts.render("librarian/system")
-    text = source.text[: ctx.cfg.source_chars]
+    text = source.text[: ctx.cfg.effective_read_chars]
     draft = ctx.llm.complete(system, f"Write a short note in Markdown about this text:\n\n{text}", op="draft")
     critique = ctx.llm.complete(
         system, f"List what is missing or wrong in this note, given the text.\n\nText:\n{text}\n\nNote:\n{draft}", op="critique"

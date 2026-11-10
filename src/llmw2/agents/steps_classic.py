@@ -9,6 +9,7 @@ Public, so a custom step can reuse them: `replace(CLASSIC, summarize=lambda ctx,
 from __future__ import annotations
 
 import difflib
+import json
 import logging
 import math
 import re
@@ -17,6 +18,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator
 
+from llmw2.agents import lexical, note_checks
 from llmw2.agents.base import clean_tags, list_folders, list_notes
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.state import source_state, split_blocks
@@ -117,23 +119,157 @@ def summarize(ctx: StepContext, source: Source) -> Candidate:
     if not ctx.cfg.summarize:
         return _verbatim(source, ctx.cfg.classifier.state_chars)
     room = ctx.cfg.effective_read_chars - PROMPT_ROOM
-    if len(source.text) <= room:
-        draft = ctx.ask_json(
+    # a source the note copies (`llm.note_copy_words`, `llm.note_copy_parts`) is never split: no call on its parts
+    llm = ctx.cfg.llm
+    copied = llm.note_steps and (len(source.text.split()) < llm.note_copy_words or (llm.note_copy_parts and len(source.text) > room))
+    if len(source.text) <= room or copied:
+        draft = None
+        if ctx.cfg.llm.note_steps:
+            body_cap = max(ctx.cfg.effective_note_chars, len(source.text))
+            draft = _in_two_calls(
+                ctx, "librarian/summarize_body", {"source_text": source.text}, source, body_cap, exact=True
+            )
+        draft = draft or ctx.ask_json(
             "librarian/summarize",
             NoteDraft,
             source_title=source.label,
             source_resource=source.resource or "(none)",
             source_text=source.text,
             length_rule="",  # one call reads the whole source: no length rule (the output cap only stops runaways)
+            language_of=source.text,
             # A summary has no reason to be longer than its source; a cap at the note length cut long replies (2026-10-07).
             reply_chars=max(ctx.cfg.effective_note_chars, len(source.text)),
         )
     else:
         draft = _summarize_in_parts(ctx, source, room)
+    draft = _unquoted(ctx, draft, source.text)
     state = source_state(source.title, source.text, ctx.cfg.classifier.state_chars)
     cand = Candidate(draft.title.strip(), draft.summary.strip(), clean_tags(draft.tags), draft.body.strip(), state=state)
     _warn_if_long("summarize", cand.title, cand.body, ctx.cfg.target_note_chars(len(source.text)))
     return cand
+
+
+class NoteMeta(BaseModel):
+    title: str
+    summary: str
+    tags: list[str] = []
+
+
+META_CHARS = 3_000  # how much of the body the metadata call reads
+_FENCE = re.compile(r"\A\s*```[\w-]*[ \t]*\n(.*?)\n?```\s*\Z", re.DOTALL)
+_TITLE_LINE = re.compile(r"\A\s*# [^\n]*\n")
+_TOP_HEADING = re.compile(r"^# ", re.MULTILINE)
+
+
+def _plain_body(reply: str) -> str:
+    """A body reply without the tags of the prompt or the code fence a small model wraps it in, and without a lone top-level
+    title heading."""
+    text = note_checks.wrapper_free(reply)
+    if (title := _TITLE_LINE.match(text)) and not _TOP_HEADING.search(text[title.end() :]):
+        text = text[title.end() :].strip()
+    return text
+
+
+def _unwrapped(reply: str) -> str:
+    """A body reply that is a JSON object anyway: its "note", "body" or "content" string; "" when it has none (the caller
+    then makes the single JSON call). Any other reply as it is."""
+    text = _plain_body(reply)
+    if not text.startswith("{"):
+        return reply
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return reply
+    if not isinstance(data, dict):
+        return reply
+    return next((data[k] for k in ("note", "body", "content") if isinstance(data.get(k), str)), "")
+
+
+def _in_two_calls(
+    ctx: StepContext,
+    prompt: str,
+    values: dict[str, Any],
+    source: Source,
+    reply_chars: int | None,
+    *,
+    exact: bool = False,
+) -> NoteDraft | None:
+    """`llm.note_steps`: the body as a plain-text reply, then title, summary and tags from its start. A small writer
+    does each of the two better than both in one JSON reply. None when the body is empty or the metadata reply is
+    invalid: the caller then makes the single JSON call.
+
+    The body is written with the source's URLs, paths and identifiers listed when `exact`, and checked: a body in another
+    language, or with such a string the source does not have, is asked for once more (the only retry of the note), and is the
+    source text if it fails again. The title is written with the document's heading and names, and checked (see `note_checks`)."""
+    language = lexical.language_of(source.text) or "the language of the document"
+    listed = note_checks.items_rule(note_checks.exact_items(source.text, note_checks.ITEMS_MAX)) if exact else ""
+    copy = len(source.text.split()) < ctx.cfg.llm.note_copy_words
+    copy = copy or (ctx.cfg.llm.note_copy_parts and len(source.text) > ctx.cfg.effective_read_chars - PROMPT_ROOM)
+    body = source.text if copy else ""
+
+    def write(seed: int | None = None) -> str:
+        # The librarian's system message asks for a JSON object, which a small model then answers with: this call has its own
+        reply = ctx.ask_text(
+            prompt, reply_chars=reply_chars, system_prompt="librarian/system_text", language=language, seed=seed, items=listed, **values
+        )
+        plain = note_checks.without_stray_tags(_plain_body(_unwrapped(reply)), source.text)
+        text = note_checks.restored(note_checks.without_repeated_sections(plain, source.text), source.text)
+        return text
+
+    def problem(text: str) -> str:
+        wanted, written = lexical.language_of(source.text), lexical.language_of(text)
+        if wanted and written and wanted != written:  # a small writer now and then answers in another language
+            return f"the body is in {written}, the source in {wanted}"
+        if wrong := note_checks.altered(text, source.text):
+            return f"the body has strings the source does not: {wrong[:3]}"
+        if wrong := note_checks.misquoted(text, source.text):
+            return f"the body quotes words the source does not have: {[q[:60] for q in wrong[:2]]}"
+        if wrong := note_checks.misattributed(text, source.text):
+            return f"the body gives a quotation to someone else than the source does: {[q[:60] for q in wrong[:2]]}"
+        return ""
+
+    if not body:
+        body = write()
+    if not body:
+        return None
+    if body != source.text and (why := problem(body)):
+        log.warning("summarize: %s: asking for it once more", why)
+        ctx.decide("note_retry", "code", why)  # counted by whoever reads the trace (`IngestResult.decisions`)
+        again = write((ctx.cfg.llm.seed or 0) + 1)
+        # Wrong twice: the source as it is, in its own language, beats a note the reader cannot trust
+        fixed = bool(again) and not problem(again)
+        body = again if fixed else source.text
+        log.debug("summarize: retry %s", "fixed the body" if fixed else "kept the source text")
+        if not fixed:
+            ctx.decide("note_source", "code", "the body is the source text", fallback=True)
+    def ask_meta(named: str) -> NoteMeta:
+        return ctx.ask_json(
+            "librarian/summarize_meta",
+            NoteMeta,
+            language=language,
+            source_title=named,
+            hints=note_checks.title_hints(note_checks.distinctive(source.text)),
+            note_text=note_checks.without_file_name_line(body)[:META_CHARS],
+        )
+
+    try:
+        meta = ask_meta(note_checks.heading_of(source.text) or source.file_name or source.title or "(none)")
+        title = note_checks.checked_title(meta.title, source.text, source.file_name, source.title)
+        if note_checks.copies_name(title, source.file_name or source.title):  # the name it was shown: once more without it
+            log.debug("summarize: title %r is the source's name: asking once more without it", title)
+            meta = ask_meta("(none)")
+            title = note_checks.checked_title(meta.title, source.text, source.file_name, source.title)
+    except ReplyInvalid as e:
+        log.warning("summarize: the metadata reply is invalid (%s): one JSON call writes the note", e)
+        return None
+    if title != " ".join(meta.title.split()):
+        log.debug("summarize: title %r replaced by %r", meta.title, title)
+    summary = meta.summary
+    wanted, written = lexical.language_of(source.text), note_checks.short_language(summary)
+    if wanted and written and wanted != written:
+        log.debug("summarize: summary in %s, the source in %s: its first sentence from the body instead", written, wanted)
+        summary = note_checks.first_sentence(body) or summary
+    return NoteDraft(title=title, summary=summary, tags=meta.tags, body=body)
 
 
 def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraft:
@@ -165,6 +301,7 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
                 "block_text": block.text,
                 "cap": cap,
                 "keep_cut": True,  # only the first `cap` characters are kept anyway: a cut reply holds them
+                "language_of": block.text,
             }
             cut: list[str] = []
             notes = ctx.ask_text("librarian/summarize_part", reply_chars=reply_chars, cut=cut, **args).strip()
@@ -182,20 +319,49 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
         parts.append(f"Part {k} of {n} — {heading}\n{notes}")
     target = cfg.target_note_chars(len(source.text))
     part_notes = "\n\n".join(parts)
-    draft = ctx.ask_json(
+    combine_cap = {} if cfg.note_length == "fixed" else {"reply_chars": math.ceil(1.2 * target)}  # fixed: the default cap of a note
+    draft = None
+    if cfg.llm.note_steps:
+        draft = _in_two_calls(
+            ctx, "librarian/summarize_combine_body", {"part_notes": part_notes}, source, combine_cap.get("reply_chars")
+        )
+    draft = draft or ctx.ask_json(
         "librarian/summarize_combine",
         NoteDraft,
         source_title=source.label,
         source_resource=source.resource or "(none)",
         part_notes=part_notes,
         note_chars=target,
-        **({} if cfg.note_length == "fixed" else {"reply_chars": math.ceil(1.2 * target)}),  # fixed: the default cap of a note
+        language_of=source.text,
+        **combine_cap,
     )
     wanted = incoming_values("\n\n".join(written))  # the notes only: a heading such as "Green Coffee" is not a value
     missing = wanted - incoming_values(draft.body)
     if missing:  # only logged: nothing is asked again
         log.warning("summarize: the note of %r lacks %d of %d values of its part notes", draft.title, len(missing), len(wanted))
-    return draft
+    return draft.model_copy(
+        update={
+            "title": _without_part_labels(draft.title, source.text, line=False) or draft.title,
+            "summary": _without_part_labels(draft.summary, source.text, line=False),
+            "body": _without_part_labels(draft.body, source.text),
+        }
+    )
+
+
+# the labels the parts of a long source carry (above, and in the prompt `summarize_part`), which a small writer copies
+_PART_LINE = re.compile(r"(?im)^[ \t#>*_-]*(?:this is )?part \d+ of \d+\b.*(?:\n|\Z)")
+_DASHES = "-\u2014\u2013:"
+_PART_WORDS = re.compile(rf"(?i)\s*[{_DASHES}(]*\s*\bpart \d+ of \d+\b\)?\s*[{_DASHES}]?\s*")
+
+
+def _without_part_labels(text: str, source: str, *, line: bool = True) -> str:
+    """`text` without the "Part k of n" labels of the parts, unless the source itself has such words: in a body the whole
+    line goes (the label and the prompt's "This is part k of n, starting in: ..."), in a title or summary the words."""
+    if _PART_WORDS.search(source):
+        return text
+    if line:
+        return _PART_LINE.sub("", text).strip()
+    return _PART_WORDS.sub(" ", text).strip(" " + _DASHES)
 
 
 def cut_notes(notes: str, cap: int) -> str:
@@ -266,7 +432,7 @@ def name_folder(ctx: StepContext, parent: Folder, cand: Candidate) -> tuple[str,
         FolderName,
         parent=parent.label,
         parent_description=parent.description or "(root of the wiki)",
-        siblings=list_folders(parent.subfolders),
+        siblings=list_folders([f for f in parent.subfolders if f.routable]),
         note=ctx.state(cand),
         reply_chars=DECIDE_CHARS,
     )
@@ -325,6 +491,7 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
         "source_text": "" if cand is not None else body[:budget],
         # The merge rewrites the whole existing note: its cap grows with it (a note of 36k characters failed at 3 times note_chars).
         "reply_chars": reply_chars,
+        "language_of": source.text or existing,
     }
     if long_source:
         # A long source: the candidate is a summary of it and misses values; read the text itself (no guard, no candidate call).
@@ -335,7 +502,9 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
             log.warning("merge: the draft of %s is unchanged although the source has new values: asking again", note.rel)
             listed = _lost_originals(source.text[:budget], missing)
             values["source_text"] += MERGE_UNCHANGED_NOTE + "\n".join(f"- {v}" for v in listed)
-            draft = ctx.ask_json(prompt, NoteDraft, **values)
+            again = ctx.ask_json(prompt, NoteDraft, **values)
+            if not note_checks.echoes(again.body, MERGE_UNCHANGED_NOTE, existing + "\n" + source.text[:budget]):
+                draft = again
     else:
         draft = ctx.ask_json(prompt, NoteDraft, **values)
         new = incoming_values(body[:budget]) - incoming_values(existing)
@@ -358,10 +527,30 @@ def merge(ctx: StepContext, note: Note, source: Source) -> NoteDraft:
         listed = _lost_originals(existing, lost)
         values[field] = values[field] + MERGE_LOST_NOTE + "\n".join(f"- {v}" for v in listed)
         again = ctx.ask_json(prompt, NoteDraft, **values)
-        if len(old - incoming_values(again.body)) < len(lost):
+        if note_checks.echoes(again.body, MERGE_LOST_NOTE, existing + "\n" + body):
+            log.warning("merge: the second draft of %s repeats the request instead of the note: the first is kept", note.rel)
+        elif len(old - incoming_values(again.body)) < len(lost):
             draft = again
+    # A small writer may copy the prompt's own words, its example included, as if they were facts of the note.
+    told = "\n".join((ctx.prompts.load("librarian/merge"), ctx.prompts.load("librarian/merge_source"), MERGE_LOST_NOTE))
+    told += MERGE_UNCHANGED_NOTE
+    if note_checks.echoes(f"{draft.summary}\n{draft.body}", told, f"{existing}\n{body}\n{source.text}"):
+        log.warning("merge: the draft of %s copies the prompt's own words: the incoming note is added as a section", note.rel)
+        return _appended(note, existing, cand, source)
     _warn_if_long("merge", draft.title, draft.body, ctx.cfg.target_note_chars(len(source.text), len(existing)))
-    return draft
+    return _unquoted(ctx, draft, f"{existing}\n{source.text}")
+
+
+def _unquoted(ctx: StepContext, draft: NoteDraft, reference: str) -> NoteDraft:
+    """The draft with the quotation marks taken off what it quotes and `reference` (the source, and the note a merge
+    rewrites) does not have, in the body and the summary; a `quote_unquoted` decision says how many. No model call."""
+    body, wrong = note_checks.unquoted(draft.body, reference)
+    summary, wrong_summary = note_checks.unquoted(draft.summary, reference)
+    if not (wrong or wrong_summary):
+        return draft
+    log.debug("quotations the source does not have, left without quotation marks: %s", [q[:60] for q in wrong + wrong_summary])
+    ctx.decide("quote_unquoted", "code", f"{len(wrong) + len(wrong_summary)} quotations not in the source")
+    return draft.model_copy(update={"body": body, "summary": summary})
 
 
 def _appended(note: Note, existing: str, cand: Candidate | None, source: Source) -> NoteDraft:
@@ -468,6 +657,7 @@ def _source_values(note: Note, existing: str, source: Source, budget: int, reply
         "source_text": source.text[:budget],
         "length_rule": "",
         "reply_chars": reply_chars,
+        "language_of": source.text or existing,
     }
 
 

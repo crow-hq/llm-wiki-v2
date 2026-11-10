@@ -118,15 +118,14 @@ def test_answer_conflicts_false_does_not_change_the_rare_candidates(bundle: Path
 
 
 def two_note_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, **switches: bool) -> Wiki:
-    """Overview at the root and Revenue policy in /finance: retrieval reads both, the conflict check says 0.9."""
+    """Overview at the root and Revenue policy in /finance: the search finds both, the conflict check says 0.9."""
     wiki = Wiki(WikiConfig(bundle=bundle, mode="crow", **switches), llm=llm, classifier=classifier, steps=LEVELS)
     wiki.init()
     root = wiki.store.load()
-    add_note(wiki, root, "Overview", "We sell widgets.")
+    add_note(wiki, root, "Overview", "We sell widgets. Revenue is booked at head office.")
     finance, _ = wiki.store.create_folder(root, "finance", "Everything about finance.")
     add_note(wiki, finance, "Revenue policy", "Revenue policy in detail.")
-    classifier.noul_scores["retrieve_folder"] = {'folder "finance"': 0.9}
-    classifier.noul_scores["retrieve_note"] = {'note titled "Overview"': 0.9, 'note titled "Revenue policy"': 0.9}
+    classifier.noul_scores["retrieve_note"] = {'note titled "Revenue policy"': 0.9}
     classifier.noul_scores[CONFLICT_OP] = lambda text: 0.9
     llm.add(ANSWER, "Answer.")
     return wiki

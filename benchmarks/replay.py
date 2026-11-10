@@ -82,13 +82,27 @@ class Replay:
 
             # The key leaves max_tokens out: an uncut answer does not depend on it, and a cut raises (it is not cached), so older
             # caches stay valid. A cached reply longer than a cap set later is replayed as a success: a replay cannot show a cut.
-            def cached_chat(messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
+            def cached_chat(
+                messages: list[dict[str, str]],
+                *,
+                op: str = "",
+                json_mode: bool = False,
+                max_tokens: int | None = None,
+                seed: int | None = None,
+            ) -> str:
+                fixed = {} if seed is None else {"seed": seed}
                 if not self._wants("llm", op):
-                    return chat(messages, op=op, json_mode=json_mode, max_tokens=max_tokens)
+                    return chat(messages, op=op, json_mode=json_mode, max_tokens=max_tokens, **fixed)
                 key = digest(
-                    {"model": llm.model, "temperature": llm.temperature, "seed": llm.seed, "json_mode": json_mode, "messages": messages}
+                    {
+                        "model": llm.model,
+                        "temperature": llm.temperature,
+                        "seed": llm.seed if seed is None else seed,
+                        "json_mode": json_mode,
+                        "messages": messages,
+                    }
                 )
-                return str(self._through("llm", key, lambda: chat(messages, op=op, json_mode=json_mode, max_tokens=max_tokens)))
+                return str(self._through("llm", key, lambda: chat(messages, op=op, json_mode=json_mode, max_tokens=max_tokens, **fixed)))
 
             llm.chat = cached_chat  # type: ignore[method-assign]
         if classifier is not None:

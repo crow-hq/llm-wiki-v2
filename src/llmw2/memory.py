@@ -9,6 +9,7 @@
 Its tools are served over Streamable HTTP, at /mcp of the wiki's own server:
 - `recall`: a question, answered with the notes the answer cites;
 - `remember`: a text, filed like any note;
+- `search`: the notes that best match a query, with no model call;
 - `read_note`: one note in full;
 - `rebuild`: every note filed again on the same folders, from the wiki's own raw copies (destructive, asks for a confirmation);
 - `create_area`, `propose_area`, `proposals` and `confirm_area`: the top-level folders. The memory never opens or proposes
@@ -68,6 +69,7 @@ A typed classifier decides where each note goes and a model writes it (CROW).
 they mention something from before. Cite the notes it returns as [path.md].
 - Call `remember` when something durable is settled: a decision and why, a fix that worked, a preference, a fact about \
 a project or a person. One topic per call, written to make sense without this conversation.
+- Call `search` to find notes by their words with no answer written (fast, no model), when you will read them yourself.
 - Call `read_note` to read a cited note in full.
 - When `recall` or `remember` returns requests instead of a result, the memory works with your models: follow its `how`.
 Never store secrets: keys, passwords, tokens."""
@@ -157,6 +159,20 @@ class Memory:
             if relay is None:
                 raise ToolError(f"no job {job!r}: it was never started, or it ended over {KEEP / 60:.0f} minutes ago")
             return self.progress(job, relay, relay.answer(replies))
+
+        @server.tool(annotations=READ_ONLY)
+        def search(
+            query: Annotated[str, Field(description="Words to look for, or a quoted expression, a code, a name")],
+            k: Annotated[int, Field(description="How many notes, 1 to 50", ge=1, le=50)] = 8,
+            where: Annotated[
+                dict[str, str] | None, Field(description="Only notes whose fields have all these values, e.g. {\"team\": \"ops\"}")
+            ] = None,
+        ) -> list[dict[str, Any]]:
+            """The notes that best match a query, with their title and summary, and no answer written: fast, no model call.
+
+            For when you will read the notes yourself with read_note; recall writes an answer from them instead.
+            """
+            return [h.to_dict() for h in guarded(lambda: self.live().search(query, k=k, where=where))]
 
         @server.tool(annotations=READ_ONLY)
         def read_note(path: Annotated[str, Field(description="The note's path as recall cites it, e.g. finance/pricing.md")]) -> str:

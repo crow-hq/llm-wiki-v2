@@ -24,11 +24,12 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 import yaml
 from pydantic import BaseModel
 
+from llmw2.agents import lexical, linking
 from llmw2.agents import steps_classic as classic
 from llmw2.agents import steps_crow as crow
 from llmw2.agents.base import Decision
@@ -74,29 +75,59 @@ class StepContext:
     candidate: Candidate | None = None  # the note `summarize` wrote from it (None while asking and while summarizing)
     decisions: list[Decision] = field(default_factory=list)
     fixed: bool = False  # a rebuild: the folders are the ones there are, so no step opens one or asks the LLM where to file
+    home: str | None = None  # the folder (its rel) the document was routed to: `match` looks at its notes first (None while asking)
+    search: Callable[[str, int], list[Note]] | None = None  # while asking: the best k notes for a query, as `Wiki.search` finds them
 
-    def ask_json(self, prompt: str, schema: type[T], *, reply_chars: int | None = None, **values: object) -> T:
+    def ask_json(
+        self, prompt: str, schema: type[T], *, reply_chars: int | None = None, language_of: str | None = None, **values: object
+    ) -> T:
         """Render `prompt` with `values` and ask for a JSON reply.
 
         `reply_chars` is about how long the reply should be (default: a note, `effective_note_chars`); it sets the
-        output cap, and a reply cut by it is asked once more, shorter. It is not a prompt value: a prompt cannot
-        have a variable of that name.
+        output cap, and a reply cut by it is asked once more, shorter. `language_of`: the text whose language the note
+        is written in (see `_language_line`). Neither is a prompt value: a prompt cannot have a variable of that name.
         """
         system = self.prompts.render(self.system_prompt)
         cap = reply_tokens(self.cfg.effective_note_chars if reply_chars is None else reply_chars)
-        return self.llm.json(system, self.prompts.render(prompt, **self._values(values)), schema, op=prompt, max_tokens=cap)
+        user = self.prompts.render(prompt, **self._values(values)) + self._language_line(prompt, language_of)
+        return self.llm.json(system, user, schema, op=prompt, max_tokens=cap)
+
+    def _language_line(self, prompt: str, text: str | None) -> str:
+        """With `llm.note_language`, a last line naming the language of `text` when it is not English: a small writer
+        ignores "write in the language of the source" but follows the name. Empty otherwise, so the prompt is unchanged."""
+        if not (self.cfg.llm.note_language and text):
+            return ""
+        language = lexical.language_of(text)
+        if language is None or language == "English":
+            return ""
+        what = "the notes" if prompt == "librarian/summarize_part" else "the title, summary, section headings and body"
+        return f"\n\nWrite {what} in {language}."
 
     def ask_text(
-        self, prompt: str, *, reply_chars: int | None = None, keep_cut: bool = False, cut: list[str] | None = None, **values: object
+        self,
+        prompt: str,
+        *,
+        reply_chars: int | None = None,
+        keep_cut: bool = False,
+        cut: list[str] | None = None,
+        language_of: str | None = None,
+        system_prompt: str | None = None,
+        seed: int | None = None,
+        **values: object,
     ) -> str:
         """Like `ask_json`, for a plain-text reply.
 
-        `keep_cut`: a reply cut by the cap is returned as written, not asked again; `cut` collects it. Not prompt values.
+        `keep_cut`: a reply cut by the cap is returned as written, not asked again; `cut` collects it.
+        `system_prompt`: the system message when it is not the step's own (whose rule is to answer in JSON). Not prompt values.
+        `seed`: replaces the configured seed for this request, so that a repeat of the request differs.
         """
-        system = self.prompts.render(self.system_prompt)
+        system = self.prompts.render(system_prompt or self.system_prompt)
         cap = reply_tokens(self.cfg.effective_note_chars if reply_chars is None else reply_chars)
-        user = self.prompts.render(prompt, **self._values(values))
-        return self.llm.complete(system, user, op=prompt, max_tokens=cap, keep_cut=keep_cut, **({} if cut is None else {"cut": cut}))
+        user = self.prompts.render(prompt, **self._values(values)) + self._language_line(prompt, language_of)
+        extra: dict[str, Any] = {} if cut is None else {"cut": cut}
+        if seed is not None:
+            extra["seed"] = seed
+        return self.llm.complete(system, user, op=prompt, max_tokens=cap, keep_cut=keep_cut, **extra)
 
     def _values(self, values: dict[str, object]) -> dict[str, object]:
         """The values of a prompt, with the note length and the length rule that `shared/note_rules` asks for."""
@@ -121,8 +152,8 @@ class StepContext:
         return folder.depth < self.cfg.max_depth
 
     def children(self, folder: Folder) -> list[Folder]:
-        """Subfolders a step may enter: none below max_depth."""
-        return folder.subfolders if folder.depth < self.cfg.max_depth else []
+        """Subfolders a step may enter: none below max_depth, and none closed to automatic filing."""
+        return [f for f in folder.subfolders if f.routable] if folder.depth < self.cfg.max_depth else []
 
     def state(self, cand: Candidate) -> str:
         return cand.compact(self.cfg.classifier.state_chars)
@@ -206,7 +237,8 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
     model (CROW only), temperature, seed, pinned providers, the CROW thresholds, `max_depth`, `max_links`, `mode`,
     `summarize`, the size of the state routing reads (`state_chars`, `STATE_VERSION`), how much one
     call reads and how long a note may be (`effective_read_chars`, `effective_note_chars`, and `note_length` unless fixed),
-    `SUMMARY_VERSION`, and `relate_rare_values`, `answer_conflicts` and `strict_new_folders` when switched off. Keys, addresses, timeouts,
+    `SUMMARY_VERSION`, and `relate_rare_values`, `answer_conflicts` and `strict_new_folders` when switched off, `link_scope` and
+    `overflow_folder` when set. Keys, addresses, timeouts,
     attempts, other sizes, concurrency and logs do not change the decisions: not in it.
     """
     decisive = {
@@ -219,6 +251,9 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
         "pin_provider": cfg.llm.pin_provider,
         "crow": cfg.crow.model_dump(),
         "fallback_menu_chars": crow.FALLBACK_MENU_CHARS,  # the menu limit is a constant outside the hashed step functions
+        "match_top": crow.MATCH_TOP,  # so are the caps on the candidates of match and relate
+        "relate_top": crow.RELATE_TOP,
+        "rare_top": linking.RARE_TOP,
         "max_depth": cfg.max_depth,
         "max_links": cfg.max_links,
         "mode": cfg.mode,
@@ -237,6 +272,10 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
         decisive["answer_conflicts"] = False
     if not cfg.strict_new_folders:
         decisive["strict_new_folders"] = False
+    if cfg.link_scope != "wiki":
+        decisive["link_scope"] = cfg.link_scope
+    if cfg.overflow_folder:
+        decisive["overflow_folder"] = cfg.overflow_folder
     return hashlib.sha256(json.dumps(decisive, sort_keys=True).encode("utf-8")).hexdigest()[:8]
 
 

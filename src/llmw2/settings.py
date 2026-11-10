@@ -334,6 +334,8 @@ def is_default(field: str, value: str, classifier_provider: str) -> bool:
     section, leaf = FIELDS[field][0], FIELDS[field][-1]
     presets = thresholds(crow_preset(classifier_provider)) if field.startswith("crow_") else PARAMS.get(section, {})
     default = presets.get(leaf)
+    if isinstance(default, bool):  # a switch such as rerank
+        return str(value).strip().lower() == str(default).lower()
     try:
         return default is not None and math.isclose(float(value), float(default))
     except ValueError:

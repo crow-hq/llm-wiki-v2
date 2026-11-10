@@ -114,7 +114,14 @@ class DryLLM(LLM):
         super().__init__(LLMConfig(model="fake/llm"), usage)
         self.delay = delay
 
-    def chat(self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
+    def chat(
+        self, messages: list[dict[str, str]],
+        *,
+        op: str = "",
+        json_mode: bool = False,
+        max_tokens: int | None = None,
+        seed: int | None = None,
+    ) -> str:
         time.sleep(self.delay)
         self.usage.record(
             "llm", self.model, 100, 10, op=op, seconds=self.delay, provider="dry", temperature=self.temperature, seed=self.seed

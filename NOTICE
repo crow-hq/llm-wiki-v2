@@ -4,7 +4,7 @@ Copyright 2026 Federico Cesarini, Marco Sassarini
 This project started as a fork of the Open Knowledge Format (OKF) project by
 Google LLC: https://github.com/GoogleCloudPlatform/open-knowledge-format
 Copyright 2026 Google LLC, licensed under the Apache License 2.0
-(SPDX-License-Identifier: Apache-2.0), whose text is in LICENSES/Apache-2.0.md.
+(SPDX identifier Apache-2.0), whose text is in LICENSES/Apache-2.0.txt.
 
 The OKF specification, reference agent, viewer, sample bundles and their
 tests have been removed. The wiki's on-disk format is derived from OKF v0.2
@@ -12,7 +12,7 @@ tests have been removed. The wiki's on-disk format is derived from OKF v0.2
 writes it and is an independent implementation.
 
 Files carried over from OKF, modified, and keeping their original headers:
-- LICENSES/Apache-2.0.md (was LICENSE.md): the Apache License 2.0 text, unchanged.
+- LICENSES/Apache-2.0.txt (was LICENSE.md): the Apache License 2.0 text, unchanged.
 - pyproject.toml: distribution renamed to llmwiki2, the reference agent
   and its Google dependencies removed, llmw2 package added.
 - .gitignore: entries added.
@@ -44,7 +44,16 @@ Everything else (Copyright 2026 Federico Cesarini, Marco Sassarini): src/llmw2/
 over from OKF, is licensed under the GNU Affero General Public License v3.0 or
 later (AGPL-3.0-or-later), whose text is in LICENSE.
 
+Code of conduct: CODE_OF_CONDUCT.md is adapted from the Contributor Covenant 2.1
+(https://www.contributor-covenant.org), Creative Commons Attribution 4.0
+International (CC-BY-4.0).
+
+Machine-readable licensing: REUSE.toml states the copyright and licence of the
+files that carry no header (demo, benchmark corpora, documentation,
+examples, images, fonts), following the REUSE specification
+(https://reuse.software). The licence texts are in LICENSES/.
+
 License change: versions up to 0.2.0 were released under the Apache License 2.0
-and stay available under it. Later versions are AGPL-3.0-or-later. The authors
-also offer the software under separate commercial terms; contributions are
+and stay available under it. Later versions are AGPL-3.0-or-later. The copyright
+holders may also license the software on other terms; contributions are
 accepted under the Contributor License Agreement in CLA.md, which allows this.

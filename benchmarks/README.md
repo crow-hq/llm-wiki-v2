@@ -21,7 +21,12 @@ The real corpora are not committed (licence and size): only the scripts that sel
 |---|---|---|
 | GitLab handbook, marketing (CC BY-SA 4.0) | https://gitlab.com/gitlab-com/content-sites/handbook, head `2c77a1f5b8c8a80cb7b5151ff11cfad84f98bfbb` | `t9_handbook_select.py`: pages first added from 2024-01-01, labels from the folder they were added in, renames as events |
 | PostHog handbook (`contents/` is MIT) | https://github.com/PostHog/posthog.com, head `2c6eef5ed782311675b28993df3c70fbbcbf2372` | `posthog_select.py`: 120 pages of the handbook's folders (seed 9, at most 20 000 bytes, none at the root, no `_snippets`), labels from the folder the page is in at the head, `manifest.json` with the sha256 of every file |
+| MultiEURLEX, Italian and English (CC BY 4.0) | https://huggingface.co/datasets/coastalcph/multi_eurlex, revision `d0318b7f68f43f7d77797437ce172d899254cd0f` (archive `data/multi_eurlex.tar.gz`; label names from `eurovoc_descriptors.json` of https://github.com/nlpaueb/multi-eurlex at `af2da31b54ca4272d880a46aee8dbbf346712e90`) | `eurlex_select.py`: 180 laws of the test split, the same celex ids in `eurlex-it` and `eurlex-en` (seed 9, 300 to 150 000 characters, at least a third over 20 000), labels from the first EUROVOC level-1 descriptor, `manifest.json` per language with the sha256 of every file |
+| CUAD v1 contracts (CC BY 4.0) | https://zenodo.org/records/4595826, `CUAD_v1.zip`, sha256 `88b694d99007d39777fa44cd72daf8297773d285dc3eab0091ba32078888d18e` | `cuad_select.py`: 180 of the full-contract text files (seed 9, 300 to 150 000 characters, at least a third over 20 000), labels from the official contract type folder of the CUAD PDFs, `manifest.json` with the sha256 of every file |
+| HMRC internal manuals (Open Government Licence v3.0) | https://www.gov.uk/hmrc-internal-manuals through the GOV.UK Content API; live source, so a local snapshot (its date and the sha256 of its files) is the pin | `hmrc_select.py`: builds the snapshot politely (2 requests a second), then 180 sections of 10 manuals (seed 9, 300 to 150 000 characters of text, at least a third over 20 000 if the snapshot has them), labels from the manual, `manifest.json` with the sha256 of every file |
 | Enron mail | https://www.cs.cmu.edu/~enron/, `enron_mail_20150507.tar.gz`, sha256 `b3da1b3fe0369ec3140bb4fbce94702c33b7da810ec15d718b3fadf5cd748ca7` | `t9_enron_select.py`: one mailbox, the folders its owner made, labels from the folder |
+| Enron mail, user folders across mailboxes (scale corpus) | same archive and sha256 as the Enron row above | `enron_folders_select.py`: the messages their owners filed in folders of their own (system folders left out, folders with at least 50 messages, duplicates by Message-ID or body dropped), the first N of one seeded shuffle (seed 9, N = 2 000; 1 000 is a prefix of 2 000), gold `/mailbox/folder`, `-manifest.json` with the sha256 of every file |
+| Italian Wikipedia articles on diseases with an ICD-10 code (CC BY-SA 4.0, Wikipedia contributors) | live source (Wikidata SPARQL, property P494, plus the MediaWiki API of it.wikipedia.org), so the revision id and the sha256 of every article, in the manifest, are the pin | `itwiki_icd_select.py`: 600 articles of at least 1 500 characters (seed 9, at most 20% in one ICD-10 chapter, items with codes in several chapters dropped), gold `/chapter/block` of the WHO ICD-10 block list; polite download (at most one request a second, cached, resumable), stops at a block, `-manifest.json` with the article URL, revision id and sha256 of every file |
 | Office and OpenDocument files (2,629: NapierOne and Common Crawl `CC-MAIN-2026-39`) | per file its sha256 and source: `office/SOURCES.md` | `office/fetch.py` fetches them; `office/measure.py` compares two versions of the readers on them, free |
 
 ## Scripts
@@ -42,12 +47,13 @@ The real corpora are not committed (licence and size): only the scripts that sel
 - `make_long2_corpus.py`, `make_deep_demo.py`, `make_deep_corpus.py`, `make_dup_corpus.py` — generators (the corpora are
   committed; they are run only to change them; `--check` is free). `corpus_common.py` holds what they share.
 - `t9_labels.py` — merges the two blind annotations of a synthetic half into one `labels.json`.
-- `t9_handbook_select.py`, `t9_enron_select.py`, `posthog_select.py` — build the real corpora from their sources (above).
+- `t9_handbook_select.py`, `t9_enron_select.py`, `posthog_select.py`, `eurlex_select.py`, `cuad_select.py`, `hmrc_select.py` — build the real corpora from their sources (above).
 - `incremental.py` — files a corpus into an empty wiki with the library of its own tree, in one `ingest_many` or one `ingest`
   per document (`--mode crow|classic`, `--flow batch|single`, `--cache`, `--max-usd`, `--dry-run`; see its docstring).
 - `incremental_score.py` — shape, cost and agreement with gold folders (AMI, pairwise F1) of the runs of `incremental.py`. Free.
 - `retrieval.py` — CROW's `select` step on the final wiki of a run, for questions written about its documents. Costs a few calls
   per question; `--make-cases` is free.
+- `growth.py` — tokens, cost and time per document of the runs of `incremental.py` as the wiki fills: slopes, blocks, fits. Free.
 
 ## Comparing with `main`: three arms, three models
 
@@ -125,18 +131,176 @@ logged after it, because folders are split and notes move after they are filed.
 It prints documents and errors, the share of notes below the first level, the largest folder, folders with one note, notes
 at the root, AMI and pairwise co-location F1 against the gold, the cost per document (original cost of every call, replayed
 ones included) and the cache hit rate. Reference: in the real folders, 30% of the PostHog pages sit in a folder that has
-subfolders.
+subfolders. Without gold it also gives the share of the notes in the largest folder, in folders of more than 50 notes, the
+90th percentile of the notes in a folder, the deepest folder, the pool of the `match` and `relate` decisions (median, 90th
+percentile, largest) and the documents whose routing was cut. `--gold-depth D` (repeatable) scores against the gold cut to its
+first D levels as well, for a gold with nested folders.
+
+**Runs that grow.** For wikis of hundreds or thousands of documents, `incremental.py` takes some more options (all work with
+`--dry-run`):
+
+    python benchmarks/incremental.py --corpus $C --out $R/grow --chunk 200 --stop-projected 1.3 --model $m
+    python benchmarks/incremental.py --corpus $C --out $R/other-order --order-seed 1 --no-plan --model $m
+
+- `--chunk N` files the documents in successive `ingest_many` of N, each on the tree the one before left, and leaves a
+  snapshot `ckpt-<documents filed>/` after each (the logs so far, `moves.jsonl`, a copy of `wiki/`, and the `digest` of the wiki
+  in its `meta.json`). `incremental_score.py` and `retrieval.py` read a snapshot like a run; a rerun with the same cache has the
+  same digests, whatever the time says.
+- `--stop-projected USD` (with `--chunk`) stops at the end of a chunk when the projected spend of the whole run, from the cost per
+  document so far and its growth, is above USD. Costs here are the original ones, replayed calls included.
+- `--order-seed S` files the documents in a seeded permutation instead of the name order; `--no-plan` files a batch with no plan
+  of the folders (the other setting of the plan, `OKF_PLAN=groups`, is the environment's). Every replica of a run needs a
+  cache of its own, or it repeats the answers of the first.
+- `calls.jsonl` has, for each call, `filed` (documents filed before it, so with one document at a time the document it
+  belongs to) and `phase` (`plan` for the calls that lay out folders). `meta.json` has the commit of the tree
+  (`git rev-parse HEAD`), `dirty` and the hash of what differs from it, the plan setting, the pin of the provider and the
+  calls per provider. A run whose `commit` is null or `dirty` is true does not name the library it measured.
+
+`growth.py` reads such runs, or any run with a `usage.jsonl`, and prints per corpus the slope of the tokens per document over
+the documents already filed (per 100), pooled over the corpora with a bootstrap interval, and with `--block N` the mean per
+block with its interval and the linear and log-log fits over the blocks:
+
+    python benchmarks/growth.py $R/C18-* $R/K18-* --block 200 --json growth.json
 
 **Retrieval.** `retrieval.py` asks the library's `select` step, on a copy of a run's final wiki, a question for each of a
 sample of its documents, and counts a hit when the document's final note is among the notes returned (also hit@1, hit@3, MRR
-and the share answered through the LLM fallback). The questions are written by a model that reads only the document:
+and the share answered through the LLM fallback; for CROW also `search@16`, the share of the questions whose note is in the 16
+the search offers before the classifier reorders them: the ceiling of the rest). The questions are written by a model that
+reads only the document:
 
     python benchmarks/retrieval.py --make-cases $C --n 60 --seed 9 --out cases.json
+    python benchmarks/retrieval.py --make-cases $C --n 120 --range 0:200 --out early.json   # only the first 200 documents
     # one question per case, with benchmarks/judgements/retrieval-questions-prompt.md, into questions.json: [{id, question}]
     python benchmarks/retrieval.py --questions questions.json --cases cases.json $R/branch-crow-batch-$n $R/main-crow-batch-$n
 
 Run it from the tree of the arm whose wikis it reads. The repository holds only the prompt: for a corpus that is not
 committed, neither the questions (they quote the documents) nor the texts are, and the results name a question by its id.
+
+## Professional corpora: laws, contracts, tax manuals
+
+Three real professional corpora of 180 documents each, built from open sources by their selection scripts (table above):
+MultiEURLEX laws in Italian and in English (the same laws in both, so the language is the only difference), CUAD contracts
+and the HMRC internal manuals. Each manifest gives the reference folder of every document (the EUROVOC level-1 descriptor,
+the contract type, the manual) and the sha256 of every file.
+
+    python benchmarks/eurlex_select.py --archive multi_eurlex.tar.gz --names eurovoc_descriptors.json --out CORPORA
+    python benchmarks/cuad_select.py --zip CUAD_v1.zip --out CORPORA
+    python benchmarks/hmrc_select.py --snapshot hmrc-snapshot --out CORPORA
+
+**A run with cloud models.** The writer and the classifier come from the settings (`OKF_CONFIG` pointing at a settings file
+with the keys, or the `OKF_*` and `OPENROUTER_API_KEY` variables); nothing else is set, so the run measures the library's
+defaults:
+
+    export OKF_MODE=crow OKF_LLM_PROVIDER=openrouter OKF_LLM_MODEL=z-ai/glm-5.3-flash OKF_CLASSIFIER_PROVIDER=openrouter
+    for c in eurlex-it eurlex-en cuad hmrc; do
+      python -u benchmarks/incremental.py --corpus CORPORA/$c --out runs/branch-$c --mode crow --flow batch         --model $OKF_LLM_MODEL --cache cache/branch-$c.json --max-usd 0.5
+    done
+    python benchmarks/incremental_score.py runs/branch-hmrc --gold CORPORA/hmrc-manifest.json
+
+Compare a change by running the same loop from the tree of each version (as in the three arms above) and scoring the runs
+side by side. **Reference** of this branch, writer GLM 5.3 Flash and the Jev classifier, one run per corpus:
+
+| corpus | folders | notes below the first level | largest folder | AMI | pairwise F1 |
+|---|---|---|---|---|---|
+| HMRC manuals | 35 | 93% | 18 | 0.674 | 0.442 |
+| MultiEURLEX, Italian | 17 | 35% | 18 | 0.246 | 0.188 |
+| MultiEURLEX, English | 17 | 16% | 39 | 0.237 | 0.223 |
+| CUAD contracts | 12 | 6% | 29 | 0.603 | 0.441 |
+
+The MultiEURLEX reference keeps the first of a law's EUROVOC descriptors only, so its AMI understates a tree that files a law
+under another of its descriptors. The writer summarizes long sources, so the notes cover a part of each law or contract;
+`omitted` lists the sections a note leaves out. One run per corpus: the share below the first level is what varies most
+from one run to the next, as the plan of the folders does.
+
+## CROW against classic on eleven corpora
+
+The numbers of the banner at the top of the main README. Each corpus filed into an empty wiki in one batch (`--flow batch`)
+twice, in CROW mode and in classic mode, from the same tree, with the same writer (GLM 5.3 Flash), seed and classifier
+(Jev), one run per mode and corpus. Then 60 questions per corpus, each written blind from one document
+with `judgements/retrieval-questions-prompt.md` on the cases of `retrieval.py --make-cases --n 60 --seed 9`, asked with
+`retrieval.py --as-asked`: the notes each wiki would read to answer, chosen as `ask` chooses them (CROW: the wiki's search,
+then the classifier reorders; classic: the LLM walks the folders).
+
+- **Right note read**: share of the questions for which the note of the document the question was written from is among the
+  notes read (at most 8). Questions with nothing to ask are left out before.
+- **Seconds per document**: the time of the run over the documents filed. **LLM tokens**: input and output of the writer's
+  calls per document (the classifier's apart). **Cost**: CROW's cost per document as a ratio of classic's, every call
+  included (the classifier too): as the runs paid it, and with the writer's calls priced at its list price.
+
+| corpus | documents | right note, CROW | right note, classic | seconds per document | LLM tokens per document | cost, as paid | cost, writer at list price |
+|---|---|---|---|---|---|---|---|
+| GitLab handbook | 151 | 100% | 78% | 18.2 vs 32.2 | 3,913 vs 11,648 | 0.99× | 0.58× |
+| Synthetic personal brain (Italian) | 150 | 100% | 75% | 12.1 vs 24.7 | 2,317 vs 8,630 | 1.01× | 0.54× |
+| Enron mail | 171 | 100% | 76% | 9.9 vs 19.1 | 1,700 vs 7,465 | 0.80× | 0.43× |
+| HMRC manuals | 180 | 100% | 93% | 15.7 vs 23.6 | 2,830 vs 12,937 | 0.77× | 0.42× |
+| MultiEURLEX, Italian | 180 | 100% | 90% | 23.3 vs 32.6 | 8,848 vs 17,146 | 1.15× | 0.72× |
+| CUAD contracts | 180 | 100% | 55% | 36.8 vs 48.7 | 12,907 vs 24,487 | 0.99× | 0.69× |
+| MultiEURLEX, English | 180 | 100% | 95% | 18.7 vs 26.3 | 6,487 vs 13,732 | 1.20× | 0.69× |
+| PostHog handbook | 120 | 100% | 75% | 17.2 vs 28.5 | 3,736 vs 11,997 | 0.96× | 0.55× |
+| Italian Wikibooks | 260 | 100% | 85% | 23.6 vs 39.1 | 5,982 vs 16,436 | 1.02× | 0.59× |
+| Synthetic personal brain, larger (Italian) | 327 | 97% | 68% | 9.9 vs 22.4 | 2,080 vs 10,221 | 1.11× | 0.47× |
+| Coffee corpus (`t9a` + `t9b`) | 120 | 98% | 83% | 13.5 vs 21.4 | 2,573 vs 8,557 | 1.02× | 0.56× |
+| **all** | **2,019** | **99.5%** | **79.4%** | **18.0 vs 29.2** | **4,861 vs 13,227** | **1.02×** | **0.59×** |
+
+Over the 656 questions the right note is read 99.5% of the time with CROW (95% Wilson interval 98.7 to 99.8) and 79.4% with
+classic (76.2 to 82.3); the difference, +20.1 points, has a paired bootstrap interval of +16.9 to +23.3. CROW files a
+document 1.62 times as fast and with 63% fewer LLM tokens. What that saves depends on the writer's price against the
+classifier's: the runs paid the writer about a quarter of its list price (the cheapest providers), about what the classifier
+costs per token, so the classifier's calls took what the LLM saved and the cost came out the same (1.02×); with the same
+calls priced at the writer's list price CROW costs 0.59 times classic's (0.42 to 0.72 per corpus), and 0.77 and 0.82 times
+with the list prices of two other writers (GLM 5.3, DeepSeek V4.1 Flash). The cost per document grows with the wiki in both
+modes, as the folders and the notes to compare with grow: per 100 documents already filed, at the writer's list price, by
+5.5% of classic's mean cost with CROW and 12.1% with classic; as paid, by 18% and 7%, since the classifier's calls (relevance
+and links, which read more candidates as the wiki grows) are then half of CROW's cost. Classic missed 135 of the 656 questions: in 65 its walk of the folders read no note, in 70 it read other notes;
+on the contracts it filed 97 of 180 in one broad folder and looked for them in the folders their names suggest. The gap in retrieval is the way each mode
+picks the notes, not the wiki it built: CROW reads the 8 notes its search finds (classic reads 1.2 on average), and the
+search alone (BM25, `crow.rerank` off, no model call) finds the right note 99.2% of the time on the CROW wikis and 98.9% on
+the classic ones, first 92.4% and 92.1% of the time; the right note comes first with CROW's `ask` 92.4% of the time, with
+classic's 72.6%. The wikis differ in their folders: against the reference folders of the ten corpora that have them, CROW's
+are closer (AMI 0.53 against 0.41 on average, higher in nine). The two synthetic brains and the Italian
+Wikibooks pages are not in this repository; the other corpora are built by the scripts above. Times are those of one run per mode on a shared
+cloud provider, with other runs alongside in varying numbers; the summary of the source, the same work in both modes, took
+a median time per output token within 0.81 to 1.09 of each other across corpora, so the load did not favour either mode.
+
+## CROW as the wiki grows
+
+**1,000 Enron mails** filed by their owners in their own folders (`enron_folders_select.py`, the first 1,000: 59
+mailboxes, 190 folders, reference `/mailbox/folder`), in batches of 200 with a checkpoint after each (`--chunk 200`), the
+same writer and classifier as above; one run per arm. Measures per document filed, in blocks of the documents already
+filed (`growth.py --block`):
+
+| documents filed | classifier tokens, CROW without the cap on candidates | CROW | classic LLM decision tokens | cost, CROW / classic (writer at list price) | right note read, CROW / classic |
+|---|---|---|---|---|---|
+| 0-200 | 6,500 | 5,600 | 5,375 | 0.48× | 100% / 76% |
+| 200-400 | 14,300 | 9,400 | 7,229 | 0.49× | 100% / 64% |
+| 400-600 | | 9,950 | 8,464 | 0.44× | 100% / 63% |
+| 800-1,000 | | 10,900 | 10,190 | 0.41× | 100% / 60% |
+
+Without the cap on the candidates of `match` and `relate` the classifier's tokens per document grew by about 4,000 every
+100 documents (that run stopped at 400, its projected spend over the limit); with it they grow by about 160 every 100
+documents after the first 400, half of it in routing, which the cap does not touch. The writer's tokens per document
+follow the documents (classic's identical summaries rise as much); classic's decision tokens keep growing. Over the 1,000
+documents CROW's cost per document rose 1.4 times, classic's 1.6 times; the ratio went from 0.48 to 0.41 and then held.
+Routing at 1,000 documents, with 190 reference folders and at most 10 top-level ones: 80% of the documents by the one
+choice among every folder, 4% by the LLM after the per-level walk, and 9% filed where the cap on top-level folders sent
+them (14% in the last 200), against 95%, 0.7% and 2% on the eleven smaller corpora. The right note read is
+for 107 questions written from the first 200 documents and asked again at each checkpoint. CROW's folders against the
+reference: AMI 0.25 at 400 and at 1,000, classic 0.21 and 0.22. At the price the runs paid for the writer, CROW cost 1.15
+times classic per document at 800-1,000.
+
+**Repeated runs.** On Enron, GitLab and HMRC, two more runs of each mode (one in another filing order, `--order-seed`),
+each with its own cache: CROW's folders agree more with the reference than classic's in all six pairs, CROW read the right
+note for every question in every run, classic between 64% and 90%. Two runs of the same code share about half of their
+See-also links: compare links on samples judged blind, not link by link.
+
+**Without the plan.** `--no-plan` files a batch with no plan of the folders: on an empty wiki every note ends in one folder
+(AMI 0 on all three corpora), at two to three times the cost; `plan="groups"` (groups made in code) gives much less even
+folders than the writer's plan. The folders come from the writer's plan; the classifier files within it.
+
+**Questions without the document's words.** The Enron questions rewritten (98 of the 107) with no name, number or rare word of the
+document: the search alone puts the right note in the first three 89% of the time at 400 documents, `ask` with the
+classifier's reordering 96%; at 1,000 documents 83% and 93%. The note ranked first is the search's (the reordering keeps
+it), and it is right less often as the wiki grows: 85% at 200 documents, 68% at 1,000.
 
 ## Results of 0.6.0: CROW against CROW 0.5.0 and classic
 

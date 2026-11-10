@@ -42,7 +42,9 @@ def deviations(results: Iterable[IngestResult]) -> list[dict[str, Any]]:
     for result in results:
         if result.overflow is not None:
             root = "/" + result.folder.strip("/").split("/")[0]
-            odds = {"p_none": result.overflow.get("p_none"), "p_root": result.overflow.get("p_root")}
+            odds: dict[str, Any] = {"p_none": result.overflow.get("p_none"), "p_root": result.overflow.get("p_root")}
+            if "declared" in result.overflow:  # sent to the folder `overflow_folder` names
+                odds["declared"] = True
             found.append({"note": result.note, "root": root, **odds})
         found += deviations(result.parts)
     return found
@@ -51,6 +53,8 @@ def deviations(results: Iterable[IngestResult]) -> list[dict[str, Any]]:
 def deviation_line(d: dict[str, Any]) -> str:
     """One deviation as a line of text: `path -> /root (p_none 0.4, p_root 0.3)`."""
     odds = f"p_none {d['p_none']}, p_root {d['p_root']}" if d.get("p_root") is not None else "chosen by words"
+    if d.get("declared"):
+        odds = "the declared overflow folder"
     return f"{d['note']} -> {d['root']} ({odds})"
 
 

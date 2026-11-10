@@ -37,9 +37,8 @@ def constant(p: float) -> Callable[[str], float]:
 
 
 def two_notes(classifier: FakeClassifier, check: Callable[[str], float]) -> None:
-    """Retrieval picks Overview and Revenue policy; the conflict check answers with `check`."""
-    classifier.noul_scores["retrieve_folder"] = {'folder "finance"': 0.9}
-    classifier.noul_scores["retrieve_note"] = {'note titled "Overview"': 0.9, 'note titled "Revenue policy"': 0.9}
+    """The search finds Overview and Revenue policy; the conflict check answers with `check`."""
+    classifier.noul_scores["retrieve_note"] = {'note titled "Revenue policy"': 0.9}
     classifier.noul_scores[CONFLICT_OP] = check
 
 
@@ -222,14 +221,13 @@ def test_conflict_decision_is_recorded_with_the_probability(bundle: Path, llm: F
 
 
 def test_hint_absent_with_one_note_read(bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> None:
-    wiki = make_wiki(bundle, llm, classifier)
-    classifier.noul_scores["retrieve_note"] = {'note titled "Overview"': 0.9}
+    wiki = make_wiki(bundle, llm, classifier, k=1)
     classifier.noul_scores[CONFLICT_OP] = constant(0.9)
     llm.add(ANSWER, "Answer.")
 
     answer = wiki.ask(ASKED)
 
-    assert answer.notes == ["overview.md"]
+    assert len(answer.notes) == 1
     assert CONFLICT_OP not in classifier.ops
     assert CONFLICT_HINT not in crow_answer_prompt(llm)
     assert not any(d.step == "conflict" for d in answer.decisions)
