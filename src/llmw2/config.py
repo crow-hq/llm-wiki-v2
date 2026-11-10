@@ -282,7 +282,7 @@ class WikiConfig(BaseModel):
     max_top_folders: int = Field(10, ge=1)
     max_steps: int = Field(12, gt=0)  # classic researcher: folders it may open per question
     max_links: int = Field(5, ge=0)  # See-also links added per ingest
-    max_notes: int = Field(8, gt=0)  # classic researcher and CROW's fallback: notes read per question (CROW uses crow.k)
+    max_notes: int = Field(8, gt=0)  # classic researcher: notes read per question (CROW reads crow.k)
     # Deprecated: the characters one prompt may hold, when `llm.read_chars` is not set (see `effective_read_chars`).
     source_chars: int = Field(100_000, gt=0)
     note_chars: int | None = Field(None, ge=1_000)  # about how long a note body may be; None: automatic (see `effective_note_chars`)

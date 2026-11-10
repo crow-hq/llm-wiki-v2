@@ -101,7 +101,7 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 | `beam` | `OKF_BEAM` | 2 | 2 | Ingestion: paths kept per uncertain routing step |
 | `k` | `OKF_K` | 8 | 5 | CROW retrieval: notes passed to the answer |
 | `rerank` | `OKF_RERANK` | true | true | CROW retrieval: the classifier reorders the search's notes after the first; `false` keeps the search's order, with no classifier call. For a small local classifier, on a wiki where the reordering does not help |
-| `max_notes` | `OKF_MAX_NOTES` | 8 | Classic retrieval and CROW's navigation fallback: notes read per question |
+| `max_notes` | `OKF_MAX_NOTES` | 8 | Classic retrieval: notes read per question (CROW reads `k`) |
 
 The batch window (`PLAN_BATCH`, 50), the split limit (`SPLIT_AT`, 12) and the plan's
 limits (`PLAN_*`: three levels, a 220-character opening per document) are constants

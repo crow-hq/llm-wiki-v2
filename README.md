@@ -337,7 +337,7 @@ ask:     select notes (search; CROW reorders them with the classifier) → answe
 | Merge into it, or write a new note? | LLM | classifier Choice, unsure → new note |
 | Name a new folder · rewrite a merged note | LLM | LLM |
 | Related notes (See also) | LLM | classifier Noul per note |
-| Find the notes for a question | LLM navigation | classifier Noul per folder and note, LLM fallback |
+| Find the notes for a question | LLM navigation | the wiki's search (BM25, and the embedder if set); the classifier reorders the notes after the first (Noul per note) |
 | Write the answer | LLM | LLM |
 
 Both modes run the same pipeline and write the same kind of wiki: only the

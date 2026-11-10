@@ -262,6 +262,41 @@ Wikibooks pages are not in this repository; the other corpora are built by the s
 cloud provider, with other runs alongside in varying numbers; the summary of the source, the same work in both modes, took
 a median time per output token within 0.81 to 1.09 of each other across corpora, so the load did not favour either mode.
 
+## CROW as the wiki grows
+
+**1,000 Enron mails** filed by their owners in their own folders (`enron_folders_select.py`, the first 1,000: 59
+mailboxes, 190 folders, reference `/mailbox/folder`), in batches of 200 with a checkpoint after each (`--chunk 200`), the
+same writer and classifier as above; one run per arm. Measures per document filed, in blocks of the documents already
+filed (`growth.py --block`):
+
+| documents filed | classifier tokens, CROW without the cap on candidates | CROW | classic LLM decision tokens | cost, CROW / classic (writer at list price) | right note read, CROW / classic |
+|---|---|---|---|---|---|
+| 0-200 | 6,500 | 5,600 | 5,375 | 0.48× | 100% / 76% |
+| 200-400 | 14,300 | 9,400 | 7,229 | 0.49× | 100% / 64% |
+| 400-600 | | 9,950 | 8,464 | 0.44× | 100% / 63% |
+| 800-1,000 | | 10,900 | 10,190 | 0.41× | 100% / 60% |
+
+Without the cap on the candidates of `match` and `relate` the classifier's tokens per document grew by about 4,000 every
+100 documents (that run stopped at 400, its projected spend over the limit); with it they level off from about 300
+documents. The writer's tokens stay flat in both modes; classic's decision tokens keep growing. The right note read is
+for 107 questions written from the first 200 documents and asked again at each checkpoint. CROW's folders against the
+reference: AMI 0.25 at 400 and at 1,000, classic 0.21 and 0.22. At the price the runs paid for the writer, CROW cost 1.15
+times classic per document at 800-1,000.
+
+**Repeated runs.** On Enron, GitLab and HMRC, two more runs of each mode (one in another filing order, `--order-seed`),
+each with its own cache: CROW's folders agree more with the reference than classic's in all six pairs, CROW read the right
+note for every question in every run, classic between 64% and 90%. Two runs of the same code share about half of their
+See-also links: compare links on samples judged blind, not link by link.
+
+**Without the plan.** `--no-plan` files a batch with no plan of the folders: on an empty wiki every note ends in one folder
+(AMI 0 on all three corpora), at two to three times the cost; `plan="groups"` (groups made in code) gives much less even
+folders than the writer's plan. The folders come from the writer's plan; the classifier files within it.
+
+**Questions without the document's words.** The 107 Enron questions rewritten with no name, number or rare word of the
+document: the search alone puts the right note in the first three 89% of the time at 400 documents, `ask` with the
+classifier's reordering 96%; at 1,000 documents 83% and 93%. The note ranked first is the search's (the reordering keeps
+it), and it is right less often as the wiki grows: 85% at 200 documents, 68% at 1,000.
+
 ## Results of 0.6.0: CROW against CROW 0.5.0 and classic
 
 The PostHog corpus above (120 pages, 30 real folders), filed into an empty wiki in one batch (`--flow batch`), with two
