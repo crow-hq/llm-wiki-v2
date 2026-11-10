@@ -297,7 +297,7 @@ See-also links: compare links on samples judged blind, not link by link.
 (AMI 0 on all three corpora), at two to three times the cost; `plan="groups"` (groups made in code) gives much less even
 folders than the writer's plan. The folders come from the writer's plan; the classifier files within it.
 
-**Questions without the document's words.** The 107 Enron questions rewritten with no name, number or rare word of the
+**Questions without the document's words.** The Enron questions rewritten (98 of the 107) with no name, number or rare word of the
 document: the search alone puts the right note in the first three 89% of the time at 400 documents, `ask` with the
 classifier's reordering 96%; at 1,000 documents 83% and 93%. The note ranked first is the search's (the reordering keeps
 it), and it is right less often as the wiki grows: 85% at 200 documents, 68% at 1,000.
