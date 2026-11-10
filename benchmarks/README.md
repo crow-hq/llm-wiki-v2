@@ -277,8 +277,13 @@ filed (`growth.py --block`):
 | 800-1,000 | | 10,900 | 10,190 | 0.41× | 100% / 60% |
 
 Without the cap on the candidates of `match` and `relate` the classifier's tokens per document grew by about 4,000 every
-100 documents (that run stopped at 400, its projected spend over the limit); with it they level off from about 300
-documents. The writer's tokens stay flat in both modes; classic's decision tokens keep growing. The right note read is
+100 documents (that run stopped at 400, its projected spend over the limit); with it they grow by about 160 every 100
+documents after the first 400, half of it in routing, which the cap does not touch. The writer's tokens per document
+follow the documents (classic's identical summaries rise as much); classic's decision tokens keep growing. Over the 1,000
+documents CROW's cost per document rose 1.4 times, classic's 1.6 times; the ratio went from 0.48 to 0.41 and then held.
+Routing at 1,000 documents, with 190 reference folders and at most 10 top-level ones: 80% of the documents by the one
+choice among every folder, 4% by the LLM after the per-level walk, and 9% filed where the cap on top-level folders sent
+them (14% in the last 200), against 95%, 0.7% and 2% on the eleven smaller corpora. The right note read is
 for 107 questions written from the first 200 documents and asked again at each checkpoint. CROW's folders against the
 reference: AMI 0.25 at 400 and at 1,000, classic 0.21 and 0.22. At the price the runs paid for the writer, CROW cost 1.15
 times classic per document at 800-1,000.

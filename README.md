@@ -122,9 +122,10 @@ accuracy across a twentyfold growth of the wiki. A separate test on a private wi
 of about 500 notes pointed the same way: with CROW the right note was found nearly
 as often at the end as early on, while with the LLM taking the decisions it was
 found markedly less often as the wiki grew. On 1,000 Enron mails filed in their owners' folders, CROW read the right
-note for every question at each step of the growth while classic went from 76% to 60%, and CROW's cost per document
-levelled off: the classifier weighs at most 24 candidate notes per decision, so at 1,000 documents CROW cost 0.41 times
-classic's with the writer at its list price ([benchmarks/README.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/benchmarks/README.md#crow-as-the-wiki-grows)).
+note for every question at each step of the growth while classic went from 76% to 60%. The classifier weighs at most
+24 candidate notes per decision, so its tokens per document nearly stopped growing after the first few hundred documents;
+CROW's cost per document rose 1.4 times over the 1,000, classic's 1.6 times, and at 800 to 1,000 documents CROW cost 0.41
+times classic's with the writer at its list price ([benchmarks/README.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/benchmarks/README.md#crow-as-the-wiki-grows)).
 
 ## FAQ
 
