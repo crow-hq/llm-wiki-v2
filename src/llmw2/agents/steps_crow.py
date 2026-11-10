@@ -35,6 +35,8 @@ log = logging.getLogger(__name__)
 SEARCH_K = 16  # notes the search offers to the retrieval Noul (the first stays in place, the other 15 are reordered)
 PASSAGE_CHARS = 600  # the passage of a note's body that the retrieval Noul reads
 PASSAGE_STEP = 300  # passages start every this many characters
+MATCH_TOP = 24  # most notes `match` asks about: the folder's own first, then the ones closest to the document by BM25
+RELATE_TOP = 24  # the same for `relate`; the notes that share rare values (linking.RARE_TOP) come on top of them
 FALLBACK_MENU_CHARS = 8000  # most characters of the folder menu the routing fallback shows the LLM
 ROUTE_PROMPT = "classifier/route"  # the routing Choice; with `strict_new_folders` off, 0.3.0's text:
 ROUTE_PROMPT_OPEN = "classifier/route_open"
@@ -462,11 +464,37 @@ def _deepest(ctx: StepContext, root: Folder, path: str) -> tuple[Folder, bool]:
     return folder, False
 
 
+def _closest(
+    ctx: StepContext, notes: list[Note], text: str, top: int, home: str | None, step: str, given: dict[str, float] | None = None
+) -> list[Note]:
+    """At most `top` of `notes`, chosen by code: first the notes with a probability in `given`, the highest first; then
+    the notes of the folder `home`, then the others, each group in the order BM25 over a note's text ranks it against
+    `text`. The notes kept stay in their order. All of them when they fit: the request is then what it always was.
+    A cut is the decision `<step>_cut`."""
+    if len(notes) <= top:
+        return notes
+    given = given or {}
+    first = [n.rel for n in sorted((n for n in notes if n.rel in given), key=lambda n: -given[n.rel])]
+    rest = [n for n in notes if n.rel not in given]
+    order = first[:top]
+    if len(order) < top and rest:
+        ranked = lexical.rank(text, {n.rel: n.full_text() for n in rest})
+        by_rel = {n.rel: n for n in rest}
+        own = [r for r in ranked if home is not None and by_rel[r].folder is not None and by_rel[r].folder.rel == home]
+        taken = set(own)
+        order += (own + [r for r in ranked if r not in taken])[: top - len(order)]
+    kept = set(order)
+    how = "by match probability, then BM25" if first else "by BM25"
+    ctx.decide(f"{step}_cut", "code", f"{len(kept)} of {len(notes)} notes, {how}")
+    return [n for n in notes if n.rel in kept]
+
+
 def match(ctx: StepContext, pool: list[Note], cand: Candidate) -> Note | None:
-    """Step 2: one batched Noul per note; the best one above tau_ing is the candidate."""
+    """Step 2: one batched Noul per note; the best one above tau_ing is the candidate. A pool over `MATCH_TOP` notes is cut first."""
     classifier = ctx.need_classifier("match")
     if not pool:
         return None
+    pool = _closest(ctx, pool, ctx.state(cand), MATCH_TOP, ctx.home, "match")
     questions = {f"n{i}": ctx.prompts.render("classifier/note_relevance", title=n.title, summary=n.summary) for i, n in enumerate(pool)}
     try:
         probs = classifier.nouls(ctx.state(cand), questions, op="match")
@@ -521,8 +549,17 @@ def consolidate(ctx: StepContext, note: Note, cand: Candidate) -> bool:
 
 
 def relate(ctx: StepContext, note: Note, others: list[Note]) -> list[Note]:
-    """Correlation (an extension of the paper): one Noul per candidate, above tau_link."""
+    """Correlation (an extension of the paper): one Noul per candidate, above tau_link. Over `RELATE_TOP` candidates the
+    ones the code ranks first are asked about: those `match` gave a probability for this document (the highest first), then
+    the others by BM25; the notes that share rare values (their own group, already capped) all are asked."""
     classifier = ctx.need_classifier("relate")
+    rare = {rel for d in ctx.decisions if d.step == "relate_candidates" for rel in d.scores}
+    common = [n for n in others if n.rel not in rare]
+    if len(common) > RELATE_TOP:
+        home = note.folder.rel if note.folder is not None else None
+        matched = {rel: p for d in ctx.decisions if d.step == "match" for rel, p in d.scores.items()}  # none after a merge or a rebuild
+        common = _closest(ctx, common, note.compact(ctx.cfg.classifier.state_chars), RELATE_TOP, home, "relate", matched)
+        others = [*common, *(n for n in others if n.rel in rare)]
     questions = {f"n{i}": ctx.prompts.render("classifier/relate", title=n.title, summary=n.summary) for i, n in enumerate(others)}
     try:
         probs = classifier.nouls(note.compact(ctx.cfg.classifier.state_chars), questions, op="relate")

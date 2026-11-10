@@ -29,7 +29,7 @@ from typing import Any, Literal, TypeVar
 import yaml
 from pydantic import BaseModel
 
-from llmw2.agents import lexical
+from llmw2.agents import lexical, linking
 from llmw2.agents import steps_classic as classic
 from llmw2.agents import steps_crow as crow
 from llmw2.agents.base import Decision
@@ -75,6 +75,7 @@ class StepContext:
     candidate: Candidate | None = None  # the note `summarize` wrote from it (None while asking and while summarizing)
     decisions: list[Decision] = field(default_factory=list)
     fixed: bool = False  # a rebuild: the folders are the ones there are, so no step opens one or asks the LLM where to file
+    home: str | None = None  # the folder (its rel) the document was routed to: `match` looks at its notes first (None while asking)
     search: Callable[[str, int], list[Note]] | None = None  # while asking: the best k notes for a query, as `Wiki.search` finds them
 
     def ask_json(
@@ -250,6 +251,9 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
         "pin_provider": cfg.llm.pin_provider,
         "crow": cfg.crow.model_dump(),
         "fallback_menu_chars": crow.FALLBACK_MENU_CHARS,  # the menu limit is a constant outside the hashed step functions
+        "match_top": crow.MATCH_TOP,  # so are the caps on the candidates of match and relate
+        "relate_top": crow.RELATE_TOP,
+        "rare_top": linking.RARE_TOP,
         "max_depth": cfg.max_depth,
         "max_links": cfg.max_links,
         "mode": cfg.mode,

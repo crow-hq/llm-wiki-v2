@@ -15,7 +15,7 @@ from llmw2.agents.steps_classic import incoming_values
 from llmw2.bundle.store import RACY_NS, Stamp, body_hash
 from llmw2.bundle.tree import Folder, Note, split_see_also
 
-RARE_TOP = 40  # most notes added to the candidates of `relate`
+RARE_TOP = 10  # most notes added to the candidates of `relate`
 RARE_MAX_SHARE = 0.05  # a value is rare when at most this share of the notes hold it...
 RARE_MIN_CAP = 3  # ...or this many, in a small wiki
 INDEGREE_CAP = 12  # a note with this many See-also entries is not offered

@@ -232,6 +232,7 @@ class Librarian:
                 if self.cfg.mode == "crow":  # at most `cfg.max_top_folders` top-level folders, whoever opened one
                     route = steps_crow.keep_folders(ctx, root, cand, route)  # a rebuild opens none at all
                     route = steps_crow.cap_roots(ctx, root, cand, route)
+            ctx.home = route.folder.rel
             pool = unique_objects(n for f in [*route.candidates, route.folder] for n in f.notes)
             pool = [n for n in pool if n.folder is None or n.folder.is_routable]  # nothing is merged into a closed folder
             theirs = {**read.fields, **cand.fields}  # the document's fields: its own, and what the summary made of them
