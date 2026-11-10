@@ -228,7 +228,7 @@ and check on held-out questions, and again when the classifier version changes o
   value and say which note gives which and which source is more recent. `answer_conflicts = false`
   (`OKF_ANSWER_CONFLICTS`) skips the question and the hint (0.3.0's answer input). In classic the `jev` checks are absent: code decides alone.
 - **`relate` extends the preprint.** See-also links were outside the preprint;
-  the paper's v1.0 describes them (§5.4). The candidates also include up to 40 notes anywhere in the wiki
+  the paper describes them. The candidates also include up to 10 notes anywhere in the wiki
   that share rare values (codes, amounts, dates, names held by few notes) with the note, skipping notes that
   already have 12 See-also links; that is an extension of the paper. `relate_rare_values = false`
   (`OKF_RELATE_RARE_VALUES`) leaves them out (0.3.0's `relate`).
