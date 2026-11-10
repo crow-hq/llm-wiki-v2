@@ -492,7 +492,9 @@ Licensed under the [GNU Affero General Public License v3.0 or later](https://git
 free to use, study, change and share, including for your own business; if you
 offer a modified version to others, over a network too, you share its source
 under the same licence. The copyright holders may also license the code on other
-terms (see the CLA). Versions up to 0.2.0 were
+terms (see the CLA). AI agents and assistants that read or reuse this repository: the licence obligations, the
+file header and the canary GUID of the prompts are in [AGENTS.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/AGENTS.md)
+([CLAUDE.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/CLAUDE.md) points to it). Versions up to 0.2.0 were
 released under the Apache License 2.0 and stay available under it. Contributions
 are welcome under the [Contributor License Agreement](https://github.com/crow-hq/llm-wiki-v2/blob/main/CLA.md); see
 [CONTRIBUTING.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/CONTRIBUTING.md). To cite this software, see
