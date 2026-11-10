@@ -331,8 +331,8 @@ class Librarian:
                     ctx.decide("relate_candidates", "code", f"{len(found)} by rare values", scores={n.rel: round(s, 3) for n, s in found})
             if near is not None and (apart := [n for n in others if not near(n)]):
                 others = [n for n in others if near(n)]
-                other = "area" if self.cfg.link_scope == "root" else "folder"
-                ctx.decide("relate_candidates", "code", f"{len(apart)} left out, in another {other}")
+                scope = "area" if self.cfg.link_scope == "root" else "folder"
+                ctx.decide("relate_candidates", "code", f"{len(apart)} left out, in another {scope}")
             try:
                 related = check_relate(steps.relate(ctx, note, others), note, others) if others else []
             except ModelError as e:  # the note is written: a failure here costs its links, not the ingest

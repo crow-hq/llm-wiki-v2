@@ -9,7 +9,7 @@ authors:
     given-names: Federico
   - family-names: Sassarini
     given-names: Marco
-version: 0.8.0
+version: 1.0.0
 date-released: 2026-11-03
 license: AGPL-3.0-or-later
 repository-code: "https://github.com/crow-hq/llm-wiki-v2"

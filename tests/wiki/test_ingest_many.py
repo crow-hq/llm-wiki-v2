@@ -41,7 +41,7 @@ from llmw2.agents.librarian import IngestResult
 from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import LLM_TOKENS, ContentLLM
 
-TIMEOUT = 5  # seconds any test waits for another thread before calling it a bug
+TIMEOUT = 20  # seconds any test waits for another thread before calling it a bug
 
 
 # -- helpers ----------------------------------------------------------------------

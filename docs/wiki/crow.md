@@ -82,7 +82,7 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 
 | Step | Classic decider | CROW decider | Primitive | Threshold | Fallback |
 |---|---|---|---|---|---|
-| note finding | LLM `researcher/navigate`. It opens folders from a frontier, at most `OKF_MAX_STEPS` (12), and stops once it has `OKF_MAX_NOTES` (8) notes, or says it is done after selecting at least one (a "done" with nothing selected only closes that folder). | `Wiki.search` (BM25, and the embedder if there is one) finds 16 notes, with no model call. The tree is not walked. | none (code) | - | - |
+| note finding | LLM `researcher/navigate`. It opens folders from a frontier, at most `OKF_MAX_STEPS` (12), and stops once it has `OKF_MAX_NOTES` (8) notes, or says it is done after selecting at least one (a "done" with nothing selected only closes that folder). | `Wiki.search` (BM25, and the embedder if there is one) finds 16 notes, with no model call. The tree is walked only when the search finds nothing (see Fallback). | none (code) | - | when the search finds no note (no embedder, and no word in common with any note), the LLM navigates the folders as the classic step does (`select` with `fallback: true`) |
 | note reordering | same `navigate` call, which also selects notes | `classifier/retrieval_note`: the search's first note stays first; one batched Noul for each of the other 15 (the note's title, summary and the 600-character passage of its body that best matches the question by BM25) reorders them. The first `k` are read. Off with `rerank`: the search's order. | Noul | `rerank`, `k` | the search's order, on error |
 | answer | LLM `researcher/answer`, citing `[path.md]`; a quotation the notes read do not have loses its quotation marks, in code (`quote_unquoted`) | same LLM step | - | - | - |
 
@@ -188,6 +188,7 @@ choice, confidence, fallback)`. You can read it from
 | `match` | note path, or `none` | best note probability | `tau_ing` |
 | `match_cut`, `relate_cut` | `"K of N notes, by BM25"` (relate: `by match probability, then BM25` when `match` scored them): the candidates kept when there were more than 24; the notes that share rare values are never cut | | |
 | `consolidate` | `modify` or `new` | Choice confidence | `tau_cons` |
+| `select` | `"the search found no note: the LLM navigates the folders"`, `fallback: true` (followed by the classic `navigate` decisions) | | |
 | `relate`, `retrieve_note` | the paths chosen (`retrieve_note`: every note after the first, reordered) | per-item probabilities in `scores` | `tau_link` |
 
 A `route` decision is the Choice among every folder's when its choice is a plain path, and the per-level

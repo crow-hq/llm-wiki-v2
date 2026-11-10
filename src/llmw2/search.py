@@ -117,9 +117,10 @@ class VectorCache:
 class NoteSearch:
     """Ranks notes for a query. Keeps the counted words and the vectors of the notes it has seen, by the hash of their text."""
 
-    def __init__(self, vectors: VectorCache | None, embedder: Embedder | None = None) -> None:
+    def __init__(self, vectors: VectorCache | None, embedder: Embedder | None = None, model: str = "") -> None:
         self.vectors = vectors
         self.embedder = embedder
+        self.model = model  # the embedder's model when the library knows it: vectors of another model are not reused
         self._counts: dict[str, tuple[str, Counter[str]]] = {}  # note path -> (hash of its text, its words)
         self._index: tuple[tuple[str, ...], lexical.Bm25] | None = None
         self._held: dict[str, array[float]] = {}  # hash of a text -> its unit vector
@@ -173,13 +174,18 @@ class NoteSearch:
         self._index = (signature, index)
         return index
 
+    def _key(self, text_hash: str) -> str:
+        """The key of a note's vector in the cache: its text's hash, and the model's name when there is one."""
+        return _hash(f"{self.model}\0{text_hash}") if self.model else text_hash
+
     def _by_meaning(self, query: str, by_rel: dict[str, Note], hashes: dict[str, str], everything: list[Note]) -> list[str]:
         asked = _unit(self._embed([query])[0])
-        wanted = list(dict.fromkeys(hashes.values()))
+        wanted = list(dict.fromkeys(self._key(h) for h in hashes.values()))
         known = {h: self._held[h] for h in wanted if h in self._held and len(self._held[h]) == len(asked)}
         stored = self.vectors.get([h for h in wanted if h not in known]) if self.vectors is not None else {}
         known.update({h: v for h, v in stored.items() if len(v) == len(asked)})
-        todo = {hashes[rel]: rel for rel in by_rel if hashes[rel] not in known}
+        keys = {rel: self._key(hashes[rel]) for rel in by_rel}
+        todo = {keys[rel]: rel for rel in by_rel if keys[rel] not in known}
         fresh: dict[str, array[float]] = {}
         pairs = list(todo.items())
         for i in range(0, len(pairs), EMBED_BATCH):
@@ -187,10 +193,10 @@ class NoteSearch:
             vectors = self._embed([_embedded(by_rel[rel]) for _, rel in chunk])
             fresh.update({h: _unit(v) for (h, _), v in zip(chunk, vectors, strict=True)})
         if fresh and self.vectors is not None:
-            self.vectors.put(fresh, {_hash(_text_of(n)) for n in everything})
+            self.vectors.put(fresh, {self._key(_hash(_text_of(n))) for n in everything})
             known.update(fresh)
         self._held = known
-        score = {rel: _cosine(asked, known[hashes[rel]]) for rel in by_rel}
+        score = {rel: _cosine(asked, known[keys[rel]]) for rel in by_rel}
         return sorted(by_rel, key=lambda rel: -score[rel])
 
     def _embed(self, texts: list[str]) -> Sequence[Sequence[float]]:

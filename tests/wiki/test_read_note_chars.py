@@ -13,10 +13,11 @@ import pytest
 from pydantic import ValidationError
 
 from llmw2 import CLASSIC, Candidate, NoteDraft, Route, Source, StepContext, Steps, Wiki, WikiConfig
+from llmw2 import config as config_module
 from llmw2.agents import steps_classic as classic
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.steps import LENGTH_RULE, decision_hash
-from llmw2.config import ClassifierConfig
+from llmw2.config import PROVIDERS, ClassifierConfig
 from tests.wiki.fakes import FakeLLM
 
 ROOM = 6_000  # what a prompt holds besides the text (PROMPT_ROOM of the spec)
@@ -79,19 +80,25 @@ def test_read_chars_accepts_the_minimum_and_refuses_less(tmp_path: Path) -> None
         WikiConfig.from_env(env_for(tmp_path, OKF_LLM_READ_CHARS="7999"))
 
 
-# -- source_chars: the old name still works, with a warning --------------------------------------
+# -- source_chars: removed, ignored with a warning ---------------------------------------------------
 
 
-def test_effective_read_chars_when_source_chars_is_set_then_it_is_used_with_a_deprecation_warning(tmp_path: Path) -> None:
-    with pytest.warns(DeprecationWarning):
+@pytest.fixture
+def fresh_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config_module, "_WARNED_REMOVED", set())
+
+
+def test_source_chars_in_the_config_is_ignored_with_a_deprecation_warning(tmp_path: Path, fresh_warnings: None) -> None:
+    with pytest.warns(DeprecationWarning, match="llm.read_chars"):
         config = cfg_of(tmp_path, source_chars=30_000)
 
-    assert config.effective_read_chars == 30_000
+    assert config.effective_read_chars == PROVIDERS[config.llm.provider].read_chars
+    assert not hasattr(config, "source_chars")
 
 
-def test_effective_read_chars_when_both_are_set_then_read_chars_wins(tmp_path: Path) -> None:
-    with pytest.warns(DeprecationWarning):
-        config = cfg_of(tmp_path, source_chars=30_000, llm={"read_chars": 12_000})
+def test_source_chars_in_the_environment_is_ignored_with_a_deprecation_warning(tmp_path: Path, fresh_warnings: None) -> None:
+    with pytest.warns(DeprecationWarning, match="OKF_LLM_READ_CHARS"):
+        config = WikiConfig.from_env(env_for(tmp_path, OKF_SOURCE_CHARS="30000", OKF_LLM_READ_CHARS="12000"))
 
     assert config.effective_read_chars == 12_000
 

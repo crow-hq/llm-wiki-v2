@@ -16,8 +16,23 @@ import sys
 import tempfile
 from pathlib import Path
 
-from llmw2 import Candidate, Change, ChangeBatch, NoteDraft, Origin, Route, Source, StepContext, Steps, SyncReport, Wiki, WikiConfig, sync
-from llmw2.bundle.tree import Folder, Note
+from llmw2 import (
+    Candidate,
+    Change,
+    ChangeBatch,
+    Folder,
+    Note,
+    NoteDraft,
+    Origin,
+    Route,
+    Source,
+    StepContext,
+    Steps,
+    SyncReport,
+    Wiki,
+    WikiConfig,
+    sync,
+)
 
 
 class DictDrive:

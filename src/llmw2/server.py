@@ -400,7 +400,7 @@ def create_app(
     @app.post("/areas")
     def create_area(req: AreaRequest) -> dict[str, Any]:
         with write_lock:
-            return current().create_area(req.name, req.description, req.over_limit).to_dict()
+            return current().create_area(req.name, req.description, over_limit=req.over_limit).to_dict()
 
     @app.post("/folder/rename")
     def rename_folder(req: RenameRequest) -> dict[str, Any]:
@@ -424,7 +424,7 @@ def create_app(
     @app.post("/proposals/{proposal_id}/confirm")
     def confirm_proposal(proposal_id: str, req: ConfirmRequest | None = None) -> dict[str, Any]:
         with write_lock:
-            proposal, moved = current().confirm_proposal(proposal_id, (req or ConfirmRequest()).over_limit)
+            proposal, moved = current().confirm_proposal(proposal_id, over_limit=(req or ConfirmRequest()).over_limit)
         return {**proposal.to_dict(), "moved": moved}
 
     @app.post("/proposals/{proposal_id}/dismiss")

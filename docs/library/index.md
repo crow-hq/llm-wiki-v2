@@ -52,7 +52,7 @@ The fields you will touch most:
 | `note_length` | `proportional` | how long a note grows (`OKF_NOTE_LENGTH`): `proportional` about a quarter of its source, `fixed` about `note_chars` (0.3.0's length); see [Note length](#note-length-proportional-or-fixed) |
 | `relate_rare_values` | `True` | CROW: `relate` also weighs notes that share rare values (`OKF_RELATE_RARE_VALUES`); `False` keeps 0.3.0's `relate` |
 | `answer_conflicts` | `True` | CROW: the answer is asked with a hint when the notes read disagree (`OKF_ANSWER_CONFLICTS`); `False` keeps 0.3.0's answer input |
-| `crow.rerank` | `True` | CROW: after `ask` finds its notes with the search (`search`'s own ranking), the classifier reorders all but the first (`OKF_RERANK`, or `crow_rerank` in the settings); `False` reads them in the search's order and asks the classifier nothing. Turn it off for a small local classifier on a wiki where the reordering does not help |
+| `crow.rerank` | `True` | CROW: after `ask` finds its notes with the search (`search`'s own ranking), the classifier reorders all but the first (`OKF_RERANK`, or `crow_rerank` in the settings); `False` reads them in the search's order and asks the classifier nothing. When the search finds no note at all (no embedder, and no word in common with any note), the LLM walks the folders as in classic mode instead, and the decision `select` is recorded with `fallback`. Turn it off for a small local classifier on a wiki where the reordering does not help |
 | `strict_new_folders` | `True` | CROW: a new subfolder only when the classifier is sure of it (`OKF_STRICT_NEW_FOLDERS`); `False` keeps 0.3.0's routing |
 | `link_scope` | `wiki` | the See-also links code adds (`relate`, and the notes that share rare values): `wiki` between any notes; `root` only between notes of the same top-level folder; `folder` only between notes of the same folder (`OKF_LINK_SCOPE`). With `root` (or `folder`), a note that changes area (or folder) (`move_note`, a folder moved or merged, `confirm_proposal`) loses the entries that no longer fit, from both notes, and a folder closed to automatic filing gives and gets none. See [Keeping areas apart](#keeping-areas-apart) |
 | `overflow_folder` | none | CROW: the label of a folder of the wiki (`"/inbox"`, `OKF_OVERFLOW_FOLDER`) that takes a note when routing cannot open a new top-level folder (the limit `max_top_folders` is reached), in place of the likeliest existing one; the note is marked as a deviated note. A folder that does not exist logs a warning and the note goes where it would have. See [Keeping areas apart](#keeping-areas-apart) |
@@ -124,8 +124,8 @@ have it set `X-Author`, and the log then says who, as far as the proxy does.
 | `ingest_many(items, *, concurrency, on_result)` | file a batch, preparing several documents at once; returns a `BatchReport` (see below) |
 | `rebuild(items, *, concurrency, on_result)` | file the documents again on the folders the wiki has (see below); returns a `BatchReport`. Cannot be undone |
 | `raw_items()` | the wiki's own raw copies as `Item`s for `rebuild`: an origin from its latest copy, a copy with no origin once per text |
-| `ask(question, where=None)` | answer from the notes, found by `search` (the first 16, reordered by the CROW classifier unless `crow.rerank` is off) and read up to `crow.k`; returns an `Answer`. `where` (a dict, field to value) restricts it to the notes whose `fields` hold all of them, compared as text; a field that is a list holds a value when one of its items is equal to it |
-| `search(query, k=3, where=None)` | the best `k` notes, with no model call of the library; returns a list of `Hit` (`path`, `title`, `summary`, `rank`). `where` restricts it as in `ask`; an empty query raises `InputError`; see [Search without a model](#search-without-a-model) |
+| `ask(question, where=None)` | answer from the notes, found by `search` (the first 16, reordered by the CROW classifier unless `crow.rerank` is off) and read up to `crow.k`; when `search` finds nothing, the LLM navigates the folders as in classic mode; returns an `Answer`. `where` (a dict, field to value) restricts it to the notes whose `fields` hold all of them, compared as text; a field that is a list holds a value when one of its items is equal to it |
+| `search(query, k=8, where=None)` | the best `k` notes, with no model call of the library; returns a list of `Hit` (`path`, `title`, `summary`, `rank`). `where` restricts it as in `ask`; an empty query raises `InputError`; see [Search without a model](#search-without-a-model) |
 | `tree()` | the folder tree, read from disk: `Folder` objects with `.notes` and `.subfolders` |
 | `create_folder(parent, name, description, *, routable=True)` | make a folder by hand; `parent` is `"/"` or `"/finance"`. With `routable=False` it is closed to automatic filing |
 | `set_routable(path, value)` | close (`False`) or open (`True`) a folder to automatic filing; see [Keeping areas apart](#keeping-areas-apart) |
@@ -176,7 +176,8 @@ the same, so a search at thousands of notes reads only the lists of the query's 
 notes that hold it, unless it is in more than 3 of the best 16.
 
 Give `Wiki` an `embedder` and the search also goes by meaning, and so does `ask` in CROW mode, which finds its notes with
-this search. Set it in the configuration (`OKF_EMBEDDER_PROVIDER=ollama`, `OKF_EMBEDDER_MODEL=...`, plus
+this search (without one, a question that shares no word with any note is answered by the LLM walking the folders, as in
+classic mode). Set it in the configuration (`OKF_EMBEDDER_PROVIDER=ollama`, `OKF_EMBEDDER_MODEL=...`, plus
 `OKF_EMBEDDER_BASE_URL` and `OKF_EMBEDDER_API_KEY` if needed; `openai` is any server with `/embeddings`) and the
 command line, the server and the memory MCP use it; or pass a callable, which wins. A callable is any callable from a list of texts to a list of
 vectors (the library has no model, provider or dependency for it), and it is called with the query and with the notes
@@ -190,10 +191,11 @@ for hit in wiki.search("how long do customers have to ask for a refund?", k=3, w
     print(hit.rank, hit.path, hit.title, hit.summary)
 ```
 
-The vectors are kept in `.llmw2/cache/embeddings.sqlite` of the bundle, under the hash of the note's text, so a search
+The vectors are kept in `.llmw2/cache/embeddings.sqlite` of the bundle, under the hash of the embedder's model and the note's text, so a search
 embeds only the notes that are new or changed; the vectors of text that no longer exists are dropped. A vector of
-another size than the query's is embedded again. The file does not say which embedder made its vectors: if you change
-the embedder for one with the same size, delete the file. `wiki.clear()` deletes it.
+another size than the query's is embedded again. When the embedder is the one built from the configuration, the key includes its model, so changing the
+model embeds the notes again (the vectors of the old model are dropped). An embedder you pass as a callable has no
+known model: if you change it for one with the same vector size, delete the file. `wiki.clear()` deletes it.
 
 ### Asking several wikis
 
@@ -256,11 +258,11 @@ wiki.merge_roots("/legal", "/contracts")
 - `propose_area(label, description, notes)` validates and queues a `Proposal` (`id`, `label`, `description`, `notes`: stable
   note ids, `origin`: `"user"`, `created`, `status`). Notes are given by id or by path. The queue is the file
   `.llmw2/proposals.json` of the wiki: it survives between syncs and reopening, and `clear()` empties it. Nothing moves.
-- `confirm_proposal(id, over_limit=False)` creates the root, counted in `max_top_folders`: `InputError` when the wiki
+- `confirm_proposal(id, *, over_limit=False)` creates the root, counted in `max_top_folders`: `InputError` when the wiki
   already has that many, unless `over_limit`. It moves only the proposed notes still in the wiki, writing `moved_from` (the
   folder they came from) in their frontmatter and dropping their `overflow` mark. No rebuild, no other note touched,
   one "Confirmed area" line in `log.md`. `propose_area` writes a "Proposed area" line and `dismiss_proposal(id)` closes a proposal with a "Dismissed proposal" line, changing nothing else.
-- `create_area(name, description, over_limit=False)` is `create_folder("/", ...)` refused over the limit.
+- `create_area(name, description, *, over_limit=False)` is `create_folder("/", ...)` refused over the limit.
 - `rename_root(path, new_name)` renames a top-level folder with its notes; `merge_roots(source, target)` moves every note
   of one root into another (subfolders keep their structure, one both have is merged), each note with `moved_from`, and
   deletes the source. Links to and from the notes follow, descriptions stay, one `log.md` line each.
@@ -318,11 +320,44 @@ note is never passed to it, nor the text a person gives (`create_folder`, `descr
 document's own title kept in `sources`. A title the function empties becomes "Untitled". A function that raises stops the
 filing. Notes written before it was given are not changed. Without it, nothing changes.
 
-## Upgrading: removed retrieval settings
+## Upgrading: removed settings
 
 `crow.tau_fold`, `crow.tau_ret` and `crow.retrieval_beam` (`OKF_TAU_FOLD`, `OKF_TAU_RET`, `OKF_RETRIEVAL_BEAM`, and
 `crow_tau_fold` and the like in a settings file) no longer exist: `ask` finds its notes with the search and `crow.rerank`
-and `crow.k` tune the rest. They are ignored with one `DeprecationWarning`; delete them from your environment and settings.
+and `crow.k` tune the rest. `source_chars` no longer exists either: `llm.read_chars`
+(`OKF_LLM_READ_CHARS`) sets the characters one prompt may hold. In the environment, a settings file or a mapping they are
+ignored with one `DeprecationWarning`, so an old setup keeps starting; delete them. Code that reads them from the
+configuration (`cfg.source_chars`, `cfg.crow.tau_fold`) raises `AttributeError`. The full list of what changed since
+0.8.0 is in the [CHANGELOG](../../CHANGELOG.md).
+
+## Compatibility
+
+From 1.0.0 llmw2 follows [semantic versioning](https://semver.org). Covered, so that a change to it needs a new major version:
+
+- the names in `llmw2.__all__`, and their documented methods, arguments, fields and results;
+- the `Steps` API and its ten signatures ([steps.md](steps.md));
+- the `WikiConfig` fields, their `OKF_*` variables and the keys of the settings file;
+- the command line's commands, options and exit codes, the HTTP endpoints and their JSON, the MCP tools and their arguments;
+- the layout of a wiki on disk: notes, frontmatter keys, `index.md`, the kinds of line in `log.md`, `raw/`,
+  `.llmw2/proposals.json` and the sync cursors.
+
+Not covered, and free to change in a minor release:
+
+- the text of the prompts (their names and placeholders are covered, since `OKF_PROMPTS_DIR` overrides depend on them);
+- the default and suggested models and the provider presets (a model can be retired by its provider: the defaults then change);
+- the CROW thresholds, their presets and the caps on candidates;
+- which notes a step chooses and what a model writes;
+- decision names and trace texts, and the wording of the lines of `log.md`;
+- the cache files under `.llmw2/cache/` (deleting them is always safe);
+- every module, class, function or attribute that `llmw2` does not export and these guides do not name: `WikiStore`
+  (`wiki.store`), the modules under `llmw2.agents`, `llmw2.bundle` and `llmw2.models` (import their types from `llmw2`),
+  except the step functions of `llmw2.agents.steps_classic` and `llmw2.agents.steps_crow` that [steps.md](steps.md) names
+  for writing a step set: their names and signatures are covered.
+
+Paths follow the kind of thing they name: a note is `finance/alpha.md`, a folder `/finance`, a raw copy `/raw/...`.
+
+A deprecated name keeps working for at least one minor release, with a `DeprecationWarning`, and is removed only in the next
+major version. A setting that is removed is ignored with a warning, never an error.
 
 ## Filing many documents
 
@@ -503,10 +538,7 @@ classifier your own when you build the wiki:
 import json
 
 import redis
-from llmw2 import Wiki, WikiConfig
-from llmw2.models.classifier import Classifier
-from llmw2.models.llm import LLM
-from llmw2.models.usage import UsageTracker
+from llmw2 import LLM, Classifier, UsageTracker, Wiki, WikiConfig
 
 class RedisCache:                       # get(key) -> answers or None; put(key, answers)
     def __init__(self, url: str) -> None:
@@ -557,7 +589,9 @@ note with is written again from its own raw copy. If filing the others again sto
 be undone. `llmwiki2 purge KEY --yes` does it from the terminal (without `--yes` it says what it would delete and exits
 with 2); the key is the one the raw copies carry in their `origin`.
 
-Keeping documents for a time only is left to the caller, in a few lines:
+Keeping documents for a time only is left to the caller, in a few lines. This recipe reads `wiki.store`, which is
+internal (no public method lists the origin keys or gives the source's `modified` date), so it may need a change in a
+minor release:
 
 ```python
 from datetime import UTC, datetime, timedelta

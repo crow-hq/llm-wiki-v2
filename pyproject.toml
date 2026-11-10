@@ -25,18 +25,22 @@ name = "llmwiki2"
 dynamic = ["version"]  # one source: llmw2.__version__, also written into every note it generates
 description = "LLM wiki in a Markdown format derived from the Open Knowledge Format: librarian, researcher and CROW classifier routing"
 readme = "README.md"
-license = "AGPL-3.0-or-later"  # SPDX expression; needs setuptools>=77, which also drops the License classifier
-license-files = ["LICENSE", "NOTICE", "LICENSES/*"]  # the Apache text must travel with the files taken from OKF
+# SPDX expression of what the distribution carries (see NOTICE and REUSE.toml): the project, the files taken from OKF
+# (Apache-2.0), typed.py's prompt and marked (MIT), d3 (ISC), DOMPurify (Apache-2.0 or MPL-2.0) and the fonts (OFL-1.1).
+# Needs setuptools>=77, which also drops the License classifier.
+license = "AGPL-3.0-or-later AND Apache-2.0 AND MIT AND ISC AND (Apache-2.0 OR MPL-2.0) AND OFL-1.1"
+license-files = ["LICENSE", "NOTICE", "LICENSES/*"]  # every licence text must travel with the files it covers
 authors = [{ name = "Federico Cesarini" }, { name = "Marco Sassarini" }]
 keywords = ["LLM wiki", "knowledge base", "Open Knowledge Format", "typed classifier", "CROW"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Topic :: Text Processing :: Markup :: Markdown",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",

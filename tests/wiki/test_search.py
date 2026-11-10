@@ -12,7 +12,7 @@ import pytest
 from llmw2 import InputError, Wiki, WikiConfig
 from llmw2.agents import lexical
 from llmw2.models.usage import UsageTracker
-from llmw2.search import VECTORS_FILE
+from llmw2.search import VECTORS_FILE, NoteSearch, VectorCache
 from tests.wiki.fakes import FakeLLM
 
 NOTES = [
@@ -152,3 +152,23 @@ def test_only_the_first_3000_characters_of_the_body_are_embedded(tmp_path: Path)
     wiki.search("parcels")
 
     assert not any("TAIL" in text for text in emb.seen) and any("Hiring\nOpen roles\n\n" + "x" * 3000 in text for text in emb.seen)
+
+
+def test_the_vectors_of_another_model_are_not_reused_and_those_of_the_same_model_are(tmp_path: Path) -> None:
+    wiki = make(tmp_path)
+    notes = wiki.store.load().all_notes()
+    cache = VectorCache(tmp_path / "vectors.sqlite")
+
+    def search(model: str, emb: Embedder) -> None:
+        NoteSearch(cache, emb, model).search(notes, notes, "parcels", 3)
+
+    first, again, other, old = Embedder(), Embedder(), Embedder(), Embedder()
+    search("model-a", first)
+    search("model-a", again)
+    search("model-b", other)
+    search("", old)  # an embedder whose model the library does not know: the keys of the note's text alone
+
+    assert len(first.seen) == len(NOTES) + 1
+    assert again.seen == ["parcels"]  # same model: every vector served from the file
+    assert len(other.seen) == len(NOTES) + 1  # another model: embedded again
+    assert len(old.seen) == len(NOTES) + 1  # entries written without a model simply miss

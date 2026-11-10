@@ -242,7 +242,7 @@ class LLM(HttpModel):
         and appended to `cut` if given (so the caller knows the reply is unfinished). `seed` replaces the configured one.
         """
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        extra = {} if seed is None else {"seed": seed}
+        extra: dict[str, Any] = {} if seed is None else {"seed": seed}  # only when given: a stand-in `chat` need not take it
         try:
             return no_surrogates(self.chat(messages, op=op, max_tokens=max_tokens, **extra))
         except ReplyCut as e:

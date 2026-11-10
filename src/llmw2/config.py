@@ -211,6 +211,15 @@ def warn_removed_crow(names: Collection[str], where: str) -> None:
             )
 
 
+def warn_removed_source_chars(names: Collection[str], where: str) -> None:
+    """`source_chars` was removed in 1.0.0: `llm.read_chars` sets the characters one prompt may hold. Ignored, with a warning."""
+    if "source_chars" in names and "source_chars" not in _WARNED_REMOVED:
+        _WARNED_REMOVED.add("source_chars")
+        warnings.warn(
+            f"source_chars ({where}) was removed and is ignored: use llm.read_chars (OKF_LLM_READ_CHARS)", DeprecationWarning, stacklevel=2
+        )
+
+
 class CrowConfig(BaseModel):
     """Thresholds of the CROW paper (§5.3). Calibrate them on a labelled sample of your wiki.
 
@@ -283,8 +292,6 @@ class WikiConfig(BaseModel):
     max_steps: int = Field(12, gt=0)  # classic researcher: folders it may open per question
     max_links: int = Field(5, ge=0)  # See-also links added per ingest
     max_notes: int = Field(8, gt=0)  # classic researcher: notes read per question (CROW reads crow.k)
-    # Deprecated: the characters one prompt may hold, when `llm.read_chars` is not set (see `effective_read_chars`).
-    source_chars: int = Field(100_000, gt=0)
     note_chars: int | None = Field(None, ge=1_000)  # about how long a note body may be; None: automatic (see `effective_note_chars`)
     note_length: Literal["fixed", "proportional"] = "proportional"  # in proportion to its source (default), or about `note_chars` long
     # A source that revises the one document a note cites: the note replaced by the new version with the old body archived
@@ -329,11 +336,12 @@ class WikiConfig(BaseModel):
         """`~/my-wiki` (typed on the settings page, or in .env) is the home folder's, not a folder named "~"."""
         return path.expanduser() if path is not None else None
 
-    @model_validator(mode="after")
-    def _warn_source_chars(self) -> WikiConfig:
-        if "source_chars" in self.model_fields_set:
-            warnings.warn("source_chars is deprecated: use llm.read_chars (OKF_LLM_READ_CHARS)", DeprecationWarning, stacklevel=2)
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_removed_source_chars(cls, data: Any) -> Any:
+        if isinstance(data, Mapping):
+            warn_removed_source_chars(data, "in the settings or the config")
+        return data
 
     @model_validator(mode="after")
     def _crow_preset(self) -> WikiConfig:
@@ -358,11 +366,9 @@ class WikiConfig(BaseModel):
 
     @property
     def effective_read_chars(self) -> int:
-        """Characters one prompt may hold: `llm.read_chars`, else an explicit `source_chars`, else the provider's."""
+        """Characters one prompt may hold: `llm.read_chars`, else the provider's."""
         if self.llm.read_chars is not None:
             return self.llm.read_chars
-        if "source_chars" in self.model_fields_set:
-            return self.source_chars
         return PROVIDERS[self.llm.provider].read_chars
 
     @property
@@ -414,6 +420,7 @@ class WikiConfig(BaseModel):
         }
         emb = {f: env[f"OKF_EMBEDDER_{f.upper()}"] for f in EmbedderConfig.model_fields if env.get(f"OKF_EMBEDDER_{f.upper()}")}
         crow = {f: env[f"OKF_{f.upper()}"] for f in CrowConfig.model_fields if env.get(f"OKF_{f.upper()}")}
+        warn_removed_source_chars([f for f in ("source_chars",) if env.get("OKF_SOURCE_CHARS")], "OKF_SOURCE_CHARS")
         warn_removed_crow([f for f in REMOVED_CROW if env.get(f"OKF_{f.upper()}")], "OKF_{}")
         data = merge(dict(base or {}), {**top, "llm": llm, "classifier": clf, "crow": crow, "embedder": emb})
         # Each model's provider variable (OPENROUTER_API_KEY, …) is its key unless OKF_LLM_API_KEY / OKF_CLASSIFIER_API_KEY is set.

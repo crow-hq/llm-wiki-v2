@@ -480,7 +480,7 @@ def _closest(
     if len(order) < top and rest:
         ranked = lexical.rank(text, {n.rel: n.full_text() for n in rest})
         by_rel = {n.rel: n for n in rest}
-        own = [r for r in ranked if home is not None and by_rel[r].folder is not None and by_rel[r].folder.rel == home]
+        own = [r for r in ranked if home is not None and (folder := by_rel[r].folder) is not None and folder.rel == home]
         taken = set(own)
         order += (own + [r for r in ranked if r not in taken])[: top - len(order)]
     kept = set(order)
@@ -584,6 +584,9 @@ def select(ctx: StepContext, root: Folder, question: str) -> list[Note]:
     if crow.rerank:
         ctx.need_classifier("select")
     found = _found(ctx, root, question)
+    if not found:  # the search matched nothing (no embedder, and no word in common): the LLM walks the folders, as in classic
+        ctx.decide("select", "llm", "the search found no note: the LLM navigates the folders", fallback=True)
+        return classic.select(ctx, root, question)[: crow.k]
     if crow.rerank and len(found) > 1:
         found = found[:1] + _reordered(ctx, found[1:], question)
     return found[: crow.k]

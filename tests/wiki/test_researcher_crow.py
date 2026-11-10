@@ -13,6 +13,7 @@ import pytest
 
 from llmw2 import Wiki, WikiConfig
 from llmw2.agents import steps_crow
+from llmw2.agents.researcher import NO_ANSWER
 from llmw2.bundle.tree import Folder, Note
 from llmw2.config import CrowConfig
 from llmw2.errors import ModelError
@@ -150,11 +151,41 @@ def test_where_keeps_the_search_and_the_reordering_to_the_notes_that_match(
     assert answer.notes[0] == wiki.search(QUESTION, k=1, where={"team": "ops"})[0].path
 
 
-def test_nothing_found_means_no_answer_and_no_model_call(wiki: Wiki, classifier: FakeClassifier, llm: FakeLLM) -> None:
+NAVIGATE = "researcher/navigate"
+
+
+def test_nothing_found_by_the_search_and_nothing_found_by_the_llm_means_no_answer(
+    wiki: Wiki, classifier: FakeClassifier, llm: FakeLLM
+) -> None:
+    llm.add(NAVIGATE, {"reasoning": "Nothing here is about zebras."})
+
     answer = wiki.ask("zebra giraffe")
 
-    assert answer.notes == []
-    assert llm.ops == [] and classifier.ops == []
+    assert answer.notes == [] and answer.text == NO_ANSWER
+    assert llm.ops == [NAVIGATE] and classifier.ops == []
+    assert [(d.step, d.decider, d.fallback) for d in answer.decisions] == [("select", "llm", True), ("navigate", "llm", False)]
+
+
+def test_nothing_found_by_the_search_the_llm_walks_the_folders_and_the_answer_reads_what_it_picks(
+    wiki: Wiki, classifier: FakeClassifier, llm: FakeLLM
+) -> None:
+    llm.add(NAVIGATE, {"open": ["legal"], "select": ["overview.md"]}, {"select": ["legal/nda-template.md"]}).add(ANSWER, "Answer.")
+
+    answer = wiki.ask("zebra giraffe")
+
+    assert answer.notes == ["overview.md", "legal/nda-template.md"]
+    assert llm.ops == [NAVIGATE, NAVIGATE, ANSWER]
+    assert OP not in classifier.ops  # what the LLM picked is not reordered
+    assert [d.step for d in answer.decisions if d.fallback] == ["select"]
+
+
+def test_a_question_the_search_answers_never_makes_the_llm_navigate(wiki: Wiki, classifier: FakeClassifier, llm: FakeLLM) -> None:
+    llm.add(ANSWER, "Answer.")
+
+    answer = wiki.ask(QUESTION)
+
+    assert NAVIGATE not in llm.ops and llm.ops == [ANSWER]
+    assert not any(d.fallback or d.step == "navigate" for d in answer.decisions)
 
 
 def test_the_question_to_the_classifier_carries_the_passage_of_the_note_that_matches_it(

@@ -305,7 +305,7 @@ in it. For different permissions, use one wiki per domain.
 The wiki never opens or proposes an area by itself: proposals come from you, and the list of deviated notes helps you
 compose them. `propose_area(label, description, notes)` queues one (the notes by id or path; the queue is kept in the
 wiki, in `.llmw2/proposals.json`, and nothing moves yet), `proposals()` lists the open ones, `dismiss_proposal(id)` closes one,
-and `confirm_proposal(id, over_limit=False)` opens the root (counted in the limit: refused when the wiki has as many, unless
+and `confirm_proposal(id, *, over_limit=False)` opens the root (counted in the limit: refused when the wiki has as many, unless
 `over_limit`) and moves into it only the proposed notes still there, each with `moved_from` (the folder it came from) and
 without its `overflow` mark, with no rebuild and no other note touched. `rename_root(path, new_name)` renames a top-level
 folder and `merge_roots(source, target)` moves all of one into another and deletes it; links follow, descriptions stay,
@@ -320,6 +320,8 @@ your own, while the core keeps checking and writing. The guide to the whole
 library is in [docs/library/](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/library/index.md),
 the steps in [docs/library/steps.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/library/steps.md),
 and runnable programs, some with no key, in [examples/](https://github.com/crow-hq/llm-wiki-v2/tree/main/examples).
+From 1.0.0 the library follows semantic versioning; what that covers and what it does not is in the
+[Compatibility](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/library/index.md#compatibility) section of the guide.
 
 </details>
 
@@ -340,7 +342,7 @@ ask:     select notes (search; CROW reorders them with the classifier) → answe
 | Merge into it, or write a new note? | LLM | classifier Choice, unsure → new note |
 | Name a new folder · rewrite a merged note | LLM | LLM |
 | Related notes (See also) | LLM | classifier Noul per note, at most 24, plus up to 10 that share rare values |
-| Find the notes for a question | LLM navigation | the wiki's search (BM25, and the embedder if set); the classifier reorders the notes after the first (Noul per note) |
+| Find the notes for a question | LLM navigation | the wiki's search (BM25, and the embedder if set); the classifier reorders the notes after the first (Noul per note); the LLM walks the folders only when the search finds nothing |
 | Write the answer | LLM | LLM |
 
 Both modes run the same pipeline and write the same kind of wiki: only the
@@ -463,7 +465,7 @@ uv run mypy                    # strict types
 uv run pytest --cov            # tests, failing under 95% coverage
 ```
 
-CI runs the same four checks on Python 3.11 to 3.13, and builds the wheel.
+CI runs the same four checks on Python 3.11 to 3.14, and builds the wheel.
 
 Tests never call a real model: they use the scripted fakes in `tests/wiki/fakes.py`.
 Keep changes in the style of the surrounding code (typed, class-based, one

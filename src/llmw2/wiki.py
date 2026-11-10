@@ -240,7 +240,8 @@ class Wiki:
         self._embedder: HttpEmbedder | None = None  # the one built from the settings, closed with the wiki
         if embedder is None and cfg.embedder.enabled:
             embedder = self._embedder = HttpEmbedder(cfg.embedder, self.tracker)
-        self._search = NoteSearch(VectorCache(cfg.bundle / VECTORS_FILE), embedder)
+        model = cfg.embedder.model or "" if self._embedder is not None else ""  # a callable's model is not known
+        self._search = NoteSearch(VectorCache(cfg.bundle / VECTORS_FILE), embedder, model)
         self._preparing = threading.BoundedSemaphore(cfg.concurrency)
         if cfg.mode == "crow" and classifier is None:
             cache = SqliteCache(cfg.bundle / CACHE_FILE) if cfg.classifier.cache else None
@@ -836,8 +837,9 @@ class Wiki:
         self._require_classifier()
         return self.researcher().ask(question, where)
 
-    def search(self, query: str, k: int = 3, where: dict[str, Any] | None = None) -> list[Hit]:
-        """The best `k` notes for `query`, with no model call of the library. `where` restricts it as in `ask`.
+    def search(self, query: str, k: int = 8, where: dict[str, Any] | None = None) -> list[Hit]:
+        """The best `k` notes for `query` (8 by default, as the command line, the HTTP API and the MCP tool), with no model call
+        of the library. `where` restricts it as in `ask`.
 
         BM25 on each note (title, summary and body, without See also). With an `embedder` the first `k - 1` come from the
         nearest by meaning and one from BM25, no note twice, the rest filled in the order of meaning; the vectors are kept
@@ -1163,7 +1165,7 @@ class Wiki:
     # -- the top-level areas: made, proposed, renamed and merged by users, never by the wiki ------------------
 
     @by_author
-    def create_area(self, name: str, description: str, over_limit: bool = False, *, author: str | None = None) -> Folder:
+    def create_area(self, name: str, description: str, *, over_limit: bool = False, author: str | None = None) -> Folder:
         """Create a top-level folder by hand, counted in `cfg.max_top_folders`: InputError when the wiki has that many,
         unless `over_limit`. Otherwise as `create_folder` at "/"."""
         return self._create_folder("/", name, description, limit=True, over_limit=over_limit)
@@ -1224,7 +1226,7 @@ class Wiki:
 
     @by_author
     def confirm_proposal(
-        self, proposal_id: str, over_limit: bool = False, *, author: str | None = None
+        self, proposal_id: str, *, over_limit: bool = False, author: str | None = None
     ) -> tuple[Proposal, list[str]]:
         """Open the proposed area: create the root, counted in `cfg.max_top_folders`, and move into it the proposed notes
         that are still in the wiki; (the proposal, the paths they now have).

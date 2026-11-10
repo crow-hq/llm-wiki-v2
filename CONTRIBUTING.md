@@ -30,7 +30,7 @@ uv run mypy                    # strict types
 uv run pytest --cov            # tests, failing under 95% coverage
 ```
 
-CI runs the same checks on Python 3.11 to 3.13. Tests never call a real model:
+CI runs the same checks on Python 3.11 to 3.14. Tests never call a real model:
 they use the scripted fakes in `tests/wiki/fakes.py`, and any network access in
 a test fails it.
 

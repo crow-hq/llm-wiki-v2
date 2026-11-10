@@ -6,7 +6,7 @@ Fixes go into the latest release only.
 
 | Version | Supported |
 |---|---|
-| 0.4.x | yes |
+| 1.0.x | yes |
 | older | no |
 
 ## Reporting a vulnerability
