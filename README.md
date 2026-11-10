@@ -121,7 +121,10 @@ for a document filed alone, by splitting a folder that has grown. In the [paper]
 accuracy across a twentyfold growth of the wiki. A separate test on a private wiki
 of about 500 notes pointed the same way: with CROW the right note was found nearly
 as often at the end as early on, while with the LLM taking the decisions it was
-found markedly less often as the wiki grew.
+found markedly less often as the wiki grew. On 1,000 Enron mails filed in their owners' folders, CROW read the right
+note for every question at each step of the growth while classic went from 76% to 60%, and CROW's cost per document
+levelled off: the classifier weighs at most 24 candidate notes per decision, so at 1,000 documents CROW cost 0.41 times
+classic's with the writer at its list price ([benchmarks/README.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/benchmarks/README.md#crow-as-the-wiki-grows)).
 
 ## FAQ
 
@@ -333,10 +336,10 @@ ask:     select notes (search; CROW reorders them with the classifier) → answe
 |---|---|---|
 | Summarize the source into a note | LLM | LLM (optional, `OKF_SUMMARIZE=false` files it verbatim) |
 | Route: best folder, or a new one | LLM, one level at a time | one classifier Choice among every folder; per-level Choice and beam for an empty wiki or `None of these`; LLM fallback |
-| Same subject as an existing note? | LLM | classifier Noul per note |
+| Same subject as an existing note? | LLM | classifier Noul per note, at most 24 (the folder's first, then the closest by BM25) |
 | Merge into it, or write a new note? | LLM | classifier Choice, unsure → new note |
 | Name a new folder · rewrite a merged note | LLM | LLM |
-| Related notes (See also) | LLM | classifier Noul per note |
+| Related notes (See also) | LLM | classifier Noul per note, at most 24, plus up to 10 that share rare values |
 | Find the notes for a question | LLM navigation | the wiki's search (BM25, and the embedder if set); the classifier reorders the notes after the first (Noul per note) |
 | Write the answer | LLM | LLM |
 
