@@ -8,17 +8,20 @@ export async function showMemory(onSaved, said = {}) {
   const view = $("#view");
   view.className = "";
   const s = await api("/settings");
-  const v = s.values, on = Boolean(v.mcp), byClient = v.mcp_models === "client", installed = s.mcp_installed !== false;
+  const v = s.values, on = Boolean(v.mcp), who0 = ["client", "hybrid"].includes(v.mcp_models) ? v.mcp_models : "wiki", byClient = who0 === "client", installed = s.mcp_installed !== false;
   const lockedOn = !installed || !s.editable || s.managed.includes("mcp");
   const lockedWho = !installed || !s.editable || s.managed.includes("mcp_models");
   const url = `${location.origin}/mcp`;
   const clients = [
     ["Claude Code", `claude mcp add --transport http --scope user llm-wiki ${url}`],
     ["Codex", `codex mcp add llm-wiki --url ${url}`],
+    ["Claude Code from the terminal only, with no page to keep open: it starts the memory by itself", "claude mcp add --scope user llm-wiki -- llmwiki2 mcp"],
     ["Cursor, VS Code and other clients (mcp.json)", JSON.stringify({ mcpServers: { "llm-wiki": { type: "http", url } } }, null, 2)],
   ];
   const own = v.mode === "crow" ? `${v.model} writes, ${v.classifier_model} decides` : `${v.model} writes and decides`;
-  const work = byClient // what the chosen models do
+  const work = who0 === "hybrid" // what the chosen models do
+    ? `Your client's model writes and ${esc(v.classifier_model)} decides where things go: only the writing comes back to the client, a few calls per memory instead of a dozen. Without a classifier set up it works as Claude or GPT for everything.`
+    : byClient
     ? "The memory hands each model call to your client, and CROW does the rest: Claude Code decides with Haiku subagents and writes with its own model; Codex does both with its own. It runs on the client's plan, and a memory takes about a minute."
     : "The client only calls the memory: the models in Settings recall and file, as for the documents you drop on this page. A memory takes 10–30 s.";
   view.innerHTML = `<article class="settings">
@@ -37,6 +40,7 @@ export async function showMemory(onSaved, said = {}) {
       <select id="who" ${lockedWho ? "disabled" : ""}>
         <option value="wiki"${byClient ? "" : " selected"}>This wiki's settings — ${esc(own)}</option>
         <option value="client"${byClient ? " selected" : ""}>Claude or GPT for everything — your MCP client's own models, no key</option>
+        <option value="hybrid"${who0 === "hybrid" ? " selected" : ""}>Hybrid — your client writes, ${esc(v.classifier_model)} decides</option>
       </select>
       <div class="hint">${work}${s.managed.includes("mcp_models") ? " Set by the environment (OKF_MCP_MODELS)." : ""}</div>
       <div class="actions"><span class="status" id="who-status"></span></div></div>
@@ -58,9 +62,9 @@ export async function showMemory(onSaved, said = {}) {
 
   $("#toggle").onclick = () => change("mcp-status", { mcp: on ? "" : "true" }, on ? "Stopped" : `Started: clients can connect at ${url}`);
   const who = $("#who");
-  who.onchange = () => change("who-status", { mcp_models: who.value === "client" ? "client" : "" },
-    who.value === "client" ? "Claude or GPT for everything: your MCP client does the work" : "This wiki's settings do the work",
-    () => (who.value = byClient ? "client" : "wiki"));
+  const whoSaid = { wiki: "This wiki's settings do the work", client: "Claude or GPT for everything: your MCP client does the work",
+    hybrid: "Hybrid: your client writes, the classifier decides" };
+  who.onchange = () => change("who-status", { mcp_models: who.value === "wiki" ? "" : who.value }, whoSaid[who.value], () => (who.value = who0));
   view.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => {
     await navigator.clipboard.writeText(clients[Number(b.dataset.copy)][1]);
     b.textContent = "Copied";

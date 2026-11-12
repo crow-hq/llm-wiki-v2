@@ -319,8 +319,9 @@ class WikiConfig(BaseModel):
     upload_mb: int = Field(25, gt=0)  # largest request body the server reads: a big PDF fits, a runaway upload does not fill memory
     # The server answers as an MCP memory at /mcp (OKF_MCP, or Start on the page's Memory): recall, remember, read_note.
     mcp: bool = False
-    # Who does the memory's model work: this wiki's own models, or the MCP client's, on its own plan (models.relay).
-    mcp_models: Literal["wiki", "client"] = "wiki"
+    # Who does the memory's model work: this wiki's own models, or the MCP client's, on its own plan (models.relay), or
+    # "hybrid": the client's model writes and this wiki's classifier decides.
+    mcp_models: Literal["wiki", "client", "hybrid"] = "wiki"
     concurrency: int = Field(4, ge=1, le=16)  # documents prepared (extracted, summarized) at once by a batch or the server
     actor: str = f"llmw2/{__version__}"  # OKF `generated.by`
     usage_log: Path | None = None  # optional JSONL audit of every model call

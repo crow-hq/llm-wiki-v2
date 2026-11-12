@@ -18,7 +18,7 @@ from typing import Any
 
 import httpx
 
-from llmw2.config import NAMES, ClassifierConfig
+from llmw2.config import NAMES, ClassifierConfig, WikiConfig
 from llmw2.errors import ConfigError, ModelError
 from llmw2.models.cache import AnswerCache, cache_key
 from llmw2.models.client import HttpModel, reported_cost
@@ -151,6 +151,17 @@ def _too_many_questions(e: ModelError) -> bool:
     """Whether a server refused a request for holding more questions than it takes: "questions must contain 1-64 fields"."""
     text = str(e).lower()
     return "must contain 1" in text and "fields" in text  # the dash between the numbers varies: en dash, hyphen, escaped in JSON
+
+
+# Seconds a test of the classifier waits: a local model loads on its first request, which takes longer than the timeout of
+# a decision, and a request dropped before the load ends leaves it unloaded, so every test would fail.
+PROBE_TIMEOUT = 120.0
+
+
+def probe_config(cfg: WikiConfig) -> WikiConfig:
+    """`cfg` for a test of its classifier: the classifier waits at least `PROBE_TIMEOUT`, nothing else changes."""
+    timeout = max(cfg.classifier.timeout, PROBE_TIMEOUT)
+    return cfg.model_copy(update={"classifier": cfg.classifier.model_copy(update={"timeout": timeout})})
 
 
 def probe(classifier: Classifier) -> float:

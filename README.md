@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/demo.gif" alt="A PDF dropped on the page is merged into the note it updates; a typed question gets an answer citing that note; a second document dropped on the brain appears as a new note in its folder" width="100%">
+  <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/demo.gif" alt="Twenty-two documents dropped on the brain of an empty wiki are filed in folders the wiki opens, and the brain grows with them (shown five times faster); a question about a damaged parcel gets an answer citing two notes, and one of them opens" width="100%">
 </p>
 
 # LLM Wiki v2
@@ -65,7 +65,7 @@ so you can add to it or delete it. To try it without installing anything but uv:
 |---|---|
 | **Add documents** | Drop text, Markdown, PDF, Word, PowerPoint, Excel or OpenDocument files anywhere on the page. Each one lands in the right folder, merged with what the wiki already knows; a spreadsheet gives a note per sheet. |
 | **Ask questions** | Type a question. The answer cites the notes it used: click one to read it. |
-| **Give Claude a memory** | **Memory** → **Start**, then paste the `claude mcp add …` or `codex mcp add …` line it shows: Claude Code, Codex or any MCP client recall from your wiki and file what they learn in it. |
+| **Give Claude a memory** | From the terminal only: `llmwiki2 setup`, then talk to Claude Code or Codex in plain words. With the page: **Memory** → **Start**, then paste the `claude mcp add …` or `codex mcp add …` line it shows. Either way they recall from your wiki and file what they learn in it ([below](#claudes-memory-mcp)). |
 | **See the brain** | A live map of your folders, notes and links. |
 | **Delete** | Hover a note or folder in the sidebar and press the bin, or **Delete note** at the foot of a note. Links to it go from the other notes. **Empty the wiki** on the home page starts over. |
 | **Move and describe** | **Move** at the foot of a note files it in another folder; every link to and from it follows. The pencil beside a folder in the sidebar edits its description, the line the librarian routes by. |
@@ -75,29 +75,72 @@ so you can add to it or delete it. To try it without installing anything but uv:
 ## Claude's memory (MCP)
 
 The wiki can be the long-term memory of Claude Code, Codex or any MCP client, documents already filed included.
-It comes with the `mcp` extra (the Docker image has it):
+It comes with the `mcp` extra (the Docker image has it).
+
+### From the terminal only (Claude Code, Codex)
+
+No page, no server to keep running: Claude Code starts the memory by itself.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/crow-hq/llm-wiki-v2/main/docs/assets/demo-memory.gif" alt="In a terminal, llmwiki2 setup shows the CROW logo and is answered 2, then Enter at every question: the memory is on and Claude Code is connected. In Claude Code, a remember about a supplier's minimum order is merged into the supplier's note, whose Markdown file beside it shows the new line; in a new session, a question in Italian is answered in Italian through recall, citing that note (the models' work sped up)" width="100%">
+</p>
+
+**1. Install it:**
 
 ```bash
-pip install 'llmwiki2[mcp]'      # or: uv tool install 'llmwiki2[mcp]'
+uv tool install 'llmwiki2[mcp]'      # or: pip install 'llmwiki2[mcp]'
 ```
 
-Open **Memory** on the page, press **Start**, and connect a client:
+**2. Set it up:**
+
+```bash
+llmwiki2 setup
+```
+
+To the first question answer **2** (as the memory of an agentic CLI); after that, Enter takes the default every time:
+
+| It asks | Pick |
+|---|---|
+| Which models do the work | **1** (the default): Claude Code or Codex do it, on their plan, no key. **2** (hybrid) is quicker and needs an OpenRouter key, or Ollama on your computer |
+| Connect Claude Code? | **Y**. With several configurations (`~/.claude`, `~/.claude-work`), it asks which: Enter for all |
+| Add the lines to CLAUDE.md? | **Y**: they make Claude use the memory when you talk normally |
+
+**3. Talk to it**, in any language, in Claude Code or Codex, anywhere:
+
+> ricorda che Rossi ci paga a 45 giorni · what did we decide about pricing? · add ~/Downloads/offer.pdf to the
+> wiki · move the pricing note to suppliers
+
+The first time it uses each tool, Claude Code asks your permission: choose "don't ask again" for the ones you trust.
+To see the brain or browse the notes, run `llmwiki2`: the page opens on the same wiki, while Claude Code keeps using it.
+Run `llmwiki2 setup` again to change anything. Windows says it blocked `llmwiki2.exe`? See
+[Something wrong?](#something-wrong).
+
+### With the page
+
+Open **Memory**, press **Start**, and connect a client:
 
 ```bash
 claude mcp add --transport http --scope user llm-wiki http://127.0.0.1:8000/mcp
 codex mcp add llm-wiki --url http://127.0.0.1:8000/mcp
 ```
 
-The client gets its tools: `recall` answers from your notes and documents, citing them; `remember` files what it
-learns, in the right folder, merged and linked like any note (CROW); `search` finds notes by their words with no model call; `read_note` reads a note in full; `rebuild` (with `confirm`) files every note again on the same folders, from the memory's own raw copies. Which models
-do the work is a choice under Memory:
+### What it can do
 
-- **This wiki's settings** (the default). OpenRouter or a local model, with Jev or Laya deciding, file the memories; the
+The client gets its tools: `recall` answers from your notes and documents, citing them; `remember` files what it
+learns, in the right folder, merged and linked like any note (CROW); `search` finds notes by their words with no model
+call; `read_note` reads a note in full; `folders`, `move_note`, `describe_folder`, `rename_area`, `merge_areas` and
+`delete_note` reorganize the wiki (the last two only when you ask); `rebuild` (with `confirm`) files every note again on
+the same folders, from the memory's own raw copies. Started from the terminal (`llmwiki2 mcp`) it also files documents
+from your disk: `remember_file` and `sync_folder`. Which models do the work is a choice under Memory or in `setup`:
+
+- **This wiki's settings** (the default on the page). OpenRouter or a local model, with Jev or Laya deciding, file the memories; the
   client only calls the memory.
-- **Claude or GPT for everything.** The memory hands the client every model call it makes, while CROW runs as always.
+- **Claude or GPT for everything** (the default in `setup`). The memory hands the client every model call it makes, while CROW runs as always.
   Claude Code decides with a Haiku subagent and writes with its own model; Codex uses its own. It runs on the client's
   plan, with no key in the wiki. The requests carry your documents' text to the client: it is told to read it as data
   and to answer without tools, but that is an instruction, not a sandbox (see Security in the memory guide).
+- **Hybrid.** The client's model writes, and the wiki's classifier (Jev through OpenRouter, or Ollama or Laya on your
+  computer) decides: fewer round trips than the above, and no Haiku subagents.
 
 Docker, the tools and security: [docs/wiki/memory.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/memory.md).
 
@@ -172,6 +215,10 @@ authors and everyone who contributes; you keep the copyright in your work.
 - **Test connection fails**: the message is the provider's own, usually a wrong key or model name.
 - **A PDF adds nothing**: it is a scan with no text layer; run OCR on it first.
 - **Another folder for the wiki**: `llmwiki2 --bundle <folder>`. Settings live in `~/.config/llm-wiki/config.json`.
+- **Windows blocks `llmwiki2.exe`** ("an application control policy has blocked this file", common on work PCs): run
+  it through Python, which the policy lets through. Installed with pip: `python -m llmwiki2 setup`. With uv, in
+  PowerShell: `& "$(uv tool dir)\llmwiki2\Scripts\python.exe" -m llmwiki2 setup`. Every command works this way
+  (`-m llmwiki2 serve`, `-m llmwiki2 demo`), and `setup` connects Claude Code through that same Python.
 
 ## For developers
 
@@ -272,7 +319,8 @@ llmwiki2 --bundle ./wiki sync ~/OneDrive       # file a folder and keep the wiki
 llmwiki2 --bundle ./wiki --mode classic ask "What did we decide about pricing?"
 llmwiki2 --bundle ./wiki check        # lint: OKF conformance, index drift, broken links
 llmwiki2 --bundle ./wiki serve        # the HTTP API and page; plain `llmwiki2` also opens the browser
-llmwiki2 setup                        # provider, key and model, tested and saved
+llmwiki2 setup                        # provider, key and model, tested and saved; or the memory of Claude Code/Codex
+llmwiki2 --bundle ./wiki mcp          # the wiki as an MCP memory over stdio, started by the client (claude mcp add … -- llmwiki2 mcp)
 llmwiki2 demo                         # an example wiki, copied to ~/llm-wiki-demo and opened
 ```
 

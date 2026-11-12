@@ -14,13 +14,26 @@ Its tools are served over Streamable HTTP, at /mcp of the wiki's own server:
 - `rebuild`: every note filed again on the same folders, from the wiki's own raw copies (destructive, asks for a confirmation);
 - `create_area`, `propose_area`, `proposals` and `confirm_area`: the top-level folders. The memory never opens or proposes
   one itself; the user does, in chat, and a proposal is confirmed (or dismissed) with a yes or a no;
+- `folders`, `move_note`, `describe_folder`, `rename_area`, `merge_areas` and `delete_note`: the edits by hand of the page and
+  the command line (the last two, destructive, ask for a confirmation);
+- `remember_file` and `sync_folder`: a document, or a folder of them, filed from this computer's disk. Over stdio only
+  (`llmwiki2 mcp`), where the memory runs as the user who started the client: over HTTP it may serve other machines,
+  which must not read the server's files;
 - `reply`: the client's replies, when its models do the memory's work.
+
+Two transports: Streamable HTTP at /mcp of the wiki's server (`llmwiki2 serve`, turned on by the setting `mcp`), or stdio
+(`llmwiki2 mcp`), a process the client starts by itself, always on, with no server to keep running:
+
+    claude mcp add --scope user llm-wiki -- llmwiki2 mcp
 
 Whose models do that work is the setting `mcp_models`:
 - "wiki": this wiki's own models (OpenRouter, a local model, Jev or Laya), and the client only calls the memory;
 - "client": the client's models, on its own plan, with no key. `recall` and `remember` start the work, and its model
   calls come back to the client as requests (see models.relay). Claude Code answers a decision with a Haiku subagent
   and writes with its own model; `reply` hands the answers over until the result comes.
+- "hybrid": the client's model writes, and this wiki's classifier (Jev through OpenRouter, or a local Laya or Ollama)
+  takes the decisions: only the writing comes back to the client as requests, and no decision does.
+  Without a classifier ready in the settings it works as "client".
 
 Its tools work while the settings turn the memory on (`mcp`: OKF_MCP, or Start under Memory on the page). Off, a client
 still connects and finds them, and they answer that the memory is off and how to start it: a client added before Start
@@ -37,6 +50,7 @@ import uuid
 from collections.abc import AsyncGenerator, Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from pathlib import Path
 from typing import Annotated, Any, TypeVar
 
 from mcp.server import MCPServer
@@ -53,10 +67,11 @@ from llmw2 import __version__
 from llmw2.agents.librarian import IngestResult
 from llmw2.agents.researcher import Answer
 from llmw2.batch import BatchReport, deviations
+from llmw2.bundle.files import extract_text
 from llmw2.errors import WikiError
-from llmw2.models.relay import Relay, RelayClassifier, RelayLLM, relayed
+from llmw2.models.relay import LLM_CONFIG, Relay, RelayClassifier, RelayLLM, relayed
 from llmw2.models.usage import UsageTracker
-from llmw2.sources import SyncReport
+from llmw2.sources import LocalFolderSource, SyncReport, sync
 from llmw2.wiki import Wiki
 
 T = TypeVar("T")
@@ -65,14 +80,25 @@ T = TypeVar("T")
 INSTRUCTIONS = """\
 Your long-term memory: a wiki of Markdown notes on this computer, which already holds the user's documents. \
 A typed classifier decides where each note goes and a model writes it (CROW).
-- Call `recall` before you answer about the user's work, projects, documents, decisions or preferences, and whenever \
-they mention something from before. Cite the notes it returns as [path.md].
-- Call `remember` when something durable is settled: a decision and why, a fix that worked, a preference, a fact about \
-a project or a person. One topic per call, written to make sense without this conversation.
+The user speaks to you in plain words, in any language, and never names these tools: use them on your own.
+- Call `recall` before you answer about the user's work, projects, people, documents, decisions or preferences, and \
+whenever they mention something from before ("what did we decide about…", "ti ricordi…", "cosa sappiamo di…"). \
+Cite the notes it returns as [path.md].
+- Call `remember` when the user asks you to keep something ("remember that…", "ricorda che…", "segnati…", "annota…", \
+"from now on…", "d'ora in poi…"), and on your own when something durable is settled: a decision and why, a fix that \
+worked, a preference, a fact about a project or a person. One topic per call, written to make sense without this \
+conversation, in the user's language.{files}
 - Call `search` to find notes by their words with no answer written (fast, no model), when you will read them yourself.
 - Call `read_note` to read a cited note in full.
+- To reorganize when the user asks ("move…", "sposta…", "rinomina…", "cancella…"): `folders` lists the folders, then \
+`move_note`, `describe_folder`, `rename_area`, `merge_areas`, `delete_note`. Delete or merge only what the user asked \
+for; when unsure, ask first.
 - When `recall` or `remember` returns requests instead of a result, the memory works with your models: follow its `how`.
 Never store secrets: keys, passwords, tokens."""
+# With the files of this computer (stdio): the documents the user points at.
+FILES = """
+- Call `remember_file` with a document's path when the user asks you to add, import or file it ("add this PDF…", \
+"aggiungi questo file…"); `sync_folder` for a whole folder."""
 # How the client does the memory's model work, sent with the requests. A request's prompt carries the documents' text,
 # which anyone may have written: the client, which has tools, must read it as data and answer with text alone.
 HOW = (
@@ -100,13 +126,15 @@ NO_LIFESPAN = "the memory needs the server's lifespan: run the wiki's app itself
 class Memory:
     """The MCP server over the wiki that `wiki()` returns at each call, so it follows the server's settings."""
 
-    def __init__(self, wiki: Callable[[], Wiki]) -> None:
+    def __init__(self, wiki: Callable[[], Wiki], *, local_files: bool = False) -> None:
+        """`local_files`: the tools that read this computer's files (`remember_file`, `sync_folder`), for stdio only."""
         self.wiki = wiki
         self.app: Starlette | None = None  # the SDK's app, made by each lifespan: its session manager runs only once
         self._jobs: dict[str, Relay] = {}  # the work going on with the client's models, by job id
         self._jobs_lock = threading.Lock()
         # WARNING: the SDK sets the level of the whole process's logging, and INFO would log every request.
-        self.server: MCPServer = MCPServer("llm-wiki", instructions=INSTRUCTIONS, version=__version__, log_level="WARNING")
+        instructions = INSTRUCTIONS.format(files=FILES if local_files else "")
+        self.server: MCPServer = MCPServer("llm-wiki", instructions=instructions, version=__version__, log_level="WARNING")
         server = self.server
 
         # Plain functions: the SDK runs them in a thread, as the wiki's calls block.
@@ -117,7 +145,10 @@ class Memory:
                 dict[str, str] | None, Field(description="Only notes whose fields have all these values, e.g. {\"team\": \"ops\"}")
             ] = None,
         ) -> dict[str, Any]:
-            """Answer a question from the long-term memory, with the notes the answer cites."""
+            """Answer a question from the long-term memory, with the notes the answer cites.
+
+            Call it whenever the user asks about their work, their documents or anything from before, in any language.
+            """
             return self.run(lambda wiki: answered(wiki.ask(question, where)))
 
         @server.tool(annotations=WRITES)
@@ -126,7 +157,7 @@ class Memory:
             title: Annotated[str | None, Field(description="A short title; empty: the memory names it")] = None,
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """Keep something in the long-term memory.
+            """Keep something in the long-term memory: whenever the user asks you to remember or note it, in any language.
 
             It is filed in the right folder, or merged into the note on the same subject, and linked to related notes.
             """
@@ -220,13 +251,109 @@ class Memory:
             proposal, moved = guarded(lambda: self.live().confirm_proposal(id, author=by))
             return {**proposal.to_dict(), "moved": moved}
 
+        @server.tool(annotations=READ_ONLY)
+        def folders() -> list[dict[str, Any]]:
+            """Every folder of the memory, with its description and how many notes it holds directly."""
+            tree = self.live().tree()
+            return [{"folder": f.label, "description": f.description, "notes": len(f.notes)} for f in tree.walk() if not f.is_root]
+
+        @server.tool(annotations=WRITES)
+        def move_note(
+            path: Annotated[str, Field(description="The note's path, e.g. finance/pricing.md")],
+            folder: Annotated[str, Field(description='The folder to file it in, e.g. /sourcing ("/" is the top level)')],
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """Move a note into another folder; the links to and from it follow."""
+            try:
+                note = guarded(lambda: self.live().move_note(path, folder, author=author_of(ctx)))
+            except FileNotFoundError as e:
+                raise ToolError(f"no note at {path}") from e
+            return {"note": note.rel}
+
+        @server.tool(annotations=WRITES)
+        def describe_folder(
+            folder: Annotated[str, Field(description="The folder, e.g. /finance")],
+            description: Annotated[str, Field(description="One line: what belongs in it")],
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """Change a folder's one-line description, the line new notes are routed by."""
+            done = guarded(lambda: self.live().describe_folder(folder, description, author=author_of(ctx)))
+            return {"folder": done.label, "description": done.description}
+
+        @server.tool(annotations=WRITES)
+        def rename_area(
+            folder: Annotated[str, Field(description="The top-level folder, e.g. /finance")],
+            name: Annotated[str, Field(description="Its new name")],
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """Rename a top-level folder; its notes and the links to them follow."""
+            done = guarded(lambda: self.live().rename_root(folder, name, author=author_of(ctx)))
+            return {"folder": done.label, "description": done.description}
+
+        @server.tool(annotations=DELETES)
+        def merge_areas(
+            source: Annotated[str, Field(description="The top-level folder to empty and delete, e.g. /legal")],
+            target: Annotated[str, Field(description="The top-level folder that takes its notes, e.g. /contracts")],
+            confirm: Annotated[bool, Field(description="true when the user asked for it: the first folder is deleted")] = False,
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """Move every note of a top-level folder into another and delete the first; only when the user asked for it."""
+            if confirm is not True:
+                raise ToolError(f"merging deletes {source} once its notes are moved: if the user asked for it, call it with confirm=true")
+            done = guarded(lambda: self.live().merge_roots(source, target, author=author_of(ctx)))
+            return {"folder": done.label, "description": done.description}
+
+        @server.tool(annotations=DELETES)
+        def delete_note(
+            path: Annotated[str, Field(description="The note's path, e.g. finance/pricing.md")],
+            confirm: Annotated[bool, Field(description="true when the user asked for it: it cannot be undone")] = False,
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """Delete a note; the links to it go from the other notes. Cannot be undone: only when the user asked for it."""
+            if confirm is not True:
+                raise ToolError(f"deleting {path} cannot be undone: if the user asked for it, call it with confirm=true")
+            try:
+                return guarded(lambda: self.live().delete_note(path, author=author_of(ctx))).to_dict()
+            except FileNotFoundError as e:
+                raise ToolError(f"no note at {path}") from e
+
+        if not local_files:
+            return
+
+        @server.tool(annotations=WRITES)
+        def remember_file(
+            path: Annotated[str, Field(description="The document's path on this computer: text, Markdown, PDF, Office…")],
+            title: Annotated[str | None, Field(description="A title; empty: the file's name")] = None,
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """File a document from this computer's disk, as dropping it on the wiki's page does."""
+            file, by = local_path(path, folder=False), author_of(ctx)
+            if title:
+                text = guarded(lambda: extract_text(file.read_bytes(), file.name))
+                return self.run(lambda wiki: filed(wiki.ingest(text, title=title, resource=str(file), author=by)))
+            return self.run(lambda wiki: filed(wiki.ingest_file(file.read_bytes(), file.name, resource=str(file), author=by)))
+
+        @server.tool(annotations=WRITES)
+        def sync_folder(
+            folder: Annotated[str, Field(description="A folder on this computer whose documents to file")],
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """File every document of a folder and keep the memory in step with it: a later call files only what changed."""
+            where, by = local_path(folder, folder=True), author_of(ctx)
+            return self.run(lambda wiki: sync(wiki, LocalFolderSource(where), author=by).to_dict())
+
     def run(self, work: Callable[[Wiki], dict[str, Any]]) -> dict[str, Any]:
         """The work's result with this wiki's own models; with the client's, its first requests (see models.relay)."""
         wiki = self.live()
-        if wiki.cfg.mcp_models != "client":
+        if wiki.cfg.mcp_models == "wiki":
             return guarded(lambda: work(wiki))
         relay, tracker = Relay(), UsageTracker()  # the client's plan pays: nothing to count here
-        client_wiki = Wiki(relayed(wiki.cfg), llm=RelayLLM(relay, tracker), classifier=RelayClassifier(relay, tracker))
+        if wiki.cfg.mcp_models == "hybrid" and wiki.cfg.classifier.ready:
+            # The client writes and the wiki's own classifier decides: only the writing comes back as requests.
+            cfg = wiki.cfg.model_copy(update={"mode": "crow", "llm": LLM_CONFIG.model_copy()})
+            client_wiki = Wiki(cfg, llm=RelayLLM(relay, tracker))
+        else:
+            client_wiki = Wiki(relayed(wiki.cfg), llm=RelayLLM(relay, tracker), classifier=RelayClassifier(relay, tracker))
         job = uuid.uuid4().hex[:8]
         with self._jobs_lock:
             now = time.monotonic()  # the jobs that ended long ago are forgotten, their result with them
@@ -317,6 +444,16 @@ def deviated(results: list[IngestResult]) -> dict[str, Any]:
     """The notes the limit on top-level folders sent to the likeliest root, as `deviated` (count) and `deviations`; empty when none."""
     found = deviations(results)
     return {"deviated": len(found), "deviations": found} if found else {}
+
+
+def local_path(given: str, *, folder: bool) -> Path:
+    """A file (or a folder) of this computer by the path the client gives, `~` expanded; ToolError when there is none."""
+    path = Path(given).expanduser().resolve()
+    if folder and not path.is_dir():
+        raise ToolError(f"no folder at {path}")
+    if not folder and not path.is_file():
+        raise ToolError(f"no file at {path}")
+    return path
 
 
 def guarded(call: Callable[[], T]) -> T:

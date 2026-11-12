@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-12
+
+The wiki as the memory of Claude Code or Codex from the terminal alone, with no page and no server to keep running.
+
+### Added
+
+- `llmwiki2 mcp`: the memory over stdio, started by the client itself (`claude mcp add --scope user llm-wiki -- llmwiki2 mcp`, `codex mcp add llm-wiki -- llmwiki2 mcp`). It is always on, whatever **Start** says, and writes the same wiki as the page, one at a time.
+- `llmwiki2 setup` first asks how the wiki will be used. **As the memory of an agentic CLI** asks which models do its work, saves the memory as on, connects Claude Code and Codex when it finds them (over stdio), asking which configurations when there are several (`~/.claude`, `~/.claude-work`, … through `CLAUDE_CONFIG_DIR`; `CODEX_HOME` for Codex), and offers to add to `~/.claude/CLAUDE.md` (Codex: `~/.codex/AGENTS.md`) a few lines, between markers that a later `setup` replaces, that make the client use the memory when you speak in plain words. With neither on the PATH it prints the commands.
+- Hybrid models for the memory (`mcp_models = "hybrid"`, `OKF_MCP_MODELS=hybrid`, in `setup` and on the page): the client's model writes and the wiki's classifier decides (Jev through OpenRouter or TypeSafe, or Ollama or Laya on your computer), so only the writing goes to the client and no Haiku subagent runs. Without a classifier set up it works as `client`. `setup` tests the classifier before saving.
+- MCP tools for the edits by hand: `folders`, `move_note`, `describe_folder`, `rename_area`, `merge_areas` and `delete_note`. The last two do nothing without `confirm=true`, and the client is told to delete or merge only what you asked for.
+- `python -m llmwiki2`, the command line by the name the package installs as (`python -m llmw2` still works).
+- Over stdio only, `remember_file(path)` and `sync_folder(folder)` file documents from your disk. Over HTTP they are not offered, as the server may answer other machines, which must not read its files.
+
+### Changed
+
+- The memory's instructions tell the client that the user speaks in plain words, in any language, and never names the tools, with examples in English and Italian ("ricorda che…", "ti ricordi…"); `recall` and `remember` say the same in their descriptions.
+- The README and the memory guide start the memory section with the terminal-only setup, in three steps with the answer to each question of `setup`; "Something wrong?" says what to do when Windows application control blocks `llmwiki2.exe`: run it through Python. `setup` registers the memory with the Python that runs it, never a launcher found on the PATH, so it works there too.
+- In `setup`, a first memory starts from the CLI's own models, which need no key: Enter at every question after the first gives a working memory.
+
+### Fixed
+
+- Testing a classifier on this computer (Ollama, Laya), in `setup` and with **Test connection** on the page, failed every time while its model was not loaded: the test gave up after the 8 seconds of a decision, before the model had loaded, and the dropped request left it unloaded. A test now waits up to 2 minutes; the decisions keep their timeout.
+
 ## [1.0.0] - 2026-11-10
 
 The first stable release: from here on the library follows semantic versioning. What it covers (the API, the settings, the command line, the HTTP API, the MCP tools and the wiki on disk) and what it does not (prompt texts, models, thresholds, caches) is in [Compatibility](docs/library/index.md#compatibility).
@@ -360,6 +383,7 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[1.0.1]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.1
 [1.0.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.0
 [0.8.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.8.0
 [0.7.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.7.0

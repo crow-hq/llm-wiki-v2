@@ -70,7 +70,7 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "classifier_state_chars": ("classifier", "state_chars"),
     "classifier_request_chars": ("classifier", "request_chars"),
     "mcp": ("mcp",),  # "true": the server answers as an MCP memory at /mcp (the page's Memory)
-    "mcp_models": ("mcp_models",),  # "client": the MCP client's models do the memory's work; "": this wiki's own
+    "mcp_models": ("mcp_models",),  # "client": the MCP client's models do the memory's work; "hybrid": its writer only; "": this wiki's own
 }
 # The parameters of each model the page edits (a number each), with the default a new provider starts from.
 PARAMS = {
