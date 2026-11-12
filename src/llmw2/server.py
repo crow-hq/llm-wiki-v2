@@ -49,6 +49,7 @@ from llmw2.bundle.tree import graph
 from llmw2.config import WikiConfig, missing_keys
 from llmw2.errors import ConfigError, InputError, ModelError
 from llmw2.models.classifier import probe as probe_classifier
+from llmw2.models.classifier import probe_config
 from llmw2.models.llm import context_warning, live_models, probe
 from llmw2.settings import Settings
 from llmw2.wiki import Wiki
@@ -169,7 +170,7 @@ class SettingsChanges(BaseModel):
     classifier_state_chars: str | None = None
     classifier_request_chars: str | None = None
     mcp: str | None = None  # "true" answers as an MCP memory at /mcp, "" turns it off
-    mcp_models: str | None = None  # "client": the MCP client's models do the memory's work, "" this wiki's own
+    mcp_models: str | None = None  # "client": the MCP client's models do the memory's work, "hybrid" its writer only, "" this wiki's own
 
 
 class MemoryChanges(BaseModel):
@@ -527,7 +528,7 @@ def create_app(
             _, cfg = editable(request).apply(changes.model_dump(exclude_unset=True))
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
-        with make_wiki(cfg) as trial:
+        with make_wiki(probe_config(cfg)) as trial:  # a local classifier may load on this first request
             try:
                 result: dict[str, Any] = {"ok": True, "model": cfg.llm.model, "reply": probe(trial.llm)}
             except ModelError as e:

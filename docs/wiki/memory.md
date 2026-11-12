@@ -9,7 +9,46 @@ learns, through CROW:
 
 A memory is a note like any other. It shows up in the page, and the page can move or delete it.
 
-## Start it and connect a client
+## From the terminal only (Claude Code, Codex)
+
+No page and no server to keep running: the client starts the memory by itself, over stdio, each time it starts.
+
+```bash
+uv tool install 'llmwiki2[mcp]'      # or: pip install 'llmwiki2[mcp]'
+llmwiki2 setup
+```
+
+`setup` asks how you will use the wiki: pick **As the memory of an agentic CLI**, then which models do its work (see
+[Which models do the work](#which-models-do-the-work)):
+
+1. **The CLI's own models**, with no key: Claude Code or Codex do everything on their plan.
+2. **Hybrid**: the CLI writes, and a small classifier (Jev through OpenRouter, or Ollama or Laya on your computer)
+   decides where things go. It asks for that classifier's key or address and tests it.
+3. **A model provider for everything** (OpenRouter, Ollama, …), as for the page: it asks for the provider, key and model.
+
+Then, for each of Claude Code and Codex it finds, it offers to connect it (`claude mcp add --scope user llm-wiki --
+llmwiki2 mcp`) and to add a few lines to `~/.claude/CLAUDE.md` (Codex: `~/.codex/AGENTS.md`) that tell it to use the
+memory when you speak in plain words. With more than one configuration (`~/.claude` and `~/.claude-work`, used through
+`CLAUDE_CONFIG_DIR`; for Codex `CODEX_HOME`), it lists them and asks which to connect: Enter for all. The memory's own instructions already say so; the lines make it surer, as the
+client reads them at every session. Run `setup` again to change anything: it replaces the lines rather than adding them
+twice.
+
+By hand, the same is:
+
+```bash
+claude mcp add --scope user llm-wiki -- llmwiki2 mcp      # Claude Code, every project
+codex mcp add llm-wiki -- llmwiki2 mcp                    # Codex
+OKF_MCP_MODELS=client                                     # or hybrid; or a provider in ~/.config/llm-wiki/config.json
+```
+
+`llmwiki2 mcp` is always on, whatever **Start** says, and takes `--bundle` (before `mcp`) for a wiki other than
+`~/llm-wiki`. Then just talk: "ricorda che il fornitore paga a 45 giorni", "what did we decide about pricing?", "add
+~/Downloads/contract.pdf to the wiki", "move the note on pricing to suppliers". The client calls the tools by itself.
+
+Over stdio the memory has two more tools, for the files of your computer: `remember_file` and `sync_folder` (below).
+The page can stay off; if you open it as well (`llmwiki2`), both write the same wiki, one at a time.
+
+## With the page: start it and connect a client
 
 The memory comes with the `mcp` extra, which the Docker image has:
 
@@ -59,24 +98,43 @@ approval_mode = "approve"
 | `propose_area(name, description, notes)` | Queues a top-level folder the user described, with the notes (paths or ids) it would hold. Nothing moves until it is confirmed. | the proposal (`id`, `label`, `description`, `notes`, `status`…) |
 | `proposals()` | The open proposals, to put to the user as a yes or a no. Read-only. | a list of proposals |
 | `confirm_area(id, yes)` | The user's answer: `yes` true opens the folder and moves only the proposed notes still there into it (each with `moved_from`); false dismisses the proposal. A yes is refused at the limit of top-level folders. | the proposal, and `moved` (the notes' new paths) for a yes |
+| `folders()` | Every folder, with its description and how many notes it holds directly. Read-only. | a list of `{"folder", "description", "notes"}` |
+| `move_note(path, folder)` | Moves a note into another folder (`/` is the top level); the links to and from it follow, as **Move** on the page. | `{"note"}`: its new path |
+| `describe_folder(folder, description)` | Changes a folder's one-line description, the line new notes are routed by. | `{"folder", "description"}` |
+| `rename_area(folder, name)` | Renames a top-level folder; its notes and the links to them follow. | `{"folder", "description"}` |
+| `merge_areas(source, target, confirm)` | Moves every note of a top-level folder into another and deletes the first. Does nothing unless `confirm` is `true`: the client is told to merge only what you asked for, and to ask when unsure. | `{"folder", "description"}` of the target |
+| `delete_note(path, confirm)` | Deletes a note; the links to it go from the other notes. Cannot be undone, so it does nothing unless `confirm` is `true`. | what went: `notes`, `sources`, `archived`, `unlinked` |
+| `remember_file(path, title?)` | Over stdio only. Files a document of your computer (text, Markdown, PDF, Word, PowerPoint, Excel, OpenDocument), as dropping it on the page does. | as `remember` |
+| `sync_folder(folder)` | Over stdio only. Files every document of a folder and keeps the wiki in step with it, as `llmwiki2 sync`: a later call files only what changed. | the counts and the errors, as `sync --json` |
 | `reply(job, replies)` | Hands over the client's replies to the memory's requests, when the client does its model work (below). | the next requests, or the result |
 
 The server tells the client's model how to use them:
-- recall before answering about the user's work, projects, documents, decisions or preferences;
-- remember what is settled, one topic per call;
+- the user speaks in plain words, in any language, and never names the tools: the model calls them by itself;
+- recall before answering about the user's work, projects, documents, decisions or preferences, or anything from before;
+- remember when asked ("remember that…", "ricorda che…") and what is settled, one topic per call;
+- delete or merge only what the user asked for, and ask when unsure;
 - never store secrets.
+
+`remember_file` and `sync_folder` read the disk of the machine the memory runs on, so only the stdio memory has them: it
+runs as you, started by your own client. Over HTTP the server may answer other machines (a reverse proxy, Docker), which
+must not read its files.
 
 When the wiki refuses a call (an empty question, a missing note, a model that fails), the client's model reads why.
 
 ## Which models do the work
 
-Two setups, chosen under **Memory** in **Which models do the work** (the setting `mcp_models`, or `OKF_MCP_MODELS`).
-The choice applies from the client's next call:
+Three setups, chosen under **Memory** in **Which models do the work**, or in `llmwiki2 setup` (the setting
+`mcp_models`, or `OKF_MCP_MODELS`). The choice applies from the client's next call:
 
 - **This wiki's settings** (`wiki`, the default): the models in **Settings**. OpenRouter or a local model writes, and
   Jev or Laya decides. The client only calls the memory, and spends nothing on filing.
 - **Claude or GPT for everything** (`client`): the client's own models do the memory's model work, on its plan, with no
   key in the wiki.
+- **Hybrid** (`hybrid`): the client's model writes, and this wiki's classifier decides (Jev through OpenRouter or
+  TypeSafe, or a System One server on your computer: Ollama 0.35 or later, or Laya). Only the writing goes to the client
+  (in our tries, one or two replies per memory instead of four to seven), and no Haiku subagent runs; the writing stays
+  on the client's plan.
+  Without a classifier set up (its key, or its address), it works as `client`.
 
 ### How the client does it
 

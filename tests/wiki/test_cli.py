@@ -274,13 +274,14 @@ def test_setup_tests_the_model_then_saves(
     llm.add("settings/probe", "OK")
     built: list[WikiConfig] = []
     monkeypatch.setattr(cli, "build_wiki", lambda cfg: built.append(cfg) or Wiki(cfg, llm=llm))
-    asked = answers(monkeypatch, "gemini", "", keys=("g-key-0123456789", "or-key-0123456789"))
+    asked = answers(monkeypatch, "", "gemini", "", keys=("g-key-0123456789", "or-key-0123456789"))
 
     assert cli.main(["setup"]) == 0
 
-    assert asked[0] == "Provider (openrouter, openai, gemini, ollama, custom) [openrouter]: "
-    assert asked[2] == "Model (e.g. gemini-3.8-flash, gemini-3.5-flash, gemini-3.5-flash-lite) [gemini-3.8-flash]: "
-    assert asked[3].startswith("CROW classifier key")
+    assert asked[0] == "Choice [1]: "
+    assert asked[1] == "Provider (openrouter, openai, gemini, ollama, custom) [openrouter]: "
+    assert asked[3] == "Model (e.g. gemini-3.8-flash, gemini-3.5-flash, gemini-3.5-flash-lite) [gemini-3.8-flash]: "
+    assert asked[4].startswith("CROW classifier key")
     assert (built[0].llm.provider, built[0].llm.api_key, built[0].mode) == ("gemini", "g-key-0123456789", "crow")
     assert saved_settings(home) == {
         "llm": {"provider": "gemini", "api_key": "g-key-0123456789", "model": "gemini-3.8-flash"},
@@ -294,7 +295,7 @@ def test_setup_without_a_classifier_key_chooses_classic_mode(
 ) -> None:
     llm.add("settings/probe", "OK")
     monkeypatch.setattr(cli, "build_wiki", lambda cfg: Wiki(cfg, llm=llm))
-    answers(monkeypatch, "ollama", "")
+    answers(monkeypatch, "", "ollama", "")
 
     assert cli.main(["setup"]) == 0
 
@@ -307,7 +308,7 @@ def test_with_openrouter_setup_keeps_crow_with_one_key(
 ) -> None:
     llm.add("settings/probe", "OK")
     monkeypatch.setattr(cli, "build_wiki", lambda cfg: Wiki(cfg, llm=llm))
-    asked = answers(monkeypatch, "", "", keys=("or-key-0123456789",))
+    asked = answers(monkeypatch, "", "", "", keys=("or-key-0123456789",))
 
     assert cli.main(["setup"]) == 0
 
@@ -320,7 +321,7 @@ def test_setup_asks_before_saving_settings_that_failed_the_test(
 ) -> None:
     unreachable(llm, monkeypatch)
     monkeypatch.setattr(cli, "build_wiki", lambda cfg: Wiki(cfg, llm=llm))
-    answers(monkeypatch, "ollama", "", "n")
+    answers(monkeypatch, "", "ollama", "", "n")
 
     assert cli.main(["setup"]) == 1
 
@@ -451,3 +452,120 @@ def test_ingest_when_a_file_has_a_title_then_the_title_names_the_source(
     assert "Revenue is booked on delivery." in prompt and "Source title: Q3 board" in prompt
     [raw] = (bundle / "raw").glob("*.md")
     assert f"resource: {source}" in raw.read_text(encoding="utf-8")
+
+
+# -- setup as the memory of an agentic CLI, and `llmwiki2 mcp` ---------------------------------------------------
+
+
+def clis(monkeypatch: pytest.MonkeyPatch, *found: str, envs: list[str | None] | None = None) -> list[list[str]]:
+    """Put these agentic CLIs on the PATH; returns the commands setup runs, and in `envs` the CLAUDE_CONFIG_DIR of each."""
+    ran: list[list[str]] = []
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+
+    def run(cmd: list[str], env: dict[str, str]) -> Any:
+        ran.append(cmd)
+        if envs is not None:
+            envs.append(env.get("CLAUDE_CONFIG_DIR"))
+        return __import__("subprocess").CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(cli, "which", lambda name: f"/bin/{name}" if name in found else None)
+    monkeypatch.setattr(cli, "run_command", run)
+    return ran
+
+
+def test_setup_for_claude_code_with_its_own_models_needs_no_key_and_connects_it_over_stdio(
+    monkeypatch: pytest.MonkeyPatch, home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # ARRANGE: memory, the CLI's own models, connect Claude Code, write the lines in CLAUDE.md
+    ran = clis(monkeypatch, "claude")
+    (home / ".claude").mkdir()
+    (home / ".claude" / "CLAUDE.md").write_text("# Mine\n\nKeep it short.\n", encoding="utf-8")
+    answers(monkeypatch, "2", "1", "", "")
+
+    # ACT
+    assert cli.main(["setup"]) == 0
+
+    # ASSERT
+    assert saved_settings(home) == {"mcp": "true", "mcp_models": "client"}
+    command = [sys.executable, "-m", "llmwiki2", "mcp"]
+    assert ran == [
+        ["/bin/claude", "mcp", "remove", "--scope", "user", "llm-wiki"],
+        ["/bin/claude", "mcp", "add", "--scope", "user", "llm-wiki", "--", *command],
+    ]
+    hint = (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
+    assert hint.startswith("# Mine\n\nKeep it short.\n\n<!-- llm-wiki memory -->") and "ricorda che" in hint
+    assert "Claude Code (~/.claude): connected" in capsys.readouterr().out
+
+    # a second setup replaces the lines, it does not add them twice
+    answers(monkeypatch, "", "", "", "")
+    assert cli.main(["setup"]) == 0
+    assert (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8") == hint
+
+
+def test_setup_asks_which_claude_code_configurations_to_connect_and_writes_the_lines_in_each(
+    monkeypatch: pytest.MonkeyPatch, home: Path
+) -> None:
+    # ARRANGE: ~/.claude and ~/.claude-work hold a configuration, ~/.claude-old is an empty folder
+    envs: list[str | None] = []
+    ran = clis(monkeypatch, "claude", envs=envs)
+    (home / ".claude").mkdir()
+    (home / ".claude-work").mkdir()
+    (home / ".claude-work" / "settings.json").write_text("{}", encoding="utf-8")
+    (home / ".claude-old").mkdir()
+    asked = answers(monkeypatch, "2", "1", "1,2", "")
+
+    # ACT
+    assert cli.main(["setup"]) == 0
+
+    # ASSERT
+    assert asked[2].startswith("Which to connect to the memory?")
+    adds = [i for i, cmd in enumerate(ran) if cmd[2] == "add"]
+    assert [envs[i] for i in adds] == [None, str(home / ".claude-work")]  # the default one with no variable
+    assert (home / ".claude" / "CLAUDE.md").is_file() and (home / ".claude-work" / "CLAUDE.md").is_file()
+    assert not (home / ".claude-old" / "CLAUDE.md").exists()
+
+
+def test_setup_hybrid_tests_the_classifier_and_without_any_cli_prints_what_to_type(
+    monkeypatch: pytest.MonkeyPatch, home: Path, classifier: FakeClassifier, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # ARRANGE: memory, hybrid, Jev through OpenRouter with its key
+    ran = clis(monkeypatch)
+    probed: list[WikiConfig] = []
+    monkeypatch.setattr(cli, "build_classifier", lambda cfg: probed.append(cfg) or classifier)
+    monkeypatch.setattr(cli, "probe_classifier", lambda c: 0.9)
+    answers(monkeypatch, "2", "2", "1", keys=("or-key-0123456789",))
+
+    # ACT
+    assert cli.main(["--bundle", str(home / "notes"), "setup"]) == 0
+
+    # ASSERT
+    assert saved_settings(home) == {
+        "mcp": "true", "mcp_models": "hybrid", "classifier": {"provider": "openrouter", "api_key": "or-key-0123456789"}
+    }
+    assert probed[0].classifier.api_key == "or-key-0123456789" and ran == []
+    assert probed[0].classifier.timeout >= 120  # a local model loads on its first request: the test waits for it
+    out = capsys.readouterr().out
+    assert "No Claude Code or Codex found" in out
+    assert f"claude mcp add --scope user llm-wiki -- {sys.executable} -m llmwiki2 --bundle {home / 'notes'} mcp" in out
+
+
+def test_mcp_serves_the_memory_over_stdio_with_the_files_of_this_computer(
+    made: list[dict[str, Any]], bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("mcp")
+    from llmw2 import memory
+
+    served: list[tuple[bool, str]] = []
+
+    class Spy(memory.Memory):
+        def __init__(self, wiki: Any, *, local_files: bool = False) -> None:
+            super().__init__(wiki, local_files=local_files)
+            self.server.run = lambda transport: served.append((wiki().cfg.mcp, transport))  # type: ignore[method-assign]
+            served.append((local_files, "made"))
+
+    monkeypatch.setattr(memory, "Memory", Spy)
+
+    assert run(bundle, "mcp") == 0
+
+    assert served == [(True, "made"), (True, "stdio")]  # on, whatever the settings say

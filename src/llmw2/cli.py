@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 """`llmwiki2` command line: setup, init, ingest, sync, rebuild, purge, ask, move, describe,
-proposals, rename-root, merge-roots, audit, health, check, serve.
+proposals, rename-root, merge-roots, audit, health, check, serve, mcp.
 
 `llmwiki2` alone serves the wiki and opens it in the browser, where the settings
-page asks for what is missing; `llmwiki2 setup` asks the same in the terminal.
+page asks for what is missing; `llmwiki2 setup` asks the same in the terminal, and
+sets the wiki up as the memory of an agentic CLI (Claude Code, Codex) with no page:
+`llmwiki2 mcp` is that memory over stdio, started by the client itself.
 Configuration: the settings file (see `settings.py`), under `OKF_*` environment
 variables (and a `.env` file in the current folder), under `--bundle` and `--mode`.
 A one-line token summary goes to stderr.
@@ -19,6 +21,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from importlib import resources
@@ -28,10 +31,13 @@ from llmw2.audit import AUDIT_MIN, HEALTH_MAX_SHARE, HEALTH_MIN_FILED
 from llmw2.batch import deviation_line, deviations
 from llmw2.bundle.files import extract_text
 from llmw2.bundle.proposals import notes_count
-from llmw2.config import PROVIDERS, WikiConfig
+from llmw2.config import CLASSIFIER_PROVIDERS, NAMES, PROVIDERS, WikiConfig
 from llmw2.errors import InputError, ModelError
 from llmw2.logo import show_logo
+from llmw2.models.classifier import Classifier, probe_config
+from llmw2.models.classifier import probe as probe_classifier
 from llmw2.models.llm import probe
+from llmw2.models.usage import UsageTracker
 from llmw2.settings import Settings, default_bundle, mask, ready, tilde
 from llmw2.sources import LocalFolderSource, SyncReport, documents, estimate, sync
 from llmw2.wiki import Wiki
@@ -44,8 +50,14 @@ def settings_wiki(*, bundle: Path | None = None, mode: str | None = None) -> Wik
 # Tests replace these to inject fake models or answers.
 make_wiki: Callable[..., Wiki] = settings_wiki
 build_wiki: Callable[[WikiConfig], Wiki] = Wiki  # after a settings change: the server and `setup`
+build_classifier: Callable[[WikiConfig], Classifier] = lambda cfg: Classifier(cfg.classifier, UsageTracker())  # noqa: E731
 prompt: Callable[[str], str] = input
 secret: Callable[[str], str] = getpass.getpass
+run_command: Callable[[list[str], dict[str, str]], subprocess.CompletedProcess[str]] = lambda cmd, env: subprocess.run(  # noqa: E731
+    cmd, capture_output=True, text=True, check=False, env=env
+)
+which: Callable[[str], str | None] = shutil.which
+home: Callable[[], Path] = Path.home
 # the commands that may write log.md
 CHANGING = ("ingest", "sync", "rebuild", "purge", "move", "describe", "proposals", "rename-root", "merge-roots", "audit")
 
@@ -157,6 +169,7 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--open", action="store_true", help="open the wiki in the browser")
+    sub.add_parser("mcp", help="the wiki as an MCP memory over stdio, for a client that starts it (claude mcp add … -- llmwiki2 mcp)")
     demo = sub.add_parser("demo", help="open an example wiki (a copy in ~/llm-wiki-demo)")
     demo.add_argument("--port", type=int, default=8000)
 
@@ -165,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args([*(sys.argv[1:] if argv is None else argv), "serve", "--open"])
     if args.command == "setup":
         try:
-            return setup(Settings(bundle=args.bundle, mode=args.mode))
+            return setup(Settings(bundle=args.bundle, mode=args.mode), bundle=args.bundle)
         except (ValueError, EOFError, KeyboardInterrupt) as e:
             print(f"\nllmwiki2: {str(e) or 'setup cancelled'}", file=sys.stderr)
             return 2
@@ -200,13 +213,78 @@ def copy_demo(to: Path) -> Path:
     return to
 
 
-def setup(settings: Settings) -> int:
-    """Ask for provider, key and model, test them with one request, save them."""
+USES = (
+    ("page", "With its web page and this command line: a model provider files your documents and answers"),
+    ("memory", "As the memory of an agentic CLI (Claude Code, Codex), from the terminal only, with no page"),
+)
+WORKERS = (
+    ("client", "The CLI's own models, on its plan, with no key. Slower: a memory takes about a minute"),
+    ("hybrid", "Hybrid: the CLI writes, and a small classifier (Jev through OpenRouter, or a local Laya or Ollama) decides "
+               "where things go. Quicker, and on the CLI's plan but for the classifier"),
+    ("wiki", "A model provider for everything (OpenRouter, Ollama, …): the CLI only calls the memory"),
+)
+# Each agentic CLI: its command, its name, the variable that picks its configuration folder, the default folder in the
+# home (others sit next to it: ~/.claude-work), the file of instructions it reads there, and what tells such a folder.
+CLIENTS = (
+    ("claude", "Claude Code", "CLAUDE_CONFIG_DIR", ".claude", "CLAUDE.md", (".credentials.json", "settings.json", "projects")),
+    ("codex", "Codex", "CODEX_HOME", ".codex", "AGENTS.md", ("auth.json", "config.toml", "sessions")),
+)
+# The lines an agentic CLI reads at every session, so it calls the memory when the user speaks in plain words.
+HINT_START, HINT_END = "<!-- llm-wiki memory -->", "<!-- /llm-wiki memory -->"
+HINT = f"""{HINT_START}
+## Long-term memory (llm-wiki)
+
+The MCP server `llm-wiki` is my long-term memory. I talk to you in plain words, in any language, and never name its tools:
+- when I ask you to remember, note or keep something ("ricorda che…", "remember that…"), call its `remember`;
+- when I ask about my work, my documents, people or anything from before ("ti ricordi…", "what did we decide…"), call its
+  `recall` first and cite the notes;
+- when I ask you to add or import a file or a folder, call `remember_file` or `sync_folder` with its path.
+{HINT_END}
+"""
+
+
+def choose(question: str, options: tuple[tuple[str, str], ...], default: int = 0) -> str:
+    """One of `options` (key, text), picked by its number; Enter takes `default`."""
+    print(question)
+    for i, (_, text) in enumerate(options, 1):
+        print(f"  {i}. {text}")
+    while True:
+        got = prompt(f"Choice [{default + 1}]: ").strip() or str(default + 1)
+        if got.isdigit() and 1 <= int(got) <= len(options):
+            return options[int(got) - 1][0]
+        print(f"Type a number from 1 to {len(options)}.")
+
+
+def setup(settings: Settings, bundle: Path | None = None) -> int:
+    """Ask how the wiki will be used. With its page: provider, key and model, tested with one request, then saved. As the
+    memory of an agentic CLI: whose models do the work, then the memory is turned on and the CLIs found are connected."""
     view = settings.view()
     now, managed = view["values"], set(view["managed"])
     show_logo()
     print(f"Settings file: {tilde(settings.path)}")
-    changes: dict[str, str] = {}
+    if choose("How will you use the wiki?", USES, default=1 if now["mcp"] else 0) == "page":
+        changes: dict[str, str] = {}
+        if not _models(settings, now, managed, changes):
+            return 1
+        cfg = settings.save(changes)
+        print(f"Saved ({cfg.mode} mode, API key {mask(cfg.llm.api_key) or 'none'}). Start the wiki with: llmwiki2")
+        return 0
+    keys = [key for key, _ in WORKERS]
+    # The memory set up before keeps its choice; a first one starts from the CLI's own models, which need no key.
+    worker = choose("Which models do the memory's work?", WORKERS, default=keys.index(now["mcp_models"] if now["mcp"] else "client"))
+    changes = {"mcp": "true", "mcp_models": "" if worker == "wiki" else worker}
+    if worker == "wiki" and not _models(settings, now, managed, changes):
+        return 1
+    if worker == "hybrid" and not _classifier(settings, now, managed, changes):
+        return 1
+    settings.save(changes, require_keys=worker == "wiki")
+    print("Saved: the memory is on.")
+    connect(bundle)
+    return 0
+
+
+def _models(settings: Settings, now: dict[str, str], managed: set[str], changes: dict[str, str]) -> bool:
+    """Ask for provider, key and model into `changes`, and test them with one request; False when the user gives up."""
 
     def ask(field: str, question: str, default: str) -> str:
         if field in managed:
@@ -247,10 +325,165 @@ def setup(settings: Settings) -> int:
         print("OK")
     except ModelError as e:
         print(f"failed: {e}")
-        if prompt("Save anyway? [y/N]: ").strip().lower() != "y":
-            return 1
-    settings.save(changes)
-    print(f"Saved ({cfg.mode} mode, API key {mask(cfg.llm.api_key) or 'none'}). Start the wiki with: llmwiki2")
+        return prompt("Save anyway? [y/N]: ").strip().lower() == "y"
+    return True
+
+
+def _classifier(settings: Settings, now: dict[str, str], managed: set[str], changes: dict[str, str]) -> bool:
+    """Ask for the CROW classifier into `changes`, and test it with one request; False when the user gives up."""
+    local = "custom"
+    options = (
+        ("openrouter", "Jev through OpenRouter (an OpenRouter key)"),
+        ("typesafe", "Jev through TypeSafe (a TypeSafe key)"),
+        (local, "A System One server on this computer: Ollama 0.35 or later, or Laya"),
+    )
+    keys = [key for key, _ in options]
+    if "classifier_provider" in managed:
+        provider = now["classifier_provider"]
+        print(f"Classifier: {provider} (set by the environment or a flag)")
+    else:
+        provider = choose("Which classifier decides?", options, default=keys.index(now["classifier_provider"] or "openrouter"))
+    changes["classifier_provider"] = provider
+    if provider == local:
+        if "classifier_base_url" not in managed:
+            url = now["classifier_base_url"] or "http://localhost:11434/v1"
+            question = f"Its URL, under which it serves /systemone (Laya: http://127.0.0.1:8001/v1) [{url}]: "
+            changes["classifier_base_url"] = prompt(question).strip() or url
+        if "classifier_model" not in managed:
+            model = now["classifier_model"] if now["classifier_provider"] == local else CLASSIFIER_PROVIDERS[local].models[0]
+            changes["classifier_model"] = prompt(f"Its model [{model}]: ").strip() or model
+    elif "classifier_api_key" not in managed:
+        kept = f"Enter keeps {now['classifier_api_key']}" if now["classifier_api_key"] else "Enter for none"
+        changes["classifier_api_key"] = secret(f"{NAMES[provider]} API key ({kept}): ").strip()
+    _, cfg = settings.apply(changes)
+    slow = " (a model on this computer may take a minute to load)" if provider == local else ""
+    print(f"Testing {cfg.classifier.model} at {cfg.classifier.base_url}{slow} … ", end="", flush=True)
+    try:
+        classifier = build_classifier(probe_config(cfg))
+        try:
+            probe_classifier(classifier)
+        finally:
+            classifier.close()
+        print("OK")
+    except ModelError as e:
+        print(f"failed: {e}")
+        return prompt("Save anyway? [y/N]: ").strip().lower() == "y"
+    return True
+
+
+def memory_command(bundle: Path | None) -> list[str]:
+    """How a client starts this memory over stdio: this very Python, which runs `setup` and so is known to work.
+
+    Not `llmwiki2` on the PATH: it may be another install, or a launcher the system refuses to run (Windows application
+    control blocks new executables such as the one `uv tool install` writes)."""
+    command = [sys.executable, "-m", "llmwiki2"]
+    return [*command, "--bundle", str(bundle.expanduser().resolve()), "mcp"] if bundle else [*command, "mcp"]
+
+
+def profiles(variable: str, default: str, markers: tuple[str, ...]) -> list[Path]:
+    """A CLI's configuration folders: the default one in the home, its siblings (~/.claude-work) that hold a configuration,
+    and the one `variable` names; the default first."""
+    base = home()
+    found = [base / default]
+    found += [d for d in sorted(base.glob(f"{default}-*")) if d.is_dir() and any((d / m).exists() for m in markers)]
+    named = os.environ.get(variable)
+    if named and Path(named).expanduser().resolve() not in {d.resolve() for d in found}:
+        found.append(Path(named).expanduser())
+    return found
+
+
+def pick(name: str, folders: list[Path]) -> list[Path]:
+    """The configuration folders the user wants connected: a yes for one, numbers (Enter: all, 0: none) for several."""
+    if len(folders) == 1:
+        answer = prompt(f"Connect {name} ({tilde(folders[0])}) to the memory now? [Y/n]: ").strip().lower()
+        return folders if answer in ("", "y", "yes") else []
+    print(f"{name} has {len(folders)} configurations:")
+    for i, folder in enumerate(folders, 1):
+        print(f"  {i}. {tilde(folder)}")
+    while True:
+        answer = prompt("Which to connect to the memory? Numbers separated by commas, Enter for all, 0 for none: ").strip()
+        if not answer:
+            return folders
+        if answer == "0":
+            return []
+        numbers = [part.strip() for part in answer.split(",")]
+        if all(n.isdigit() and 1 <= int(n) <= len(folders) for n in numbers):
+            return [folders[int(n) - 1] for n in dict.fromkeys(numbers)]
+        print(f"Type numbers from 1 to {len(folders)}, such as 1,2.")
+
+
+def connect(bundle: Path | None) -> None:
+    """Register the memory with each agentic CLI found on the PATH, in the configurations the user picks, and add the lines
+    that make it call the memory when the user speaks in plain words, when the user says yes; else print what to type."""
+    command = memory_command(bundle)
+    line = " ".join(f'"{part}"' if " " in part else part for part in command)
+    found = False
+    for cli_name, name, variable, default, hint_name, markers in CLIENTS:
+        exe = which(cli_name)
+        if exe is None:
+            continue
+        found = True
+        chosen = pick(name, profiles(variable, default, markers))
+        connected = []
+        for folder in chosen:
+            env = {k: v for k, v in os.environ.items() if k != variable}  # the default folder: no variable at all
+            if folder != home() / default:
+                env[variable] = str(folder)
+            scope = ["--scope", "user"] if cli_name == "claude" else []
+            run_command([exe, "mcp", "remove", *scope, "llm-wiki"], env)  # an older one, by HTTP or stdio: none is fine
+            added = run_command([exe, "mcp", "add", *scope, "llm-wiki", "--", *command], env)
+            if added.returncode != 0:
+                print(f"{name} ({tilde(folder)}) did not take it: {(added.stderr or added.stdout).strip()}")
+                continue
+            print(f"{name} ({tilde(folder)}): connected. It starts the memory by itself: no server to keep running.")
+            connected.append(folder)
+        if not connected:
+            continue
+        files = [folder / hint_name for folder in connected]
+        where = ", ".join(tilde(f) for f in files)
+        if prompt(f"Add to {where} the lines that make {name} use the memory when you talk in plain words? [Y/n]: ").strip().lower() in (
+            "", "y", "yes"
+        ):
+            for file in files:
+                write_hint(file)
+            print(f"Written in {where}.")
+    if not found:
+        print("No Claude Code or Codex found on the PATH. Connect yours with:")
+    else:
+        print("Any other MCP client:")
+    print(f"  claude mcp add --scope user llm-wiki -- {line}")
+    print(f"  codex mcp add llm-wiki -- {line}")
+    print('Then talk to it in plain words, in any language: "remember that…", "what did we decide about…".')
+    print("To see the brain or browse the notes, whenever you like: llmwiki2")
+
+
+def write_hint(path: Path) -> None:
+    """`HINT` in the file at `path`, in place of an older one, else at its end; the rest of the file as it was."""
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    start, end = text.find(HINT_START), text.find(HINT_END)
+    if start != -1 and end > start:
+        text = text[:start] + HINT + text[end + len(HINT_END):].lstrip("\n")
+    else:
+        text = text + ("\n" if text and not text.endswith("\n") else "") + ("\n" if text else "") + HINT
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def memory_stdio(wiki: Wiki) -> int:
+    """`llmwiki2 mcp`: the wiki as an MCP memory over stdio, on whatever the settings say, until the client closes it.
+
+    Nothing goes to stdout but the protocol: messages go to stderr. The tools that read this computer's files are on, as
+    the memory runs as the user who started the client.
+    """
+    try:
+        from llmw2.memory import Memory
+    except ImportError:
+        print("llmwiki2: the memory needs the mcp extra: pip install 'llmwiki2[mcp]' (or uv tool install 'llmwiki2[mcp]')",
+              file=sys.stderr)
+        return 2
+    wiki.cfg.mcp = True  # started for this: on, whatever the settings say
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s", stream=sys.stderr)
+    Memory(lambda: wiki, local_files=True).server.run("stdio")
     return 0
 
 
@@ -413,6 +646,8 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
             print(problem)
         print(f"{len(problems)} problem(s)", file=sys.stderr)
         return 1 if problems else 0
+    elif args.command == "mcp":
+        return memory_stdio(wiki)
     elif args.command == "serve":
         from llmw2.server import serve
 

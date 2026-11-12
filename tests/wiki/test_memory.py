@@ -66,8 +66,79 @@ def test_the_memory_offers_recall_remember_and_read_note_with_the_readers_marked
     assert read_only == {
         "recall": True, "remember": False, "reply": False, "search": True, "read_note": True, "rebuild": False,
         "create_area": False, "propose_area": False, "proposals": True, "confirm_area": False,
+        "folders": True, "move_note": False, "describe_folder": False, "rename_area": False, "merge_areas": False,
+        "delete_note": False,
     }
     assert "recall" in instructions and "Never store secrets" in instructions
+    assert "remember_file" not in read_only and "remember_file" not in instructions  # over HTTP: no file of the server
+
+
+def test_the_instructions_say_to_use_the_memory_on_plain_words_in_any_language(crow_wiki: Wiki) -> None:
+    # ACT
+    async def go() -> Any:
+        async with Client(Memory(lambda: crow_wiki, local_files=True).server) as client:
+            return client.instructions, [t.name for t in (await client.list_tools()).tools]
+
+    instructions, names = asyncio.run(go())
+
+    # ASSERT
+    assert "in any language" in instructions and "never names these tools" in instructions
+    assert "ricorda che" in instructions and "remember that" in instructions
+    assert {"remember_file", "sync_folder"} <= set(names) and "remember_file" in instructions
+
+
+def test_a_client_moves_describes_renames_merges_and_deletes_and_the_destructive_ones_ask_first(classic_wiki: Wiki) -> None:
+    # ARRANGE
+    built = Built(classic_wiki)
+
+    # ACT
+    listed = call(classic_wiki, "folders", {})
+    moved = call(classic_wiki, "move_note", {"path": "finance/tea.md", "folder": "/legal"})
+    described = call(classic_wiki, "describe_folder", {"folder": "/ops", "description": "How we work."})
+    renamed = call(classic_wiki, "rename_area", {"folder": "/legal", "name": "contracts"})
+    unasked_merge = call(classic_wiki, "merge_areas", {"source": "/contracts", "target": "/ops"})
+    merged = call(classic_wiki, "merge_areas", {"source": "/contracts", "target": "/ops", "confirm": True})
+    unasked_delete = call(classic_wiki, "delete_note", {"path": "ops/tea.md"})
+    deleted = call(classic_wiki, "delete_note", {"path": "ops/tea.md", "confirm": True})
+    missing = call(classic_wiki, "move_note", {"path": "ops/none.md", "folder": "/ops"})
+
+    # ASSERT
+    assert {"folder": "/finance", "description": "Money in and out.", "notes": 2} in listed.structured_content["result"]
+    assert moved.structured_content == {"note": "legal/tea.md"}
+    assert described.structured_content == {"folder": "/ops", "description": "How we work."}
+    assert renamed.structured_content["folder"] == "/contracts"
+    assert unasked_merge.is_error and "confirm=true" in text(unasked_merge)
+    assert merged.structured_content["folder"] == "/ops" and built.note("Terms").rel == "ops/terms.md"
+    assert unasked_delete.is_error and "confirm=true" in text(unasked_delete)
+    assert deleted.structured_content["notes"] == ["ops/tea.md"]
+    assert "Tea" not in [n.title for n in classic_wiki.store.load().all_notes()]
+    assert missing.is_error
+
+
+def test_remember_file_and_sync_folder_file_documents_from_this_computer(
+    classic_wiki: Wiki, llm: FakeLLM, tmp_path: Path
+) -> None:
+    # ARRANGE
+    script_ingest(llm)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "memo.md").write_text("Revenue is booked on delivery.", encoding="utf-8")
+    classic_wiki.cfg.mcp = True
+    memory = Memory(lambda: classic_wiki, local_files=True)
+
+    async def go(tool: str, arguments: dict[str, Any]) -> Any:
+        async with Client(memory.server) as client:
+            return await client.call_tool(tool, arguments)
+
+    # ACT
+    filed = asyncio.run(go("remember_file", {"path": str(docs / "memo.md")}))
+    nothing = asyncio.run(go("remember_file", {"path": str(docs / "none.pdf")}))
+    synced = asyncio.run(go("sync_folder", {"folder": str(docs)}))
+
+    # ASSERT
+    assert not filed.is_error and filed.structured_content["note"] == NOTE
+    assert nothing.is_error and "no file at" in text(nothing)
+    assert not synced.is_error and synced.structured_content["errors"] == []
 
 
 def test_remember_files_the_text_as_a_note_and_read_note_reads_it_back(classic_wiki: Wiki, llm: FakeLLM) -> None:
@@ -184,7 +255,8 @@ def test_mcp_speaks_the_protocol_whether_the_memory_is_on_or_off(bundle: Any, ll
     # ASSERT
     assert (started.status_code, started.json()["result"]["serverInfo"]["name"]) == (200, "llm-wiki")
     assert [t["name"] for t in listed.json()["result"]["tools"]] == [
-        "recall", "remember", "rebuild", "reply", "search", "read_note", "create_area", "propose_area", "proposals", "confirm_area"
+        "recall", "remember", "rebuild", "reply", "search", "read_note", "create_area", "propose_area", "proposals", "confirm_area",
+        "folders", "move_note", "describe_folder", "rename_area", "merge_areas", "delete_note",
     ]
 
 
@@ -278,6 +350,36 @@ def test_with_the_clients_models_remember_and_recall_go_through_requests_and_cro
     assert [r["step"] for r in asking] == ["researcher/answer"]  # the search finds the one note: nothing to reorder
     assert (llm.ops, classifier.ops) == ([], [])
     assert ", mcp-client)" in (bundle / "log.md").read_text(encoding="utf-8")  # the provenance names the client's models
+
+
+def test_hybrid_hands_the_client_only_the_writing_and_the_wikis_classifier_decides(
+    bundle: Path, llm: FakeLLM, classifier: FakeClassifier
+) -> None:
+    # ARRANGE: a classifier ready in the settings (a key), so the wiki's own decides
+    wiki = Wiki(WikiConfig(bundle=bundle, mode="classic", mcp=True, mcp_models="hybrid", classifier={"api_key": "k"}), llm=llm)
+    wiki.init()
+    asked: list[str] = []
+    real = Wiki.__init__
+
+    def spy(self: Wiki, cfg: WikiConfig, **kw: Any) -> None:  # the wiki of the work, with the fake classifier for the real one
+        real(self, cfg, **kw)
+        if cfg.llm.model == "mcp-client" and self.classifier is not None:
+            asked.append(type(self.classifier).__name__)
+
+    memory = Memory(lambda: wiki)
+    import llmw2.memory as memory_module
+
+    original = memory_module.Wiki
+    memory_module.Wiki = type("SpyWiki", (Wiki,), {"__init__": spy})  # type: ignore[misc]
+    try:
+        # ACT
+        _, requests = through(memory, "remember", {"text": "Revenue is booked on delivery."})
+    finally:
+        memory_module.Wiki = original
+
+    # ASSERT
+    assert asked == ["Classifier"]  # CROW with the settings' classifier, not the client's
+    assert requests and {r["kind"] for r in requests} == {"write"}
 
 
 def test_requests_come_with_how_to_answer_them(bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> None:
