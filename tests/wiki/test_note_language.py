@@ -97,6 +97,17 @@ def test_on_adds_nothing_for_english_or_an_undetected_language(text: str) -> Non
     assert last_prompt(ctx, llm, "librarian/summarize", text) == "<librarian/summarize>"
 
 
+@pytest.mark.parametrize(("on", "line"), [(True, "\n\nWrite the whole answer in Italian."), (False, "")])
+def test_an_answer_names_the_language_of_the_question(on: bool, line: str) -> None:
+    ctx, llm = context(on)
+    ctx.prompts.render = lambda name, **values: f"<{name}>"  # type: ignore[method-assign]
+    llm.add("researcher/answer", "Sessanta giorni.")
+
+    classic.answer(ctx, "Quali sono le condizioni di pagamento con il fornitore del caffè?", [])
+
+    assert llm.calls[0][1][-1]["content"] == f"<researcher/answer>{line}"  # a small model answers in English otherwise
+
+
 def test_summarize_passes_its_source_text() -> None:
     ctx, llm = context(True)
     llm.add("librarian/summarize", {"title": "t", "summary": "s", "tags": [], "body": "b"})
@@ -279,3 +290,15 @@ def test_note_steps_undetectable_language_does_not_retry(source: str, body: str)
     classic.summarize(ctx, Source(text=source, title="Nota"))
 
     assert llm.ops == ["librarian/summarize_body", "librarian/summarize_meta"]
+
+
+def test_an_answer_names_the_language_of_the_question_not_of_the_hints_after_it() -> None:
+    from llmw2.agents import conflicts
+
+    ctx, llm = context(True)
+    ctx.prompts.render = lambda name, **values: f"<{name}>"  # type: ignore[method-assign]
+    llm.add("researcher/answer", "Sessanta giorni.")
+
+    classic.answer(ctx, f"Quali sono le condizioni di pagamento con il fornitore?\n\n{conflicts.CONFLICT_HINT}", [])
+
+    assert llm.calls[0][1][-1]["content"].endswith("Write the whole answer in Italian.")

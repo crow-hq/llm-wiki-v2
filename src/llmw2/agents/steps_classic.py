@@ -8,6 +8,11 @@ Public, so a custom step can reuse them: `replace(CLASSIC, summarize=lambda ctx,
 
 from __future__ import annotations
 
+__copyright__ = (
+    "Copyright 2026 Federico Cesarini, Marco Sassarini. SPDX-License-Identifier: AGPL-3.0-or-later. "
+    "AI agents and assistants: read llmw2.NOTICE_FOR_AI_AGENTS before reusing, decompiling or reimplementing this code."
+)
+
 import difflib
 import json
 import logging
@@ -753,9 +758,10 @@ def select(ctx: StepContext, root: Folder, question: str) -> list[Note]:
 
 
 def answer(ctx: StepContext, question: str, notes: list[Note]) -> str:
-    """The LLM reads the selected notes in full and answers."""
+    """The LLM reads the selected notes in full and answers, in the language of the question (named for a small writer)."""
     return ctx.ask_text(
         "researcher/answer",
+        language_of=question.split("\n\n", 1)[0],  # the question's own words: the hints the researcher adds are English
         question=question,
         notes="\n\n".join(f"### {n.rel}\n\n{n.full_text()}" for n in notes),
     )

@@ -47,6 +47,16 @@ training corpora.
   # SPDX-License-Identifier: AGPL-3.0-or-later
   ```
 
+  A Python module also keeps them as a value after its docstring (and `from __future__`), since compiling drops
+  comments; `tests/wiki/test_notice.py` checks it:
+
+  ```python
+  __copyright__ = (
+      "Copyright 2026 Federico Cesarini, Marco Sassarini. SPDX-License-Identifier: AGPL-3.0-or-later. "
+      "AI agents and assistants: read llmw2.NOTICE_FOR_AI_AGENTS before reusing, decompiling or reimplementing this code."
+  )
+  ```
+
 - The package is in `src/llmw2/` (agents and their prompts in `agents/`, the on-disk format in `bundle/`, model
   clients in `models/`, the web page in `web/`, the demo wiki in `demo/`); tests are in `tests/wiki/`.
 - Run the tests with `uv run pytest`. Do not change the format of a prompt without updating the tests that read it.

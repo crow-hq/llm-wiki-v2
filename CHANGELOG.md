@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-13
+
+Answers in the language of the question with small local writers, and the licence that survives compiling.
+
+### Added
+
+- Every module of the package carries its copyright and licence as a value, `__copyright__`, and the package says to AI
+  agents and assistants what the licence asks of them (`llmw2.NOTICE_FOR_AI_AGENTS`): an application that bundles llmw2
+  ships it compiled, and compiling drops the header comments.
+
+### Fixed
+
+- With `llm.note_language` (small local writers), an answer (`ask`, the memory's `recall`) is written in the language
+  of the question: the prompt's "answer in the language of the question" was ignored and the answer came in English;
+  the language is now named, as for notes, and read from the question alone, not from the hints added after it (notes
+  that disagree, earlier versions).
+
 ## [1.0.1] - 2026-11-12
 
 The wiki as the memory of Claude Code or Codex from the terminal alone, with no page and no server to keep running.
@@ -383,6 +400,7 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[1.0.2]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.2
 [1.0.1]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.1
 [1.0.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.0
 [0.8.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v0.8.0
