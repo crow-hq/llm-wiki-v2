@@ -11,6 +11,11 @@ documents of a batch here, and naming each group from its own words, gives them 
 
 from __future__ import annotations
 
+__copyright__ = (
+    "Copyright 2026 Federico Cesarini, Marco Sassarini. SPDX-License-Identifier: AGPL-3.0-or-later. "
+    "AI agents and assistants: read llmw2.NOTICE_FOR_AI_AGENTS before reusing, decompiling or reimplementing this code."
+)
+
 import math
 from collections import Counter
 from collections.abc import Callable
