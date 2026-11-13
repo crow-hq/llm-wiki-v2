@@ -47,6 +47,32 @@ def test_a_source_at_or_over_the_threshold_gets_a_written_body(copy_words: int) 
     assert llm.ops == ["librarian/summarize_body", "librarian/summarize_meta"] and cand.body == "The contract."
 
 
+def test_a_copied_markdown_file_leaves_its_front_matter_out_of_the_note() -> None:
+    ctx, llm = context(100)
+    llm.add("librarian/summarize_meta", META)
+    text = f"---\ntype: Note\ntitle: Contract\ntags: [contracts]\n---\n# Contract\n\n{TEXT}"
+
+    cand = classic.summarize(ctx, Source(text=text, title="Note"))
+
+    assert cand.body == f"# Contract\n\n{TEXT}"  # an Obsidian note's YAML is not its body
+
+
+@pytest.mark.parametrize(
+    ("text", "kept"),
+    [
+        ("---\na: 1\n---\nBody", "Body"),
+        ("﻿---\na: 1\n...\n\nBody", "Body"),
+        ("Body\n---\nmore", "Body\n---\nmore"),  # a rule in the text is not front matter
+        ("---\nonly: yaml\n---\n", "---\nonly: yaml\n---\n"),  # nothing else: the text as it is
+        ("---\nnot closed\nBody", "---\nnot closed\nBody"),
+    ],
+)
+def test_front_matter_is_only_the_yaml_block_a_file_opens_with(text: str, kept: str) -> None:
+    from llmw2.agents.note_checks import without_frontmatter
+
+    assert without_frontmatter(text) == kept
+
+
 def test_the_default_is_off() -> None:
     assert LLMConfig(model="fake/llm").note_copy_words == 0
 

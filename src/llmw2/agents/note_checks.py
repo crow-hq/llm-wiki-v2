@@ -60,6 +60,14 @@ _ITEM = re.compile("|".join(f"(?:{p})" for p in (_URL, _EMAIL, _SPAN, _PATH, _ID
 
 _FILE_EXT = re.compile(r"\.(?:md|markdown|txt|pdf|docx?|html?|rtf|csv|json)\b", re.IGNORECASE)
 _FILE_DATE = re.compile(r"\d{2}_\d{2}_\d{2,4}|(?<!\d)(?:19|20)\d{6}(?!\d)")
+_FRONTMATTER = re.compile(r"\A\ufeff?---[ \t]*\n.*?\n(?:---|\.\.\.)[ \t]*(?:\n|\Z)", re.S)
+
+
+def without_frontmatter(text: str) -> str:
+    """`text` without the YAML front matter a Markdown file may open with (an Obsidian note, a page of a static site):
+    what a note copies or reads first as the document. The whole text when it is only front matter."""
+    rest = _FRONTMATTER.sub("", text, count=1).lstrip("\n")
+    return rest if rest.strip() else text
 
 
 def file_name_like(line: str) -> bool:

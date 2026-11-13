@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.2] - 2026-11-13
 
-Answers in the language of the question with small local writers, and the licence that survives compiling.
+Answers in the language of the question with small local writers, Markdown front matter kept out of notes, and the
+licence that survives compiling.
 
 ### Added
 
@@ -23,6 +24,9 @@ Answers in the language of the question with small local writers, and the licenc
   of the question: the prompt's "answer in the language of the question" was ignored and the answer came in English;
   the language is now named, as for notes, and read from the question alone, not from the hints added after it (notes
   that disagree, earlier versions).
+- A Markdown file that opens with YAML front matter (an Obsidian note, a page of a static site) no longer brings it
+  into its note: with `llm.note_steps` the note copied a short file as it was, front matter included, and showed it as
+  text. The file, its raw copy and its hash are unchanged, so nothing already filed is filed again.
 
 ## [1.0.1] - 2026-11-12
 

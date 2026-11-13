@@ -132,7 +132,7 @@ def summarize(ctx: StepContext, source: Source) -> Candidate:
         if ctx.cfg.llm.note_steps:
             body_cap = max(ctx.cfg.effective_note_chars, len(source.text))
             draft = _in_two_calls(
-                ctx, "librarian/summarize_body", {"source_text": source.text}, source, body_cap, exact=True
+                ctx, "librarian/summarize_body", {"source_text": note_checks.without_frontmatter(source.text)}, source, body_cap, exact=True
             )
         draft = draft or ctx.ask_json(
             "librarian/summarize",
@@ -210,7 +210,8 @@ def _in_two_calls(
     listed = note_checks.items_rule(note_checks.exact_items(source.text, note_checks.ITEMS_MAX)) if exact else ""
     copy = len(source.text.split()) < ctx.cfg.llm.note_copy_words
     copy = copy or (ctx.cfg.llm.note_copy_parts and len(source.text) > ctx.cfg.effective_read_chars - PROMPT_ROOM)
-    body = source.text if copy else ""
+    kept = note_checks.without_frontmatter(source.text)  # a Markdown file's YAML front matter is no part of its note
+    body = kept if copy else ""
 
     def write(seed: int | None = None) -> str:
         # The librarian's system message asks for a JSON object, which a small model then answers with: this call has its own
@@ -237,13 +238,13 @@ def _in_two_calls(
         body = write()
     if not body:
         return None
-    if body != source.text and (why := problem(body)):
+    if body != kept and (why := problem(body)):
         log.warning("summarize: %s: asking for it once more", why)
         ctx.decide("note_retry", "code", why)  # counted by whoever reads the trace (`IngestResult.decisions`)
         again = write((ctx.cfg.llm.seed or 0) + 1)
         # Wrong twice: the source as it is, in its own language, beats a note the reader cannot trust
         fixed = bool(again) and not problem(again)
-        body = again if fixed else source.text
+        body = again if fixed else kept
         log.debug("summarize: retry %s", "fixed the body" if fixed else "kept the source text")
         if not fixed:
             ctx.decide("note_source", "code", "the body is the source text", fallback=True)
@@ -258,7 +259,7 @@ def _in_two_calls(
         )
 
     try:
-        meta = ask_meta(note_checks.heading_of(source.text) or source.file_name or source.title or "(none)")
+        meta = ask_meta(note_checks.heading_of(kept) or source.file_name or source.title or "(none)")
         title = note_checks.checked_title(meta.title, source.text, source.file_name, source.title)
         if note_checks.copies_name(title, source.file_name or source.title):  # the name it was shown: once more without it
             log.debug("summarize: title %r is the source's name: asking once more without it", title)
