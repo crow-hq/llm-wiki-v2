@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `glama.json` names the maintainers of the memory's listing on Glama, so they can claim it and have Glama build and
   check it.
 
+### Security
+
+- The CI asks GitHub only to read the repository, as code scanning advises, instead of the repository's default
+  permissions.
+
 ## [1.0.4] - 2026-11-17
 
 The memory answers from an empty wiki the first time it is used, and a test of the spending cap that failed now and then
