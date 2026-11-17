@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.crow-hq/llm-wiki-v2",
-  "title": "LLM Wiki v2",
+  "title": "CROW: LLM Wiki",
   "description": "Long-term memory as a Markdown wiki: recall with cited notes, remember, file your documents.",
   "repository": {
     "url": "https://github.com/crow-hq/llm-wiki-v2",
