@@ -458,7 +458,7 @@ list is in [.env.example](https://github.com/crow-hq/llm-wiki-v2/blob/main/.env.
 | `OKF_BUNDLE` | `~/llm-wiki` for the CLI (`/data/wiki` in Docker) | wiki folder |
 | `OKF_MODE` | `crow` | `crow` (a typed classifier decides, needs its key or a local server) or `classic` (the LLM decides) |
 | `OKF_LLM_PROVIDER` | `openrouter` | `openrouter`, `openai`, `gemini`, `ollama` or `custom` |
-| `OKF_LLM_MODEL` | the provider's default | e.g. `google/gemini-3.8-flash` on OpenRouter |
+| `OKF_LLM_MODEL` | the provider's default | e.g. `deepseek/deepseek-v4.1-flash` on OpenRouter |
 | `OKF_LLM_BASE_URL` | the provider's | any OpenAI-compatible API (required for `custom`) |
 | `OPENROUTER_API_KEY` · `OPENAI_API_KEY` · `GEMINI_API_KEY` | — | the provider's key (`OKF_LLM_API_KEY` wins); OpenRouter's also serves the classifier |
 | `OKF_CLASSIFIER_PROVIDER` | `openrouter` | where the CROW classifier runs, apart from the LLM: `openrouter`, `typesafe` (both Jev) or `custom` (any System One server, such as Laya on this computer; starts from the Laya thresholds preset) |

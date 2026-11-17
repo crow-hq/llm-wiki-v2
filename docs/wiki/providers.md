@@ -67,7 +67,7 @@ fall back to the LLM, one decision at a time.
 
 | Provider | Base URL | Key variable | Default model |
 |---|---|---|---|
-| `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `google/gemini-3.8-flash` |
+| `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `deepseek/deepseek-v4.1-flash` |
 | `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `gpt-6-luna` |
 | `gemini` | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `gemini-3.8-flash` |
 | `ollama` | `http://localhost:11434/v1` | none | `gemma4` |

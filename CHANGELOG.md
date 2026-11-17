@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- On OpenRouter the default model is `deepseek/deepseek-v4.1-flash`, the writer CROW's thresholds and benchmarks are
+  calibrated with; `google/gemini-3.8-flash` is still suggested. A wiki that names its model keeps it.
+
 ## [1.0.2] - 2026-11-13
 
 Answers in the language of the question with small local writers, Markdown front matter kept out of notes, and the

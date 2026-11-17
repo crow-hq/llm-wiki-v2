@@ -313,7 +313,8 @@ def test_with_openrouter_setup_keeps_crow_with_one_key(
     assert cli.main(["setup"]) == 0
 
     assert not any(q.startswith("CROW classifier key") for q in asked)
-    assert saved_settings(home) == {"llm": {"provider": "openrouter", "api_key": "or-key-0123456789", "model": "google/gemini-3.8-flash"}}
+    llm = {"provider": "openrouter", "api_key": "or-key-0123456789", "model": "deepseek/deepseek-v4.1-flash"}
+    assert saved_settings(home) == {"llm": llm}
 
 
 def test_setup_asks_before_saving_settings_that_failed_the_test(
