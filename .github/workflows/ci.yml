@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# The checks only read the code.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ${{ matrix.os }}
