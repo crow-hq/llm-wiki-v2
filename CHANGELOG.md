@@ -7,10 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-17
+
+Tool descriptions an MCP client's model can choose by, the listing on Glama, and a CI that only reads the repository.
+
 ### Added
 
 - `glama.json` names the maintainers of the memory's listing on Glama, so they can claim it and have Glama build and
   check it.
+
+### Changed
+
+- Every tool of the memory says first what it does, then when to call it and when to call another one instead, what it
+  returns, what it changes and what it refuses, as an MCP client's model reads it to choose; the descriptions reach the
+  client as plain paragraphs, with no indentation of the source left in them. Every tool is also marked as acting on a
+  closed world (`openWorldHint: false`): the wiki, and over stdio the files the user points at.
 
 ### Security
 
@@ -454,6 +465,7 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[1.0.5]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.5
 [1.0.4]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.4
 [1.0.3]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.3
 [1.0.2]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.2
