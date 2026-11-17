@@ -474,12 +474,15 @@ def write_hint(path: Path) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def memory_stdio(wiki: Wiki) -> int:
+def memory_stdio(wiki: Wiki, settings: Settings | None = None) -> int:
     """`llmwiki2 mcp`: the wiki as an MCP memory over stdio, on whatever the settings say, until the client closes it.
 
     Nothing goes to stdout but the protocol: messages go to stderr. The tools that read this computer's files are on, as
-    the memory runs as the user who started the client.
+    the memory runs as the user who started the client. Never set up (no settings file, no OKF_MCP_MODELS), as when a
+    client starts it from a registry, the client's models do the work, the first choice `llmwiki2 setup` offers.
     """
+    if settings is not None and not settings.saved() and not settings.env.get("OKF_MCP_MODELS"):
+        wiki.cfg.mcp_models = "client"
     try:
         from llmw2.memory import Memory
     except ImportError:
@@ -652,7 +655,7 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
         print(f"{len(problems)} problem(s)", file=sys.stderr)
         return 1 if problems else 0
     elif args.command == "mcp":
-        return memory_stdio(wiki)
+        return memory_stdio(wiki, Settings(bundle=args.bundle, mode=args.mode))
     elif args.command == "serve":
         from llmw2.server import serve
 

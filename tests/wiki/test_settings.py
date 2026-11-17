@@ -44,7 +44,7 @@ def test_without_a_file_the_defaults_and_the_home_wiki_apply(home: Path) -> None
     cfg = Settings({}).config()
 
     assert cfg.bundle == home / "llm-wiki"
-    assert (cfg.llm.provider, cfg.llm.model, cfg.llm.api_key) == ("openrouter", "google/gemini-3.8-flash", "")
+    assert (cfg.llm.provider, cfg.llm.model, cfg.llm.api_key) == ("openrouter", "deepseek/deepseek-v4.1-flash", "")
 
 
 def test_save_writes_only_what_changed_readable_by_the_owner_only() -> None:
@@ -64,7 +64,7 @@ def test_an_empty_key_keeps_the_saved_one_and_an_empty_field_its_default() -> No
     cfg = settings.save({"api_key": "", "model": ""})
 
     assert written(settings) == {"llm": {"api_key": KEY}}
-    assert cfg.llm.model == "google/gemini-3.8-flash"
+    assert cfg.llm.model == "deepseek/deepseek-v4.1-flash"
 
 
 def test_a_key_never_follows_the_wiki_to_another_provider() -> None:

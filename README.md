@@ -74,6 +74,8 @@ so you can add to it or delete it. To try it without installing anything but uv:
 
 ## Claude's memory (MCP)
 
+<!-- mcp-name: io.github.crow-hq/llm-wiki-v2 -->
+
 The wiki can be the long-term memory of Claude Code, Codex or any MCP client, documents already filed included.
 It comes with the `mcp` extra (the Docker image has it).
 
@@ -172,12 +174,12 @@ times classic's with the writer at its list price ([benchmarks/README.md](https:
 
 ## FAQ
 
-**Does everything run on my computer?** The LLM can, with Ollama or any
-OpenAI-compatible server. CROW's classifier is remote by default: Jev, through
-OpenRouter or TypeSafe. To keep it local too, point it at a System One server on
-your machine, such as Ollama 0.35 or later or Laya (see [providers](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/providers.md)).
-Without a classifier the wiki runs in classic mode, where the LLM takes every
-decision.
+**Does everything run on my computer?** It can, with no key and nothing leaving it.
+[Crow](https://github.com/crow-hq/crow-desktop), the desktop app, does it out of the box. With the library, Ollama
+serves the writer and the classifier too: a typed classifier such as `tev1` behind Ollama 0.35 or later, or Laya
+(see [everything on your computer](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/providers.md#everything-on-your-computer-with-small-models)).
+The library's default classifier is remote: Jev, through OpenRouter or TypeSafe. Without a classifier the wiki runs in
+classic mode, where the LLM takes every decision.
 
 **What is Jev?** A typed classifier by TypeSafe AI. Given a text, it answers typed
 questions (pick one of these options; is this statement true?) with probabilities
@@ -458,7 +460,7 @@ list is in [.env.example](https://github.com/crow-hq/llm-wiki-v2/blob/main/.env.
 | `OKF_BUNDLE` | `~/llm-wiki` for the CLI (`/data/wiki` in Docker) | wiki folder |
 | `OKF_MODE` | `crow` | `crow` (a typed classifier decides, needs its key or a local server) or `classic` (the LLM decides) |
 | `OKF_LLM_PROVIDER` | `openrouter` | `openrouter`, `openai`, `gemini`, `ollama` or `custom` |
-| `OKF_LLM_MODEL` | the provider's default | e.g. `google/gemini-3.8-flash` on OpenRouter |
+| `OKF_LLM_MODEL` | the provider's default | e.g. `deepseek/deepseek-v4.1-flash` on OpenRouter |
 | `OKF_LLM_BASE_URL` | the provider's | any OpenAI-compatible API (required for `custom`) |
 | `OPENROUTER_API_KEY` · `OPENAI_API_KEY` · `GEMINI_API_KEY` | — | the provider's key (`OKF_LLM_API_KEY` wins); OpenRouter's also serves the classifier |
 | `OKF_CLASSIFIER_PROVIDER` | `openrouter` | where the CROW classifier runs, apart from the LLM: `openrouter`, `typesafe` (both Jev) or `custom` (any System One server, such as Laya on this computer; starts from the Laya thresholds preset) |

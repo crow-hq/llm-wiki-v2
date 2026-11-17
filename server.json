@@ -1,0 +1,50 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.crow-hq/llm-wiki-v2",
+  "title": "CROW: LLM Wiki",
+  "description": "Long-term memory as a Markdown wiki: recall with cited notes, remember, file your documents.",
+  "repository": {
+    "url": "https://github.com/crow-hq/llm-wiki-v2",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/crow-hq/llm-wiki-v2#claudes-memory-mcp",
+  "version": "1.0.3",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "llmwiki2",
+      "version": "1.0.3",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--with",
+          "value": "mcp>=2.3,<3",
+          "description": "The mcp extra of llmwiki2, which the memory needs"
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "OKF_MCP_MODELS",
+          "description": "Whose models do the memory's work, over what llmwiki2 setup saved: client (the MCP client's, on its own plan, no key), hybrid (the client writes, the wiki's classifier files) or wiki (the providers in the wiki's settings). Never set up, client",
+          "choices": ["client", "hybrid", "wiki"],
+          "isRequired": false
+        },
+        {
+          "name": "OKF_BUNDLE",
+          "description": "The wiki folder (default ~/llm-wiki)",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

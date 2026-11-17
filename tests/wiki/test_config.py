@@ -62,7 +62,7 @@ def test_from_env_ignores_empty_variables(tmp_path: Path) -> None:
     config = WikiConfig.from_env(env_for(tmp_path, OKF_MODE="", OKF_LLM_MODEL="", OKF_BEAM=""))
 
     assert config.mode == "crow"
-    assert config.llm.model == "google/gemini-3.8-flash"
+    assert config.llm.model == "deepseek/deepseek-v4.1-flash"
     assert config.crow.beam == 2
 
 

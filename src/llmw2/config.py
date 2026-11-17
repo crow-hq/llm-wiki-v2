@@ -40,7 +40,8 @@ PROVIDERS: dict[str, Provider] = {
     # asks the provider for its live list (GET {base_url}/models).
     "openrouter": Provider(
         "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY",
-        ("google/gemini-3.8-flash", "anthropic/claude-sonnet-5", "openai/gpt-6-luna", "deepseek/deepseek-v4.1-flash"),
+        # the first is the default: the writer CROW's thresholds and benchmarks are calibrated with
+        ("deepseek/deepseek-v4.1-flash", "google/gemini-3.8-flash", "anthropic/claude-sonnet-5", "openai/gpt-6-luna"),
         {"reasoning": {"enabled": False}},  # deepseek-v4.1-flash: 35 output tokens to name a folder, 2722 with effort minimal
         {"reasoning": {"effort": "minimal"}},  # gemini-3.8-flash must think: 400 to the off switch, this one it takes
         read_chars=100_000,
