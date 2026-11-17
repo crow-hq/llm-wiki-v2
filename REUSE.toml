@@ -26,6 +26,7 @@ path = [
     "README.md",
     "SECURITY.md",
     "docker-compose.yml",
+    "glama.json",
     "server.json",
     "uv.lock",
     "benchmarks/**",
