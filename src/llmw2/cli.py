@@ -489,6 +489,11 @@ def memory_stdio(wiki: Wiki, settings: Settings | None = None) -> int:
         print("llmwiki2: the memory needs the mcp extra: pip install 'llmwiki2[mcp]' (or uv tool install 'llmwiki2[mcp]')",
               file=sys.stderr)
         return 2
+    try:
+        wiki.init()  # as `serve` does: a memory never used answers from an empty wiki, where recall would fail on no folder
+    except OSError as e:
+        print(f"llmwiki2: cannot make the wiki at {wiki.cfg.bundle}: {e}", file=sys.stderr)
+        return 2
     wiki.cfg.mcp = True  # started for this: on, whatever the settings say
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s", stream=sys.stderr)
     Memory(lambda: wiki, local_files=True).server.run("stdio")

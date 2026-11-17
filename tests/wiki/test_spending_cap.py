@@ -16,7 +16,7 @@ from llmw2 import BatchReport, ChangeBatch, InputError, Item, Origin, SpendingCa
 from llmw2.agents.librarian import IngestResult
 from llmw2.config import ClassifierConfig
 from llmw2.models.classifier import Classifier
-from llmw2.models.usage import UsageTracker
+from llmw2.models.usage import UsageTracker, _filing
 from tests.wiki.fakes import ContentLLM, FakeLLM
 from tests.wiki.test_crow_plan import add_folder
 from tests.wiki.test_ingest_many import Probe, make_wiki
@@ -66,25 +66,32 @@ def test_sync_stops_at_the_spending_cap_and_passes_it_by_at_most_the_calls_in_fl
     assert wiki.check() == []
 
 
-def test_each_lane_makes_at_most_one_call_after_the_cap_is_passed(bundle: Path) -> None:
-    late: dict[int, int] = {}
+# Caps that fall on each step of a document's filing, from its first call to its last: where the cap is passed decides
+# how many calls the document being filed still makes, whatever the speed of the machine.
+@pytest.mark.parametrize("cap", [10.0, 10.5, 11.5, 12.5, 13.5, 14.0])
+def test_after_the_cap_each_lane_makes_at_most_one_call_but_the_document_being_filed_ends(bundle: Path, cap: float) -> None:
+    late: dict[tuple[int, bool], int] = {}  # calls made once the cap was passed, by thread and by whether they file
     lock = threading.Lock()
 
     class Watching(ContentLLM):
         def chat(self, messages: list[dict[str, str]], *, op: str = "", json_mode: bool = False, max_tokens: int | None = None) -> str:
             reply = super().chat(messages, op=op, json_mode=json_mode, max_tokens=max_tokens)  # SpendingCap leaves before the count
-            if self.usage.spent() >= 10.0:
+            if self.usage.spent() >= cap:
                 with lock:
-                    late[threading.get_ident()] = late.get(threading.get_ident(), 0) + 1
+                    key = (threading.get_ident(), _filing.get())
+                    late[key] = late.get(key, 0) + 1
             return reply
 
     llm = Watching(UsageTracker(), cost=1.0, jitter=0.004)
     wiki = make_wiki(bundle, concurrency=4, llm=llm)
 
-    report = sync(wiki, Fake(*pages(), files=topic_files(*IDS)), max_cost=10.0)
+    report = sync(wiki, Fake(*pages(), files=topic_files(*IDS)), max_cost=cap)
 
     assert report.stopped and "spending cap" in report.stopped
-    assert late and max(late.values()) == 1
+    assert late
+    assert all(n <= 1 for (_, filing), n in late.items() if not filing)  # a lane stops at its next call
+    # The document being filed is not cut halfway (`UsageTracker.filing`): one at a time, it makes the rest of its calls.
+    assert sum(n for (_, filing), n in late.items() if filing) <= FILING
 
 
 def test_the_next_sync_after_a_spending_stop_goes_on_and_files_nothing_twice(bundle: Path) -> None:
