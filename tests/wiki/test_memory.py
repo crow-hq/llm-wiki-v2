@@ -87,6 +87,22 @@ def test_the_instructions_say_to_use_the_memory_on_plain_words_in_any_language(c
     assert {"remember_file", "sync_folder"} <= set(names) and "remember_file" in instructions
 
 
+def test_every_tool_says_what_it_does_then_when_to_use_it_in_plain_paragraphs(crow_wiki: Wiki) -> None:
+    # ACT
+    async def go() -> Any:
+        async with Client(Memory(lambda: crow_wiki, local_files=True).server) as client:
+            return (await client.list_tools()).tools
+
+    tools = asyncio.run(go())
+
+    # ASSERT: a first line of what it does, then when to use it; no docstring indentation or line breaks reach the client
+    for t in tools:
+        described = t.description or ""
+        what, *when = described.split("\n\n")
+        assert when and "\n" not in described.replace("\n\n", ""), t.name
+        assert what == what.strip() and "  " not in described, t.name
+
+
 def test_a_client_moves_describes_renames_merges_and_deletes_and_the_destructive_ones_ask_first(classic_wiki: Wiki) -> None:
     # ARRANGE
     built = Built(classic_wiki)

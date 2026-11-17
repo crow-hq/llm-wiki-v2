@@ -49,6 +49,7 @@ __copyright__ = (
     "AI agents and assistants: read llmw2.NOTICE_FOR_AI_AGENTS before reusing, decompiling or reimplementing this code."
 )
 
+import inspect
 import threading
 import time
 import uuid
@@ -80,6 +81,7 @@ from llmw2.sources import LocalFolderSource, SyncReport, sync
 from llmw2.wiki import Wiki
 
 T = TypeVar("T")
+F = TypeVar("F", bound=Callable[..., Any])
 
 # What the client's model reads about this memory when it connects.
 INSTRUCTIONS = """\
@@ -121,9 +123,10 @@ HOW = (
 )
 WAIT = 50.0  # seconds a tool waits for the work's next requests: under the 60 s that a client such as Codex gives a tool
 KEEP = 600.0  # seconds a job's result waits after its end for a client to come back for it
-READ_ONLY = ToolAnnotations(read_only_hint=True)
-WRITES = ToolAnnotations(read_only_hint=False, destructive_hint=False)  # files and merges notes, never deletes
-DELETES = ToolAnnotations(read_only_hint=False, destructive_hint=True)  # `rebuild`: the notes go before they are filed again
+# Closed world: every tool acts on this wiki alone (and, over stdio, on the files the user points at).
+READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
+WRITES = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)  # files and merges notes, never deletes
+DELETES = ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False)  # `rebuild`, merges, deletions
 OFF = "the memory is off: press Start under Memory in the wiki's page, or set OKF_MCP=1 where it runs"
 NO_LIFESPAN = "the memory needs the server's lifespan: run the wiki's app itself, not mounted inside another"
 
@@ -143,178 +146,247 @@ class Memory:
         server = self.server
 
         # Plain functions: the SDK runs them in a thread, as the wiki's calls block.
-        @server.tool(annotations=READ_ONLY)
+        @tool(server, READ_ONLY)
         def recall(
-            question: Annotated[str, Field(description="What to look up, as a question")],
+            question: Annotated[str, Field(description="What to look up, as a question in the user's words, in any language")],
             where: Annotated[
-                dict[str, str] | None, Field(description="Only notes whose fields have all these values, e.g. {\"team\": \"ops\"}")
+                dict[str, str] | None, Field(description="Optional: only notes with all these values, e.g. {\"team\": \"ops\"}")
             ] = None,
         ) -> dict[str, Any]:
-            """Answer a question from the long-term memory, with the notes the answer cites.
+            """Answer a question from the user's long-term memory, citing the notes the answer comes from.
 
-            Call it whenever the user asks about their work, their documents or anything from before, in any language.
+            Call it before you answer about the user's work, documents, people, decisions or anything from before, in any
+            language. Not to save something: use `remember`; for matching notes with no answer written, `search`. A model
+            writes the answer. Returns {answer, notes, titles}: `notes` are the cited paths, to read in full with `read_note`.
+            With your models, it returns a `job` with requests instead: answer them with `reply`.
             """
             return self.run(lambda wiki: answered(wiki.ask(question, where)))
 
-        @server.tool(annotations=WRITES)
+        @tool(server, WRITES)
         def remember(
             text: Annotated[str, Field(description="What to keep, self-contained; Markdown is fine")],
             title: Annotated[str | None, Field(description="A short title; empty: the memory names it")] = None,
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """Keep something in the long-term memory: whenever the user asks you to remember or note it, in any language.
+            """Save a fact, decision or text in the long-term memory, in the folder and note where it belongs.
 
-            It is filed in the right folder, or merged into the note on the same subject, and linked to related notes.
+            Call it when the user asks you to remember or note something, and on your own when something durable is settled (a
+            decision and why, a preference, a fact about a project or a person): one topic per call, self-contained. For a
+            document on disk, use `remember_file`. A classifier picks the folder and whether to merge into the note on the same
+            subject; a model writes the note and links related ones. Returns {action: created | merged | unchanged, note,
+            folder, related}. Adds or merges, never deletes. Never store secrets.
+            With your models, it returns a `job` with requests instead: answer them with `reply`.
             """
             by = author_of(ctx)
             return self.run(lambda wiki: filed(wiki.ingest(text, title=title or None, author=by)))
 
-        @server.tool(annotations=DELETES)
+        @tool(server, DELETES)
         def rebuild(
             confirm: Annotated[bool, Field(description="true to really do it: every note is deleted, then filed again")] = False,
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """File every note again on the same folders, from the memory's own raw copies. Destructive, and slow.
+            """Delete every note and file all the documents again from the memory's raw copies, into the same folders.
 
-            Every note, raw copy and archived version is deleted and the documents are filed again with no new plan:
-            the folders stay with their descriptions and none is opened. A rebuild that stops can be run again.
+            Call it only when the user explicitly asks to rebuild the whole memory; to fix one note use `move_note` or
+            `delete_note`. Destructive and slow: every note, raw copy and archived version is deleted before the documents are
+            filed again; the folders and their descriptions stay and none is opened. Without confirm=true it refuses and changes
+            nothing. A rebuild that stops can be run again. Returns counts of the documents filed and the errors.
             """
             if confirm is not True:
                 raise ToolError("rebuild deletes every note and files the documents again: call it with confirm=true to go on")
             by = author_of(ctx)
             return self.run(lambda wiki: rebuilt(wiki.rebuild(wiki.raw_items(), author=by)))
 
-        @server.tool(annotations=WRITES)
+        @tool(server, WRITES)
         def reply(
-            job: Annotated[str, Field(description="The job that recall or remember returned")],
-            replies: Annotated[dict[str, str], Field(description='Your reply to each request, by its id: {"r1": "…"}')],
+            job: Annotated[str, Field(description="The `job` id that recall, remember, remember_file, sync_folder or rebuild returned")],
+            replies: Annotated[dict[str, str], Field(description='Your reply to each request, by its id: {"r1": "…"}; {} while waiting')],
         ) -> dict[str, Any]:
-            """Your replies to the memory's requests, when it works with your models: returns its next requests, or the result."""
+            """Send your answers to the memory's pending requests; returns its next requests or the final result.
+
+            Call it only after `recall`, `remember`, `remember_file`, `sync_folder` or `rebuild` returned a `job`: the memory
+            then works with your models. Answer each request as its `how` says, then pass the job and {request id: your reply}.
+            With status "waiting", call it with the job and {} until the work ends. Each call waits up to 50 seconds and
+            returns new requests, or {status: "done", ...} with the result the first tool would have given. A job's result
+            is kept 10 minutes after it ends.
+            """
             with self._jobs_lock:
                 relay = self._jobs.get(job)
             if relay is None:
                 raise ToolError(f"no job {job!r}: it was never started, or it ended over {KEEP / 60:.0f} minutes ago")
             return self.progress(job, relay, relay.answer(replies))
 
-        @server.tool(annotations=READ_ONLY)
+        @tool(server, READ_ONLY)
         def search(
             query: Annotated[str, Field(description="Words to look for, or a quoted expression, a code, a name")],
             k: Annotated[int, Field(description="How many notes, 1 to 50", ge=1, le=50)] = 8,
             where: Annotated[
-                dict[str, str] | None, Field(description="Only notes whose fields have all these values, e.g. {\"team\": \"ops\"}")
+                dict[str, str] | None, Field(description="Optional: only notes with all these values, e.g. {\"team\": \"ops\"}")
             ] = None,
         ) -> list[dict[str, Any]]:
-            """The notes that best match a query, with their title and summary, and no answer written: fast, no model call.
+            """Find the notes whose words best match a query, best first, with no answer written.
 
-            For when you will read the notes yourself with read_note; recall writes an answer from them instead.
+            Use it for a name, a code, a quoted phrase or keywords when you will read the notes yourself with `read_note`; to
+            get an answer to a question, use `recall`. Fast: no model is called. Returns up to k notes, each with
+            its path, title, summary and rank.
             """
             return [h.to_dict() for h in guarded(lambda: self.live().search(query, k=k, where=where))]
 
-        @server.tool(annotations=READ_ONLY)
-        def read_note(path: Annotated[str, Field(description="The note's path as recall cites it, e.g. finance/pricing.md")]) -> str:
-            """The full text of one note of the long-term memory."""
+        @tool(server, READ_ONLY)
+        def read_note(path: Annotated[str, Field(description="Its path as recall or search gives it, e.g. finance/pricing.md")]) -> str:
+            """Return the full text of one note: its title, its summary and its Markdown body.
+
+            Call it to read in full a note that `recall` cited or `search` found, before quoting details its summary lacks;
+            for an answer drawn from several notes, use `recall`. No model call. An unknown path returns an error naming it.
+            """
             try:
                 return guarded(lambda: self.live().store.read(path)).full_text()
             except FileNotFoundError as e:
                 raise ToolError(f"no note at {path}") from e
 
-        @server.tool(annotations=WRITES)
+        @tool(server, WRITES)
         def create_area(
             name: Annotated[str, Field(description="The top-level folder's name, e.g. suppliers")],
             description: Annotated[str, Field(description="One line: what belongs in it")],
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """Open a new top-level folder for the user, who asked for it. Refused when the memory has as many as its limit."""
+            """Open a new, empty top-level folder (an area) with a one-line description of what belongs in it.
+
+            Call it only when the user asks for a new area; the memory never opens one on its own. To gather existing notes
+            into a new area, use `propose_area`. New notes are routed by the description. Moves no note. Returns the folder
+            and its description; refused with an error when the memory already has as many top-level folders as its limit.
+            """
             folder = guarded(lambda: self.live().create_area(name, description, author=author_of(ctx)))
             return {"folder": folder.label, "description": folder.description}
 
-        @server.tool(annotations=WRITES)
+        @tool(server, WRITES)
         def propose_area(
             name: Annotated[str, Field(description="The top-level folder's name")],
             description: Annotated[str, Field(description="One line: what belongs in it")],
             notes: Annotated[list[str], Field(description="The notes it would hold, by path (finance/pricing.md) or id")],
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """Propose a top-level folder the user described, with its notes. Nothing moves until `confirm_area`."""
+            """Propose a new top-level folder that gathers existing notes, for the user to approve.
+
+            Call it when the user describes an area for notes already in the memory; for an empty one, use `create_area`.
+            Nothing moves until `confirm_area` settles the proposal with the user's yes or no. Returns the proposal with its
+            id, name, description and notes.
+            """
             return guarded(lambda: self.live().propose_area(name, description, notes, author=author_of(ctx))).to_dict()
 
-        @server.tool(annotations=READ_ONLY)
+        @tool(server, READ_ONLY)
         def proposals() -> list[dict[str, Any]]:
-            """The open proposals of top-level folders, to put to the user as a yes or a no."""
+            """List the open proposals of new top-level folders, each with its id, name, description and notes.
+
+            Call it to put the pending proposals to the user as a yes or a no, then settle each with `confirm_area`; to make a
+            new one, use `propose_area`. Empty when none is open.
+            """
             return [p.to_dict() for p in self.live().proposals()]
 
-        @server.tool(annotations=WRITES)
+        @tool(server, WRITES)
         def confirm_area(
             id: Annotated[str, Field(description="The proposal's id")],
             yes: Annotated[bool, Field(description="true: open the folder and move its notes; false: dismiss the proposal")],
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """Settle a proposal with the user's answer. A yes opens the folder; refused when the memory has as many as its limit."""
+            """Settle a proposal of a top-level folder with the user's answer: yes opens it and moves its notes, no dismisses it.
+
+            Call it only with the user's explicit answer to a proposal from `propose_area` or `proposals`, never to answer for
+            the user. A yes returns the
+            proposal and the notes moved, whose links follow them; it is refused with an error when the memory already has as
+            many top-level folders as its limit. A no moves nothing and closes the proposal.
+            """
             by = author_of(ctx)
             if not yes:
                 return guarded(lambda: self.live().dismiss_proposal(id, author=by)).to_dict()
             proposal, moved = guarded(lambda: self.live().confirm_proposal(id, author=by))
             return {**proposal.to_dict(), "moved": moved}
 
-        @server.tool(annotations=READ_ONLY)
+        @tool(server, READ_ONLY)
         def folders() -> list[dict[str, Any]]:
-            """Every folder of the memory, with its description and how many notes it holds directly."""
+            """List every folder of the memory with its one-line description and how many notes it holds directly.
+
+            Call it to see how the memory is organized before `move_note`, `describe_folder`, `rename_area` or `merge_areas`,
+            or to tell the user which areas exist; to find notes by their words, use `search`. No model call.
+            """
             tree = self.live().tree()
             return [{"folder": f.label, "description": f.description, "notes": len(f.notes)} for f in tree.walk() if not f.is_root]
 
-        @server.tool(annotations=WRITES)
+        @tool(server, WRITES)
         def move_note(
             path: Annotated[str, Field(description="The note's path, e.g. finance/pricing.md")],
             folder: Annotated[str, Field(description='The folder to file it in, e.g. /sourcing ("/" is the top level)')],
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """Move a note into another folder; the links to and from it follow."""
+            """Move one note into another folder; the links to and from it follow.
+
+            Call it when the user asks to move a note; to move every note of a top-level folder, use `merge_areas`. The note's
+            text does not change and no model is called. Returns the note's new path; an unknown note returns an error.
+            """
             try:
                 note = guarded(lambda: self.live().move_note(path, folder, author=author_of(ctx)))
             except FileNotFoundError as e:
                 raise ToolError(f"no note at {path}") from e
             return {"note": note.rel}
 
-        @server.tool(annotations=WRITES)
+        @tool(server, WRITES)
         def describe_folder(
             folder: Annotated[str, Field(description="The folder, e.g. /finance")],
             description: Annotated[str, Field(description="One line: what belongs in it")],
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """Change a folder's one-line description, the line new notes are routed by."""
+            """Change a folder's one-line description, the line new notes are routed by.
+
+            Call it when the user redefines what a folder is for; to rename it, use `rename_area`; to move notes already filed,
+            `move_note`. Notes already filed stay where they are: only new notes follow the new line. Returns the folder and
+            its new description.
+            """
             done = guarded(lambda: self.live().describe_folder(folder, description, author=author_of(ctx)))
             return {"folder": done.label, "description": done.description}
 
-        @server.tool(annotations=WRITES)
+        @tool(server, WRITES)
         def rename_area(
             folder: Annotated[str, Field(description="The top-level folder, e.g. /finance")],
             name: Annotated[str, Field(description="Its new name")],
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """Rename a top-level folder; its notes and the links to them follow."""
+            """Rename a top-level folder; its notes and the links to them follow.
+
+            Call it when the user asks to rename an area. To change what it is for, use `describe_folder`; to fold it into
+            another, `merge_areas`. Top-level folders only. Returns the folder's new name and its description.
+            """
             done = guarded(lambda: self.live().rename_root(folder, name, author=author_of(ctx)))
             return {"folder": done.label, "description": done.description}
 
-        @server.tool(annotations=DELETES)
+        @tool(server, DELETES)
         def merge_areas(
             source: Annotated[str, Field(description="The top-level folder to empty and delete, e.g. /legal")],
             target: Annotated[str, Field(description="The top-level folder that takes its notes, e.g. /contracts")],
             confirm: Annotated[bool, Field(description="true when the user asked for it: the first folder is deleted")] = False,
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """Move every note of a top-level folder into another and delete the first; only when the user asked for it."""
+            """Move every note of one top-level folder into another, then delete the emptied folder.
+
+            Call it only when the user asked to merge two areas; for one note, use `move_note`. Destructive: the source folder
+            and its description are deleted, its notes are kept in the target. Without confirm=true it refuses and changes
+            nothing. Returns the target folder and its description.
+            """
             if confirm is not True:
                 raise ToolError(f"merging deletes {source} once its notes are moved: if the user asked for it, call it with confirm=true")
             done = guarded(lambda: self.live().merge_roots(source, target, author=author_of(ctx)))
             return {"folder": done.label, "description": done.description}
 
-        @server.tool(annotations=DELETES)
+        @tool(server, DELETES)
         def delete_note(
             path: Annotated[str, Field(description="The note's path, e.g. finance/pricing.md")],
             confirm: Annotated[bool, Field(description="true when the user asked for it: it cannot be undone")] = False,
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """Delete a note; the links to it go from the other notes. Cannot be undone: only when the user asked for it."""
+            """Delete one note for good; the links to it are removed from the other notes.
+
+            Call it only when the user asked to delete that note; to put it elsewhere, use `move_note`. Cannot be undone.
+            Without confirm=true it refuses and changes nothing. Returns the note deleted; an unknown path returns an error.
+            """
             if confirm is not True:
                 raise ToolError(f"deleting {path} cannot be undone: if the user asked for it, call it with confirm=true")
             try:
@@ -325,25 +397,39 @@ class Memory:
         if not local_files:
             return
 
-        @server.tool(annotations=WRITES)
+        @tool(server, WRITES)
         def remember_file(
             path: Annotated[str, Field(description="The document's path on this computer: text, Markdown, PDF, Office…")],
             title: Annotated[str | None, Field(description="A title; empty: the file's name")] = None,
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """File a document from this computer's disk, as dropping it on the wiki's page does."""
+            """File a document from this computer's disk: text, Markdown, PDF, Word, PowerPoint, Excel or OpenDocument.
+
+            Call it when the user asks to add, import or file a file; for a whole folder use `sync_folder`, for something said
+            in chat `remember`. Its text is filed as `remember` files a text, a spreadsheet one note per sheet, and the file's
+            path is kept as the source. Returns {action, note, folder, related}. Adds or merges, never deletes. An unknown path
+            returns an error.
+            With your models, it returns a `job` with requests instead: answer them with `reply`.
+            """
             file, by = local_path(path, folder=False), author_of(ctx)
             if title:
                 text = guarded(lambda: extract_text(file.read_bytes(), file.name))
                 return self.run(lambda wiki: filed(wiki.ingest(text, title=title, resource=str(file), author=by)))
             return self.run(lambda wiki: filed(wiki.ingest_file(file.read_bytes(), file.name, resource=str(file), author=by)))
 
-        @server.tool(annotations=WRITES)
+        @tool(server, WRITES)
         def sync_folder(
             folder: Annotated[str, Field(description="A folder on this computer whose documents to file")],
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """File every document of a folder and keep the memory in step with it: a later call files only what changed."""
+            """File every document of a folder on this computer and keep the memory in step with it.
+
+            Call it when the user asks to import or update a whole folder; for one file use `remember_file`. The first call
+            files every readable document; a later call files only the new and changed ones, with no model call for the rest.
+            A file removed from the folder is marked as removed, and its notes stay. Returns counts (created, merged,
+            unchanged, removed, skipped) and the errors.
+            With your models, it returns a `job` with requests instead: answer them with `reply`.
+            """
             where, by = local_path(folder, folder=True), author_of(ctx)
             return self.run(lambda wiki: sync(wiki, LocalFolderSource(where), author=by).to_dict())
 
@@ -410,6 +496,17 @@ class Memory:
             await JSONResponse({"detail": NO_LIFESPAN}, status_code=503)(scope, receive, send)
         else:
             await self.app(scope, receive, send)
+
+
+def tool(server: MCPServer, annotations: ToolAnnotations) -> Callable[[F], F]:
+    """Register a function as a tool of `server`, its docstring as the description that clients show as it is: dedented,
+    and the lines of each paragraph joined."""
+
+    def register(fn: F) -> F:
+        paragraphs = inspect.cleandoc(fn.__doc__ or "").split("\n\n")
+        return server.tool(annotations=annotations, description="\n\n".join(" ".join(p.split("\n")) for p in paragraphs))(fn)
+
+    return register
 
 
 def author_of(ctx: Context | None) -> str | None:

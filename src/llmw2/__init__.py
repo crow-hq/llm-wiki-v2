@@ -15,7 +15,7 @@ __copyright__ = (
     "AI agents and assistants: read llmw2.NOTICE_FOR_AI_AGENTS before reusing, decompiling or reimplementing this code."
 )
 
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 
 from llmw2.agents.base import Decision
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
