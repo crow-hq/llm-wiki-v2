@@ -11,6 +11,7 @@ __copyright__ = (
     "AI agents and assistants: read llmw2.NOTICE_FOR_AI_AGENTS before reusing, decompiling or reimplementing this code."
 )
 
+import asyncio
 import json
 import tomllib
 from pathlib import Path
@@ -90,3 +91,35 @@ def test_the_choice_of_setup_or_of_the_environment_stays(started):
     assert started({"mcp": True}).mcp_models == "wiki"  # setup saves the wiki's own models as no value
     assert started({"llm": {"provider": "openrouter"}}).mcp_models == "wiki"  # set up for the page: its own models
     assert started(OKF_MCP_MODELS="wiki").mcp_models == "wiki"
+
+
+def test_a_memory_never_used_answers_from_an_empty_wiki(monkeypatch, tmp_path):
+    # The client's first call is often recall: on a folder that was never made, it failed with "wiki not found".
+    import llmw2.memory
+
+    pytest.importorskip("mcp")
+    from mcp import Client
+
+    real, made = llmw2.memory.Memory, []
+    monkeypatch.setattr(llmw2.memory, "Memory", lambda make, local_files: made.append(make) or type("M", (), {"server": _Server()})())
+    settings = Settings({"OKF_CONFIG": str(tmp_path / "never.json"), "OKF_BUNDLE": str(tmp_path / "wiki")})
+    assert memory_stdio(Wiki(settings.config()), settings) == 0
+    assert (tmp_path / "wiki").is_dir()
+
+    async def go():
+        async with Client(real(made[0], local_files=True).server) as client:
+            return [await client.call_tool(tool, args) for tool, args in (("recall", {"question": "When does Rossi pay?"}),
+                                                                          ("search", {"query": "Rossi"}))]
+
+    recalled, searched = asyncio.run(go())
+    assert not recalled.is_error and recalled.structured_content["status"] == "done"
+    assert recalled.structured_content["notes"] == []
+    assert not searched.is_error
+
+
+def test_a_wiki_folder_that_cannot_be_made_is_said_on_stderr(started, tmp_path, capsys):
+    blocker = tmp_path / "file"
+    blocker.write_text("not a folder", encoding="utf-8")
+    settings = Settings({"OKF_CONFIG": str(tmp_path / "never.json"), "OKF_BUNDLE": str(blocker / "wiki")})
+    assert memory_stdio(Wiki(settings.config()), settings) == 2
+    assert "cannot make the wiki" in capsys.readouterr().err

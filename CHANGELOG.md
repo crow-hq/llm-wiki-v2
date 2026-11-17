@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-17
+
+The memory answers from an empty wiki the first time it is used, and a test of the spending cap that failed now and then
+on slow machines.
+
+### Fixed
+
+- `llmwiki2 mcp` makes the wiki when it starts, as `llmwiki2` does for its page: on a computer where the memory was never
+  used, a first `recall` failed with "wiki not found" and `search` with no reason given, until something was remembered.
+  They now answer from an empty wiki. A wiki folder that cannot be made is said on stderr, and the memory does not start.
+- The test of the spending cap counted every call a lane made once the cap was passed, but the document being filed ends
+  with all its calls (`UsageTracker.filing`), so where the cap fell decided whether it passed. It now checks that each
+  lane stops at its next call and that the document being filed makes at most the calls of one filing, at caps that fall
+  on each step of it.
+
 ## [1.0.3] - 2026-11-17
 
 The memory in the official MCP Registry, working with no setup on the client's models; DeepSeek as the default writer
@@ -429,6 +444,7 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[1.0.4]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.4
 [1.0.3]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.3
 [1.0.2]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.2
 [1.0.1]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.1
