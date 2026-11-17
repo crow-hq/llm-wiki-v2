@@ -7,10 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-17
+
+The memory in the official MCP Registry, working with no setup on the client's models; DeepSeek as the default writer
+on OpenRouter; a README that says first that everything can run on your computer.
+
+### Added
+
+- The memory is listed in the official MCP Registry as `io.github.crow-hq/llm-wiki-v2`, so an MCP client that reads the
+  registry finds it and starts it with `uvx --with "mcp>=2.3,<3" llmwiki2 mcp`, on what `llmwiki2 setup` saved or,
+  never set up, on the client's models with no key. `server.json` describes it; the release publishes it after PyPI,
+  and a test keeps its version, its command and the README's `mcp-name:` line in step with the package.
+
 ### Changed
 
 - On OpenRouter the default model is `deepseek/deepseek-v4.1-flash`, the writer CROW's thresholds and benchmarks are
   calibrated with; `google/gemini-3.8-flash` is still suggested. A wiki that names its model keeps it.
+- The README says first that everything can run on your computer, with no key: the desktop app out of the box, the
+  library with the writer and the classifier behind Ollama.
+
+### Fixed
+
+- `llmwiki2 mcp` started by a client on a computer where the wiki was never set up (no settings file, no
+  `OKF_MCP_MODELS`) works on the client's models, the first choice `llmwiki2 setup` offers: every `remember` and
+  `recall` failed asking for a classifier key. Once set up, for the memory or for the page, the settings decide as before.
 
 ## [1.0.2] - 2026-11-13
 
@@ -409,6 +429,7 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[1.0.3]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.3
 [1.0.2]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.2
 [1.0.1]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.1
 [1.0.0]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.0
