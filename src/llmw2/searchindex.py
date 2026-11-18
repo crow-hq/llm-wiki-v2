@@ -766,7 +766,7 @@ class SearchIndex:
         return self._guarded(lambda: self._rank(query, n, where))
 
     def _rank(self, query: str, n: int, where: dict[str, Any] | None) -> list[str]:
-        words = set(lexical.words(query))
+        words = dict.fromkeys(lexical.words(query))  # in the query's order, as `Bm25.scores`: the same sum in every process
         allowed: set[int] | None
         tie = self._pos
         if not where:

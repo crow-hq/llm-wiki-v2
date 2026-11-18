@@ -114,7 +114,7 @@ class Bm25:
             subset, size = set(keys), sum(self.length[k] for k in keys)
         avg = (size / n if n else 1.0) or 1.0
         total = dict.fromkeys(keys, 0.0)
-        for w in set(words(query)):
+        for w in dict.fromkeys(words(query)):  # in the query's order: a set's changes with the process, and the sum's last bits with it
             posting = self.postings.get(w)
             if not posting:
                 continue

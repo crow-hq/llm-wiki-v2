@@ -77,6 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The order of `search` and `ask`, and the choices CROW's filing makes by words, no longer depend on the process: the scores of a
+  query's words are added up in the order the query gives them, so notes with close scores come in the same order in every process
+  (before, the order of a set, which changes from one process to the next, decided the last bits of the sums). Notes with the same
+  score keep the order of the tree.
 - `WikiStore.load` keeps what it parsed of each note (by modification time, size, inode and change time) between the sessions of a
   process, from its second session on (as it already did outside a session): a purge, a batch of documents or a filing no longer
   parses the whole tree again, only the notes whose file changed. Three things to know: the first session of a process (the first
