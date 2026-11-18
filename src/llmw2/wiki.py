@@ -703,8 +703,9 @@ class Wiki:
         documents before the failed one are filed, and everything from it on is in `not_done` with `stopped` saying
         why. A failure while filing stops at once, the same way. `on_result` is called after each item is filed or fails.
 
-        The batch is one session of the store (`WikiStore.session`): the tree is read whole once, then only the folders that
-        changed. A note another program or Wiki wrote or edited meanwhile is seen by the next document; one the batch was
+        The batch is one session of the store (`WikiStore.session`): the tree is listed whole once (a note whose file is as the
+        last parse left it is not parsed again, even if that was in an earlier session), then only the folders that changed. A note
+        another program or Wiki wrote or edited meanwhile is seen by the next document; one the batch was
         to merge into is never overwritten: that document is a `NoteChanged` result (counted in the report's `conflicts`)
         and the next run files it again.
 
@@ -1731,6 +1732,13 @@ class Wiki:
         With `dry_run` nothing is changed: the report says what would go and what would be filed again. If filing the others
         again stops (a model failing) the report has `stopped` and `errors`: their old raw copies stay, no note cites them, and
         a `rebuild` files them. Cannot be undone.
+
+        The notes are found by what the store parsed of them, kept from the second session of the process on (a purge is one) and
+        checked against each file's modification time, size, inode and change time. Limit: where there is no change time (Windows),
+        a note another program rewrote in place with the same size and its old modification time put back by hand (`cp -p`,
+        `rsync -t`) is not seen by a purge in a process that had parsed it before: it may keep a citation it did not know of, or be
+        written over, until its size or time changes. A process that starts afresh parses every file, and the first purge of a CLI
+        call is that.
         """
         with self.store.session():  # what the store reads in the first step it keeps for the last
             if dry_run:

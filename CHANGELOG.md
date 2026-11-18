@@ -77,6 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `WikiStore.load` keeps what it parsed of each note (by modification time, size, inode and change time) between the sessions of a
+  process, from its second session on (as it already did outside a session): a purge, a batch of documents or a filing no longer
+  parses the whole tree again, only the notes whose file changed. Three things to know: the first session of a process (the first
+  purge, every call of the CLI) keeps nothing and pays nothing for it, and the second fills the cache; the process keeps the front matter and text of every note it has loaded, memory that grows with the wiki; and where the
+  system gives no change time (Windows) a note rewritten in place with the same size and its old modification time put back by hand
+  (`cp -p`, `rsync -t`) is not seen until its size or time changes, the limit `scan_notes` has always had.
 - The record of a filing in the journal (`F`, what `Receipt.wait()` returns) names the notes it links to by their ids (`related`),
   never by title or path, so that a purge does not leave the title of a note in the records of other entries.
 - A purge no longer writes `log.md` whole: each line that names what was purged is overwritten where it stands by a line of the same

@@ -40,7 +40,7 @@ from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, S
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import yaml
 
@@ -160,11 +160,12 @@ def same_stamp(a: Stamp, b: Stamp) -> bool:
     return a[:2] == b[:2] and (a[2] == b[2] or 0 in (a[2], b[2]))
 
 
-@dataclass(frozen=True)
-class _Parsed:
-    """A note file as `load` last read it, valid while its modification time, size and inode are the same."""
+class _Parsed(NamedTuple):  # a tuple, not a dataclass: one is made for every note of the tree at the first load
+    """A note file as `load` last read it (inside a session too, and between sessions), valid while its modification time, size, inode
+    and change time (where the system has one, see `changed`) are the same."""
 
     stamp: tuple[int, int, int]
+    changed: int  # st_ctime_ns: a time restored by hand (`cp -p`, `rsync -t`) leaves the stamp, not this one (where there is one)
     frontmatter: bytes  # pickled: each load hands out its own copy, which callers edit in place
     body: str
 
@@ -207,6 +208,8 @@ class WikiStore:
         self._depth = 0
         self._dirs: dict[str, tuple[int, bool, Folder]] = {}  # folder path -> (its time, whether it was old enough, the folder)
         self._recent: set[str] = set()
+        self._relisted = False  # whether the last session `load` listed a folder again
+        self._sessions = 0  # the sessions this store has had: the first fills no cache (a process of one session, the CLI, never reads it)
         # what `scan_notes` keeps of a folder while its names stay the same: (the names, its notes, its subfolders, the bundle paths
         # of its notes, the stamps of its notes when none was to be read again, the caller that had them)
         self._listed: dict[str, tuple[Any, list[tuple[str, str]], list[tuple[str, str]], list[str], list[Any] | None, object]] = {}
@@ -280,7 +283,8 @@ class WikiStore:
         return done
 
     def _restore(self) -> txn.Restored:
-        """The lock is held: undo what an interrupted section left, and forget what this store had read of the bundle."""
+        """The lock is held: undo what an interrupted section left, and forget the folders this store had listed (a file put
+        back has a new time, so the notes parsed before are read again)."""
         if not txn.pending(self.root):
             txn.sweep_trash(self.root)
             return txn.Restored()
@@ -365,12 +369,18 @@ class WikiStore:
     @contextlib.contextmanager
     def session(self) -> Iterator[None]:
         """A batch of writes by this store (see `Wiki.ingest_many`): `load` and the origin index only look again at what
-        changed. The first `load` reads everything, as ever; after it, a folder whose modification time is the same (and
-        not recent) keeps the notes it had, and so does `raw/`: every write of the store replaces a file, which changes its
-        folder's time. A note edited in place by another program, which leaves the folder's time as it was, is seen by
-        the next batch, and never overwritten meanwhile (see `_save`). Outside a session nothing is kept."""
+        changed. The first `load` of a session lists the whole tree and parses only the notes whose file is not the one it
+        parsed before (`_parsed`, by modification time, size, inode and change time, kept between sessions and outside them, for
+        notes older than RACY_NS, filled from the second session of the store on: the first, all a CLI call has, parses and keeps
+        nothing); after it, a folder whose modification time is the same (and not recent) keeps the notes it
+        had, and so does `raw/`: every write of the store replaces a file, which changes its folder's time. A note edited in
+        place by another program, which leaves the folder's time as it was, is seen by the next batch, and never overwritten
+        meanwhile (see `_save`). The folders are kept only while the session lasts. Limit, as in `scan_notes`: a note edited
+        in place with the same size and the same modification time put back by hand is not seen (on Windows; elsewhere the
+        change time shows it) until its size or time changes."""
         with self._session_guard:
             self._depth += 1
+            self._sessions += self._depth == 1
             self._origins.session = True
         try:
             yield
@@ -382,7 +392,8 @@ class WikiStore:
                     self.forget()
 
     def forget(self) -> None:
-        """Drop what a session kept, so the next `load` reads the wiki whole (after a failure that left it unknown)."""
+        """Drop what a session kept of the folders, so the next `load` lists the wiki whole (after a failure that left it unknown).
+        The notes already parsed (`_parsed`) are checked against their files at that listing, not dropped."""
         with self._session_guard:
             self._dirs.clear()
             self._recent.clear()
@@ -396,11 +407,39 @@ class WikiStore:
             raise FileNotFoundError(f"wiki not found: {self.root} (run `llmwiki2 init`)")
         if self._depth:
             with self._session_guard:
-                return self._load_folder(self.root, "", "", None, {})
+                self._relisted = False
+                root = self._load_folder(self.root, "", "", None, self._parsed)  # `_parsed` outlives the session
+                if self._relisted and self._parsed:  # a folder listed again: what no note of the tree is any more goes
+                    live = {str(n.path) for n in root.all_notes()}
+                    self._parsed = {w: p for w, p in list(self._parsed.items()) if w in live}
+                return root
         seen: dict[str, _Parsed] = {}  # what this load met, so the cache never outgrows the wiki
         folder = self._load_folder(self.root, "", "", None, seen)
         self._parsed = seen
         return folder
+
+    @property
+    def _fills(self) -> bool:
+        return not self._depth or self._sessions > 1
+
+    def _note_of(self, where: str, rel: str, folder: Folder, st: os.stat_result, stamp: Stamp, seen: dict[str, _Parsed]) -> Note | None:
+        """The note of a file: from `_parsed` (the stamp is the same) or read; `seen` (what this load keeps, `_parsed` itself in a
+        session) holds it once the file is older than RACY_NS, else not (a file written this very moment may change again unseen).
+        None when the file cannot be read. The first session of a store does not keep what it parses (`_fills`): the copy of the front
+        matter of every note costs about 3% of that session, and nothing in a process that has only one session will ever use it."""
+        if (hit := self._parsed.get(where)) and hit.stamp == stamp and hit.changed == st.st_ctime_ns:
+            seen[where] = hit
+            return Note(Path(where), rel, pickle.loads(hit.frontmatter), hit.body, folder, stamp)
+        try:
+            doc = OKFDocument.read(Path(where))
+        except OKFDocumentError as e:
+            log.warning("skipping %s: %s", rel, e)
+            return None
+        if self._fills and time.time_ns() - st.st_mtime_ns > RACY_NS:
+            seen[where] = _Parsed(stamp, st.st_ctime_ns, pickle.dumps(doc.frontmatter), doc.body)
+        else:
+            seen.pop(where, None)
+        return Note(Path(where), rel, doc.frontmatter, doc.body, folder, stamp)
 
     def _load_folder(
         self, path: Path, rel: str, description: str, parent: Folder | None, seen: dict[str, _Parsed]
@@ -423,6 +462,7 @@ class WikiStore:
                     return folder
                 prior = {str(n.path): n for n in kept[2].notes}
         folder = Folder(path, rel, description, parent=parent)
+        self._relisted = True  # a folder listed again: the notes it no longer holds leave `_parsed`
         descriptions: dict[str, str] | None = None  # read from index.md when there is a subfolder to describe
         with os.scandir(path) as listing:  # the entries carry their stat, a call each saved on some systems
             entries = sorted(listing, key=lambda e: os.path.normcase(e.name))
@@ -456,30 +496,17 @@ class WikiStore:
                         folder.notes.append(known)
                         self._held[where] = known
                         continue
-                    try:
-                        doc = OKFDocument.read(Path(where))
-                    except OKFDocumentError as e:
-                        log.warning("skipping %s: %s", child_rel, e)
+                    if (fresh := self._note_of(where, child_rel, folder, st, stamp, seen)) is None:
                         continue
                     if time.time_ns() - st.st_mtime_ns > RACY_NS:
                         self._recent.discard(where)
                     else:
                         self._recent.add(where)
-                    fresh = self._held[where] = Note(Path(where), child_rel, doc.frontmatter, doc.body, folder, stamp)
+                    self._held[where] = fresh
                     folder.notes.append(fresh)
                     continue
-                if (hit := self._parsed.get(where)) and hit.stamp == stamp:
-                    seen[where] = hit
-                    folder.notes.append(Note(Path(where), child_rel, pickle.loads(hit.frontmatter), hit.body, folder, stamp))
-                    continue
-                try:
-                    doc = OKFDocument.read(Path(where))
-                except OKFDocumentError as e:
-                    log.warning("skipping %s: %s", child_rel, e)
-                    continue
-                if time.time_ns() - st.st_mtime_ns > RACY_NS:  # a file written this very moment may change again unseen
-                    seen[where] = _Parsed(stamp, pickle.dumps(doc.frontmatter), doc.body)
-                folder.notes.append(Note(Path(where), child_rel, doc.frontmatter, doc.body, folder, stamp))
+                if (fresh := self._note_of(where, child_rel, folder, st, stamp, seen)) is not None:
+                    folder.notes.append(fresh)
         if self._depth:
             # a folder changed within RACY_NS of this listing may change again in the same tick, leaving the time as it is:
             # it is listed again at the next load (its notes, which are not recent, are not read again)
@@ -496,7 +523,8 @@ class WikiStore:
 
         Limit, the same as in v1.0.2 (`_parsed`): a file edited in place by another program that leaves both its size and its
         modification time as they were (`rsync -t`, `cp -p`, a restore) is not seen, until its size or time changes. The
-        file's inode is no help on Windows, where the listing gives none.
+        file's inode is no help on Windows, where the listing gives none. The same limit holds for `load` in a session, which keeps
+        what it parsed between sessions (`_parsed`); on a system with a change time (not Windows) it is closed.
 
         A folder is listed in one call that carries every file's time and size. What a folder holds by name (its notes and its
         subfolders, in order) is kept while the names are the same, so a wiki that did not change costs one call per folder and
@@ -1494,6 +1522,9 @@ class WikiStore:
         versions go too, whichever note they were archived from."""
         gone_notes = {n.rel for n in notes}
         gone_dirs = [f.rel for f in folders]
+        with self._session_guard:  # a `load` in another thread fills the cache under it too
+            for gone_note in [*notes, *(n for top in folders for n in top.all_notes())]:
+                self._parsed.pop(str(gone_note.path), None)  # what was deleted is kept in no cache (a purge leaves no text behind)
 
         def gone(target: str) -> bool:
             return target in gone_notes or any(target == d or target.startswith(f"{d}/") for d in gone_dirs)
