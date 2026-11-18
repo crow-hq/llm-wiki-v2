@@ -29,6 +29,7 @@ from llmw2 import (
 )
 from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import ContentLLM, FakeClassifier, FakeLLM
+from tests.wiki.problems import errors
 from tests.wiki.test_ingest_many import Probe, make_wiki
 
 if TYPE_CHECKING:
@@ -192,7 +193,7 @@ def test_a_second_run_resumes_from_the_saved_cursor_file(wiki: Wiki) -> None:
 
     assert later.cursors == ["c1"]
     assert saved_cursor(wiki) == "c2"
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
 
 def test_accounts_sharing_a_long_prefix_keep_separate_cursors(wiki: Wiki, tmp_path: Path) -> None:
@@ -292,7 +293,7 @@ def test_sync_files_a_page_in_parallel_and_reports_created(par: Wiki) -> None:
 
     assert report == SyncReport(created=9)
     assert probe.prep_max == 3 and probe.serial_max == 1
-    assert saved_cursor(par) == "c1" and par.check() == []
+    assert saved_cursor(par) == "c1" and errors(par.check()) == []
 
 
 def test_sync_files_the_rest_of_a_page_around_an_unusable_reply_and_the_next_run_retries_only_it(bundle: Path) -> None:
@@ -410,7 +411,7 @@ def test_sync_that_stops_on_a_model_error_returns_a_partial_report_and_keeps_the
     assert (report.created, report.errors) == (3, [])  # a, b and c: the page's documents before the failed one
     assert source.cursors == [None, "c1"]  # asked for no third page
     assert saved_cursor(par) == "c1"
-    assert par.check() == []
+    assert errors(par.check()) == []
 
 
 def test_the_next_sync_after_a_stop_resumes_at_the_page_and_does_not_pay_again_for_what_was_filed(par: Wiki, pllm: ContentLLM) -> None:
@@ -435,7 +436,7 @@ def test_the_next_sync_after_a_stop_resumes_at_the_page_and_does_not_pay_again_f
     assert saved_cursor(par) == "c2"
     again = Fake(ChangeBatch([upsert(i) for i in ids], "c3"), files=files)
     assert sync(par, again) == SyncReport(skipped=6) and again.fetched == []
-    assert par.check() == []
+    assert errors(par.check()) == []
 
 
 def test_sync_when_the_model_fails_on_the_first_document_files_nothing_and_saves_no_cursor(par: Wiki, pllm: ContentLLM) -> None:
@@ -554,7 +555,7 @@ def test_syncing_a_folder_twice_files_nothing_the_second_time(wiki: Wiki, llm: F
     assert first == SyncReport(created=2)
     assert second == SyncReport()
     assert len(llm.calls) == calls
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
 
 def test_syncing_a_folder_follows_edits_and_deletions(wiki: Wiki, llm: FakeLLM, folder: Path) -> None:

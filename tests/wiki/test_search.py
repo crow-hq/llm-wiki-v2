@@ -172,3 +172,15 @@ def test_the_vectors_of_another_model_are_not_reused_and_those_of_the_same_model
     assert again.seen == ["parcels"]  # same model: every vector served from the file
     assert len(other.seen) == len(NOTES) + 1  # another model: embedded again
     assert len(old.seen) == len(NOTES) + 1  # entries written without a model simply miss
+
+
+def test_the_vectors_keep_their_rollback_journal_between_writes_and_a_purge_cuts_it(tmp_path: Path) -> None:
+    from array import array
+
+    cache = VectorCache(tmp_path / "vectors.sqlite")
+    cache.put({"a": array("f", [1.0, 0.0])}, {"a"})
+    cache.put({"b": array("f", [0.0, 1.0])}, {"a", "b"})
+    journal = tmp_path / "vectors.sqlite-journal"
+    assert journal.exists() and journal.stat().st_size > 0  # PERSIST: not made and deleted at every write
+    cache.truncate_journal()
+    assert journal.stat().st_size == 0 and set(cache.get(["a", "b", ""])) == {"a", "b"}

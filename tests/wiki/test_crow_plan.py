@@ -75,7 +75,7 @@ def note_rels(wiki: Wiki) -> list[str]:
 
 def log_lines(wiki: Wiki, verb: str) -> list[str]:
     text = (wiki.cfg.bundle / LOG).read_text(encoding="utf-8")
-    return [line for line in text.splitlines() if line.startswith(f"* **{verb}**")]
+    return [line for line in text.splitlines() if line.startswith(f"* **{verb}**")][::-1]  # the newest first
 
 
 def user_text(call: tuple[str, list[dict[str, str]]]) -> str:

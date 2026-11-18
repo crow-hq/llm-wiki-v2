@@ -33,21 +33,27 @@ __copyright__ = (
 
 import collections
 import concurrent.futures
+import contextlib
 import contextvars
+import errno
 import functools
 import hashlib
 import itertools
+import json
 import logging
 import os
 import re
 import shutil
 import tempfile
 import threading
+import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path, PurePath
 from typing import Any, ParamSpec, Self, TypeVar
 
+from llmw2 import filer as _filer
 from llmw2.agents import echo, grouping, lexical, steps_crow
 from llmw2.agents.base import Decision
 from llmw2.agents.data import Candidate, FolderPlan, Source, SplitPlan
@@ -65,18 +71,32 @@ from llmw2.audit import (
     SPLIT_VERB,
     FolderHealth,
     RouteProposal,
-    last_split_at,
     taxonomy_health,
 )
 from llmw2.batch import BatchReport, Item
+from llmw2.bundle import journal as J
+from llmw2.bundle import txn
 from llmw2.bundle.check import Problem, check
+from llmw2.bundle.filelock import FileLock
 from llmw2.bundle.files import is_spreadsheet, sheet_sources, title_of
-from llmw2.bundle.origin import Origin, OriginRecord, content_hash
+from llmw2.bundle.origin import Origin, OriginRecord, content_hash, format_at
 from llmw2.bundle.proposals import CONFIRMED, DISMISSED, OPEN, Proposal, notes_count, read_proposals, write_proposals
-from llmw2.bundle.store import CACHE_FILE, Deleted, WikiStore, authored, current_author, raw_sources, read_utf8_or_latin1
-from llmw2.bundle.tree import INDEX, LOG, Folder, Note, matching, slugify, within_area, within_folder
+from llmw2.bundle.store import CACHE_FILE, Deleted, WikiStore, authored, current_author, raw_sources
+from llmw2.bundle.tree import INDEX, LOG, Folder, Note, slugify, within_area, within_folder
 from llmw2.config import PROMPT_ROOM, WikiConfig
-from llmw2.errors import ConfigError, InputError, NoteChanged, ReplyInvalid, SpendingCap
+from llmw2.errors import (
+    ConfigError,
+    DiskFull,
+    FailedBacklog,
+    FilerError,
+    InputError,
+    NoteChanged,
+    QueueFull,
+    ReplyInvalid,
+    SpendingCap,
+    WikiError,
+)
+from llmw2.filer import Filing, Hub, Receipt, hub_for, release, sha_key
 from llmw2.models.cache import SqliteCache
 from llmw2.models.classifier import Classifier
 from llmw2.models.embedder import HttpEmbedder
@@ -134,6 +154,14 @@ def _named(item: Item) -> str:
     return item.origin.key if item.origin else item.filename
 
 
+_REMEMBERED = Origin("remember", "", "").key  # "remember::": the origin of what `remember` was given a key for
+
+
+def _entry_key(key: str) -> str:
+    """The key of an entry of the journal for a key `purge` is given: an origin of `remember` names the key it was remembered with."""
+    return key.removeprefix(_REMEMBERED)
+
+
 
 def _follow(report: BatchReport, moved: list[tuple[str, str]]) -> None:
     """Point the results of `report` at where `_tidy` moved their notes: `moved` holds (path before, path after), of a
@@ -174,6 +202,11 @@ class Purged:
     log_lines: int = 0  # lines of log.md now saying "[purged]"
     errors: list[tuple[str, str]] = field(default_factory=list)  # (document, message) of those that could not be filed again
     stopped: str | None = None  # why filing them again ended before the last (a model failing); None when it ran to the end
+    log_rewritten: bool = False  # log.md was written whole: a line was too short to be overwritten in place (it costs the whole file)
+    entries: int = 0  # entries of the journal (`remember`) forgotten
+    # what still holds some of it, to be emptied later (see `purge`): "journal" (the filer that holds the lease finishes), "index" (a
+    # reader of another process held its WAL: the next checkpoint empties it); [] when the text is in no file of the wiki
+    pending: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -246,14 +279,30 @@ class Wiki:
         if embedder is None and cfg.embedder.enabled:
             embedder = self._embedder = HttpEmbedder(cfg.embedder, self.tracker)
         model = cfg.embedder.model or "" if self._embedder is not None else ""  # a callable's model is not known
-        self._search = NoteSearch(VectorCache(cfg.bundle / VECTORS_FILE), embedder, model)
+        from llmw2.searchindex import INDEX_FILE, SearchIndex  # not with the package: `import llmw2` stays light
+
+        self._search = NoteSearch(VectorCache(cfg.bundle / VECTORS_FILE), embedder, model, SearchIndex(cfg.bundle / INDEX_FILE))
         self._preparing = threading.BoundedSemaphore(cfg.concurrency)
+        self._hub: Hub | None = None  # the journal of this bundle in this process, taken by the first `remember`, `status` or `drain`
+        self._closed = False
+        self._filer_stopped = False  # `_stop_filer` was called: a `remember` here writes the entry and does not start a filer
+        self._inited = False
         if cfg.mode == "crow" and classifier is None:
             cache = SqliteCache(cfg.bundle / CACHE_FILE) if cfg.classifier.cache else None
             self.classifier = Classifier(cfg.classifier, self.tracker, cache=cache)
 
     def close(self) -> None:
-        """Release the models' connections (a model passed in is closed only if it made its own client)."""
+        """Stop the filer of this wiki (the section it is in is let to end: the queue is not emptied, what is queued is filed by the next
+        wiki or process that drains), refuse new entries, and release the models' connections (a model passed in is closed only if it
+        made its own client). Can be called again."""
+        if self._closed:
+            return
+        self._closed = True
+        self._stop_filer()
+        if self._hub is not None:
+            release(self._hub)
+            self._hub = None
+        self._search.index.close()
         self.llm.close()
         if self.classifier is not None:
             self.classifier.close()
@@ -283,6 +332,280 @@ class Wiki:
 
     def init(self) -> None:
         self.store.init()
+
+    # -- remember: keep now, file in the background ---------------------------------------------------------------
+
+    def _journal(self) -> Hub:
+        if self._hub is None:
+            self._hub = hub_for(self.cfg.bundle)
+        return self._hub
+
+    def _start_filer(self) -> None:
+        """Start the thread that files the entries (a no-op if this process has one, or if `_stop_filer` was called)."""
+        if not self._closed and not self._filer_stopped:
+            self._journal().start_filer(self)
+
+    def _stop_filer(self) -> None:
+        """Stop this wiki's filer thread and wait for the section it is in; the server calls it on the wiki it replaces, so that the
+        lease and the models of the old settings are let go. A `remember` on this wiki afterwards writes the entry and files nothing."""
+        self._filer_stopped = True
+        if self._hub is not None:
+            self._hub.stop_filer(self)
+
+    def _recover(self) -> txn.Restored:
+        """Undo a filing a process died in, and write the `F` record it owed (the filer does it as it starts)."""
+        return self.store.recover()
+
+    def remember(
+        self,
+        text: str,
+        *,
+        title: str | None = None,
+        key: str | None = None,
+        fields: dict[str, Any] | None = None,
+        author: str | None = None,
+        at: datetime | None = None,
+        timeout: float | None = None,
+    ) -> Receipt:
+        """Keep a text now and file it in the background; returns when the entry is on the disk, before any model is called.
+
+        `key` names the memory: the same key with the same text is the same memory (the receipt of the first is returned, nothing is
+        written), with another text it is a new version of it. Without a `key` it is the hash of the text, so that a retry of the same
+        text is the same memory; a caller that wants a memory for every observation of the same text gives a `key` with the time in it.
+        The duplicate of an entry is known when it is acknowledged among the entries this process has read of the journal; between
+        processes it is known when it is filed (`Receipt.wait()` gives action "unchanged" and the note that holds the text).
+
+        `at` is when the thing the text tells of happened (a datetime with a time zone, `InputError` without): it is kept in the raw
+        copy as `event_at`, in UTC with microseconds, and does not change the text's hash. The same text with another `at` is unchanged
+        (no model is called): the new time is in the `F` record of its entry and in a "Seen again" line of the log.
+
+        The queue limit (`QUEUE_LIMIT`) counts the entries that are open and the ones given up (X, after three failures that belong to the
+        entry): those are never filed and nobody resolves them yet, so a system with no operator, whose entries keep failing, ends with a
+        full queue and a memory that refuses new entries (`FailedBacklog`, a `QueueFull`; nothing is dropped silently). `status()` warns
+        as they accumulate. Entries open or given up that hold more than half a segment of text (8 MiB at 16 MiB segments) stop
+        the reuse of the journal behind them (`status` and `check` say so) until it is done.
+
+        `timeout` bounds the wait for room when the queue is full (`QueueFull`, nothing written). `DiskFull` when the disk has less than
+        the reserve filing needs. `InputError` for an empty text, a `fields` that is not JSON, an `at` with no zone."""
+        if self._closed:
+            raise WikiError("this wiki is closed")
+        if not isinstance(text, str) or not text.strip():
+            raise InputError("nothing to remember: the text is empty")
+        if key is not None and (not isinstance(key, str) or not key.strip()):
+            raise InputError("`key` is a non-empty string")
+        fields = dict(fields or {})
+        try:
+            json.dumps(fields)
+        except (TypeError, ValueError) as e:
+            raise InputError(f"`fields` must be JSON: {e}") from e
+        event_at = format_at(at) if at is not None else None
+        limit = self._journal().journal.segment_size // 2
+        text_key = key if key is not None else sha_key(text)
+        origin = Origin("remember", "", key).to_dict() if key is not None else None
+        who = author or current_author() or self.author or ""
+        size = J.entry_size(
+            text, key=text_key, hash=content_hash(text), title=title, origin=origin, fields=fields, author=who, event_at=event_at
+        )
+        cost = Hub.entry_cost(size)  # the record as it will be written: text, title, fields, all of it
+        if cost > limit:  # before anything is written: the journal keeps at most half a segment of live backlog
+            raise InputError(
+                f"the entry weighs {cost} bytes with its title and fields; the journal takes at most {limit} bytes (half a segment) of "
+                "entries not done: give a document as a file (`ingest_file`, `remember_file`), which does not go through the journal, or "
+                "in parts"
+            )
+        self._require_classifier()
+        if not self._inited:
+            self.store.init()
+            self._inited = True
+        hub = self._journal()
+        name = who
+        digest = content_hash(text)
+        sig = (text_key, digest, event_at)
+        deadline = None if timeout is None else time.monotonic() + timeout
+        stalled = time.monotonic()
+        closed = hub.closed_total
+        while True:
+            hub.refresh()
+            known = hub.find(sig)
+            if known is not None:
+                self._start_filer()
+                return Receipt(known.id, known.key, known.at, known.event_at, hub)
+            failed = hub.failed_count()
+            opened_bytes, given_bytes = hub.backlog_bytes()
+            if failed >= _filer.QUEUE_LIMIT or given_bytes + cost > limit:
+                # the entries given up fill the queue (in number or in bytes): waiting brings no room, and nothing is dropped silently
+                raise FailedBacklog(
+                    f"{failed} entries were given up ({given_bytes} bytes) and fill the queue; their text stays in the journal and nothing "
+                    "was written now; no call clears them yet, so remembering resumes only when one does (a later step)"
+                )
+            if hub.open_n + failed < _filer.QUEUE_LIMIT and opened_bytes + given_bytes + cost <= limit:
+                break
+            self._start_filer()
+            if hub.closed_total != closed:
+                closed, stalled = hub.closed_total, time.monotonic()
+            nobody = time.monotonic() - stalled >= _filer.STALL and (
+                hub.nobody_files() or (hub.filer is not None and hub.filer.state == "error")
+            )  # a filer that is slow is not a stall
+            if (deadline is not None and time.monotonic() >= deadline) or nobody:
+                raise QueueFull("entries are waiting to be filed (the queue is full in number or in bytes): try again later")
+            with hub.cond:
+                hub.cond.wait(_filer.IDLE_POLL)
+        if hub.disk_free() < _filer.DISK_RESERVE:
+            raise DiskFull(f"less than {_filer.DISK_RESERVE >> 20} MiB free on the disk of the wiki: nothing was kept")
+        if not hub.prepared:
+            hub.journal.prepare_async()
+            hub.prepared = True
+        stamp = format_at(datetime.now(UTC))
+        try:
+            ref = hub.journal.append_entry(
+                text, key=text_key, hash=digest, title=title, origin=origin, fields=fields, author=name, at=stamp, event_at=event_at
+            )
+        except OSError as e:
+            if isinstance(e, DiskFull) or e.errno == errno.ENOSPC:
+                raise DiskFull(f"the disk of the wiki is full: nothing was kept ({e})") from e
+            raise
+        self._start_filer()
+        hub.notify()
+        return Receipt(ref.id, text_key, stamp, event_at, hub, (ref.seg, ref.end))
+
+    def drain(self, timeout: float | None = None) -> None:
+        """Return when every entry written before the call (by any process) is done: filed, and its folder split if it had to be.
+
+        Starts the filer of this process if nobody files. `TimeoutError` after `timeout` seconds (nothing is lost: what is queued stays);
+        `FilerError` for the first error of an attempt made meanwhile, for an entry that was given up, or when nobody can file (this wiki
+        was closed or its filer stopped, and no other process holds the lease)."""
+        if self._closed:
+            raise FilerError("this wiki is closed")
+        hub = self._journal()
+        hub.refresh()
+        self._stuck(hub)
+        wanted = [e.id for e in hub.open_entries()]
+        if not wanted:
+            return
+        self._start_filer()
+        errors_at = hub.error_seq
+        deadline = None if timeout is None else time.monotonic() + timeout
+        if hub.filer is not None:
+            hub.filer.kick()
+        while True:
+            hub.refresh()
+            self._stuck(hub)
+            left = [hub.entries[i] for i in wanted if i in hub.entries and not hub.entries[i].closed]
+            gave_up = [e for i in wanted if (e := hub.entries.get(i)) is not None and e.failed is not None]
+            if gave_up:
+                raise FilerError(f"entry {gave_up[0].id} was given up: {gave_up[0].failed}")
+            if not left:
+                return
+            if hub.error_seq != errors_at:
+                raise FilerError(f"filing failed: {hub.last_error}")
+            if hub.nobody_files():
+                if self._filer_stopped or self._closed:
+                    raise FilerError("no filer is running: this wiki's filer was stopped")
+                self._start_filer()
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError(f"{len(left)} entries are not done yet")
+            with hub.cond:
+                hub.cond.wait(_filer.IDLE_POLL if deadline is None else max(0.0, min(_filer.IDLE_POLL, deadline - time.monotonic())))
+
+    @staticmethod
+    def _stuck(hub: Hub) -> None:
+        """The journal stops at bytes that are not a valid record (a fault, or a record being written by another process, which a
+        short wait tells apart): what lies past them is not read, so a drain cannot say it is done."""
+        for _ in range(10):
+            if hub.journal.stuck is None:
+                return
+            time.sleep(0.03)
+            hub.refresh()
+        if hub.journal.stuck is not None:
+            seg, at = hub.journal.stuck
+            raise FilerError(f"the journal cannot be read past byte {at} of segment {seg}: entries after it are not seen; see check()")
+
+    def status(self) -> dict[str, Any]:
+        """Where the queue is, as a dict of JSON values with these keys: `queue` (entries not done), `queue_limit`, `filing` (the id the
+        filer of this process is on, or None), `failed` (entries given up), `oldest_s` (age of the oldest entry not done, or None),
+        `filer` ("running", "idle", "error" for this process's filer; "other" when another process holds the lease; "none"),
+        `last_error`, `journal_bytes`, `disk_free` and `warnings` (a list of sentences). It reads what is new in the journal and nothing
+        else: it does not take the append lock, does not read the journal from its start and does not run `check()`, and its time does
+        not grow with the notes."""
+        hub = self._journal()
+        return _filer.status(hub, self.cfg.bundle)
+
+    # -- the filer's side ------------------------------------------------------------------------------------------------
+
+    def _work_on(self, entry: _filer.Entry, filer: _filer.Filer) -> None:
+        """File one entry of the journal as `ingest` would (the same steps, the same order), then the split, then tell the journal."""
+        with authored(entry.author or self.author):
+            if entry.filed is None:
+                # an earlier attempt may have committed and failed to say so: recovery writes its `F` record; look again before filing
+                self.store.recover()
+                filer.hub.refresh()
+                entry = filer.hub.entries.get(entry.id, entry)
+                if entry.closed:
+                    return
+            if entry.filed is None:
+                try:
+                    result = self._file_entry(entry, filer.hub)
+                except _filer.Forgotten:
+                    return  # a purge took it out meanwhile: its section wrote nothing, and the tombstone closed it
+            else:  # filed before a crash, the split and `D` to do
+                f = entry.filed
+                result = IngestResult(
+                    "unchanged" if f.get("action") == "unchanged" else "created",
+                    str(f.get("note", "")),
+                    str(f.get("title", "")),
+                    str(f.get("folder", "/")),
+                    list(f.get("created_folders") or []),
+                    list(f.get("related") or []),
+                    [],
+                )
+            self._split(result)
+        filer.done(entry)
+
+    def _file_entry(self, entry: _filer.Entry, hub: Hub) -> IngestResult:
+        origin = Origin.from_dict(entry.origin) if entry.origin else None
+        filing = Filing(entry, hub)
+        if origin is None and (seen := self.store.seen_text(entry.text)) is not None:  # before a model is called
+            return self._settle(self._known(seen[0]), filing, seen[1])
+        text, title, fields, event_at = entry.text, entry.title or None, dict(entry.fields), entry.event_at
+
+        def source(ctx: StepContext) -> Source:
+            return Source(text, title, None, origin, fields, event_at=event_at)
+
+        with self._preparing:
+            ready = self._prepare(source)
+        if isinstance(ready, IngestResult):
+            return self._settle(ready, filing, self._raw_of(origin))
+        return self._file(ready, filing=filing)
+
+    def _known(self, note_rel: str) -> IngestResult:
+        title = self.store.read(note_rel).title if note_rel else ""
+        return IngestResult("unchanged", note_rel, title, "/" + note_rel.rpartition("/")[0], [], [], [], UsageReport())
+
+    def _raw_of(self, origin: Origin | None) -> str | None:
+        record = self.store.find_origin(origin.key) if origin is not None else None
+        return record.raw if record is not None else None
+
+    def _settle(self, known: IngestResult, filing: Filing, raw: str | None) -> IngestResult:
+        """An entry whose text the wiki holds already: nothing is filed; the journal is told, with a section of its own so that the `F`
+        record has the same durability as for a note that was made."""
+        done: list[dict[str, Any]] = []
+        with self.store.lock(id=filing.entry.id, after_commit=lambda: filing.put(done[0])):
+            filing.check()
+            done.append(self._seen_again(known, filing, raw))
+        return known
+
+    def _seen_again(self, known: IngestResult, filing: Filing, raw: str | None) -> dict[str, Any]:
+        """The lock is held: the `F` record of an entry that turned out to be unchanged. If it came with an `at` the first copy does not
+        have, the log says the text was seen again then (the raw copy keeps the first time)."""
+        event_at = filing.entry.event_at
+        if event_at and known.note and raw and self.store.raw_event_at(raw) != event_at:
+            self.store.append_log("Seen again", f"at {event_at}", known.note, known.title)
+        record = _filer.frecord(known, filing, [])
+        if (section := txn.current()) is not None:
+            section.set_result(record)
+        return record
+
+    # -- ingest ------------------------------------------------------------------------------------------------------------
 
     @by_author
     def ingest(
@@ -532,7 +855,7 @@ class Wiki:
         Returns what moved, in order, as (path before, path after): a note's, or a folder's with all it holds."""
         planned = {f.rel for f in made}
         moved: list[tuple[str, str]] = []
-        with self.store.lock():
+        with self.store.lock(undo=False):  # a wrapper's subfolders are moved whole
             while planned:
                 root = self.store.load()
                 for rel in sorted(planned, key=lambda r: r.count("/"), reverse=True):
@@ -776,21 +1099,40 @@ class Wiki:
         ready.usage = used
         return ready
 
-    def _file(self, prepared: Prepared, folder: str | None = None, fixed: bool = False) -> IngestResult:
+    def _file(self, prepared: Prepared, folder: str | None = None, fixed: bool = False, *, filing: Filing | None = None) -> IngestResult:
         """File what `_prepare` made, one writer at a time; the origin is checked again, as it may have been filed meanwhile.
 
         `folder` (a label) is where a group of the batch plan goes: the note is filed there without routing. `fixed`: a
-        rebuild, which opens no folder."""
-        with self.store.lock(), self.tracker.filing():  # the librarian reads the tree, then writes on what it read
-            origin = prepared.source.origin
+        rebuild, which opens no folder. `filing`: the entry of the journal this is the filing of: its id goes in the commit record, with
+        what was done, and the `F` record is written once the section is durable (and, if the process dies before, by whoever recovers)."""
+        told: list[dict[str, Any]] = []
+        hook = (lambda: filing.put(told[0])) if filing is not None else None
+        with self.store.lock(id=filing.entry.id if filing is not None else None, after_commit=hook), self.tracker.filing():
+            if filing is not None:
+                filing.check()  # forgotten by a purge while it was prepared: nothing is written
+            origin = prepared.source.origin  # the librarian reads the tree, then writes on what it read
             if origin is not None and (known := self._unchanged(origin, prepared.source.text)) is not None:
                 known.usage = prepared.usage
+                if filing is not None:
+                    told.append(self._seen_again(known, filing, self._raw_of(origin)))
                 return known
             try:
-                return self.librarian(fixed=fixed).file(prepared, planned=folder)
+                result = self.librarian(fixed=fixed).file(prepared, planned=folder)
             except BaseException:
                 self.store.forget()  # what a batch kept of the tree may not be what is on disk now
                 raise
+            if filing is not None:
+                related = [i for rel in result.related if (i := self._note_id(rel))]
+                told.append(_filer.frecord(result, filing, related))
+                if (section := txn.current()) is not None:
+                    section.set_result(told[0])
+            return result
+
+    def _note_id(self, rel: str) -> str | None:
+        """The stable id of a note (None for a note written before ids, or one that cannot be read)."""
+        with contextlib.suppress(OSError, WikiError, ValueError):
+            return self.store.read(rel).id
+        return None
 
     def origin(self, key: str) -> OriginRecord | None:
         """The latest raw copy cited by a note for an origin key (`Origin.key`), or None if no note cites one.
@@ -849,13 +1191,14 @@ class Wiki:
         BM25 on each note (title, summary and body, without See also). With an `embedder` the first `k - 1` come from the
         nearest by meaning and one from BM25, no note twice, the rest filled in the order of meaning; the vectors are kept
         in the bundle under the hash of the note, so a search embeds only the notes new or changed since.
+
+        The words of the notes are kept in an index file of the bundle (`.llmw2/cache/search-v<schema>.sqlite`), shared by every process on
+        the wiki: a search lists the wiki's files and reads only the notes new or changed since. The file is a cache, never the
+        notes themselves: delete it, or let it be damaged, and the next search builds it again.
         """
         if not query.strip():
             raise InputError("empty question")
-        root = self.store.load()
-        notes = (matching(root, where) if where else root).all_notes()
-        found = self._search.search(notes, root.all_notes() if where else notes, query, k)
-        return [Hit(n.rel, n.title, n.summary, i) for i, n in enumerate(found, 1)]
+        return [Hit(rel, title, summary, i) for i, (rel, title, summary) in enumerate(self._search.find(self.store, query, k, where), 1)]
 
     def _require_classifier(self) -> None:
         """In CROW mode, a classifier without its key stops here, before any model call or file."""
@@ -1076,30 +1419,35 @@ class Wiki:
         folder = self.store.load().find(result.folder)
         if folder is None or folder.is_root or folder.depth >= min(PLAN_DEPTH, self.cfg.max_depth) or len(folder.notes) < SPLIT_AT:
             return
-        path = self.store.root / LOG
         multiple = len(folder.notes) // SPLIT_AT
-        if multiple <= last_split_at(read_utf8_or_latin1(path) if path.exists() else "", folder.rel) // SPLIT_AT:
+        if multiple <= self.store.last_split_at(folder.rel) // SPLIT_AT:
             return
         opened: list[str] = []
         try:
             with self.tracker.filing():  # part of filing the document: the cap waits for it
-                self._split_folder(folder, opened)
+                plan = self._split_plan(folder)
+                # the moves and the "Split" line are one section: a failure in it undoes all, and the line then says nothing opened
+                with self.store.lock():
+                    self._split_folder(folder, plan, opened)
+                    self.store.append_log(SPLIT_VERB, self._split_text(folder, multiple, opened), f"{folder.rel}/index.md", folder.label)
             result.decisions.append(Decision("split", "llm", f"{folder.label}: {len(opened)} opened"))
+            return
         except Exception as e:
             log.warning("splitting %s failed: %s", folder.label, e)
             result.decisions.append(Decision("split", "llm", f"{folder.label}: error", fallback=True))
-        text = f"at {multiple * SPLIT_AT} notes, {len(opened)} opened" + (f": {', '.join(opened)}" if opened else "")
         with self.store.lock():
-            self.store.append_log(SPLIT_VERB, text, f"{folder.rel}/index.md", folder.label)
+            self.store.append_log(SPLIT_VERB, self._split_text(folder, multiple, []), f"{folder.rel}/index.md", folder.label)
 
-    def _split_folder(self, folder: Folder, opened: list[str]) -> None:
-        """Ask for the subfolders of `folder` and make them, moving the notes; the labels made are appended to `opened`."""
+    @staticmethod
+    def _split_text(folder: Folder, multiple: int, opened: list[str]) -> str:
+        return f"at {multiple * SPLIT_AT} notes, {len(opened)} opened" + (f": {', '.join(opened)}" if opened else "")
+
+    def _split_plan(self, folder: Folder) -> SplitPlan:
+        """Ask for the subfolders of `folder` (one LLM call, no lock)."""
         notes = list(folder.notes)
         listing = "\n".join(f"{i}. {n.title}: {' '.join((n.summary or '').split())[:200]}" for i, n in enumerate(notes, start=1))
         subfolders = "\n".join(f"- {c.label}: {c.description}" for c in folder.subfolders) or "(none)"
-        librarian = self.librarian()
-        ctx = librarian.ctx
-        plan = ctx.ask_json(
+        return self.librarian().ctx.ask_json(
             "librarian/split",
             SplitPlan,
             notes=listing,
@@ -1108,34 +1456,39 @@ class Wiki:
             subfolders=subfolders,
             reply_chars=SPLIT_REPLY_CHARS,
         )
+
+    def _split_folder(self, folder: Folder, plan: SplitPlan, opened: list[str]) -> None:
+        """Make the subfolders `plan` proposes for `folder` and move the notes; the labels made are appended to `opened`.
+        The caller holds the bundle's lock."""
+        notes = list(folder.notes)
+        listing = "\n".join(f"{i}. {n.title}: {' '.join((n.summary or '').split())[:200]}" for i, n in enumerate(notes, start=1))
+        librarian = self.librarian()
+        ctx = librarian.ctx
         taken: set[int] = set()
-        with self.store.lock():
-            here = self.store.load().find(folder.label)
-            if here is None:
-                return
-            parent_words = set(re.split(r"[/-]", folder.label))
-            for proposed in plan.folders:
-                name = slugify(proposed.name, max_len=40, fallback="")
-                numbers = sorted({i for i in proposed.notes if 1 <= i <= len(notes)} - taken)
-                if not name or not proposed.description.strip() or len(numbers) < 2:
+        here = self.store.load().find(folder.label)
+        if here is None:
+            return
+        parent_words = set(re.split(r"[/-]", folder.label))
+        for proposed in plan.folders:
+            name = slugify(proposed.name, max_len=40, fallback="")
+            numbers = sorted({i for i in proposed.notes if 1 <= i <= len(notes)} - taken)
+            if not name or not proposed.description.strip() or len(numbers) < 2:
+                continue
+            # a small writer's name made of the folder's own path ("benefits-benefits") or of the prompt is no subject
+            if librarian.local_writer:
+                name = echo.own_name(proposed.name, listing, parent_words)
+                if not name or not echo.own_text(proposed.description, listing, ctx.prompts, "librarian/split"):
                     continue
-                # a small writer's name made of the folder's own path ("benefits-benefits") or of the prompt is no subject
-                if librarian.local_writer:
-                    name = echo.own_name(proposed.name, listing, parent_words)
-                    if not name or not echo.own_text(proposed.description, listing, ctx.prompts, "librarian/split"):
-                        continue
-                sub, created = self.store.create_folder(
-                    here, self._redacted(name), self._redacted(proposed.description), SPLIT_MARK
-                )
-                if not created:  # an existing subfolder is never moved into
+            sub, created = self.store.create_folder(here, self._redacted(name), self._redacted(proposed.description), SPLIT_MARK)
+            if not created:  # an existing subfolder is never moved into
+                continue
+            opened.append(sub.label)
+            taken.update(numbers)
+            for i in numbers:
+                try:
+                    self.store.move_note(notes[i - 1].rel, sub.rel)
+                except InputError:  # the note went meanwhile: the others go on
                     continue
-                opened.append(sub.label)
-                taken.update(numbers)
-                for i in numbers:
-                    try:
-                        self.store.move_note(notes[i - 1].rel, sub.rel)
-                    except InputError:  # the note went meanwhile: the others go on
-                        continue
 
     @by_author
     def move_note(self, path: str, folder: str, *, author: str | None = None) -> Note:
@@ -1274,7 +1627,7 @@ class Wiki:
         name = slugify(new_name, max_len=40, fallback="")
         if not name:
             raise InputError("a folder needs a name, in letters or digits")
-        with self.store.lock():
+        with self.store.lock(undo=False):  # moves or deletes whole folders: not covered by the undo log
             root = self._root_of(path)
             folder = self.store.move_folder(root.rel, name)
             self.store.append_log("Renamed folder", f"{root.label} to {folder.label}", f"{folder.rel}/{INDEX}", folder.label)
@@ -1287,7 +1640,7 @@ class Wiki:
         Subfolders keep their structure (one `target` has too is merged), links follow, and each note records the folder it
         came from (`moved_from`). InputError for a folder that is not top-level, or the same twice.
         """
-        with self.store.lock():
+        with self.store.lock(undo=False):  # moves or deletes whole folders: not covered by the undo log
             a, b = self._root_of(source), self._root_of(target)
             if a.rel == b.rel:
                 raise InputError(f"{a.label} cannot be merged into itself")
@@ -1312,13 +1665,13 @@ class Wiki:
     @by_author
     def delete_folder(self, path: str, *, author: str | None = None) -> Deleted:
         """Delete a folder ("/finance") with everything in it, as `delete_note` does for each note."""
-        with self.store.lock():
+        with self.store.lock(undo=False):  # moves or deletes whole folders: not covered by the undo log
             return self.store.delete_folder(path)
 
     @by_author
     def clear(self, *, author: str | None = None) -> Deleted:
         """Empty the wiki: every note, folder, raw copy and archived version, and the sync cursors. Cannot be undone."""
-        with self.store.lock():
+        with self.store.lock(undo=False):  # moves or deletes whole folders: not covered by the undo log
             return self.store.clear()
 
     @by_author
@@ -1339,9 +1692,19 @@ class Wiki:
         "Here", no folder is created and none is split. Cannot be undone. A rebuild that
         stops (the report says why) leaves the folders and the notes filed so far; run it again to start over.
         """
-        with self.store.lock():
+        # A rebuild starts from nothing and, if it is interrupted, is done again from the start: no undo log for each document. A durable
+        # mark says so, and it is made BEFORE anything is deleted (a crash between the two would leave an emptied wiki with no sign);
+        # it is taken away when the rebuild has run to the end with nothing stopped or broken, after what it wrote is on the disk, and
+        # `check` reports it until then.
+        txn.mark_rebuild(self.store.root)
+        with self.store.lock(undo=False):  # moves or deletes whole folders: not covered by the undo log
             self.store.clear(keep_folders=True)
-        return self.ingest_many(items, concurrency=concurrency, on_result=on_result, plan=False)
+        with self.store.undo_suspended():
+            report = self.ingest_many(items, concurrency=concurrency, on_result=on_result, plan=False)
+        if report.stopped is None and not any(isinstance(r, Exception) and not isinstance(r, InputError) for _, r in report.results):
+            txn.sync_tree(self.store.root)
+            txn.clear_rebuild(self.store.root)
+        return report
 
     @by_author
     def purge(self, key: str, *, author: str | None = None, dry_run: bool = False) -> Purged | None:
@@ -1356,19 +1719,178 @@ class Wiki:
         line, with the author and without the document's title, is added. `check()` finds nothing wrong afterwards.
         The classifier's cache holds hashes and labels, never text: it stays.
 
+        The entries `remember` kept under this key (`Receipt.key`) are forgotten too, filed or not, given up or not, with what they were
+        filed into: the key a `remember` was given (its origin is "remember::<key>", which purge takes as well), or, without one,
+        "text:<sha256 of the text>", which takes out the raw copies of that text saved with no origin.
+        A tombstone, durable before anything is deleted, holds the hash of the key, never the key; the segments of the journal that
+        held the entries, and the records of the filings, are zeroed, and the undo log is zeroed whole. When the report says
+        `journal: "done"` the text of the document is in no file of the wiki's folder (what the disk's own firmware keeps of blocks
+        written before is not in reach of a file). `"pending"`: another process holds the journal's lease and has not finished in
+        `FORGET_WAIT` seconds; it finishes at its next look at the journal, and a process that dies before is taken up by the next one.
+
         With `dry_run` nothing is changed: the report says what would go and what would be filed again. If filing the others
         again stops (a model failing) the report has `stopped` and `errors`: their old raw copies stay, no note cites them, and
         a `rebuild` files them. Cannot be undone.
         """
         with self.store.session():  # what the store reads in the first step it keeps for the last
-            return self._purge(key, dry_run)
+            if dry_run:
+                report = self._purge(key, True)
+                queued = self._queued(key) if self._has_journal() else []
+                if queued:
+                    report = report or Purged()
+                    report.entries = len(queued)
+                return report
+            queued = self._queued(key)
+            hub = self._journal()
+            kh = _filer.key_hash(_entry_key(key))
+            left = next((t for t in hub.forgets() if t.forget is not None and t.forget.get("kh") == kh), None)  # a purge cut before
+            if not queued and not self._raws_of(key) and left is None:
+                return None
+            tomb: list[str] = []
 
-    def _purge(self, key: str, dry_run: bool) -> Purged | None:
+            def mark() -> None:
+                # the tombstone is durable before anything is deleted, in the section that deletes (under the store's lock: a filer that
+                # takes it up from the hash finds the files there, or gone, never half); a purge of the same key cut before is taken up
+                if not tomb:
+                    tomb.append(left.id if left is not None else hub.journal.append_entry("", state={"forget": {"kh": kh}}).id)
+
+            def files_done() -> None:  # durable once the section that deleted committed: a filer that takes it up does not scan
+                if tomb:
+                    hub.journal.append(J.T_FILED, {"id": tomb[0], "files": True})
+
+            found = self._purge(key, False, mark, files_done)
+            report = found or Purged()
+            mark()  # no raw copy: only entries of the journal
+            if found is None:
+                with self.store.lock(undo=False):
+                    if not self._raws_of(key):  # one that came meanwhile is the scan's, at the next look
+                        files_done()
+            hub.refresh()
+            report.entries = len(queued)
+            self._wipe_undo()
+            hub.files_done.add(tomb[0])
+            deadline = time.monotonic() + _filer.FORGET_WAIT  # one wait in all, for the index and for `O`, once the files are done
+            index_done = self._search.forget(self.store, max(0.0, deadline - time.monotonic()))  # and the vectors' journal is cut
+            if not self._close_forget(tomb[0], index_done, deadline):
+                report.pending.append("journal")
+            if not index_done:
+                report.pending.append("index")  # the tombstone stays open: the filer empties the index when the reader lets it
+            self._finish_others(tomb[0])
+            return report
+
+    def _finish_others(self, done_id: str) -> None:
+        """The tombstones of other keys left open (a purge cut, a reader that held the index), completed here when the lease is free: a
+        wiki with no filer (the command line, `ingest` only) completes them at its next purge."""
+        hub = self._journal()
+        hub.refresh()
+        others = [t for t in hub.forgets() if t.id != done_id]
+        if not others:
+            return
+        lease = FileLock(self.store.root / J.JOURNAL_DIR / "filer.lock")
+        if not lease.try_acquire():
+            return  # the filer that holds it completes them
+        try:
+            for t in others:
+                self._finish_forget(t)
+        finally:
+            lease.release()
+
+    def _queued(self, key: str) -> list[_filer.Entry]:
+        hub = self._journal()
+        hub.refresh()
+        return hub.with_key(_entry_key(key))
+
+    def _has_journal(self) -> bool:
+        return any(self.store.root.joinpath(J.JOURNAL_DIR).glob("*.wal"))
+
+    def _raws_of(self, key: str) -> list[str]:
+        """Every raw copy of a key ("/raw/…"): an origin's (with a spreadsheet's sheets), or, for "text:<sha256>", the copies of that text
+        saved with no origin."""
+        if key.startswith(_filer.TEXT_KEY):
+            return self.store.unclaimed_raws("sha256:" + key.removeprefix(_filer.TEXT_KEY))
         keys = [key, *sorted(self.store.origin_keys(key + "#"))] if is_spreadsheet(key) else [key]
-        with self.store.lock():
-            raws = [r for k in keys for r in self.store.origin_raws(k)]
+        if not key.startswith(_REMEMBERED):
+            keys.append(_REMEMBERED + key)  # the origin of what `remember` was given this key for
+        return list(dict.fromkeys(r for k in keys for r in self.store.origin_raws(k)))
+
+    def _purge_keys(self) -> set[str]:
+        """Every key `purge` takes: the origins, a spreadsheet's own key (its sheets are "<key>#<sheet>"), and "text:<sha256>" for each
+        text saved with no origin."""
+        keys = self.store.origin_keys("")
+        keys |= {base for k in keys if (base := k.rpartition("#")[0]) and is_spreadsheet(base)}
+        keys |= {_filer.TEXT_KEY + h.removeprefix("sha256:") for h in self.store.unclaimed_hashes()}
+        return keys
+
+    def _wipe_undo(self) -> None:
+        with self.store.lock(undo=False):  # no section is open: the undo log of the purge's own sections is zeroed whole
+            txn.wipe(self.store.root)
+
+    def _close_forget(self, tomb_id: str, complete: bool, deadline: float) -> bool:
+        """Seal and reuse the journal for a tombstone, with the lease: now if it is free, else the filer that holds it does it, and this
+        waits for its `O` until `deadline`. `complete` false (the index is not empty yet): the journal is reused if the lease is free
+        now, nobody is waited for, and `O` is the filer's. Whether the journal holds nothing of it any more."""
+        hub = self._journal()
+        lease = FileLock(self.store.root / J.JOURNAL_DIR / "filer.lock")
+        if not complete:
+            deadline = time.monotonic()
+        while True:
+            hub.refresh()
+            tomb = hub.entries.get(tomb_id)
+            if tomb is None or tomb.done:
+                return True
+            if lease.try_acquire():
+                try:
+                    return _filer.close_forget(hub, tomb, complete=complete)
+                finally:
+                    lease.release()
+            if hub.filer is not None:
+                hub.filer.kick()
+            if time.monotonic() >= deadline:
+                return False
+            with hub.cond:
+                hub.cond.wait(_filer.IDLE_POLL)
+
+    def _finish_forget(self, tomb: _filer.Entry) -> bool:
+        """The filer holds the lease and found a tombstone with no `O` (a purge that another process left pending, or that died): what the
+        purge does, again, from the hash of the key (the raw copies still there say which key it is), then the journal. Each step can be
+        done twice."""
+        assert tomb.forget is not None
+        hub = self._journal()
+        if not tomb.forget.get("files"):
+            with self.store.lock(undo=False):  # a purge deleting now holds it, and says its files are done before it lets go
+                hub.refresh()
+        if not tomb.forget.get("files"):  # the purge did not say its files were done: it was cut, and the hash says which key it was
+            kh = str(tomb.forget.get("kh", ""))
+            with self.store.session():
+                for key in sorted(k for k in self._purge_keys() if _filer.key_hash(_entry_key(k)) == kh):
+                    self._purge(key, False)
+            hub.journal.append(J.T_FILED, {"id": tomb.id, "files": True})
+            hub.refresh()
+        if tomb.id not in hub.files_done:  # once per tombstone in a process: a look again for the index alone does not wipe again
+            self._wipe_undo()
+            hub.files_done.add(tomb.id)
+        index_done = self._search.forget(self.store, 0)  # no wait here: the filer looks again later
+        return _filer.close_forget(hub, tomb, complete=index_done) and index_done
+
+    def _purge(
+        self, key: str, dry_run: bool, mark: Callable[[], None] | None = None, done: Callable[[], None] | None = None
+    ) -> Purged | None:
+        rewrites = self.store.log_rewrites
+        report = self._purge_files(key, dry_run, mark, done)
+        if report is not None:
+            report.log_rewritten = self.store.log_rewrites > rewrites
+        return report
+
+    def _purge_files(
+        self, key: str, dry_run: bool, mark: Callable[[], None] | None = None, done: Callable[[], None] | None = None
+    ) -> Purged | None:
+        """`mark` runs inside the section that deletes, before it does; `done` once that section committed (under the lock)."""
+        with self.store.lock(after_commit=None if dry_run else done):
+            raws = self._raws_of(key)
             if not raws:
                 return None
+            if mark is not None and not dry_run:
+                mark()
             root = self.store.load()
             notes = [n for n in root.all_notes() if set(raws).intersection(raw_sources(n.frontmatter))]
             others = self._cited_by(notes, set(raws))  # read before anything is deleted
@@ -1516,6 +2038,11 @@ class Wiki:
 
     def check(self) -> list[Problem]:
         return check(self.cfg.bundle)
+
+    def log(self, limit: int = 50) -> list[str]:
+        """The last `limit` lines of `log.md`, newest first (`* **Created**: [Title](path) - …`), read from the end of the file.
+        The file itself is in the order of arrival, oldest first."""
+        return self.store.recent_log(limit)
 
     @property
     def usage(self) -> UsageReport:

@@ -194,6 +194,7 @@ not the wiki's. Limits:
 - there is no permission model between wikis: a client added to both can read both (and `remember` into either), so
   add a wiki only to the clients that may read it;
 - `where` filters on `fields` inside one wiki; it is not an access control (see the table above).
+- `search` keeps its index, and the `fields` of every note, in a cache file of the bundle (`.llmw2/cache/search-v<schema>.sqlite`, safe to delete). The `.gitignore` in that folder keeps it out of git only: a zip, Dropbox or rsync of the bundle carries it, so exclude `.llmw2/cache/` when you send a wiki to someone. `where` is a filter, not an access control: anyone who can read the bundle reads every note and every field.
 
 To do the same from code, see "Asking several wikis" in the [library guide](../library/index.md#asking-several-wikis).
 

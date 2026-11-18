@@ -457,7 +457,7 @@ def create_app(
 
     @app.get("/check")
     def check() -> list[str]:
-        return [str(p) for p in current().check()]
+        return [str(p) if p.severity == "error" else f"warning: {p}" for p in current().check()]
 
     def editable(request: Request) -> Settings:
         if settings is None:

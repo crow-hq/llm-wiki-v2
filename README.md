@@ -419,7 +419,7 @@ JSON line per model call.
 ```
 wiki/
   index.md                     # root index (okf_version "0.2")
-  log.md                       # what changed, newest first
+  log.md                       # what changed, in the order it happened (oldest first), one line appended per change
   raw/                         # untouched copy of every source ingested
   customer-policies/
     index.md                   # * [Refund policy](refund-policy.md) - How Acme refunds orders…
@@ -438,6 +438,7 @@ with relative links. `llmwiki2 check` verifies all of this.
 
 - every folder has an `index.md`, and a folder's description is its entry in the parent's index (OKF: optional indexes);
 - links are relative (OKF recommends bundle-absolute `/…` links), and `check` reports broken ones;
+- `log.md` is the flat list of date-grouped entries of §9, kept in the order the changes came (oldest first, the title says so: `# Wiki log (oldest first)`), different from the OKF example, which shows the newest first (§9 gives no rule on the order): a change is one line appended at the end, whatever the length of the log. The heading of a day is the date of the change, so a clock that jumped leaves headings out of order, which `check` reports as a warning. `wiki.log(limit)` gives the newest lines first. A log written by an older version of llmw2 (newest first) is turned around once, when the wiki is opened; an older version that writes into a wiki already turned around adds its lines at the top, out of order;
 - `raw/` holds the sources (`type: Source`), `# See also` holds the related notes, and there is one `log.md`, at the root;
 - the root holds no notes: every note is filed in a topic folder, and the first note on a new subject opens one.
 

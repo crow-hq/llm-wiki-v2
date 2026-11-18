@@ -15,6 +15,7 @@ from llmw2.bundle.check import check
 from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.store import WikiStore
 from llmw2.errors import InputError
+from tests.wiki.problems import errors
 
 
 def build(tmp_path: Path) -> WikiStore:
@@ -45,7 +46,7 @@ def test_move_rewrites_links_archive_and_indexes(tmp_path: Path) -> None:
     assert "(../b/one.md)" in store.read("a/two.md").body
     archived = next((store.root / ".archive").rglob("*.md"))
     assert OKFDocument.parse(archived.read_text(encoding="utf-8")).frontmatter["archived_from"] == "/b/one.md"
-    assert check(store.root) == []
+    assert errors(check(store.root)) == []
     assert "one.md" in (store.root / "b/index.md").read_text(encoding="utf-8")
     assert "one.md" not in (store.root / "a/index.md").read_text(encoding="utf-8")
 
@@ -58,7 +59,7 @@ def test_move_errors_and_unique_name(tmp_path: Path) -> None:
     store.write_note(store.load().find("b"), title="One", summary="", body="x", tags=[], source={})  # type: ignore[arg-type]
     assert store.move_note("a/one.md", "b").rel == "b/one-2.md"
     assert store.move_note("b/one-2.md", "/").rel == "one-2.md"
-    assert check(store.root) == []
+    assert errors(check(store.root)) == []
 
 
 def test_describe_folder(tmp_path: Path) -> None:
@@ -68,7 +69,7 @@ def test_describe_folder(tmp_path: Path) -> None:
     for rel, text in [("/", "x"), ("/zz", "x"), ("/a", "  ")]:
         with pytest.raises(InputError):
             store.describe_folder(rel, text)
-    assert check(store.root) == []
+    assert errors(check(store.root)) == []
 
 
 def test_http_move_and_describe(client: Any, classic_wiki: Wiki) -> None:

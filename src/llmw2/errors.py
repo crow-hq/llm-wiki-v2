@@ -70,3 +70,22 @@ class StepError(WikiError):
     def __init__(self, step: str, message: str) -> None:
         super().__init__(f"{step}: {message}")
         self.step = step
+
+
+class QueueFull(WikiError):
+    """`remember` found the queue of entries not yet filed full, and no room came before the caller's `timeout` (or the stall limit):
+    nothing was written, and the caller tries again later."""
+
+
+class DiskFull(WikiError, OSError):
+    """The disk of the bundle has less room than the reserve that filing needs, or a write failed for lack of room: nothing was
+    acknowledged. (An `OSError` too, so that code that handles a full disk handles this.)"""
+
+
+class FilerError(WikiError):
+    """The filer failed on an entry (the first error of an attempt), gave an entry up, or there is no filer to file what is queued."""
+
+
+class FailedBacklog(QueueFull):
+    """`remember` found that entries given up (X) fill the queue: they are not filed and nobody resolves them, so no room will come by
+    waiting. Nothing was written. A `QueueFull` too, so that code that handles a full queue handles this."""

@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from llmw2.bundle import txn
 from llmw2.bundle.store import PROPOSALS_FILE, now_iso, write_atomic
 
 log = logging.getLogger(__name__)
@@ -62,5 +63,5 @@ def read_proposals(bundle: Path) -> list[Proposal]:
 
 def write_proposals(bundle: Path, proposals: list[Proposal]) -> None:
     path = bundle / PROPOSALS_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
+    txn.mkdir(path.parent, parents=True, exist_ok=True)
     write_atomic(path, json.dumps({"proposals": [p.to_dict() for p in proposals]}, indent=2) + "\n")

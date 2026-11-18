@@ -194,7 +194,9 @@ def test_check_lists_problems_as_strings(client: TestClient, llm: FakeLLM, bundl
     client.post("/ingest", json={"text": "Booked on delivery."})
     (bundle / NOTE).unlink()
 
-    assert client.get("/check").json() == ["finance/index.md: lists missing revenue-recognition.md"]
+    found = client.get("/check").json()  # the index lists the note that is gone, and its raw copy is cited by no note
+    assert found[0] == "finance/index.md: lists missing revenue-recognition.md"
+    assert len(found) == 2 and found[1].startswith("raw/") and found[1].endswith(": no note cites this raw copy")
 
 
 def test_concurrent_ingests_both_succeed(client: TestClient, llm: FakeLLM, bundle: Path) -> None:

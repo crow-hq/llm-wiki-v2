@@ -263,7 +263,7 @@ and check on held-out questions, and again when the classifier version changes o
   See-also entries and the rewriting of links read the file again and apply to what is there. A document that must merge
   into a note changed in the meantime is not filed (no raw copy, no note): it is a `NoteChanged` result, counted as
   `conflicts` in the batch report and listed in the errors of a sync, and the next run files it. Rare values for `relate`
-  are an inverted index kept between documents. `log.md` is rewritten whole at each line (newest first), so it grows linearly per line.
+  are an inverted index kept between documents. `log.md` gets each line appended at the end (oldest first), a store keeps the last "Split" of each folder after reading the log once, so the log costs a line per change however long it is.
   The session follows the files' modification times, so do not put the bundle in a folder a client synchronizes
   (OneDrive, Dropbox, Google Drive) or on a network disk while a batch writes: those can change or round the times.
   The source can be there; the bundle should not (see "Keeping a wiki in step with a source" in the [library guide](../library/index.md)).

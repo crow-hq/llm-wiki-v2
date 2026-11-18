@@ -18,6 +18,7 @@ from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.origin import content_hash
 from llmw2.bundle.store import WikiStore
 from tests.wiki.fakes import FakeLLM
+from tests.wiki.problems import errors
 
 ORIGIN = Origin("onedrive", "me", "item-1", link="https://od.test/1", version="v1", modified="2026-09-01T10:00:00+00:00")
 KEY = "onedrive:me:item-1"
@@ -143,7 +144,7 @@ def test_bundle_with_old_style_notes_and_raw_still_checks_clean(wiki: Wiki, llm:
     script(llm)
     wiki.ingest("New text.", origin=ORIGIN)
 
-    assert wiki.check() == []
+    assert [str(p) for p in errors(wiki.check())] == ["raw/old.md: no note cites this raw copy"]  # nothing else is wrong with it
 
 
 def test_ingest_file_takes_the_link_as_resource(wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
@@ -211,7 +212,7 @@ def test_new_text_and_new_version_ingests_again_as_a_second_raw_copy_of_the_key(
     assert sorted(c["origin"]["version"] for c in copies) == ["v1", "v2"]
     record = wiki.origin(KEY)
     assert record is not None and record.version == "v2" and result.note in record.notes
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
 
 def test_after_mark_removed_the_same_content_ingests_again(wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:
@@ -285,7 +286,7 @@ def test_mark_removed_marks_every_copy_and_keeps_raw_text_and_notes(wiki: Wiki, 
         assert read(path).frontmatter["removed"]
     assert [p.read_bytes().split(b"\n---\n", 1)[1] for p in raws(bundle)] == bodies
     assert all((bundle / n).is_file() for n in (first.note, second.note))
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
 
 def test_mark_removed_logs_once_and_is_idempotent(wiki: Wiki, llm: FakeLLM, bundle: Path) -> None:

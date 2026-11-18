@@ -13,6 +13,7 @@ from llmw2 import LocalFolderSource, Origin, SyncReport, Wiki, sync
 from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.origin import content_hash
 from tests.wiki.fakes import FakeLLM
+from tests.wiki.problems import errors
 from tests.wiki.test_sources import script, seed
 
 TEXT = "Alpha."
@@ -114,7 +115,7 @@ def test_adoption_leaves_the_wiki_without_problems(wiki: Wiki, llm: FakeLLM, fol
 
     sync(wiki, LocalFolderSource(folder))
 
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
 
 # -- a later sync -----------------------------------------------------------------------------------------

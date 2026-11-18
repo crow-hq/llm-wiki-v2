@@ -117,9 +117,8 @@ class Researcher:
         """The search of the notes `where` keeps, as `Wiki.search` runs it."""
         search = self.search
         assert search is not None
-        everything = root.all_notes()
-        notes = matching(root, where).all_notes() if where else everything
-        return lambda query, k: search.search(notes, everything, query, k)
+        by_rel = {n.rel: n for n in root.all_notes()}
+        return lambda query, k: [by_rel[rel] for rel, _, _ in search.find(self.store, query, k, where) if rel in by_rel]
 
     def _with_rows(self, question: str, notes: list[Note]) -> list[Note]:
         """The notes as the answer reads them: a spreadsheet sheet's note gets the rows of its sources the question needs.

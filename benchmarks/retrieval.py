@@ -135,6 +135,7 @@ def ask_run(
             )
             if replay:
                 replay.save()
+        wiki.close()  # its search index stays open while it lives: the folder is deleted next (Windows refuses a file held open)
     n = len(rows)
     share = lambda f: sum(map(f, rows)) / n if n else None  # noqa: E731
     searched_rows = [r for r in rows if "search_rank" in r]  # CROW only: classic has no search list

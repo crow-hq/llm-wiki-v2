@@ -27,6 +27,7 @@ class Source:
     origin: Origin | None = None  # where the original lives at its source, if it has one
     fields: dict[str, Any] = field(default_factory=dict)  # user data, uninterpreted by the core
     file_name: str | None = None  # the file it was read from, when `title` is only made from that name
+    event_at: str | None = None  # when the thing it tells of happened (see `llmw2.bundle.origin.format_at`); kept in the raw copy
 
     @property
     def label(self) -> str:

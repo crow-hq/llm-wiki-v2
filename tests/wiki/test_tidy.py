@@ -17,6 +17,7 @@ from llmw2.bundle.tree import Folder
 from llmw2.models.usage import UsageTracker
 from llmw2.wiki import _follow
 from tests.wiki.fakes import ContentLLM, FakeClassifier
+from tests.wiki.problems import errors
 from tests.wiki.test_crow_plan import add_folder, add_note, folders_json, item, labels, log_lines, make_crow, note_rels
 
 
@@ -49,7 +50,7 @@ def test_a_planned_folder_with_one_note_gives_the_note_to_the_folder_above_and_g
     assert len(note_rels(crow)) == 3 and all(r.startswith("sales/") and r.count("/") == 1 for r in note_rels(crow))
     assert len(log_lines(crow, "Moved")) == 1 and "emea/emea-deal.md" in log_lines(crow, "Moved")[0]
     assert len(log_lines(crow, "Removed folder")) == 1 and "/sales/emea" in log_lines(crow, "Removed folder")[0]
-    assert crow.check() == []
+    assert errors(crow.check()) == []
 
 
 def test_the_links_of_other_notes_to_the_note_moved_follow_it(crow: Wiki) -> None:
@@ -65,7 +66,7 @@ def test_the_links_of_other_notes_to_the_note_moved_follow_it(crow: Wiki) -> Non
     after = {n.title: n for n in crow.store.load().all_notes()}
     assert after["Emea deal"].rel == "sales/emea-deal.md"
     assert "emea/emea-deal.md" not in after["Deal one"].body and "emea-deal.md" in after["Deal one"].body
-    assert crow.check() == []
+    assert errors(crow.check()) == []
 
 
 def test_a_wrapper_top_level_folder_takes_the_notes_and_subfolders_of_its_only_subfolder(crow: Wiki) -> None:
@@ -84,7 +85,7 @@ def test_a_wrapper_top_level_folder_takes_the_notes_and_subfolders_of_its_only_s
     assert sorted(n.rel.rpartition("/")[0] for n in crow.store.load().all_notes()) == ["infra", "infra", "infra/labs", "infra/labs"]
     assert len(log_lines(crow, "Moved")) == 2 and len(log_lines(crow, "Moved folder")) == 1
     assert "/infra/demo" in log_lines(crow, "Removed folder")[0]
-    assert crow.check() == []
+    assert errors(crow.check()) == []
 
 
 def test_a_wrapper_whose_subfolder_is_not_planned_stays(crow: Wiki) -> None:
@@ -169,7 +170,7 @@ def test_a_chain_goes_up_from_the_deepest_folder(crow: Wiki) -> None:
     tidy(crow, "sales", "sales/emea", "sales/emea/spain")
 
     assert labels(crow) == ["/sales"] and all(r.startswith("sales/") and r.count("/") == 1 for r in note_rels(crow))
-    assert len(note_rels(crow)) == 3 and crow.check() == []
+    assert len(note_rels(crow)) == 3 and errors(crow.check()) == []
 
 
 def test_a_finished_batch_tidies_its_plans(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:

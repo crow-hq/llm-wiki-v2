@@ -17,6 +17,7 @@ from llmw2.agents.prompts import Prompts
 from llmw2.bundle.tree import LOG, Note
 from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import ContentLLM, FakeClassifier, FakeLLM
+from tests.wiki.problems import errors
 
 HERE, NEW, NONE = "Here", "New subfolder", "None of these"
 SUMMARIZE, SPLIT, MERGE = "librarian/summarize", "librarian/split", "librarian/merge"
@@ -93,7 +94,7 @@ def direct(wiki: Wiki, folder: str = "/sales") -> list[str]:
 
 def log_lines(wiki: Wiki, verb: str) -> list[str]:
     text = (wiki.cfg.bundle / LOG).read_text(encoding="utf-8")
-    return [line for line in text.splitlines() if line.startswith(f"* **{verb}**")]
+    return [line for line in text.splitlines() if line.startswith(f"* **{verb}**")][::-1]  # the newest first
 
 
 def user_text(call: tuple[str, list[dict[str, str]]]) -> str:
@@ -174,7 +175,7 @@ def test_the_twelfth_direct_note_makes_one_split_call_and_moves_the_groups(sales
     assert direct(sales) == [title(n) for n in (6, 7, 8, 9, 10, 11, 12)]
     assert tree.find("/sales").description == "Sales documents."  # type: ignore[union-attr]
     assert "renewals/note-01.md" in sales.store.read("sales/note-06.md").body  # the link follows the moved note
-    assert sales.check() == []  # links and the archived copy still resolve
+    assert errors(sales.check()) == []  # links and the archived copy still resolve
     decision = next(d for d in result.decisions if d.step == "split")
     assert (decision.decider, decision.choice, decision.fallback) == ("llm", "/sales: 2 opened", False)
     assert result.folder == "/sales"
@@ -419,7 +420,7 @@ def test_a_failing_split_never_hurts_the_filed_document_and_counts_as_an_attempt
     assert (decision.decider, decision.choice, decision.fallback) == ("llm", "/sales: error", True)
     assert log_lines(wiki, "Split") == ["* **Split**: [/sales](sales/index.md) - at 12 notes, 0 opened"]
     assert splits(llm) == attempts  # the next document does not retry at the same multiple
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
 
 # -- the prompt -----------------------------------------------------------------------------------

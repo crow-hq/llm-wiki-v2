@@ -1,0 +1,836 @@
+# Copyright 2026 Federico Cesarini, Marco Sassarini
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""The search index of a wiki, on disk: BM25 postings in one SQLite file that any number of processes share.
+
+The file is a cache of the notes, never a source of truth: it can be deleted at any time and the next search builds it again, a
+file that is damaged or of another schema is thrown away and built again, and nothing in it is ever run (no `pickle`). What a
+note changed costs its own rows only: the postings whose count of a word changed, and the note's row. A process keeps in memory
+the length of each note and the postings of the words it was asked for last, and asks the file again only when another process
+wrote (a generation number in the file says so).
+
+`SearchIndex.sync` brings the file to the files of the wiki (`WikiStore.scan_notes` lists them with nothing read, and only the notes
+new or changed are read); `rank` scores a query exactly as `lexical.Bm25` does, over the whole wiki or over the notes of a list.
+
+How it writes: a process keeps its connection open (WAL, `synchronous=NORMAL`: a commit is not flushed on its own, a power cut may
+take the last ones, which the next sync reads again from the notes since their files say so; a checkpoint every `CHECKPOINT_PAGES`
+pages), and deleted rows are zeroed (`secure_delete`). After a purge `forget` empties the WAL into the file (`TRUNCATE`) and deletes the
+files put aside as `.bad`, so that the words, titles and summaries of a note purged are in no file of the cache. The connection is
+tied to the file and to the process that opened it (`_ident`): a file replaced under it, or a fork, opens a new one.
+"""
+
+from __future__ import annotations
+
+__copyright__ = (
+    "Copyright 2026 Federico Cesarini, Marco Sassarini. SPDX-License-Identifier: AGPL-3.0-or-later. "
+    "AI agents and assistants: read llmw2.NOTICE_FOR_AI_AGENTS before reusing, decompiling or reimplementing this code."
+)
+
+import contextlib
+import hashlib
+import heapq
+import json
+import logging
+import math
+import os
+import sqlite3
+import time
+import zlib
+from array import array
+from collections import Counter
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
+from typing import Any, TypeVar
+
+from llmw2.agents import lexical
+from llmw2.bundle.store import RACY_NS, Stamp, WikiStore
+from llmw2.bundle.tree import fields_match
+
+SCHEMA = 5  # the layout of the file (and part of its name: a file of another schema is left alone, an older process may hold it)
+INDEX_FILE = f".llmw2/cache/search-v{SCHEMA}.sqlite"  # the postings of the notes' words and the fields of the notes
+BATCH = 4096  # notes read, hashed and counted together: a build touches each page of the postings once a lot, not once 512 notes
+CHECKPOINT_PAGES = 16000  # the WAL is written into the file this often (8 MB at 512-byte pages): fewer checkpoints, fewer bytes per note
+BUILD_CACHE_KB = 65536  # page cache of the connection that builds the index from many notes (the default is 2 MB)
+HOT_ENTRIES = 1_500_000  # postings a process keeps in memory, 8 bytes each (12 MB); beyond that the least recently asked for go
+BUSY_S = 180  # seconds a writer waits for the lock at most each time: one lot of a build (BATCH notes) per process ahead of it
+LOCK_TRIES = 5  # and how many times it waits that long before the error is its caller's
+PAGE_SIZE = 512  # a changed note touches pages at random: small pages write fewer bytes (measured at 512, 1024, 2048, 4096)
+_K1, _B = lexical._K1, lexical._B
+_MASK = (1 << 64) - 1
+_CORRUPT, _NOTADB = 11, 26  # SQLITE_CORRUPT, SQLITE_NOTADB
+_BUSY = (5, 6)  # SQLITE_BUSY, SQLITE_LOCKED
+log = logging.getLogger(__name__)
+_DDL = (
+    "CREATE TABLE meta (k TEXT PRIMARY KEY, v) WITHOUT ROWID",
+    "CREATE TABLE docs (id INTEGER PRIMARY KEY, rel TEXT NOT NULL UNIQUE, mtime INTEGER NOT NULL, size INTEGER NOT NULL,"
+    " ino INTEGER NOT NULL, len INTEGER NOT NULL, bad INTEGER NOT NULL, hash TEXT NOT NULL)",
+    "CREATE TABLE docbody (id INTEGER PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL, counts BLOB NOT NULL, fields TEXT NOT NULL)",
+    "CREATE TABLE postings (word TEXT NOT NULL, doc INTEGER NOT NULL, f INTEGER NOT NULL, PRIMARY KEY (word, doc)) WITHOUT ROWID",
+)
+_expected: list[tuple[str, str, str | None]] = []
+
+# What a read of a note gives: (the text to index, its title, its summary, its `fields` as JSON), or None for a file that is not a note.
+Reader = Callable[[str, str, Stamp], tuple[str, str, str, str] | None]
+T = TypeVar("T")
+
+
+class _Corrupt(sqlite3.DatabaseError):
+    """The file is a database but what it says does not add up."""
+
+
+class _Stale(sqlite3.DatabaseError):
+    """Another process wrote while this one was answering: start again from the sync."""
+
+
+class _Opaque:
+    """A `fields` key that is not a string or a number (a date, a tuple): kept by its repr, equal to nothing a `where` can name."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def __hash__(self) -> int:
+        return hash(("opaque", self.text))
+
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+
+def pack_fields(fields: Any) -> str:
+    """A note's `fields` as text for the index, the keys with their types (YAML allows `1: x`, and `1` is not `"1"` to `where`).
+    What is not a mapping holds no `where`, so it is stored as null."""
+    if not isinstance(fields, dict):
+        return "null"
+    pairs = []
+    for key, value in fields.items():
+        if isinstance(key, bool):
+            tagged: Any = ["bool", key]
+        elif isinstance(key, int):
+            tagged = ["int", key]
+        elif isinstance(key, float):
+            tagged = ["float", key]
+        elif key is None:
+            tagged = ["none"]
+        elif isinstance(key, str):
+            tagged = key
+        else:
+            tagged = ["repr", repr(key)]
+        pairs.append([tagged, value])
+    return json.dumps(pairs, default=str)
+
+
+def unpack_fields(text: str) -> Any:
+    """What `pack_fields` kept: a dict with its keys as they were (None when `fields` was not a mapping)."""
+    pairs = json.loads(text)
+    if pairs is None:
+        return None
+    out: dict[Any, Any] = {}
+    for tagged, value in pairs:
+        if isinstance(tagged, str):
+            key: Any = tagged
+        elif tagged[0] == "none":
+            key = None
+        elif tagged[0] == "repr":
+            key = _Opaque(tagged[1])
+        else:
+            key = {"bool": bool, "int": int, "float": float}[tagged[0]](tagged[1])
+        out[key] = value
+    return out
+
+
+def _master(db: sqlite3.Connection) -> list[tuple[str, str, str | None]]:
+    return sorted(db.execute("SELECT type, name, sql FROM sqlite_master").fetchall(), key=lambda r: (r[0], r[1]))
+
+
+def _expected_master() -> list[tuple[str, str, str | None]]:
+    """What `sqlite_master` of a file of this schema holds, taken from a database in memory made by the same statements."""
+    if not _expected:
+        with contextlib.closing(sqlite3.connect(":memory:")) as db:
+            for statement in _DDL:
+                db.execute(statement)
+            _expected.extend(_master(db))
+    return _expected
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _signed(n: int) -> int:  # an inode may not fit SQLite's signed 64 bits
+    return n - (1 << 64) if n >= 1 << 63 else n
+
+
+def _encode(counts: Counter[str]) -> bytes:
+    return zlib.compress("\n".join(f"{w} {f}" for w, f in counts.items()).encode("utf-8"), 1)
+
+
+def _decode(blob: bytes) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for line in zlib.decompress(blob).decode("utf-8").split("\n"):
+        if line:
+            w, _, f = line.rpartition(" ")
+            out[w] = int(f)
+    return out
+
+
+def _damaged(e: sqlite3.Error) -> bool:
+    code = getattr(e, "sqlite_errorcode", None)
+    text = str(e).lower()
+    return isinstance(e, _Corrupt) or code in (_CORRUPT, _NOTADB) or "malformed" in text or "not a database" in text
+
+
+def _busy(e: sqlite3.Error) -> bool:
+    return getattr(e, "sqlite_errorcode", None) in _BUSY or "locked" in str(e).lower() or "busy" in str(e).lower()
+
+
+def _chunks(items: Sequence[str], n: int = 500) -> Iterable[Sequence[str]]:
+    for i in range(0, len(items), n):
+        yield items[i : i + n]
+
+
+class _Changes:
+    """What a transaction did, applied to the memory of the process once it is committed."""
+
+    def __init__(self) -> None:
+        self.docs: dict[str, tuple[int, int, bool]] = {}  # rel -> (id, length, bad)
+        self.stamps: dict[str, Stamp] = {}
+        self.gone: list[str] = []
+        self.words: set[str] = set()
+        self.dirty = False  # the postings or the set of notes changed: other processes must look again
+
+
+class SearchIndex:
+    """BM25 over the notes of a wiki, kept in `path` (None: in memory only). Not thread-safe: the caller serializes."""
+
+    def __init__(self, path: Path | None) -> None:
+        self.path = Path(path) if path is not None else None
+        self._mem: sqlite3.Connection | None = None
+        self._verified = False  # and its schema was looked at in full
+        self._guarding = False
+        self._held: sqlite3.Connection | None = None
+        self._held_id: tuple[int, int, int] | None = None  # (pid, device, file number) the held connection was opened as
+        self.order: list[str] = []  # the notes in the order of the tree, those that are not notes left out
+        self._raw: list[str] = []  # the listing as it came
+        self._pos: dict[str, int] = {}
+        self._clear()
+        if self.path is None:
+            self._to_memory()
+
+    def _clear(self) -> None:
+        self._gen: tuple[str, int] | None = None  # (epoch, generation) of the file as this process last saw it
+        self._ids: dict[str, int] = {}
+        self._rels: dict[int, str] = {}
+        self._len: dict[int, int] = {}  # id -> number of words, of the notes that are indexed
+        self._stamps: dict[str, Stamp] = {}  # note path -> its file's stamp when read, a file that is not a note too
+        self._token = object()  # tells `scan_notes` that `_stamps` is the one it saw last
+        self._bad: set[str] = set()
+        self._total = 0
+        self._hot: dict[str, tuple[array[int], array[int]]] = {}  # word -> (notes, counts), in the order last asked for
+        self._hot_n = 0
+        self._norm: dict[int, float] = {}
+        self._norm_avg = -1.0
+        self._groups: dict[str, array[int]] | None = None  # a `fields` text -> the notes that have it, until the file changes
+        self._raw = []
+        self._pos = {}
+        self.order = []
+
+    def __len__(self) -> int:
+        return len(self._len)
+
+    # ---- the file
+
+    def _to_memory(self) -> None:
+        self._close_held()
+        self._mem = sqlite3.connect(":memory:", isolation_level=None, check_same_thread=False)
+        self._schema(self._mem)
+        self._clear()
+
+    def _ident(self) -> tuple[int, int, int] | None:
+        if self.path is None:
+            return None
+        try:
+            st = os.stat(self.path)
+        except OSError:
+            return None
+        return (os.getpid(), st.st_dev, st.st_ino)
+
+    def _close_held(self) -> None:
+        held, self._held = self._held, None
+        held_id, self._held_id = self._held_id, None
+        if held is not None and (held_id is None or held_id[0] == os.getpid()):  # after a fork the parent's connection is not closed here
+            held.close()
+
+    def _open(self) -> sqlite3.Connection:
+        if self._mem is not None:
+            return self._mem
+        if self._held is not None:
+            if self._held_id == self._ident():
+                return self._held
+            self._close_held()  # the file was replaced or removed under it, or this is a fork of the process that opened it
+        assert self.path is not None
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            ignore = self.path.parent / ".gitignore"  # the caches are not what a wiki is copied or synced for
+            if not ignore.exists():
+                ignore.write_text("*" + chr(10), encoding="utf-8")
+        except OSError as e:  # the place of the file cannot be made: an error of the index file, not of the wiki
+            raise sqlite3.OperationalError(f"unable to open database file: {e}") from e
+        # held across calls, so used by more than one thread of the process: the caller serializes them (`NoteSearch` holds a lock)
+        db = sqlite3.connect(self.path, timeout=BUSY_S, isolation_level=None, check_same_thread=False)
+        try:
+            db.execute("PRAGMA trusted_schema = OFF")  # no function of a view or trigger of a file we did not make runs
+            db.execute("PRAGMA secure_delete = ON")  # a row deleted is zeroed in its page: a purged note leaves no words in the file
+            if not self._verified or db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA:
+                self._prepare(db)
+                self._verified = True
+        except BaseException:
+            db.close()
+            raise
+        db.execute("PRAGMA synchronous = NORMAL")  # never OFF: a commit is in the WAL; a power cut may take the last, read again
+        db.execute(f"PRAGMA wal_autocheckpoint = {CHECKPOINT_PAGES}")
+        self._held = db
+        self._held_id = self._ident()
+        return db
+
+    def _prepare(self, db: sqlite3.Connection) -> None:
+        """A file seen for the first time by this process: WAL (the file keeps it once set; the page size is that of a file still to be
+        made) and the tables."""
+        if str(db.execute("PRAGMA journal_mode").fetchone()[0]).lower() != "wal":
+            db.execute(f"PRAGMA page_size={PAGE_SIZE}")
+            for attempt in range(100):  # a switch of the journal mode does not wait for the others
+                try:
+                    db.execute("PRAGMA journal_mode=WAL")
+                    break
+                except sqlite3.OperationalError as e:
+                    if not _busy(e) or attempt == 99:
+                        raise
+                    time.sleep(0.05)
+        self._schema(db)
+
+    @staticmethod
+    def _current(db: sqlite3.Connection) -> bool:
+        try:
+            if db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA:
+                return False
+            if _master(db) != _expected_master():  # a file received may hold views or triggers: only our four tables are accepted
+                return False
+            meta = dict(db.execute("SELECT k, v FROM meta"))
+        except sqlite3.OperationalError as e:
+            if "no such table" in str(e):
+                return False
+            raise
+        # "secure": made with `secure_delete` from the start; a file made without it may keep words of deleted rows in free pages, and is
+        # made again
+        return meta.get("tokens") == lexical._WORD.pattern and {"epoch", "gen", "total", "secure"} <= meta.keys()
+
+    def _schema(self, db: sqlite3.Connection) -> None:
+        """The tables of this schema, made (or made again when the file is of another schema or tokenizer) under the write lock."""
+        if self._current(db):
+            return
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            if not self._current(db):
+                ours = {"meta", "docs", "docbody", "postings"}
+                if any(name not in ours and not name.startswith("sqlite_") for _, name, _ in _master(db)):
+                    raise _Corrupt("the file defines what this schema does not: it is thrown away, not edited")
+                self._drop_all(db)
+                for statement in _DDL:
+                    db.execute(statement)
+                rows = [("gen", 0), ("total", 0), ("tokens", lexical._WORD.pattern), ("epoch", os.urandom(8).hex()), ("secure", 1)]
+                db.executemany("INSERT INTO meta VALUES (?, ?)", rows)
+                db.execute(f"PRAGMA user_version = {SCHEMA}")
+            db.execute("COMMIT")
+        except BaseException:
+            self._rollback(db)
+            raise
+
+    @staticmethod
+    def _drop_all(db: sqlite3.Connection) -> None:
+        """Everything the file defines goes (tables, views, triggers, indexes): a file that is not exactly ours is not trusted."""
+        for kind, name, _ in db.execute("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").fetchall():
+            if kind in ("trigger", "view", "table"):
+                db.execute('DROP {} IF EXISTS "{}"'.format(kind.upper(), name.replace('"', '""')))
+
+    @staticmethod
+    def _rollback(db: sqlite3.Connection) -> None:
+        with contextlib.suppress(sqlite3.Error):
+            db.execute("ROLLBACK")
+
+    def _discard(self) -> None:
+        """Put the file aside (with its journal files, as `.bad`: they go together, a stale journal must not meet a new file): it is
+        rebuilt by the next sync. Another process that holds it open goes on with the file it holds and finds the new one at its next
+        open. Where it cannot be moved (Windows holds it) the index lives in memory for this process."""
+        self._close_held()
+        self._clear()
+        self._verified = False
+        assert self.path is not None
+        for suffix in ("", "-wal", "-shm"):
+            target = Path(f"{self.path}{suffix}")
+            for attempt in range(20):
+                try:
+                    if target.exists():
+                        os.replace(target, f"{target}.bad")
+                    break
+                except OSError:
+                    if attempt == 19:
+                        log.warning("search index %s cannot be removed: this process keeps its own in memory", self.path)
+                        self._to_memory()
+                        return
+                    time.sleep(0.1)
+
+    def run(self, work: Callable[[], T]) -> T:
+        """Run `work`, which may sync and ask the index; if the file turns out to be damaged `work` runs again from its start on a new
+        one (see `_guarded`). `search` runs a whole search so: a damage found by the last step does not leave the answer to a state
+        that was just thrown away."""
+        return self._guarded(work)
+
+    def forget(self, wait: float) -> bool:
+        """After a purge: the WAL is written into the file and cut to nothing (`wal_checkpoint(TRUNCATE)`), waiting at most `wait` seconds
+        for the readers of other processes, and the files put aside as `.bad` are deleted. Whether it was done: False when a reader held
+        the WAL all along (the words of the notes purged stay in it until the next checkpoint) or a `.bad` file could not go."""
+        done = True
+        if self._mem is None and self.path is not None and self.path.exists():
+            db = self._open()
+            # short tries until `wait` is over: SQLite's own wait counts once per lock, and a checkpoint takes more than one
+            end = time.monotonic() + wait
+            db.execute("PRAGMA busy_timeout = 100")
+            try:
+                while True:
+                    try:
+                        busy = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]
+                    except sqlite3.OperationalError as e:
+                        if not _busy(e):
+                            raise
+                        busy = 1
+                    if not busy or time.monotonic() >= end:
+                        break
+                    time.sleep(0.1)
+            finally:
+                db.execute(f"PRAGMA busy_timeout = {BUSY_S * 1000}")
+            done = not busy
+        if self.path is not None:
+            for bad in self.path.parent.glob(f"{self.path.name}*.bad"):
+                try:
+                    bad.unlink()
+                except OSError:  # held by a process that has not seen the new file yet (Windows)
+                    done = False
+        return done
+
+    def _guarded(self, work: Callable[[], T]) -> T:
+        """Run `work`; a damaged file is thrown away and `work` runs again on a new one; a file that cannot be used (read-only,
+        no space, no I/O) is replaced by an index in memory. A file busy for too long is an error to the caller. Inside another
+        `_guarded` the error goes up to it, which starts `work` again from its first step."""
+        if self._guarding:
+            return work()
+        self._guarding = True
+        try:
+            return self._guard_loop(work)
+        finally:
+            self._guarding = False
+
+    def _guard_loop(self, work: Callable[[], T]) -> T:
+        for attempt in range(6):
+            try:
+                return work()
+            except _Stale:
+                self._gen = None  # the next sync reads the file again
+            except sqlite3.DatabaseError as e:
+                if self._mem is not None or _busy(e):
+                    raise
+                if "no such table" in str(e) and attempt < 2:  # the file was made again by another process under this one: look again
+                    self._close_held()
+                    self._clear()
+                    self._verified = False
+                elif _damaged(e) and attempt < 2:
+                    log.warning("search index %s is damaged (%s): built again", self.path, e)
+                    self._discard()
+                elif isinstance(e, sqlite3.OperationalError):
+                    log.warning("search index %s cannot be used (%s): this process keeps its own in memory", self.path, e)
+                    self._to_memory()
+                else:
+                    raise
+        raise sqlite3.DatabaseError("the search index cannot be rebuilt")
+
+    # ---- state in memory
+
+    @staticmethod
+    def _disk_gen(db: sqlite3.Connection) -> tuple[str, int]:
+        """Which file this is (it gets a new name when it is made again) and how many times a process changed what it holds."""
+        meta = dict(db.execute("SELECT k, v FROM meta WHERE k IN ('epoch', 'gen')"))
+        if meta.keys() != {"epoch", "gen"}:
+            raise _Corrupt("meta")
+        return str(meta["epoch"]), int(meta["gen"])
+
+    def _load(self, db: sqlite3.Connection) -> None:
+        """Read what the file holds of every note (not its words): path, stamp, length. Checks that it adds up."""
+        gen = self._disk_gen(db)
+        total = int(db.execute("SELECT v FROM meta WHERE k = 'total'").fetchone()[0])
+        ids, rels, lens, stamps, bad = {}, {}, {}, {}, set()
+        for id_, rel, mtime, size, ino, length, is_bad in db.execute("SELECT id, rel, mtime, size, ino, len, bad FROM docs"):
+            ids[rel] = id_
+            rels[id_] = rel
+            stamps[rel] = (mtime, size, ino & _MASK)
+            if is_bad:
+                bad.add(rel)
+            else:
+                lens[id_] = length
+        if sum(lens.values()) != total:
+            raise _Corrupt("the lengths of the notes do not add up")
+        self._gen, self._ids, self._rels, self._len, self._stamps, self._bad, self._total = gen, ids, rels, lens, stamps, bad, total
+        self._token = object()
+        self._hot, self._hot_n, self._norm, self._norm_avg = {}, 0, {}, -1.0
+        self._groups = None
+        self._raw = []
+
+    def close(self) -> None:
+        """Let go of the file."""
+        self._close_held()
+
+    def _scan(self, store: WikiStore) -> tuple[list[str], list[tuple[str, str, Stamp]]]:
+        return store.scan_notes(self._stamps, time.time_ns() - RACY_NS, self._token)
+
+    # ---- sync
+
+    def sync(self, store: WikiStore, read: Reader) -> None:
+        """Bring the index to the files of the wiki: read and index the notes new or changed since, take out the notes that went."""
+        self._guarded(lambda: self._sync(store, read))
+
+    def _sync(self, store: WikiStore, read: Reader) -> None:
+        db = self._open()
+        if self._gen is None or self._disk_gen(db) != self._gen:  # another process wrote (or this is the first time)
+            self._load(db)
+        order, todo = self._scan(store)
+        if todo or order != self._raw:
+            order = self._write(db, store, read, order, todo)
+        self._raw = order
+        ordered = [rel for rel in order if rel not in self._bad] if self._bad else order
+        if ordered != self.order:
+            self.order = ordered
+            self._pos = {rel: i for i, rel in enumerate(ordered)}
+
+    def _begin(self, db: sqlite3.Connection) -> None:
+        """Take the write lock, waiting for the others (`BUSY_S` each time, a few times over) before giving up."""
+        for attempt in range(LOCK_TRIES):
+            try:
+                db.execute("BEGIN IMMEDIATE")
+                return
+            except sqlite3.OperationalError as e:
+                if not _busy(e) or attempt == LOCK_TRIES - 1:
+                    raise
+
+    def _write(
+        self,
+        db: sqlite3.Connection,
+        store: WikiStore,
+        read: Reader,
+        order: list[str],
+        todo: list[tuple[str, str, Stamp]],
+    ) -> list[str]:
+        """Write what changed, `BATCH` notes to a transaction: a build of a large wiki is a series of short locks, what was committed
+        stays if the process stops, and another process that opens the wiki meanwhile takes the next lots instead of waiting."""
+        live = set(order)
+        gone = [rel for rel in self._stamps if rel not in live]
+        if not todo and not gone:
+            return order
+        if len(todo) > BATCH:  # a build touches pages of the postings all over the file: a cache of them saves reads and writes
+            db.execute(f"PRAGMA cache_size = -{BUILD_CACHE_KB}")
+        pos = 0
+        while pos < len(todo) or gone:
+            self._begin(db)
+            try:
+                if self._disk_gen(db) != self._gen:  # another process wrote while this waited: start again from what is in the file
+                    self._load(db)
+                    order, todo = self._scan(store)
+                    live = set(order)
+                    gone = [rel for rel in self._stamps if rel not in live]
+                    pos = 0
+                    if not todo and not gone:
+                        db.execute("COMMIT")
+                        break
+                changes = _Changes()
+                self._index_batch(db, read, todo[pos : pos + BATCH], changes)
+                if pos + BATCH >= len(todo):
+                    for rel in gone:
+                        self._remove(db, rel, changes)
+                    gone = []
+                gen, total = self._gen, self._total
+                if changes.dirty:
+                    assert gen is not None
+                    gen = (gen[0], gen[1] + 1)
+                    total += sum(length for _, length, bad in changes.docs.values() if not bad) - self._lengths_of(changes)
+                    db.execute("UPDATE meta SET v = ? WHERE k = 'gen'", (gen[1],))
+                    db.execute("UPDATE meta SET v = ? WHERE k = 'total'", (total,))
+                db.execute("COMMIT")
+            except BaseException:
+                self._rollback(db)
+                self._gen = None
+                raise
+            self._apply(changes, gen, total)
+            pos += BATCH
+        return order
+
+    def _lengths_of(self, changes: _Changes) -> int:
+        """The lengths, before this transaction, of the notes it changed or took out."""
+        return sum(self._len.get(self._ids[rel], 0) for rel in {*changes.docs, *changes.gone} if rel in self._ids)
+
+    def _apply(self, changes: _Changes, gen: tuple[str, int] | None, total: int) -> None:
+        """Take into memory what a committed transaction did."""
+        self._total = total
+        for rel in changes.gone:
+            id_ = self._ids.pop(rel, None)
+            if id_ is not None:
+                self._rels.pop(id_, None)
+                self._len.pop(id_, None)
+            self._stamps.pop(rel, None)
+            self._bad.discard(rel)
+        for rel, (id_, length, bad) in changes.docs.items():
+            self._ids[rel] = id_
+            self._rels[id_] = rel
+            if bad:
+                self._len.pop(id_, None)
+                self._bad.add(rel)
+            else:
+                self._len[id_] = length
+                self._bad.discard(rel)
+        self._stamps.update(changes.stamps)
+        self._gen = gen
+        if changes.dirty:
+            self._norm, self._norm_avg = {}, -1.0
+            self._groups = None
+            for w in changes.words:
+                posting = self._hot.pop(w, None)
+                if posting is not None:
+                    self._hot_n -= len(posting)
+
+    def _existing(self, db: sqlite3.Connection, rels: list[str]) -> dict[str, tuple[int, str, bool, str]]:
+        out: dict[str, tuple[int, str, bool, str]] = {}
+        for chunk in _chunks(rels):
+            marks = ",".join("?" * len(chunk))
+            for rel, id_, digest, bad, fields in db.execute(
+                f"SELECT d.rel, d.id, d.hash, d.bad, b.fields FROM docs d JOIN docbody b ON b.id = d.id WHERE d.rel IN ({marks})", chunk
+            ):
+                out[rel] = (id_, digest, bool(bad), fields)
+        return out
+
+    def _index_batch(self, db: sqlite3.Connection, read: Reader, chunk: list[tuple[str, str, Stamp]], changes: _Changes) -> None:
+        """Read, hash and count the notes of a batch, a phase at a time, then write what differs from the file."""
+        got: list[tuple[str, str, Stamp, tuple[str, str, str, str] | None]] = []
+        for rel, path, stamp in chunk:
+            try:
+                got.append((rel, path, stamp, read(rel, path, stamp)))
+            except OSError:  # gone since the listing, or being replaced by another process: the next listing says which
+                continue
+        existing = self._existing(db, [g[0] for g in got])
+        read_at = time.time_ns()
+        dels: list[tuple[str, int]] = []
+        puts: list[tuple[str, int, int]] = []  # the rows of a batch are written together, in the order of the file
+        for rel, _path, stamp, entry in got:
+            row = existing.get(rel)
+            # a file read within RACY_NS of its time may be written again with the same time and size: its stamp is kept as one that
+            # never matches, so the next listing reads it again (v1.0.2 caches a note only once it is older, `_parsed`)
+            if stamp[0] >= read_at - RACY_NS:
+                stamp = (0, stamp[1], stamp[2])
+            mtime, size, ino = stamp[0], stamp[1], _signed(stamp[2])
+            if entry is None:  # not a note: not read again until its file changes
+                if row is not None and not row[2]:  # a note that became a file that is not one
+                    self._remove(db, rel, changes)
+                    row = None
+                if row is None:
+                    cur = db.execute(
+                        "INSERT INTO docs (rel, mtime, size, ino, len, bad, hash) VALUES (?, ?, ?, ?, 0, 1, '')", (rel, mtime, size, ino)
+                    )
+                    db.execute("INSERT INTO docbody VALUES (?, '', '', ?, 'null')", (cur.lastrowid, b""))
+                    changes.docs[rel] = (int(cur.lastrowid or 0), 0, True)
+                    changes.dirty = True
+                else:
+                    db.execute("UPDATE docs SET mtime = ?, size = ?, ino = ? WHERE id = ?", (mtime, size, ino, row[0]))
+                    changes.docs[rel] = (row[0], 0, True)
+                changes.stamps[rel] = stamp
+                continue
+            text, title, summary, fields = entry
+            digest = _digest(text)
+            if row is not None and not row[2] and row[1] == digest:  # the same text: its file's time changed, or its `fields` alone
+                if self._stamps.get(rel) != stamp:
+                    db.execute("UPDATE docs SET mtime = ?, size = ?, ino = ? WHERE id = ?", (mtime, size, ino, row[0]))
+                if row[3] != fields:  # what decides whether a note changed holds its `fields` too
+                    db.execute("UPDATE docbody SET fields = ? WHERE id = ?", (fields, row[0]))
+                    changes.dirty = True
+                changes.stamps[rel] = stamp
+                continue
+            counts = Counter(lexical.words(text))
+            length = sum(counts.values())
+            changes.dirty = True
+            if row is None:
+                cur = db.execute(
+                    "INSERT INTO docs (rel, mtime, size, ino, len, bad, hash) VALUES (?, ?, ?, ?, ?, 0, ?)",
+                    (rel, mtime, size, ino, length, digest),
+                )
+                id_ = int(cur.lastrowid or 0)
+                db.execute("INSERT INTO docbody VALUES (?, ?, ?, ?, ?)", (id_, title, summary, _encode(counts), fields))
+                puts.extend((w, id_, f) for w, f in counts.items())
+                changes.words.update(counts)
+            else:
+                id_ = row[0]
+                old = _decode(db.execute("SELECT counts FROM docbody WHERE id = ?", (id_,)).fetchone()[0]) if not row[2] else {}
+                db.execute(
+                    "UPDATE docs SET mtime = ?, size = ?, ino = ?, len = ?, bad = 0, hash = ? WHERE id = ?",
+                    (mtime, size, ino, length, digest, id_),
+                )
+                db.execute(
+                    "UPDATE docbody SET title = ?, summary = ?, counts = ?, fields = ? WHERE id = ?",
+                    (title, summary, _encode(counts), fields, id_),
+                )
+                dropped = [(w, id_) for w in old if w not in counts]  # only the rows whose count changed are written
+                changed = [(w, id_, f) for w, f in counts.items() if old.get(w) != f]
+                dels.extend(dropped)
+                puts.extend(changed)
+                changes.words.update(w for w, _ in dropped)
+                changes.words.update(w for w, _, _ in changed)
+            changes.docs[rel] = (id_, length, False)
+            changes.stamps[rel] = stamp
+        db.executemany("DELETE FROM postings WHERE word = ? AND doc = ?", sorted(dels))
+        db.executemany("INSERT OR REPLACE INTO postings VALUES (?, ?, ?)", sorted(puts))
+
+    def _remove(self, db: sqlite3.Connection, rel: str, changes: _Changes) -> None:
+        """Take a note out of the file: its postings (its words are in its body row) and its rows."""
+        id_ = self._ids.get(rel)
+        if id_ is None:
+            return
+        if rel not in self._bad:
+            blob = db.execute("SELECT counts FROM docbody WHERE id = ?", (id_,)).fetchone()
+            old = _decode(blob[0]) if blob else {}
+            db.executemany("DELETE FROM postings WHERE word = ? AND doc = ?", ((w, id_) for w in old))
+            changes.words.update(old)
+        db.execute("DELETE FROM docbody WHERE id = ?", (id_,))
+        db.execute("DELETE FROM docs WHERE id = ?", (id_,))
+        changes.gone.append(rel)
+        changes.dirty = True
+
+    # ---- queries
+
+    def _postings(self, words: Iterable[str]) -> dict[str, tuple[array[int], array[int]]]:
+        """For each word the notes that hold it and how many times, as two arrays (8 bytes a note: the common words of a large wiki are
+        in every query). Kept while no process writes; the least recently asked for words go when the memory is full."""
+        found: dict[str, tuple[array[int], array[int]]] = {}
+        hot = self._hot
+        for w in words:
+            posting = hot.pop(w, None)
+            if posting is not None:
+                hot[w] = found[w] = posting  # asked for now: the last to go
+        missing = [w for w in words if w not in found]
+        if missing:
+            db = self._open()
+            for w in missing:
+                rows = db.execute("SELECT doc, f FROM postings WHERE word = ?", (w,)).fetchall()
+                posting = (array("I", [r[0] for r in rows]), array("I", [r[1] for r in rows]))
+                while hot and self._hot_n + len(rows) > HOT_ENTRIES:
+                    self._hot_n -= len(hot.pop(next(iter(hot)))[0])
+                hot[w] = found[w] = posting
+                self._hot_n += len(rows)
+            if self._disk_gen(db) != self._gen:  # a process wrote since this one synced: the postings may hold notes it does not know
+                raise _Stale
+        return found
+
+    def matching(self, where: dict[str, Any]) -> frozenset[int]:
+        """The notes whose `fields` hold every key of `where` (`fields_match`, the one definition: the tree filter's), from the fields the
+        file keeps, with no note read. The notes are grouped by their fields text in one pass, kept until the file changes: each `where`
+        then judges the distinct texts (as many as the areas, not the notes), whatever `where` comes next."""
+        groups = self._groups
+        if groups is None:
+            groups = {}
+            db = self._open()
+            for id_, text in db.execute("SELECT id, fields FROM docbody"):
+                if id_ in self._len:
+                    got = groups.get(text)
+                    if got is None:
+                        got = groups[text] = array("q")
+                    got.append(id_)
+            if self._disk_gen(db) != self._gen:  # a process wrote since this one synced
+                raise _Stale
+            self._groups = groups
+        ids: set[int] = set()
+        for text, notes in groups.items():
+            if fields_match(unpack_fields(text), where):
+                ids.update(notes)
+        return frozenset(ids)
+
+    def rels(self, where: dict[str, Any] | None = None) -> list[str]:
+        """The paths of the notes `where` keeps (every note without it), in the order of the tree."""
+        if not where:
+            return list(self.order)
+        ids = self._guarded(lambda: self.matching(where))
+        return [rel for rel in self.order if self._ids.get(rel) in ids]
+
+    def rank(self, query: str, n: int, where: dict[str, Any] | None = None) -> list[str]:
+        """The paths of the `n` best notes for `query`, best first, ties in the order of the tree. `where`: only the notes that hold it
+        are ranked, as an index of just them would (their count, word frequencies and average length)."""
+        return self._guarded(lambda: self._rank(query, n, where))
+
+    def _rank(self, query: str, n: int, where: dict[str, Any] | None) -> list[str]:
+        words = set(lexical.words(query))
+        allowed: set[int] | None
+        tie = self._pos
+        if not where:
+            count, size, allowed = len(self._len), self._total, None
+        else:
+            allowed = set(self.matching(where))
+            count, size = len(allowed), sum(self._len[i] for i in allowed)
+        avg = (size / count if count else 1.0) or 1.0
+        if allowed is None:
+            if self._norm_avg != avg:  # the length part of the formula, kept while no note changes
+                self._norm = {i: _K1 * (1 - _B + _B * length / avg) for i, length in self._len.items()}
+                self._norm_avg = avg
+            norm = self._norm
+        else:
+            norm = {i: _K1 * (1 - _B + _B * self._len[i] / avg) for i in allowed}
+        total: dict[int, float] = {}
+        get = total.get
+        postings = self._postings(words)
+        for w in words:
+            docs, counts = postings[w]
+            pairs: Iterable[tuple[int, int]] = zip(docs, counts, strict=True)
+            found_in = len(docs)
+            if allowed is not None:
+                pairs = [(d, f) for d, f in pairs if d in allowed]
+                found_in = len(pairs)
+            if not found_in:
+                continue
+            idf = math.log(1 + (count - found_in + 0.5) / (found_in + 0.5))
+            for key, f in pairs:
+                total[key] = get(key, 0.0) + idf * f * (_K1 + 1) / (f + norm[key])
+        if len(total) > n:
+            floor = heapq.nlargest(n, total.values())[-1]  # nothing under the n-th score can be among them
+            total = {k: s for k, s in total.items() if s >= floor}
+        found = sorted(total, key=lambda i: (-total[i], tie[self._rels[i]]))[:n]
+        return [self._rels[i] for i in found]
+
+    def meta(self, rels: Sequence[str]) -> dict[str, tuple[str, str]]:
+        """(title, summary) of each of `rels`, from the file."""
+
+        def run() -> dict[str, tuple[str, str]]:
+            out: dict[str, tuple[str, str]] = {}
+            db = self._open()
+            for chunk in _chunks(list(rels)):
+                marks = ",".join("?" * len(chunk))
+                for rel, title, summary in db.execute(
+                    f"SELECT d.rel, b.title, b.summary FROM docs d JOIN docbody b ON b.id = d.id WHERE d.rel IN ({marks})", chunk
+                ):
+                    out[rel] = (title, summary)
+            return out
+
+        return self._guarded(run)
+
+    def hashes(self, rels: Sequence[str] | None = None) -> dict[str, str]:
+        """The hash of the text of each of `rels` (every note by default), as it was when the note was indexed."""
+
+        def run() -> dict[str, str]:
+            out: dict[str, str] = {}
+            db = self._open()
+            if rels is None:
+                out.update(db.execute("SELECT rel, hash FROM docs WHERE bad = 0"))
+            else:
+                for chunk in _chunks(list(rels)):
+                    marks = ",".join("?" * len(chunk))
+                    out.update(db.execute(f"SELECT rel, hash FROM docs WHERE bad = 0 AND rel IN ({marks})", chunk))
+            return out
+
+        return self._guarded(run)

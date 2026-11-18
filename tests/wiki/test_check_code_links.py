@@ -12,6 +12,7 @@ import pytest
 from llmw2.bundle.check import check
 from llmw2.bundle.store import WikiStore
 from llmw2.bundle.tree import Folder, Note
+from tests.wiki.problems import errors
 
 SOURCE = {"resource": "/raw/source.md", "title": "Source"}
 BROKEN = "[gone](../gone.md)"
@@ -25,7 +26,7 @@ def store(bundle: Path) -> WikiStore:
 
 
 def _problems(bundle: Path) -> list[str]:
-    return [str(p) for p in check(bundle)]
+    return [str(p) for p in errors(check(bundle))]
 
 
 def _note(store: WikiStore, folder: Folder, title: str, body: str) -> Note:

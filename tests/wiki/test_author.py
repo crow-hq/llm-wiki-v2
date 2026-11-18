@@ -19,6 +19,7 @@ from llmw2.bundle.store import clean_author
 from llmw2.bundle.tree import LOG
 from llmw2.sources import LocalFolderSource, sync
 from tests.wiki.fakes import FakeClassifier, FakeLLM
+from tests.wiki.problems import errors
 from tests.wiki.test_ingest_many import item, make_wiki
 from tests.wiki.test_managed_roots import Built
 from tests.wiki.test_server import script_ingest
@@ -27,8 +28,9 @@ BY = " · by "
 
 
 def lines(wiki: Wiki) -> list[str]:
-    """The entries of log.md, as written."""
-    return [line for line in (wiki.cfg.bundle / LOG).read_text(encoding="utf-8").splitlines() if line.startswith("* **")]
+    """The entries of log.md, the newest first (the file has them in the order they came)."""
+    found = [line for line in (wiki.cfg.bundle / LOG).read_text(encoding="utf-8").splitlines() if line.startswith("* **")]
+    return found[::-1]
 
 
 def authors(wiki: Wiki) -> list[str | None]:
@@ -212,7 +214,7 @@ def test_a_dirty_author_cannot_break_the_log_line(classic_wiki: Wiki) -> None:
 
     # ASSERT
     text = (classic_wiki.cfg.bundle / LOG).read_text(encoding="utf-8")
-    assert sum(line.startswith("## ") for line in text.splitlines()) == 1 and [str(p) for p in check(classic_wiki.cfg.bundle)] == []
+    assert sum(line.startswith("## ") for line in text.splitlines()) == 1 and [str(p) for p in errors(check(classic_wiki.cfg.bundle))] == []
     assert lines(classic_wiki)[0].endswith(f"{BY}eve ## 2026-01-01 Split : x y")
 
 
@@ -257,7 +259,7 @@ def test_check_and_health_read_a_real_log_written_with_authors(built: Built) -> 
     wiki.create_folder("/finance", "tax", "Taxes.", author="ada")
 
     # ASSERT
-    assert [str(p) for p in wiki.check()] == []
+    assert [str(p) for p in errors(wiki.check())] == []
     assert wiki.taxonomy_health(1, 0.0) != before  # the new subfolder counts, suffix or not
     assert any(r.new_subfolders for r in wiki.taxonomy_health(1, 0.0) if r.folder == "/finance")
 

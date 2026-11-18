@@ -16,6 +16,7 @@ __copyright__ = (
 
 import hashlib
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from llmw2.errors import InputError
@@ -26,6 +27,20 @@ REQUIRED = ("source", "account", "id")
 def content_hash(text: str) -> str:
     """The hash recorded for a raw copy: "sha256:" and the hex digest of its UTF-8 text."""
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def format_at(moment: datetime) -> str:
+    """The time of an event (`event_at` of a raw copy, of an entry of the journal), the one way it is written: UTC, `+00:00`, always
+    with microseconds, so that the order of the strings is the order of the times. A time with no zone is refused (`InputError`):
+    what it means depends on who reads it."""
+    if not isinstance(moment, datetime):
+        raise InputError("`at` is a datetime with a time zone")
+    if moment.tzinfo is None or moment.utcoffset() is None:
+        raise InputError("`at` needs a time zone (a datetime that says its offset from UTC)")
+    try:
+        return moment.astimezone(UTC).isoformat(timespec="microseconds")
+    except (OverflowError, ValueError) as e:
+        raise InputError(f"`at` is out of range: {e}") from e
 
 
 @dataclass(frozen=True)

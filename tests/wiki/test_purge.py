@@ -14,6 +14,7 @@ from llmw2 import Item, LocalFolderSource, Origin, Wiki, cli, sync
 from llmw2.bundle.tree import LOG
 from llmw2.errors import ModelError
 from tests.wiki.fakes import ContentLLM
+from tests.wiki.problems import errors
 from tests.wiki.test_ingest_many import make_wiki
 from tests.wiki.test_sheets import workbook
 
@@ -40,7 +41,8 @@ def raw_keys(wiki: Wiki) -> list[str]:
 
 
 def log_lines(wiki: Wiki) -> list[str]:
-    return [line for line in (wiki.cfg.bundle / LOG).read_text(encoding="utf-8").splitlines() if line.startswith("* **")]
+    found = [line for line in (wiki.cfg.bundle / LOG).read_text(encoding="utf-8").splitlines() if line.startswith("* **")]
+    return found[::-1]  # the newest first
 
 
 def file_text(path: Path) -> str:
@@ -72,7 +74,7 @@ def test_purge_deletes_the_origins_raw_copy_and_note_and_leaves_the_other_notes_
     assert report.refiled == [] and report.errors == [] and report.stopped is None
     assert SECRET not in everything(wiki) and OTHER in everything(wiki)
     assert raw_keys(wiki) == [KEY_B] and [n.rel for n in wiki.store.load().all_notes()] == [blue.rel]
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
     assert "About red-1" not in file_text(blue.path)
     assert file_text(blue.path) != before_blue and report.unlinked == [blue.rel]  # the See-also entry to the deleted note went
     assert "red-1" not in file_text(wiki.cfg.bundle / "index.md")
@@ -119,7 +121,7 @@ def test_a_fused_note_is_deleted_and_its_other_origins_are_filed_again_from_thei
     assert SECRET not in text and OTHER in text and "the blue whale sings" in text
     assert raw_keys(wiki) == [KEY_B, KEY_C]  # one raw copy each: b's old one went when the new one was filed
     assert len(wiki.store.origin_raws(KEY_B)) == 1 and wiki.origin(KEY_B) is not None
-    assert len(wiki.store.load().all_notes()) == 2 and wiki.check() == []
+    assert len(wiki.store.load().all_notes()) == 2 and errors(wiki.check()) == []
     assert report.sources and not any((wiki.cfg.bundle / s.lstrip("/")).exists() for s in report.sources)
 
 
@@ -145,7 +147,7 @@ def test_a_fused_note_is_deleted_even_when_the_purged_origin_is_the_second_one(w
 
     # ASSERT
     assert report is not None and report.refiled == [KEY_A]
-    assert OTHER not in everything(wiki) and SECRET in everything(wiki) and wiki.check() == []
+    assert OTHER not in everything(wiki) and SECRET in everything(wiki) and errors(wiki.check()) == []
 
 
 def test_a_document_marked_removed_is_purged_as_any_other(wiki: Wiki) -> None:
@@ -157,7 +159,10 @@ def test_a_document_marked_removed_is_purged_as_any_other(wiki: Wiki) -> None:
     report = wiki.purge(KEY_A)
 
     # ASSERT
-    assert report is not None and SECRET not in everything(wiki) and wiki.check() == []
+    assert report is not None and SECRET not in everything(wiki)
+    # the other document was not filed again (the run stopped): its raw copy stays, no note cites it, until a rebuild
+    left = [p.message for p in errors(wiki.check())]
+    assert left == (["no note cites this raw copy"] if report.stopped else [])
 
 
 def test_when_filing_the_others_again_fails_their_raw_copies_stay_and_the_purged_text_is_gone_all_the_same(bundle: Path) -> None:
@@ -193,7 +198,7 @@ def test_a_spreadsheet_is_purged_with_all_its_sheets(wiki: Wiki) -> None:
     # ASSERT
     assert report is not None and len(report.notes) == 1 and len(report.sources) == 2  # the fake fuses both sheets in one note
     assert wiki.store.origin_keys("test:acct:plan.xlsx#") == set()
-    assert "North-1" not in everything(wiki) and OTHER in everything(wiki) and wiki.check() == []
+    assert "North-1" not in everything(wiki) and OTHER in everything(wiki) and errors(wiki.check()) == []
 
 
 def test_the_archived_versions_of_the_notes_deleted_go_too(wiki: Wiki) -> None:
@@ -209,7 +214,8 @@ def test_the_archived_versions_of_the_notes_deleted_go_too(wiki: Wiki) -> None:
 
     # ASSERT
     assert report is not None and len(report.archived) >= 1
-    assert len(list(archive.rglob("*.md"))) == 1 and "falcon" not in everything(wiki) and OTHER in everything(wiki) and wiki.check() == []
+    assert len(list(archive.rglob("*.md"))) == 1 and "falcon" not in everything(wiki) and OTHER in everything(wiki)
+    assert errors(wiki.check()) == []
 
 
 def test_the_archived_version_of_a_note_that_moved_goes_with_it(wiki: Wiki) -> None:
@@ -260,7 +266,7 @@ def test_a_log_line_keeps_its_author_when_it_says_purged(bundle: Path) -> None:
 
     # ASSERT
     lines = log_lines(wiki)
-    assert any(line == "* **Created**: [purged] · by bob" for line in lines)
+    assert any(" ".join(line.split()) == "* **Created**: [purged] · by bob" for line in lines)  # blanks make up the length
     assert lines[0].endswith(" · by ada")
 
 
@@ -315,7 +321,7 @@ def test_a_sync_with_purge_removed_purges_what_was_removed_at_the_source(wiki: W
 
     # ASSERT
     assert (report.removed, report.errors, report.stopped) == (1, [], None)
-    assert SECRET not in everything(wiki) and OTHER in everything(wiki) and wiki.check() == []
+    assert SECRET not in everything(wiki) and OTHER in everything(wiki) and errors(wiki.check()) == []
     assert (again.removed, again.created, again.merged) == (0, 0, 0)  # b is filed again already; nothing is done twice
 
 
@@ -391,3 +397,15 @@ def test_sync_has_a_purge_removed_flag(
 
     # ASSERT
     assert code == 0 and "removed 1" in capsys.readouterr().out and SECRET not in everything(wiki)
+
+
+def test_the_command_says_what_is_pending_and_exits_with_3(
+    bundle: Path, wiki: Wiki, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from llmw2.wiki import Purged
+
+    monkeypatch.setattr(cli, "make_wiki", lambda **_: wiki)
+    monkeypatch.setattr(wiki, "purge", lambda key, **_: Purged(notes=["a.md"], entries=2, pending=["index"]))
+    code = cli.main(["--bundle", str(bundle), "purge", KEY_A, "--yes"])
+    seen = capsys.readouterr()
+    assert code == 3 and "2 entry(ies) of the journal forgotten" in seen.out and "still in: index" in seen.err

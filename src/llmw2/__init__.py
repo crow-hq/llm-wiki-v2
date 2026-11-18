@@ -32,14 +32,19 @@ from llmw2.bundle.tree import Folder, Note
 from llmw2.config import WikiConfig
 from llmw2.errors import (
     ConfigError,
+    DiskFull,
+    FailedBacklog,
+    FilerError,
     InputError,
     ModelError,
     NoteChanged,
+    QueueFull,
     ReplyInvalid,
     SpendingCap,
     StepError,
     WikiError,
 )
+from llmw2.filer import Receipt
 from llmw2.models.cache import AnswerCache
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
@@ -85,7 +90,10 @@ __all__ = [
     "ConfigError",
     "Decision",
     "Deleted",
+    "DiskFull",
     "Embedder",
+    "FailedBacklog",
+    "FilerError",
     "Folder",
     "FolderHealth",
     "Hit",
@@ -102,6 +110,8 @@ __all__ = [
     "Problem",
     "Proposal",
     "Purged",
+    "QueueFull",
+    "Receipt",
     "ReplyInvalid",
     "Route",
     "RouteProposal",

@@ -31,12 +31,12 @@ import logging
 import os
 import pickle
 import re
-import shutil
 import stat
+import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,7 +44,9 @@ from typing import Any
 
 import yaml
 
+from llmw2.bundle import logfile, txn
 from llmw2.bundle.document import DELIMITER, OKFDocument, OKFDocumentError, read_bytes
+from llmw2.bundle.filelock import FileLock
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.origin_index import OriginIndex
 from llmw2.bundle.tree import (
@@ -86,6 +88,8 @@ LINK_PREFILTER = 50  # notes deleted at once up to which only the notes naming t
 PURGED = "[purged]"  # what log.md says in place of a line's text when the line named something purged
 
 
+# the stores (by key) whose sections open with no undo log in this context (`WikiStore.undo_suspended`)
+_undo_off: contextvars.ContextVar[frozenset[object]] = contextvars.ContextVar("llmw2_undo_off", default=frozenset())
 _author: contextvars.ContextVar[str | None] = contextvars.ContextVar("llmw2_author", default=None)
 
 
@@ -125,8 +129,13 @@ def body_hash(body: str) -> str:
     return "sha256:" + hashlib.sha256("\n".join(body.strip().splitlines()).encode("utf-8")).hexdigest()
 
 
+def utc_now() -> datetime:
+    """The clock, for the heading of a log day and the time of a note."""
+    return datetime.now(UTC)
+
+
 def now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return utc_now().isoformat(timespec="seconds")
 
 
 def _entry(title: str, link: str, text: str) -> str:
@@ -198,9 +207,16 @@ class WikiStore:
         self._depth = 0
         self._dirs: dict[str, tuple[int, bool, Folder]] = {}  # folder path -> (its time, whether it was old enough, the folder)
         self._recent: set[str] = set()
+        # what `scan_notes` keeps of a folder while its names stay the same: (the names, its notes, its subfolders, the bundle paths
+        # of its notes, the stamps of its notes when none was to be read again, the caller that had them)
+        self._listed: dict[str, tuple[Any, list[tuple[str, str]], list[tuple[str, str]], list[str], list[Any] | None, object]] = {}
         self._held: dict[str, Note] = {}  # note path -> the note a kept folder holds
         self._loose: dict[str, list[Note | Folder]] = {}  # folder path -> what a write added at the end of its kept lists
         self._session_guard = threading.RLock()
+        self._undo_key = object()  # what `undo_suspended` puts in `_undo_off` for this store
+        self._log = logfile.LogTail()  # what this store knows of log.md since it last read or wrote it
+        self.log_rewrites = 0  # purges of log lines that had to write the file whole (a line too short to be overwritten in place)
+        self._log_checked = False  # whether log.md is known to be in the order of arrival
         # whether two notes may stay linked: set by a wiki that limits its links (`link_scope`), so that a note which changes
         # area loses the See-also entries that no longer fit; None: every link stays
         self.link_reach: Callable[[Note, Note], bool] | None = None
@@ -213,56 +229,138 @@ class WikiStore:
         if not (self.root / INDEX).exists():
             self.write_index(Folder(self.root, ""))
         if not (self.root / LOG).exists():
-            write_atomic(self.root / LOG, "# Wiki log\n")
+            write_atomic(self.root / LOG, logfile.TITLE + "\n")
+        with contextlib.suppress(OSError):  # a wiki that is only read (a read-only folder) needs none of these
+            txn.ensure_journal_dir(self.root)
+            self._recover(blocking=False)
+            self._migrate_log()
+
+    def _migrate_log(self) -> None:
+        """A log of 1.0.5 or earlier (newest first) is turned around, once, under the lock (see `llmw2.bundle.logfile`)."""
+        path = self.root / LOG
+        if self._log_checked or txn.current() is not None:
+            return
+        if not self._log_is_current(path):
+            with self.lock():
+                self._turn_log(path)
+        self._log_checked = True
+
+    @staticmethod
+    def _log_is_current(path: Path) -> bool:
+        try:
+            with open(path, "rb") as f:
+                return logfile.is_current(f.read(logfile.HEAD_BYTES))
+        except OSError:
+            return True  # no log: `append_log` makes one
+
+    def _turn_log(self, path: Path) -> None:
+        """The lock is held: put the log in the order of arrival, if it is not (it may have been done meanwhile)."""
+        if self._log_is_current(path):
+            return
+        write_atomic(path, logfile.newest_first_to_oldest_first(read_utf8_or_latin1(path)))
+        self._log = logfile.LogTail()
+
+    def recover(self) -> txn.Restored:
+        """Undo a filing that a process died in the middle of, if one did (the undo log is not empty and nobody holds the lock)."""
+        return self._recover(blocking=True)
+
+    def _recover(self, *, blocking: bool) -> txn.Restored:
+        """`blocking` false: only if the bundle is free right now (a process that holds it is in the middle of a section of its
+        own, whose log is not an orphan)."""
+        done = txn.Restored()
+        if not txn.pending(self.root):
+            if txn.trash_left(self.root):  # a section that died before its first record: nobody owes its images (a section running now, in
+                with self._exclusive(blocking=False) as got:  # another process, holds the lock: it is left alone)
+                    if got:
+                        self._restore()
+            return done
+        with self._exclusive(blocking=blocking) as got:
+            if got:
+                done = self._restore()
+        return done
+
+    def _restore(self) -> txn.Restored:
+        """The lock is held: undo what an interrupted section left, and forget what this store had read of the bundle."""
+        if not txn.pending(self.root):
+            txn.sweep_trash(self.root)
+            return txn.Restored()
+        done = txn.recover(self.root)
+        if done.rolled_back:
+            log.warning("restored the wiki to before an interrupted filing (%d paths, %d left alone)", done.paths, len(done.conflicts))
+        self.forget()
+        return done
 
     @contextlib.contextmanager
-    def lock(self) -> Iterator[None]:
+    def lock(self, *, undo: bool = True, id: str | None = None, after_commit: Callable[[], None] | None = None) -> Iterator[None]:
         """Hold the bundle for writing: one writer at a time across threads and processes (the CLI and a server).
 
         A lock per bundle folder within the process, shared by every store on it (the server rebuilds its wiki when
         the settings change), then an advisory flock on the folder itself, so no lock file lands in the wiki. Where
         there is no flock (Windows) it is a byte lock on `.llmw2/lock`, retried until free; the file is hidden like the
         rest of `.llmw2/`. The lock is not reentrant: do not nest it.
+
+        The section is a transaction (`llmw2.bundle.txn`): every file it changes is saved first in an undo log, so a section that
+        raises, or a process that dies in it, leaves the bundle as it was. A section that moves or deletes whole folders
+        opens with `undo=False` and writes as it always did. A log left by a dead process is undone as the lock is taken.
+        `id` is stored in the commit record; `after_commit` runs once the section is durable and before the log is emptied.
         """
-        with _thread_lock(self.root):
-            try:
-                import fcntl
-            except ImportError:
-                with self._windows_lock():
-                    yield
-                return
-            fd = os.open(self.root, os.O_RDONLY)
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX)  # type: ignore[attr-defined,unused-ignore]  # stubs hide it on Windows
+        with self._exclusive(blocking=True):
+            self._restore()
+            if not undo or self._undo_key in _undo_off.get():
                 yield
-            finally:
-                os.close(fd)  # closing the descriptor releases the lock
+                return
+            section = txn.Txn(self.root, id=id)
+            try:
+                with txn.active(section):
+                    yield
+                section.commit()
+            except BaseException:
+                try:
+                    section.rollback()
+                finally:
+                    self.forget()  # what a session kept of the tree is not what is on disk now
+                raise
+            if after_commit is not None:
+                try:
+                    after_commit()
+                    section.told = True
+                except BaseException:
+                    section.abandon()  # done and durable: not rolled back; the log keeps its commit, and the next recovery says it
+                    self.forget()
+                    raise
+            section.finish()
 
     @contextlib.contextmanager
-    def _windows_lock(self) -> Iterator[None]:
-        """The lock across processes where there is no flock: an exclusive lock on the first byte of `.llmw2/lock`."""
+    def undo_suspended(self) -> Iterator[None]:
+        """The sections this thread opens on this store (and the threads that run in a copy of its context: the workers of an
+        `ingest_many`) have no undo log while this is held; those of other threads keep theirs. For a rebuild, which starts from
+        nothing and is done again from the start if it is interrupted (see `txn.mark_rebuild`): an undo log for each of its
+        documents would be written, flushed and thrown away. Not for anything that must leave the wiki as it was."""
+        token = _undo_off.set(_undo_off.get() | {self._undo_key})
         try:
-            import msvcrt
-        except ImportError:  # neither flock nor msvcrt: only the lock within the process holds
             yield
-            return
-        path = self.root / LOCK_FILE
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(path, os.O_RDWR | os.O_CREAT)
-        try:
-            while True:
-                try:
-                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined,unused-ignore]
-                    break
-                except OSError:  # held by another process
-                    time.sleep(0.01)
-            try:
-                yield
-            finally:
-                os.lseek(fd, 0, os.SEEK_SET)
-                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined,unused-ignore]
         finally:
-            os.close(fd)
+            _undo_off.reset(token)
+
+    def lock_is_free(self) -> bool:
+        """Whether nobody holds the bundle's lock right now (one try that does not wait)."""
+        with self._exclusive(blocking=False) as got:
+            return bool(got)
+
+    @contextlib.contextmanager
+    def _exclusive(self, *, blocking: bool) -> Iterator[bool]:
+        """The lock of `lock`, without the transaction; with `blocking` false it is taken only if free (yields whether it was).
+
+        A `FileLock` (`llmw2.bundle.filelock`): the kernel waits for it, on every system, and frees it when the process dies. On
+        POSIX it is an advisory `flock` on the bundle's folder itself; on Windows a lock on the first byte of `.llmw2/lock`,
+        the same byte an older version locks, so versions of llmw2 that meet on a bundle still exclude each other."""
+        if sys.platform == "win32":
+            path = self.root / LOCK_FILE
+            lock = FileLock(path)
+        else:
+            lock = FileLock(self.root, directory=True)
+        with lock.attempt(None if blocking else 0) as got:
+            yield got
 
     @contextlib.contextmanager
     def session(self) -> Iterator[None]:
@@ -291,6 +389,7 @@ class WikiStore:
             self._held.clear()
             self._loose.clear()
             self._origins.forget()
+        self._log = logfile.LogTail()
 
     def load(self) -> Folder:
         if not self.root.is_dir():
@@ -387,6 +486,84 @@ class WikiStore:
             self._dirs[key] = (mtime, scanned - mtime > RACY_NS, folder)
         return folder
 
+    def scan_notes(
+        self, known: Mapping[str, Stamp | None], racy_before: int, owner: object = None
+    ) -> tuple[list[str], list[tuple[str, str, Stamp]]]:
+        """Every note of the wiki as `load` would list it, with nothing read: (the bundle paths in the order of the tree, the
+        notes to read again). A note is to read again when it is not in `known` (bundle path -> the stamp it had when it was
+        read), or has another time or size, or was written after `racy_before` (nanoseconds: a file that recent may change
+        again with the same time, see `RACY_NS`); each comes as (bundle path, file path, stamp).
+
+        Limit, the same as in v1.0.2 (`_parsed`): a file edited in place by another program that leaves both its size and its
+        modification time as they were (`rsync -t`, `cp -p`, a restore) is not seen, until its size or time changes. The
+        file's inode is no help on Windows, where the listing gives none.
+
+        A folder is listed in one call that carries every file's time and size. What a folder holds by name (its notes and its
+        subfolders, in order) is kept while the names are the same, so a wiki that did not change costs one call per folder and
+        a look at each note's time and size, and builds no object per note. `owner`: an object the caller keeps for as long as `known`
+        holds what it held after its last call, and replaces when it does not; a folder whose notes are as that call left them is
+        not looked at again for the same owner."""
+        if not self.root.is_dir():
+            raise FileNotFoundError(f"wiki not found: {self.root} (run `llmwiki2 init`)")
+        order: list[str] = []
+        todo: list[tuple[str, str, Stamp]] = []
+        kept_dirs = self._listed
+
+        def walk(path: str, rel: str) -> None:
+            try:
+                with os.scandir(path) as listing:
+                    entries = {e.name: e for e in listing}
+            except FileNotFoundError:  # a folder another process took away since its parent was listed: its notes are gone too
+                if not rel:
+                    raise
+                kept_dirs.pop(path, None)
+                return
+            kept = kept_dirs.get(path)
+            if kept is None or kept[0] != entries.keys():
+                notes: list[tuple[str, str]] = []
+                subs: list[tuple[str, str]] = []
+                for name in sorted(entries, key=os.path.normcase):
+                    if name == CLOSED or name.startswith(".") or (not rel and name == RAW):
+                        continue
+                    try:
+                        mode = entries[name].stat().st_mode
+                    except OSError:  # gone since the listing
+                        continue
+                    child = f"{rel}/{name}" if rel else name
+                    if stat.S_ISDIR(mode):
+                        subs.append((entries[name].path, child))
+                    elif name.endswith(".md") and name not in (INDEX, LOG):
+                        notes.append((name, child))
+                kept = kept_dirs[path] = (frozenset(entries), notes, subs, [c for _, c in notes], None, None)
+            _, notes, subs, rels, clean, had = kept
+            try:
+                stats = [entries[name].stat() for name, _ in notes]
+            except OSError:  # a note gone since the listing: the folder is looked at again by name next time
+                kept_dirs.pop(path, None)
+                stats = []
+                notes = [(name, child) for name, child in notes if os.path.exists(entries[name].path)]
+                rels = [c for _, c in notes]
+                stats = [entries[name].stat() for name, _ in notes]
+            stamps = [(st.st_mtime_ns, st.st_size, st.st_ino) for st in stats]
+            if clean is not None and owner is not None and had is owner and clean == stamps:  # the same as when the caller last had it all
+                order.extend(rels)
+            else:
+                read = False
+                for (name, child), stamp in zip(notes, stamps, strict=True):
+                    order.append(child)
+                    held = known.get(child)
+                    if held is None or stamp[0] >= racy_before or held[:2] != stamp[:2] or (held[2] != stamp[2] and held[2] and stamp[2]):
+                        todo.append((child, entries[name].path, stamp))
+                        read = True
+                if path in kept_dirs:
+                    old = kept_dirs[path]
+                    kept_dirs[path] = (*old[:4], None if read or any(s[0] >= racy_before for s in stamps) else stamps, owner)
+            for sub_path, sub_rel in subs:
+                walk(sub_path, sub_rel)
+
+        walk(str(self.root), "")
+        return order, todo
+
     def _holds(self, folder: Folder | None) -> bool:
         """Whether a session keeps this very folder as the last load built it."""
         kept = self._dirs.get(str(folder.path)) if folder is not None and self._depth else None
@@ -455,7 +632,7 @@ class WikiStore:
         folder = Folder(parent.path / name, rel, " ".join(description.split()), parent=parent)
         held = self._holds(parent)
         with self._writing(parent.path, tracked=held):
-            folder.path.mkdir(parents=True, exist_ok=True)
+            txn.mkdir(folder.path, parents=True, exist_ok=True)
             parent.subfolders.append(folder)
             if held:
                 self._loose.setdefault(str(parent.path), []).append(folder)
@@ -485,9 +662,9 @@ class WikiStore:
         marker = folder.path / CLOSED
         with self._writing(folder.path, tracked=self._holds(folder)):
             if closed:
-                marker.touch()
+                txn.touch(marker)
             else:
-                marker.unlink(missing_ok=True)
+                txn.unlink(marker, missing_ok=True)
         folder.routable = not closed
 
     def write_note(
@@ -502,10 +679,12 @@ class WikiStore:
         fields: dict[str, Any] | None = None,
         overflow: dict[str, float] | None = None,
         omitted: list[str] | None = None,
+        slug: str | None = None,
     ) -> Note:
         """Write a new note in `folder`. `overflow`, when given, marks a note the limit on top-level folders deviated (filed in the
-        likeliest existing root instead of a new one). `omitted`: the headings of its source that the body leaves out."""
-        slug = self.unique_slug(folder, slugify(title))
+        likeliest existing root instead of a new one). `omitted`: the headings of its source that the body leaves out. `slug`: the
+        file name `declare_filing` chose."""
+        slug = slug or self.unique_slug(folder, slugify(title))
         path = folder.path / f"{slug}.md"
         rel = f"{folder.rel}/{slug}.md" if folder.rel else f"{slug}.md"
         body = self._without_dead_links(body, rel)
@@ -615,7 +794,7 @@ class WikiStore:
         fm = {**note.frontmatter, "status": "archived", "archived_from": f"/{note.rel}", "archived_at": now_iso()}
         path = self.root / rel
         with self._writing(self.root, tracked=True):  # the first copy makes the folder, the only change of the root
-            path.parent.mkdir(parents=True, exist_ok=True)
+            txn.mkdir(path.parent, parents=True, exist_ok=True)
             write_atomic(path, OKFDocument(fm, note.body).serialize())
         return f"/{rel}"
 
@@ -640,13 +819,43 @@ class WikiStore:
             return False
         return self._edit(note, add)
 
-    def save_raw(self, text: str, *, title: str, resource: str | None, origin: Origin | None = None) -> str:
+    def raw_slug(self, title: str) -> str:
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        return self.unique_slug(Folder(self.root / RAW, RAW), f"{stamp}-{slugify(title, max_len=40)}")
+
+    def declare_filing(self, folder: Folder | None, *, raw_title: str, note_title: str | None) -> tuple[str, str | None]:
+        """Choose the file names of the raw copy (and the new note in `folder`, if there is one) a filing is about to write, and tell the
+        section's undo log of them and of the index and log it is about to append to in ONE record, so that the filing pays one
+        flush for what it would pay four for. Returns the names, for `save_raw` and `write_note` to use. Nothing is written."""
+        raw = self.raw_slug(raw_title)
+        note = self.unique_slug(folder, slugify(note_title)) if folder is not None and note_title is not None else None
+        section = txn.current()
+        if section is not None:
+            new = [self.root / RAW / f"{raw}.md"]
+            extend = [self.root / LOG]
+            if folder is not None and note is not None:
+                new.append(folder.path / f"{note}.md")
+                extend.append(folder.path / INDEX)
+            section.declare(new=new, extend=extend)
+        return raw, note
+
+    def save_raw(
+        self,
+        text: str,
+        *,
+        title: str,
+        resource: str | None,
+        origin: Origin | None = None,
+        slug: str | None = None,
+        event_at: str | None = None,
+    ) -> str:
         """Keep a copy of an ingested source; returns its bundle-absolute path ("/raw/…").
 
-        The frontmatter records the text's hash and, when given, where the original lives.
+        The frontmatter records the text's hash and, when given, where the original lives and `event_at`, the time of the event it tells
+        of (a top-level key, written only when given: a copy without it is as it has always been). `slug`: the file name `declare_filing`
+        chose.
         """
-        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        slug = self.unique_slug(Folder(self.root / RAW, RAW), f"{stamp}-{slugify(title, max_len=40)}")
+        slug = slug or self.raw_slug(title)
         fm: dict[str, Any] = {"type": SOURCE_TYPE, "title": title}
         if resource:
             fm["resource"] = resource
@@ -654,8 +863,10 @@ class WikiStore:
         if origin is not None:
             fm["origin"] = origin.to_dict()
             fm["seq"] = 1 + max((c.seq for c in self._origins.copies(origin.key)), default=0)  # save order per key
+        if event_at:
+            fm["event_at"] = event_at
         fm["generated"] = {"by": self.actor, "at": now_iso()}
-        (self.root / RAW).mkdir(exist_ok=True)
+        txn.mkdir(self.root / RAW, exist_ok=True)
         before = self._origins.raw_time()
         write_atomic(self.root / RAW / f"{slug}.md", OKFDocument(fm, text).serialize())
         self._origins.raw_written(f"{slug}.md", before)
@@ -728,6 +939,23 @@ class WikiStore:
         self._origins.touch(path.name)
         return True
 
+    def seen_text(self, text: str) -> tuple[str, str] | None:
+        """The note that cites a raw copy of exactly this text saved without an origin, and that copy ("/raw/…"); None if there is none.
+        What `adopt_raw` looks for, without writing: a text kept before (an `ingest`, or a `remember` without a key) is not filed again."""
+        copies = self._origins.unclaimed(content_hash(text))
+        newest = self._origins.citing([f"/{RAW}/{c.name}" for c in copies])
+        if not newest:
+            return None
+        rel = max(newest, key=lambda r: (newest[r], r))
+        return rel, f"/{RAW}/{copies[max(newest.values())].name}"
+
+    def raw_event_at(self, raw: str) -> str | None:
+        """The `event_at` a raw copy ("/raw/…") was saved with, if it has one."""
+        with contextlib.suppress(OSError, OKFDocumentError):
+            value = OKFDocument.read(self.root / raw.lstrip("/")).frontmatter.get("event_at")
+            return str(value) if value else None
+        return None
+
     def origin_keys(self, prefix: str) -> set[str]:
         """The origin keys of raw copies starting with `prefix`."""
         return self._origins.keys(prefix)
@@ -754,6 +982,14 @@ class WikiStore:
             self.append_log("Source removed", "deleted at its source", record.raw.lstrip("/"), key)
         return record
 
+    def unclaimed_raws(self, hash: str) -> list[str]:
+        """The raw copies ("/raw/…") of a text saved with no origin, by the hash of the text ("sha256:…"), oldest first."""
+        return [f"/{RAW}/{c.name}" for c in self._origins.unclaimed(hash)]
+
+    def unclaimed_hashes(self) -> set[str]:
+        """The hashes of the texts saved with no origin."""
+        return self._origins.hashes()
+
     def origin_raws(self, key: str) -> list[str]:
         """Every raw copy with this origin key, cited by a note or not, oldest first ("/raw/…")."""
         return [f"/{RAW}/{c.name}" for c in self._origins.copies(key)]
@@ -779,7 +1015,7 @@ class WikiStore:
         for resource in raws:
             path = self.root / resource.lstrip("/")
             if path.is_file():
-                path.unlink()
+                txn.unlink(path)
                 deleted.sources.append(resource)
         deleted.sources = list(dict.fromkeys(deleted.sources))
 
@@ -788,11 +1024,59 @@ class WikiStore:
 
         A line keeps its verb and its author (` · by <author>`), loses the rest: the title, the path, the link. The line is
         found by a name as it is written in it: a path, a raw copy's file name, "[title](" for a link.
+
+        Each line is overwritten where it stands, by a line of the same length (spaces after `[purged]` make up the difference):
+        the file is not rewritten, so the cost of a purge does not grow with the log, and the undo keeps the bytes of the lines, not
+        the file, which `txn` erases when the section ends. A line too short to hold the marker is the exception: the file is then
+        written whole, as it was, for all the lines of the call.
         """
         path = self.root / LOG
         wanted = [n for n in dict.fromkeys(names) if n]
         if not wanted or not path.exists():
             return 0
+        data = read_bytes(path)
+        try:
+            data.decode("utf-8")
+            enc = "utf-8"
+        except UnicodeDecodeError:
+            enc = "latin-1"
+        needles = [n.encode(enc) for n in wanted if n.encode(enc, errors="ignore") == n.encode(enc, errors="replace")]
+        if not needles:
+            return 0
+        edits: list[tuple[int, bytes, bytes]] = []
+        done = -1
+        for m in re.finditer(b"|".join(re.escape(n) for n in needles), data):
+            if m.start() < done:  # another name of the line that was just taken
+                continue
+            start = data.rfind(b"\n", 0, m.start()) + 1
+            end = data.find(b"\n", m.end())
+            end = len(data) if end < 0 else end
+            done = end
+            was = data[start:end]
+            kept = was[:-1] if was.endswith(b"\r") else was
+            head = _LOG_LINE.match(kept.decode(enc))
+            if head is None:
+                continue
+            by = _LOG_BY.search(head["text"])
+            tail = (by[0] if by else "").encode(enc)
+            core = f"{head['verb']}{PURGED}".encode(enc)
+            room = len(kept) - len(core) - len(tail)
+            if room < 0:
+                return self._scrub_log_whole(path, wanted)
+            new = core + b" " * room + tail
+            if new != kept:
+                edits.append((start, kept, new))
+        if edits:
+            with self._writing(self.root, tracked=True):
+                txn.patch(path, edits)
+            self._log = logfile.LogTail()  # the tail of the file may be a line that changed
+        return len(edits)
+
+    def _scrub_log_whole(self, path: Path, wanted: list[str]) -> int:
+        """`scrub_log` for a log with a line too short to be overwritten in place: the file is written whole, lines of their own length.
+        Counted in `log_rewrites` and said in the log of the library: it costs the whole file, as before the lines were written in place."""
+        self.log_rewrites += 1
+        log.warning("log.md has a line too short to be purged in place: the file is written whole")
         found = re.compile("|".join(re.escape(n) for n in wanted))
         lines = read_utf8_or_latin1(path).splitlines()
         changed = 0
@@ -805,39 +1089,94 @@ class WikiStore:
         if changed:
             with self._writing(self.root, tracked=True):
                 write_atomic(path, "\n".join(lines).rstrip() + "\n")
+            self._log = logfile.LogTail()  # the file is another one now
         return changed
 
     def write_index(self, folder: Folder) -> None:
-        parts: list[str] = []
+        """Write the folder's `index.md`. When the file holds exactly the entries it should, apart from notes it lacks, and ends with
+        the `# Notes` section, the lacking entries are appended (a note's entry costs its own bytes, whatever the folder holds); the
+        entries of a folder are a set, and the new ones stand last until the next full write. Any other difference (an entry that
+        changed, a note that left, a subfolder made or gone, a line somebody added) writes the file whole, the notes in order, as
+        ever; no difference writes nothing."""
+        lead: list[str] = []
         if folder.is_root:
-            parts.append(f'---\nokf_version: "{OKF_VERSION}"\n---\n')
+            lead.append(f'---\nokf_version: "{OKF_VERSION}"\n---\n')
         if folder.subfolders:
             lines = [_entry(f.name, f"{f.name}/{INDEX}", f.description) for f in folder.subfolders]
-            parts.append("# Subdirectories\n\n" + "\n".join(lines) + "\n")
-        if folder.notes or not folder.subfolders:
-            lines = [_entry(n.title, f"{n.slug}.md", n.summary) for n in folder.notes]
-            parts.append("# Notes\n\n" + "\n".join(lines) + ("\n" if lines else ""))
+            lead.append("# Subdirectories\n\n" + "\n".join(lines) + "\n")
+        show_notes = bool(folder.notes or not folder.subfolders)
+        entries = [_entry(n.title, f"{n.slug}.md", n.summary) for n in folder.notes] if show_notes else []
+        prefix = "\n".join(lead) + "\n" if lead else ""
+        text = "\n".join([*lead, "# Notes\n\n" + "\n".join(entries) + ("\n" if entries else "")]) if show_notes else "\n".join(lead)
+        path = folder.path / INDEX
         with self._writing(folder.path, tracked=self._holds(folder)):
-            write_atomic(folder.path / INDEX, "\n".join(parts))
+            current = read_utf8_or_latin1(path) if path.exists() else None
+            if current == text:
+                return
+            if show_notes and current is not None and (add := self._missing_entries(current, prefix + "# Notes\n\n", entries)) is not None:
+                if add:
+                    txn.append(path, add)
+                return
+            write_atomic(path, text)
+
+    @staticmethod
+    def _missing_entries(current: str, head: str, entries: list[str]) -> str | None:
+        """What to append to an index file `current` to have all of `entries` in it: None if the file is not a prefix `head` followed
+        by some of the entries (once each, as they are), so that it has to be written whole; "" if it lacks none."""
+        if not current.startswith(head):
+            return None
+        present = current[len(head) :].splitlines()
+        wanted = set(entries)
+        if len(set(present)) != len(present) or any(line not in wanted for line in present):
+            return None
+        have = set(present)
+        missing = [e for e in entries if e not in have]
+        if not missing:
+            return ""
+        return ("\n" if present and not current.endswith("\n") else "") + "\n".join(missing) + "\n"
 
     def append_log(self, verb: str, text: str, link: str | None = None, link_title: str | None = None) -> None:
-        """Newest first under a `## YYYY-MM-DD` heading (OKF §9); inside `authored`, the line ends with ` · by <author>`."""
+        """One line at the end of `log.md`, in the order of arrival (see `llmw2.bundle.logfile`), under a `## YYYY-MM-DD` heading
+        that is added when the day (UTC) is not the day of the last heading; inside `authored`, the line ends with ` · by <author>`.
+        A log of 1.0.5 or earlier is first turned around. Nothing of the log is read or rewritten: a line costs its own bytes."""
         path = self.root / LOG
-        lines = read_utf8_or_latin1(path).splitlines() if path.exists() else ["# Wiki log"]
         entry = f"* **{verb}**: " + " - ".join(p for p in (f"[{link_title or link}]({link})" if link else "", text) if p)
         if (author := _author.get()) is not None:
             entry += f" · by {author}"
-        today = f"## {datetime.now(UTC).date().isoformat()}"
-        first = next((i for i, line in enumerate(lines) if line.startswith("## ")), None)
-        if first is not None and lines[first] == today:
-            lines.insert(first + 2 if lines[first + 1 : first + 2] == [""] else first + 1, entry)
-        else:
-            at = first if first is not None else len(lines)
-            lines[at:at] = [today, "", entry, ""]
-            if at > 0 and lines[at - 1] != "":
-                lines.insert(at, "")
+        if not path.exists():
+            write_atomic(path, logfile.TITLE + "\n")
+        tail = self._log
+        if not tail.sync(path):  # the file is not as this store left it (or this store never looked): is it in the right order?
+            if not self._log_is_current(path):
+                self._turn_log(path)
+            tail.sync(path)
+        heading = f"## {utc_now().date().isoformat()}"
+        new_day = tail.heading != heading
+        chunk = ("\n" if tail.last and not tail.last.endswith(b"\n") else "") + (f"\n{heading}\n\n" if new_day else "") + entry + "\n"
+        data = chunk.encode("utf-8")
         with self._writing(self.root, tracked=True):
-            write_atomic(path, "\n".join(lines).rstrip() + "\n")
+            txn.append(path, chunk)
+        tail.appended(path, data, heading if new_day else None, entry)
+
+    def recent_log(self, limit: int) -> list[str]:
+        """The last `limit` lines of `log.md`, newest first, read from the end. A log of 1.0.5 or earlier that has not been turned
+        around yet (a read-only use) lists its lines as they are: newest first already."""
+        path = self.root / LOG
+        if limit <= 0 or not path.exists():
+            return []
+        if self._log_is_current(path):
+            return logfile.newest_lines(path, limit)
+        return [line for line in read_utf8_or_latin1(path).splitlines() if line.startswith("* ")][:limit]
+
+    def last_split_at(self, folder_rel: str) -> int:
+        """The most notes the folder held when a split was last tried on it, by the "Split" lines of `log.md` (0 if none): the log
+        is read once by a store, then kept up to date by its own appends; a log changed by someone else is read again."""
+        path = self.root / LOG
+        tail = self._log
+        tail.sync(path)
+        if tail.splits is None:
+            tail.splits = logfile.split_marks(read_utf8_or_latin1(path)) if path.exists() else {}
+        return tail.splits.get(folder_rel, 0)
 
     # -- moving and describing ------------------------------------------------
 
@@ -900,7 +1239,7 @@ class WikiStore:
                 write_atomic(path, doc.serialize())
         touched: dict[str, Folder] = {}
         for (note, target, _), copy in zip(plan, moved, strict=True):
-            note.path.unlink()
+            txn.unlink(note.path)
             self._stale(note.path.parent)
             if note.folder is not None:
                 note.folder.notes.remove(note)
@@ -933,7 +1272,7 @@ class WikiStore:
         description, old_parent = folder.description, folder.parent
         came_from = {n.rel: n.folder.label for n in folder.all_notes() if n.folder is not None}  # the folder each note leaves
         self._stale()
-        os.replace(folder.path, parent.path / name)
+        txn.replace_dir(folder.path, parent.path / name)
         root = self.load()
         moved = root.find(new)
         assert moved is not None
@@ -987,7 +1326,7 @@ class WikiStore:
         if left:  # something that is not a note: the folder stays
             raise InputError(f"/{src} still holds a file that is not a note ({left[0].name}): move or delete it by hand")
         self._stale()
-        shutil.rmtree(self.root / src)
+        txn.rmtree(self.root / src)
         parent = self.load().find(src.rpartition("/")[0])
         if parent is not None:
             self.write_index(parent)
@@ -1130,18 +1469,19 @@ class WikiStore:
         self._stale()
         deleted = self._delete(root, root.all_notes(), [] if keep_folders else list(root.subfolders))
         for raw in sorted((self.root / RAW).glob("*.md")):
-            raw.unlink()
+            txn.unlink(raw)
             deleted.sources.append(f"/{RAW}/{raw.name}")
         deleted.sources = list(dict.fromkeys(deleted.sources))
         archive = self.root / ARCHIVE_DIR
         deleted.archived += [f"/{p.relative_to(self.root).as_posix()}" for p in sorted(archive.rglob("*.md"))]
         deleted.archived = list(dict.fromkeys(deleted.archived))
-        shutil.rmtree(archive, ignore_errors=True)
-        shutil.rmtree(self.root / SYNC_DIR, ignore_errors=True)
+        txn.rmtree(archive, ignore_errors=True)
+        txn.rmtree(self.root / SYNC_DIR, ignore_errors=True)
         if not keep_folders:
-            shutil.rmtree((self.root / CACHE_FILE).parent, ignore_errors=True)
-        (self.root / PROPOSALS_FILE).unlink(missing_ok=True)  # the notes it names are gone
-        write_atomic(self.root / LOG, "# Wiki log\n")
+            txn.rmtree((self.root / CACHE_FILE).parent, ignore_errors=True)
+        txn.unlink(self.root / PROPOSALS_FILE, missing_ok=True)  # the notes it names are gone
+        write_atomic(self.root / LOG, logfile.TITLE + "\n")
+        self._log = logfile.LogTail()
         self.append_log("Emptied the wiki", f"{len(deleted.notes)} notes and {len(deleted.folders)} folders deleted")
         return deleted
 
@@ -1178,12 +1518,12 @@ class WikiStore:
         touched: list[Folder] = []
         self._stale()  # whatever goes, the kept folders are listed again
         for folder in folders:
-            shutil.rmtree(folder.path)
+            txn.rmtree(folder.path)
             if folder.parent is not None:
                 folder.parent.subfolders.remove(folder)
                 touched.append(folder.parent)
         for note in notes:
-            note.path.unlink(missing_ok=True)  # a note inside a deleted folder is gone already
+            txn.unlink(note.path, missing_ok=True)  # a note inside a deleted folder is gone already
             if note.folder is not None:
                 note.folder.notes.remove(note)
                 touched.append(note.folder)
@@ -1191,13 +1531,13 @@ class WikiStore:
             if folder.path.is_dir():
                 self.write_index(folder)
         for path in self.archived_of(gone, drop):  # the archived versions of what went
-            path.unlink()
+            txn.unlink(path)
             deleted.archived.append(f"/{path.relative_to(self.root).as_posix()}")
         cited = {r for n in kept for r in _raw_sources(n)} | set(keep)
         for resource in dict.fromkeys(r for n in notes for r in _raw_sources(n)):
             path = (self.root / resource.lstrip("/")).resolve()
             if resource not in cited and path.parent == (self.root / RAW).resolve() and path.is_file():
-                path.unlink()
+                txn.unlink(path)
                 deleted.sources.append(resource)
         return deleted
 
@@ -1327,6 +1667,8 @@ def read_utf8_or_latin1(path: Path) -> str:
 def write_atomic(path: Path, text: str) -> None:
     """Write atomically, so a concurrent reader never sees half a file."""
     # One temporary name per process and thread: two writers never share, and so never clobber, a temp file.
+    if (section := txn.current()) is not None:
+        section.before_write(path, text.encode("utf-8"))  # the undo log has the image before; no flush here, the commit flushes
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
         tmp.write_text(text, encoding="utf-8", newline="\n")  # "\n" on every system: a bundle moves between them

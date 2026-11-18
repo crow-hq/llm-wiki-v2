@@ -16,6 +16,7 @@ import pytest
 from llmw2 import Wiki, WikiConfig, cli
 from llmw2.errors import ModelError
 from tests.wiki.fakes import FakeClassifier, FakeLLM
+from tests.wiki.problems import errors
 from tests.wiki.test_files import make_pdf
 
 NOTE = "finance/revenue-recognition.md"  # the root holds no notes: the first one opens a folder
@@ -187,6 +188,19 @@ def test_check_exits_1_after_corrupting_a_note(
     out, err = capsys.readouterr()
     assert out == f"{NOTE}: Missing required frontmatter keys: type\n"
     assert err == "1 problem(s)\n"
+
+
+def test_check_exits_0_when_it_only_has_warnings(
+    made: list[dict[str, Any]], bundle: Path, llm: FakeLLM, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ingest_one(bundle, llm)
+    log = bundle / "log.md"
+    log.write_text(log.read_text(encoding="utf-8") + "\n## 2001-01-01\n\n* **Created**: a clock that went back\n", encoding="utf-8")
+
+    assert run(bundle, "check") == 0
+
+    out, err = capsys.readouterr()
+    assert out.startswith("warning: log.md: log days are out of order") and err == "0 problem(s), 1 warning(s)\n"
 
 
 def test_make_wiki_failure_exits_2_with_the_message(
@@ -393,7 +407,7 @@ def test_the_packaged_demo_is_a_valid_wiki() -> None:
 
     with resources.as_file(resources.files("llmw2") / "demo") as demo:
         root = WikiStore(demo, actor="test").load()
-        assert check(demo) == []
+        assert errors(check(demo)) == []
     assert len(root.all_notes()) > 20 and len(root.subfolders) >= 5
 
 

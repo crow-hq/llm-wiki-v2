@@ -16,6 +16,7 @@ from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.tree import LOG, Note
 from llmw2.errors import ConfigError, InputError, ModelError
 from tests.wiki.fakes import FakeClassifier, FakeLLM
+from tests.wiki.problems import errors
 
 HERE, NEW, NONE = "Here", "New subfolder", "None of these"
 SUMMARIZE, ROUTE_FALLBACK, NAME_FOLDER = "librarian/summarize", "librarian/route_fallback", "librarian/name_folder"
@@ -133,12 +134,12 @@ def test_a_note_without_an_id_stays_valid_and_gets_none(classic_wiki: Wiki) -> N
     add_folder(classic_wiki, "/", "beta", "Beta things.")
     note = legacy_note(classic_wiki, "/alpha", "Old")
 
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
     update(classic_wiki, note)
     assert "id" not in doc(classic_wiki, note.rel).frontmatter
     moved = classic_wiki.move_note(note.rel, "/beta")
     assert "id" not in doc(classic_wiki, moved.rel).frontmatter
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_find_note_returns_the_note_with_that_id(classic_wiki: Wiki) -> None:
@@ -188,7 +189,7 @@ def test_check_is_clean_when_every_id_is_different_or_missing(classic_wiki: Wiki
     legacy_note(classic_wiki, "/alpha", "Third")
     legacy_note(classic_wiki, "/alpha", "Fourth")
 
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_check_reports_two_notes_sharing_an_id_and_nothing_else(classic_wiki: Wiki) -> None:
@@ -199,7 +200,7 @@ def test_check_reports_two_notes_sharing_an_id_and_nothing_else(classic_wiki: Wi
     path = classic_wiki.cfg.bundle / second.rel
     path.write_text(path.read_text(encoding="utf-8").replace(note_id(classic_wiki, second.rel), shared), encoding="utf-8")
 
-    problems = classic_wiki.check()
+    problems = errors(classic_wiki.check())
 
     assert problems and all("duplicate id" in p.message.lower() for p in problems)
 
@@ -209,7 +210,7 @@ def test_the_archived_copy_is_not_a_duplicate(classic_wiki: Wiki) -> None:
     note = add_note(classic_wiki, "/alpha", "First")
     classic_wiki.store.archive_note(note)
 
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_the_id_is_in_no_link_index_or_see_also_entry(classic_wiki: Wiki) -> None:
@@ -354,7 +355,7 @@ def test_apply_moves_the_note_and_the_wiki_stays_clean(filed: Wiki, llm: FakeLLM
     assert [(p.path, p.proposed, p.applied) for p in proposals] == [("alpha/misfiled.md", "/beta", True)]
     assert not (filed.cfg.bundle / "alpha" / "misfiled.md").exists()
     assert note_id(filed, "beta/misfiled.md") == before
-    assert filed.check() == []
+    assert errors(filed.check()) == []
     assert "Moved" in (filed.cfg.bundle / LOG).read_text(encoding="utf-8")
     assert llm.calls == []
     assert "classifier 1 calls" in filed.usage.summary()
@@ -426,7 +427,7 @@ def test_cli_audit_min_confidence_and_apply(
 
     assert code == 0
     assert (filed.cfg.bundle / "beta" / "misfiled.md").is_file()
-    assert filed.check() == []
+    assert errors(filed.check()) == []
 
 
 def test_cli_audit_in_classic_mode_exits_non_zero(
@@ -476,7 +477,7 @@ def test_http_audit_with_min_confidence_and_apply(filed: Wiki, classifier: FakeC
     assert response.status_code == 200
     assert [(p["proposed"], p["applied"]) for p in response.json()] == [("/beta", True)]
     assert (filed.cfg.bundle / "beta" / "misfiled.md").is_file()
-    assert filed.check() == []
+    assert errors(filed.check()) == []
 
 
 def test_http_audit_in_classic_mode_is_an_error(client: Any) -> None:

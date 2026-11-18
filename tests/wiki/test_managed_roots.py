@@ -14,6 +14,7 @@ from llmw2 import Wiki, WikiConfig, cli
 from llmw2.bundle.tree import LOG, Note
 from llmw2.errors import InputError
 from tests.wiki.fakes import FakeLLM
+from tests.wiki.problems import errors
 
 SOURCE = {"type": "text", "title": "t"}
 
@@ -58,7 +59,7 @@ def built(classic_wiki: Wiki) -> Built:
 
 
 def clean(wiki: Wiki) -> None:
-    assert [str(p) for p in wiki.check()] == []
+    assert [str(p) for p in errors(wiki.check())] == []
 
 
 def log_text(wiki: Wiki) -> str:

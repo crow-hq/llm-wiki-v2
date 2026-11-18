@@ -14,6 +14,7 @@ from llmw2 import Wiki
 from llmw2.bundle.store import ARCHIVE_DIR, SYNC_DIR
 from llmw2.bundle.tree import INDEX, LOG, RAW, drop_links, parse_index
 from llmw2.errors import InputError
+from tests.wiki.problems import errors
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
@@ -86,7 +87,7 @@ def test_delete_note_when_other_notes_link_to_it_then_their_links_go_and_the_wik
         "unlinked": [filed.plan, filed.budget],
     }
     assert exists(classic_wiki, filed.raw_plan)  # the plan still cites it
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_delete_folder_when_it_has_subfolders_then_everything_in_it_goes(classic_wiki: Wiki, filed: Filed) -> None:
@@ -100,7 +101,7 @@ def test_delete_folder_when_it_has_subfolders_then_everything_in_it_goes(classic
     assert sorted(deleted.sources) == sorted([filed.raw_budget, filed.raw_prices])
     assert "finance/" not in body(classic_wiki, filed.plan).replace("example.com/finance/", "")
     assert [n.rel for n in classic_wiki.tree().all_notes()] == [filed.plan]
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
     assert "**Deleted folder**: /finance, with 2 notes" in (classic_wiki.cfg.bundle / LOG).read_text(encoding="utf-8")
 
 
@@ -121,7 +122,7 @@ def test_clear_when_the_wiki_is_full_then_it_is_empty_valid_and_other_files_stay
     log = (classic_wiki.cfg.bundle / LOG).read_text(encoding="utf-8")
     assert "Emptied the wiki" in log and "Created" not in log
     assert photo.exists()
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_delete_note_when_it_was_revised_then_its_archived_versions_go_and_others_stay(classic_wiki: Wiki, filed: Filed) -> None:

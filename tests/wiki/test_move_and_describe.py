@@ -20,6 +20,7 @@ from llmw2.bundle.store import body_hash
 from llmw2.bundle.tree import INDEX, LOG, RAW, link_target, parse_index, split_see_also
 from llmw2.errors import InputError
 from tests.wiki.fakes import FakeClassifier, FakeLLM
+from tests.wiki.problems import errors
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
@@ -153,7 +154,7 @@ def test_move_note_when_the_folder_exists_then_the_file_is_at_the_new_path_and_t
     assert now.frontmatter["generated"]["body_hash"] == body_hash(split_see_also(now.body)[0])  # the links in it were rewritten
     assert now.main_body().startswith("Prices are in")
     assert [n.rel for n in classic_wiki.tree().all_notes()].count(NEW_TEA) == 1
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_move_note_when_moved_to_the_root_then_it_lives_there(classic_wiki: Wiki, filed: Filed) -> None:
@@ -166,7 +167,7 @@ def test_move_note_when_moved_to_the_root_then_it_lives_there(classic_wiki: Wiki
     assert "tea-sourcing.md" in listed(classic_wiki, "")
     assert filed.price_list in targets(classic_wiki, "tea-sourcing.md")
     assert "tea-sourcing.md" in targets(classic_wiki, filed.runbook)
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_move_note_when_the_name_is_taken_in_the_target_then_the_slug_is_made_unique(classic_wiki: Wiki, filed: Filed) -> None:
@@ -185,7 +186,7 @@ def test_move_note_when_the_name_is_taken_in_the_target_then_the_slug_is_made_un
     assert sorted(listed(classic_wiki, "sourcing/green")) == ["tea-sourcing-2.md", "tea-sourcing.md"]
     assert "sourcing/green/tea-sourcing-2.md" in targets(classic_wiki, filed.runbook)
     assert taken.rel not in targets(classic_wiki, filed.runbook)
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 # -- move_note: the links ---------------------------------------------------------------------------------------------
@@ -222,7 +223,7 @@ def test_move_note_when_others_link_to_it_then_their_links_lead_to_the_new_path(
     assert "#x)" in classic_wiki.store.read(filed.runbook).body  # an anchor survives the rewrite
     inline = classic_wiki.store.read(filed.plan).main_body()
     assert "[the tea note](" in inline and "Read" in inline  # the text of the link is kept
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_move_note_then_both_indexes_are_rewritten(classic_wiki: Wiki, filed: Filed) -> None:
@@ -257,7 +258,7 @@ def test_move_note_when_it_is_moved_back_then_the_links_are_as_they_were(classic
 
     # ASSERT
     assert {rel: targets(classic_wiki, rel) for rel in watched} == before
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_check_after_many_random_moves_reports_nothing_new(classic_wiki: Wiki, filed: Filed) -> None:
@@ -267,7 +268,7 @@ def test_check_after_many_random_moves_reports_nothing_new(classic_wiki: Wiki, f
     folders = [f.label for f in wiki.tree().walk()]
     notes = len(wiki.tree().all_notes())
     graph_before = graph_by_title(wiki)
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
     # ACT
     moves = 0
@@ -280,7 +281,7 @@ def test_check_after_many_random_moves_reports_nothing_new(classic_wiki: Wiki, f
         moves += 1
 
         # ASSERT
-        assert wiki.check() == [], (note.rel, folder)
+        assert errors(wiki.check()) == [], (note.rel, folder)
         assert moved.rel.startswith("" if folder == "/" else folder.strip("/") + "/")
         assert len(wiki.tree().all_notes()) == notes
         assert graph_by_title(wiki) == graph_before
@@ -320,7 +321,7 @@ def test_move_note_when_it_has_archived_copies_then_their_archived_from_follows_
     after_other = read_doc(classic_wiki, other)  # another note's archive is not touched
     assert (after_other.frontmatter, after_other.body) == (other_before.frontmatter, other_before.body)
     assert [n.rel for n in store.load().all_notes() if n.rel.startswith(".archive")] == []
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_move_note_when_its_origin_is_ingested_again_unchanged_then_the_note_is_found_at_the_new_path(
@@ -363,7 +364,7 @@ def test_move_note_when_the_origin_comes_back_changed_then_the_note_at_the_new_p
     assert not exists(classic_wiki, OLD_TEA)
     record = classic_wiki.store.find_origin(ORIGIN.key)
     assert record is not None and record.notes == [NEW_TEA]
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 # -- move_note: errors ------------------------------------------------------------------------------------------------
@@ -468,7 +469,7 @@ def test_describe_folder_then_the_entry_in_the_parent_index_is_rewritten(classic
     assert loaded is not None and loaded.description == "Every price, quote and discount."
     assert classic_wiki.tree().to_dict()["subfolders"][0]["subfolders"][0]["description"] == "Every price, quote and discount."
     assert sorted(listed(classic_wiki, "finance")) == ["budget.md", "pricing/index.md", "tea-sourcing.md"]  # nothing else lost
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_describe_folder_when_the_folder_is_at_the_top_then_the_root_index_is_rewritten(classic_wiki: Wiki, filed: Filed) -> None:
@@ -487,7 +488,7 @@ def test_describe_folder_collapses_whitespace(classic_wiki: Wiki, filed: Filed) 
     # ASSERT
     assert folder.description == "How the work is done, step by step."
     assert entry(classic_wiki, "", "ops/index.md") == "How the work is done, step by step."
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 def test_describe_folder_then_the_log_has_a_described_folder_line(classic_wiki: Wiki, filed: Filed) -> None:
@@ -557,7 +558,7 @@ def test_http_move_answers_with_the_note_as_get_note_returns_it(client: TestClie
     assert (body["path"], body["title"]) == (NEW_TEA, "Tea sourcing")
     assert set(body) == {"path", "title", "summary", "tags", "frontmatter", "body"}
     assert client.get("/note", params={"path": filed.tea}).status_code == 404
-    assert client.get("/check").json() == []
+    assert [p for p in client.get("/check").json() if not p.startswith("warning: ")] == []
 
 
 def test_http_move_when_the_note_is_missing_then_404(client: TestClient, filed: Filed) -> None:
@@ -697,7 +698,7 @@ def test_cli_move_prints_the_new_path_and_moves_the_note(
     assert code == 0
     assert NEW_TEA in out and len(out.strip().splitlines()) == 1
     assert exists(classic_wiki, NEW_TEA) and not exists(classic_wiki, OLD_TEA)
-    assert classic_wiki.check() == []
+    assert errors(classic_wiki.check()) == []
 
 
 @pytest.mark.parametrize(

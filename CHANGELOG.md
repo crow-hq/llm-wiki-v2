@@ -7,6 +7,122 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Every write section of the bundle is a transaction (`llmw2.bundle.txn`): the image of each file is saved in an undo log, made durable,
+  before the file changes; when the section ends the files are flushed, a commit record is made durable and the log is emptied. A
+  section that raises, or a process that dies in it, leaves the wiki as it was before the section; the next one to open the wiki puts it
+  back. What somebody else wrote after the crash (an older version of the library, a hand edit, git) is not overwritten, except in the
+  paths a filing declares in one record (a new file, a file appended to, such as `log.md`): there the undo removes the file or cuts to the
+  length it had, so lines an older version of the library appended after the crash, before this one's first lock, are lost with the
+  section's own. In every other path it is listed by `check`. `.llmw2/journal/` has its own `.gitignore`. A section that moves or deletes whole folders (`rename_root`, `merge_roots`,
+  `delete_folder`, `clear`, a batch's tidy) is not covered and writes as it did. Each document filed now costs a few more flushes of the
+  disk (about +45 ms on NTFS in the library's own timing).
+- `Wiki.remember(text, *, title, key, fields, author, at, timeout) -> Receipt`: the text is kept in the journal the moment it is asked, and a
+  thread of the process (the filer, started by the first `remember`, `drain` or `_start_filer`; `Wiki()` starts none) files it with the
+  same steps as `ingest`. The `Receipt` (`id`, `key`, `at`, `state`, `note`, `wait(timeout)`) is read from the journal at each access;
+  `status()` is a dict with a fixed set of keys and no `check()`; `drain(timeout)` returns when what was written before the call is done
+  (`TimeoutError`, `FilerError`); `close()` stops the filer. `QueueFull` and `DiskFull` refuse an entry before anything is written. The key
+  is the one given, or `text:<sha256 of the text>` (so a retry of the same text is the same memory, and a retry after a crash finds the text
+  already filed: this is the one difference from `ingest`, which does not deduplicate a text with no origin). `at` (a datetime with a
+  time zone) is kept as `event_at`, a top-level key of the raw copy's front matter, in UTC with microseconds; it is outside the hash, a
+  raw copy without it is byte for byte what it was, and the release before reads and checks a copy that has it. The same text with another `at` is
+  "unchanged": no model call, the new time in the journal and in a "Seen again" log line. A process that dies after a section committed and
+  before the journal was told is recovered by the next one: the commit carries the entry's id and what was done, and recovery writes the
+  `F` record before the undo log is emptied.
+- `llmw2.bundle.filelock.FileLock`: an exclusive lock on a file across threads and processes that waits in the kernel, with a timeout.
+- `llmw2.bundle.journal.Journal`: the journal where `remember` keeps an entry the moment it is asked. Segments of 16 MiB in
+  `.llmw2/journal/`, filled with zeros that were written, so that an append is one write inside blocks that exist and the ack,
+  `fdatasync` (`os.fsync` on Windows) of the segment, is one device block; a header with a version, the number of the segment, a new
+  salt at each reuse and the id of the node; a CRC for each record over the salt, the order number and the content (a record of an
+  earlier use of the segment is never read as new); reading stops at the first record that is not valid, and a torn tail after a crash
+  is told from a fault in the middle (a record not valid before a flush limit that a valid record after it declares), which `check`
+  reports and nothing is appended over. Processes share the flush (group commit across processes). A record is never rewritten: a
+  segment is reused only from the oldest, after the entries it holds that are not done (open, or given up) were copied forward with
+  their state in one record each, and its used bytes are written over with zeros first. The reuse reads the journal once for the
+  lot, and again before a copy only when another writer moved the shared tail or the last copy did not start where the read or the
+  copy before it ended; a copy that a tombstone written meanwhile made pointless (by a writer that does not share the tail hint too:
+  another Windows session, another `/dev/shm`) is named on that tombstone (an `F` record with the ids it forgot) before the segment
+  of the original is zeroed, by whichever process reuses it (the journal says which copies came after their tombstone, so a crash
+  before the record loses nothing), and no reader takes it up; a tombstone copied forward before its purge completed keeps the segment of the original
+  (`seg`), so that a reader of the copy alone does not forget an entry of the same key remembered after it. The release before this
+  one leaves both alone with the rest of the journal. An entry and the records of its state are admitted only while the entries not
+  done fit in half a segment (`QueueFull`, `FailedBacklog` for entries given up; `InputError` for one entry larger than that, which
+  goes in as a file). A journal of a newer format is read and written by no older version of the library (`JournalVersionError`).
+- `Wiki.log(limit)`: the last lines of `log.md`, newest first.
+- `Wiki.purge` forgets what `remember` kept under the key too: the entries of the journal with that key (queued, filed or given up:
+  a purge is also the call that frees the place of an entry given up) close for good, and the receipt says `forgotten`. The key of
+  a `remember` is `Receipt.key`: the key it was given (its raw copy's origin, "remember::<key>", is taken as well) or, without one,
+  "text:<sha256 of the text>", which now also takes out the raw copies of that text saved with no origin. Before anything is deleted
+  a tombstone is made durable in the journal, with the hash of the key and never the key; after the files, the undo log is zeroed
+  whole (`txn.wipe`), the segment of the journal in use is sealed and every segment before the next one is reused (zeroed, what is
+  not done in it copied forward first), and an `O` record completes the tombstone. The vectors of texts no longer in the wiki go
+  in the same purge (their pages zeroed). `Purged.entries` counts the entries forgotten and `Purged.pending` is empty, or names
+  what still holds some of it: `journal` when another process holds the journal's lease and has not reused its segments within
+  `FORGET_WAIT` (30 s, one wait in all), `index` when a reader of another process holds the WAL of the search index as long. The
+  filer completes either at a later look (its delay doubles, as for an entry that failed), a purge cut by a crash is taken up the
+  same way, from the hash (the raw copies still there say which key it was; only when the tombstone does not say its files were
+  done, so an ordinary purge pays no scan of the raw copies), and any later purge completes the tombstones of every
+  key left open when the lease is free, so a wiki with no filer completes them too. `llmwiki2 purge` prints the entries forgotten
+  and exits with 3 when something is pending. After a purge that is done, the text of the document is in no file of the wiki's
+  folder; what a disk keeps of blocks written before is out of reach of a file and is not promised. The first purge of a wiki that
+  never used `remember` makes its journal (three segments, 48 MiB of disk, once: space, not wear that comes again). The release
+  before this one does not know the journal: it leaves `.llmw2/journal/` alone, and its `purge` does not forget the entries queued
+  there, which this version files later; a tombstone left open is completed by the next purge or filer of this version.
+
+- `Problem.severity` (`"error"` or `"warning"`). `check` now also reports, as errors, a raw copy that no note (nor archived version of one) cites and a
+  temporary file an interrupted write left anywhere in the bundle, and, as warnings, a See-also entry the note it points to does not have back and a
+  note that no line of `log.md` names. A wiki written before may have such warnings (a wiki made by hand or by an older version): `llmwiki2 check`
+  reports them and exits 0.
+
+### Changed
+
+- The record of a filing in the journal (`F`, what `Receipt.wait()` returns) names the notes it links to by their ids (`related`),
+  never by title or path, so that a purge does not leave the title of a note in the records of other entries.
+- A purge no longer writes `log.md` whole: each line that names what was purged is overwritten where it stands by a line of the same
+  length in bytes (`* **Verb**: [purged]`, blanks, and ` · by <author>` when the line had one), so the file keeps its size and every
+  other line its place, and the cost of a purge no longer grows with the log. The undo log keeps the bytes of those lines only, in a
+  file of the trash that is zeroed and flushed before it is deleted (a copy the trash holds of a file a section overwrote is zeroed
+  too, and a trash a crash left with no record is emptied at the next lock). A line too short to hold the marker makes the file be
+  written whole, as before: `Purged.log_rewritten` says so.
+- The cache of the vectors keeps its rollback journal between writes (`journal_mode=PERSIST`): the file is no longer made and deleted
+  at every write of vectors. It holds hashes and vectors, never a text, and a purge cuts it to nothing, with the vectors of the texts
+  no longer in the wiki.
+- The undo log of a section holds no text: a rewritten file's image is kept as a hard link in `.llmw2/journal/trash/` (a copy where the file
+  system has no hard links), emptied when the section ends; a record of appended lines holds their length and hash, not the lines. A filing
+  declares in one record the raw copy and note it makes and the index and log it appends to (`WikiStore.declare_filing`), and so pays one
+  flush for them instead of four. On POSIX the log is a preallocated segment of the journal's format (a new salt for each section, a CRC for
+  each record, `fdatasync`, never truncated); on Windows it stays a file of lines.
+- `rebuild` opens no undo log for each document: a durable mark in `.llmw2/journal/` says it is running, it is taken away when the rebuild has
+  run to the end, and `check` reports a rebuild that did not finish (it is run again from the start). The mark is made before anything is
+  deleted, and what the rebuild wrote is flushed (`os.sync()` on POSIX, every file elsewhere) before the mark is taken away.
+- `WikiStore.lock()` is a `FileLock`: on Windows the wait is in the kernel and no longer a poll every 10 ms (an older version of the library
+  locks the same byte, so the two still exclude each other).
+- `log.md` is written in the order the changes came (oldest first, titled `# Wiki log (oldest first)`), and a line is appended at the end
+  instead of the log being read and written whole: the cost of a line no longer grows with the log. The heading of a day is the real
+  date; a clock that jumped back leaves headings out of order, which `check` reports as a warning, not an error. A log of an older version
+  is turned around once when the wiki is opened. The OKF §9 example shows the newest first (§9 gives no rule on the order); the README says so. An older version of llmw2 that
+  writes into a wiki already turned around adds its lines at the top.
+- `llmwiki2 check` and `GET /check` tell warnings apart: the command prints them with `warning:` and exits with 1 only for errors.
+- A split's moves and its "Split" log line are one section: if the split fails half way nothing is moved and the line says 0 opened.
+- A folder's `index.md` gets the entry of a new note appended instead of being written whole: the cost of a note no longer grows with the folder.
+  The new entries stand last until the next full write, which any other change of the index (an entry that changed, a note that left, a
+  subfolder) does, in order, as before.
+- `search` and `ask` keep the BM25 index of the wiki in a file of the bundle (`.llmw2/cache/search-v5.sqlite`, a cache: delete it and
+  the next search builds it again), shared by the processes on the wiki: a search lists the files (their time and size, nothing read)
+  and reads only the notes new or changed since, by this process or another one, so a process no longer reads every note at its first
+  search; `where` filters on the `fields` the index keeps, with no note read (the notes are grouped by their `fields` once, until the
+  file changes, so that any `where` judges only the distinct ones). The scores and the ranking are exactly those of an index built
+  whole. A build writes the notes in large lots, so that it rewrites each page of the postings fewer times; `import llmw2` does not
+  load the index, the first `Wiki` does. After the upgrade the first search of a wiki builds the file once: on a large wiki it is
+  slower than the first search of the release before, which kept the index in memory, and it writes the file; after it, every
+  process opens the index without reading the notes again. Each process keeps one connection to the file (WAL, `synchronous=NORMAL`, a
+  checkpoint every 16,000 pages), tied to the file and to the process; deleted rows are zeroed (`secure_delete`), and a purge cuts the
+  WAL to nothing and deletes the files put aside as damaged (`.bad`). A damaged file is put aside and built again, and a file with views
+  or triggers (a wiki received from
+  someone) is not trusted and built again. The release before ignores the file. `where` is a filter, not an access control.
+  On Windows the folder of a wiki cannot be deleted while a `Wiki` that searched it is open: `close()` it first.
+
 ## [1.0.5] - 2026-11-17
 
 Tool descriptions an MCP client's model can choose by, the listing on Glama, and a CI that only reads the repository.

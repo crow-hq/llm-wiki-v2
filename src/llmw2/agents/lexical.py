@@ -13,6 +13,7 @@ __copyright__ = (
 import math
 import re
 from collections import Counter
+from collections.abc import Sequence
 
 _WORD = re.compile(r"[^\W_]{3,}|\d+(?:[.,]\d+)*")
 _K1, _B = 1.2, 0.75
@@ -53,33 +54,81 @@ def language_of(text: str) -> str | None:
 
 class Bm25:
     """BM25 over documents whose words were counted once (`counts`: key -> word -> times), so a query reads only the
-    postings of its own words and no text is tokenized again."""
+    postings of its own words and no text is tokenized again.
 
-    def __init__(self, counts: dict[str, Counter[str]]) -> None:
-        self.keys = list(counts)
-        self.lengths = [sum(c.values()) for c in counts.values()]
-        self.avg = sum(self.lengths) / len(self.lengths) if self.lengths else 1.0
-        self.avg = self.avg or 1.0
-        self.postings: dict[str, list[tuple[int, int]]] = {}
-        for i, c in enumerate(counts.values()):
-            for w, f in c.items():
-                self.postings.setdefault(w, []).append((i, f))
+    Documents can be added and removed one at a time (`add`, `remove`): a change to one document costs its own words, not the
+    index. A query ranks the documents of any set of keys (`keys`, default all of them) as an index of just those documents
+    would: the document count, the word frequencies across documents and the average length are those of the set. Lengths are
+    summed as integers, so the scores do not depend on the order in which documents were added or removed."""
 
-    def scores(self, query: str) -> dict[str, float]:
-        """The score of every key (0.0 for one with none of the query's words)."""
-        n = len(self.keys)
-        total = [0.0] * n
+    def __init__(self, counts: dict[str, Counter[str]] | None = None) -> None:
+        self.length: dict[str, int] = {}  # key -> number of words
+        self.total = 0  # the sum of the lengths
+        self.postings: dict[str, list[tuple[str, int]]] = {}  # word -> [(key, times)] in the order the documents were added
+        self._words: dict[str, tuple[str, ...]] = {}  # key -> its distinct words, to take it out (a tuple: the collector does not track it)
+        for key, c in (counts or {}).items():
+            self.add(key, c)
+
+    def __len__(self) -> int:
+        return len(self.length)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.length
+
+    @property
+    def keys(self) -> list[str]:
+        return list(self.length)
+
+    def add(self, key: str, counts: Counter[str]) -> None:
+        """Index a document; one already there under this key is replaced."""
+        if key in self.length:
+            self.remove(key)
+        size = sum(counts.values())
+        self.length[key] = size
+        self.total += size
+        self._words[key] = tuple(counts)
+        for w, f in counts.items():
+            self.postings.setdefault(w, []).append((key, f))
+
+    def remove(self, key: str) -> None:
+        """Take a document out (nothing if it is not there)."""
+        size = self.length.pop(key, None)
+        if size is None:
+            return
+        self.total -= size
+        for w in self._words.pop(key):
+            posting = [entry for entry in self.postings[w] if entry[0] != key]
+            if posting:
+                self.postings[w] = posting
+            else:
+                del self.postings[w]
+
+    def scores(self, query: str, keys: Sequence[str] | None = None) -> dict[str, float]:
+        """The score of every key of `keys` (all the documents, in the order they were added, by default), 0.0 for one with
+        none of the query's words. Every key must be indexed."""
+        keys = list(self.length) if keys is None else keys
+        n = len(keys)
+        if n == len(self.length):
+            subset, size = None, self.total  # the set is the whole index
+        else:
+            subset, size = set(keys), sum(self.length[k] for k in keys)
+        avg = (size / n if n else 1.0) or 1.0
+        total = dict.fromkeys(keys, 0.0)
         for w in set(words(query)):
-            posting = self.postings.get(w, ())
-            idf = math.log(1 + (n - len(posting) + 0.5) / (len(posting) + 0.5))
-            for i, f in posting:
-                total[i] += idf * f * (_K1 + 1) / (f + _K1 * (1 - _B + _B * self.lengths[i] / self.avg))
-        return dict(zip(self.keys, total, strict=True))
+            posting = self.postings.get(w)
+            if not posting:
+                continue
+            found = posting if subset is None else [(k, f) for k, f in posting if k in subset]
+            idf = math.log(1 + (n - len(found) + 0.5) / (len(found) + 0.5))
+            for key, f in found:
+                total[key] += idf * f * (_K1 + 1) / (f + _K1 * (1 - _B + _B * self.length[key] / avg))
+        return total
 
-    def rank(self, query: str) -> list[str]:
+    def rank(self, query: str, keys: Sequence[str] | None = None) -> list[str]:
         """The keys, best match first; ties keep the order of the keys."""
-        scores = self.scores(query)
-        return sorted(self.keys, key=lambda key: -scores[key])
+        keys = list(self.length) if keys is None else list(keys)
+        scores = self.scores(query, keys)
+        return sorted(keys, key=lambda key: -scores[key])
 
 
 def rank(query: str, docs: dict[str, str]) -> list[str]:

@@ -131,7 +131,8 @@ have it set `X-Author`, and the log then says who, as far as the proxy does.
 | `set_routable(path, value)` | close (`False`) or open (`True`) a folder to automatic filing; see [Keeping areas apart](#keeping-areas-apart) |
 | `move_note(path, folder)` · `move_notes(moves)` · `describe_folder(path, description)` | move a note to another folder (its links, and links to it, are rewritten; archived copies follow) · move many, as (note, folder) pairs, in one pass · change a folder's one-line description |
 | `delete_note(path)` · `delete_folder(path)` · `clear()` | delete; links to what goes are removed, and so are raw copies no remaining note cites and the archived versions of the notes deleted; `clear()` also removes the sync cursors, so the next `sync` files every document again |
-| `check()` | lint the bundle; a list of problems (OKF conformance, index drift, broken links) |
+| `check()` | lint the bundle; a list of problems (OKF conformance, index drift, broken links), each with a `severity`: `"error"`, or `"warning"` for what is a mark of the wiki's history (log days out of order after a clock jump). `llmwiki2 check` exits with 1 for errors only |
+| `log(limit=50)` | the last `limit` lines of `log.md`, newest first, read from the end of the file |
 | `usage` | token totals so far (a property): `wiki.usage.to_dict()` |
 | `origin(key)` · `mark_removed(key)` · `purge(key, *, dry_run)` | see below |
 
@@ -349,6 +350,7 @@ Not covered, and free to change in a minor release:
 - which notes a step chooses and what a model writes;
 - decision names and trace texts, and the wording of the lines of `log.md`;
 - the cache files under `.llmw2/cache/` (deleting them is always safe);
+- the files under `.llmw2/journal/`: the undo log of the write in progress, which the next process to open the wiki uses to put it back as it was if the writer died, and the paths that restore left alone (`check` reports them); a `.gitignore` there keeps them out of git;
 - every module, class, function or attribute that `llmw2` does not export and these guides do not name: `WikiStore`
   (`wiki.store`), the modules under `llmw2.agents`, `llmw2.bundle` and `llmw2.models` (import their types from `llmw2`),
   except the step functions of `llmw2.agents.steps_classic` and `llmw2.agents.steps_crow` that [steps.md](steps.md) names
@@ -586,8 +588,19 @@ on the text: nothing is rewritten "to take the document out". Everything written
 note with is written again from its own raw copy. If filing the others again stops (a model failing), the report has
 `stopped` and `errors`; their raw copies stay, cited by no note, and a `rebuild` files them. The classifier cache
 (`classifier.cache`) holds hashes and labels, never text, and is not touched. There is no MCP tool for it, as it cannot
-be undone. `llmwiki2 purge KEY --yes` does it from the terminal (without `--yes` it says what it would delete and exits
+be undone. `llmwiki2 purge KEY --yes` does it from the terminal (exit 3 when something is still pending; without `--yes` it says what it would delete and exits
 with 2); the key is the one the raw copies carry in their `origin`.
+
+What `remember` kept goes with the same call: the key is the receipt's (`Receipt.key`: the key given to `remember`, or
+`text:<sha256 of the text>` without one), and the entries of the journal with that key are forgotten, queued, filed or given
+up (their receipts say `forgotten`). The journal keeps a tombstone with the hash of the key, never the key, and the purge is
+complete when the segments of the journal that held the entries and the records of their filings are zeroed, the undo log
+with them, and the search index has zeroed its rows and emptied its WAL: then `Purged.pending` is empty, and the text of the document is in no file of the wiki's folder (the disk's own
+copies of blocks written before are not in reach of a file, and are not promised). It names `journal` when another process holds
+the journal's lease and has not finished within 30 seconds, and `index` when a reader of another process held the index's WAL
+as long; the process that files completes it at its next look at the journal, and a
+purge cut by a crash is completed by the next process that files, or by the next purge of any key. The vectors of texts no
+longer in the wiki go with the purge. `status()` says how many purges are not complete.
 
 Keeping documents for a time only is left to the caller, in a few lines. This recipe reads `wiki.store`, which is
 internal (no public method lists the origin keys or gives the source's `modified` date), so it may need a change in a

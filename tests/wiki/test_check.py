@@ -10,6 +10,7 @@ import pytest
 from llmw2.bundle.check import check
 from llmw2.bundle.store import WikiStore
 from llmw2.bundle.tree import Folder, Note
+from tests.wiki.problems import errors
 
 SOURCE = {"resource": "/raw/source.md", "title": "Source"}
 
@@ -22,7 +23,7 @@ def store(bundle: Path) -> WikiStore:
 
 
 def _problems(bundle: Path) -> list[str]:
-    return [str(p) for p in check(bundle)]
+    return [str(p) for p in errors(check(bundle))]
 
 
 def _put(path: Path, text: str) -> None:
@@ -117,8 +118,13 @@ def test_log_days_out_of_order_are_reported(store: WikiStore, bundle: Path) -> N
     assert _problems(bundle) == ["log.md: log days are not newest first"]
 
 
+def _first_raw(bundle: Path) -> str:
+    return "/raw/" + sorted(p.name for p in (bundle / "raw").glob("*.md"))[0]
+
+
 def test_raw_is_not_required_in_the_root_index(store: WikiStore, bundle: Path) -> None:
     store.save_raw("Original text.", title="Q3 Report", resource=None)
+    store.write_note(store.load(), title="Q3", summary="Numbers.", body="# Q3\n\nFacts.", tags=[], source={"resource": _first_raw(bundle)})
     assert "raw" not in (bundle / "index.md").read_text()
     assert not (bundle / "raw/index.md").exists()
     assert _problems(bundle) == []
@@ -132,6 +138,8 @@ def test_an_index_with_malformed_frontmatter_is_reported_not_raised(store: WikiS
 
 def test_links_inside_raw_copies_are_not_checked(store: WikiStore, bundle: Path) -> None:
     store.save_raw("Read the [intro](docs/intro.md) first.", title="README", resource="https://example.com/readme")
+    source = {"resource": _first_raw(bundle)}
+    store.write_note(store.load(), title="Readme", summary="A readme.", body="# Readme\n\nFacts.", tags=[], source=source)
     assert _problems(bundle) == []
 
 

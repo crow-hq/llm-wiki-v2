@@ -106,16 +106,16 @@ def test_init_writes_root_index_log_and_raw(store: WikiStore, bundle: Path) -> N
     index = _read(bundle / "index.md")
     assert index.frontmatter == {"okf_version": "0.2"}
     assert index.body.strip() == "# Notes"
-    assert (bundle / "log.md").read_text() == "# Wiki log\n"
+    assert (bundle / "log.md").read_text() == "# Wiki log (oldest first)\n"
     assert (bundle / "raw").is_dir()
 
 
 def test_init_is_idempotent(store: WikiStore, bundle: Path) -> None:
     _put(bundle / "index.md", "# Notes\n\n* [Kept](kept.md) - kept\n")
-    _put(bundle / "log.md", "# Wiki log\n\n## 2026-01-01\n\n* **Kept**: kept\n")
+    _put(bundle / "log.md", "# Wiki log (oldest first)\n\n## 2026-01-01\n\n* **Kept**: kept\n")
     store.init()
     assert (bundle / "index.md").read_text() == "# Notes\n\n* [Kept](kept.md) - kept\n"
-    assert (bundle / "log.md").read_text() == "# Wiki log\n\n## 2026-01-01\n\n* **Kept**: kept\n"
+    assert (bundle / "log.md").read_text() == "# Wiki log (oldest first)\n\n## 2026-01-01\n\n* **Kept**: kept\n"
 
 
 def test_load_raises_when_the_bundle_is_missing(tmp_path: Path) -> None:
@@ -535,26 +535,35 @@ def test_save_raw_never_overwrites_a_copy(store: WikiStore, bundle: Path, clock:
     assert _read(bundle / first.lstrip("/")).body == "one"
 
 
-def test_append_log_starts_today_on_top(store: WikiStore, bundle: Path, clock: type[_Clock]) -> None:
+def test_append_log_starts_today_at_the_end(store: WikiStore, bundle: Path, clock: type[_Clock]) -> None:
     store.append_log("Created", "from /raw/x.md", "finance/revenue.md", "Revenue")
     assert (bundle / "log.md").read_text() == (
-        "# Wiki log\n\n## 2026-09-24\n\n* **Created**: [Revenue](finance/revenue.md) - from /raw/x.md\n"
+        "# Wiki log (oldest first)\n\n## 2026-09-24\n\n* **Created**: [Revenue](finance/revenue.md) - from /raw/x.md\n"
     )
 
 
-def test_append_log_puts_newer_entries_first_within_the_day(store: WikiStore, bundle: Path, clock: type[_Clock]) -> None:
+def test_append_log_puts_newer_entries_last_within_the_day(store: WikiStore, bundle: Path, clock: type[_Clock]) -> None:
     store.append_log("Created", "first")
     store.append_log("Merged", "second", "a.md")
     assert (bundle / "log.md").read_text() == (
-        "# Wiki log\n\n## 2026-09-24\n\n* **Merged**: [a.md](a.md) - second\n* **Created**: first\n"
+        "# Wiki log (oldest first)\n\n## 2026-09-24\n\n* **Created**: first\n* **Merged**: [a.md](a.md) - second\n"
     )
 
 
-def test_append_log_keeps_older_days_below(store: WikiStore, bundle: Path, clock: type[_Clock]) -> None:
-    _put(bundle / "log.md", "# Wiki log\n\n## 2026-09-20\n\n* **Created**: older\n")
+def test_append_log_keeps_older_days_above(store: WikiStore, bundle: Path, clock: type[_Clock]) -> None:
+    _put(bundle / "log.md", "# Wiki log (oldest first)\n\n## 2026-09-20\n\n* **Created**: older\n")
     store.append_log("Created", "newer")
     assert (bundle / "log.md").read_text() == (
-        "# Wiki log\n\n## 2026-09-24\n\n* **Created**: newer\n\n## 2026-09-20\n\n* **Created**: older\n"
+        "# Wiki log (oldest first)\n\n## 2026-09-20\n\n* **Created**: older\n\n## 2026-09-24\n\n* **Created**: newer\n"
+    )
+
+
+def test_append_log_turns_a_log_of_an_older_version_around_first(store: WikiStore, bundle: Path, clock: type[_Clock]) -> None:
+    _put(bundle / "log.md", "# Wiki log\n\n## 2026-09-21\n\n* **Created**: b\n* **Created**: a\n\n## 2026-09-20\n\n* **Created**: older\n")
+    store.append_log("Created", "newer")
+    assert (bundle / "log.md").read_text() == (
+        "# Wiki log (oldest first)\n\n## 2026-09-20\n\n* **Created**: older\n\n## 2026-09-21\n\n* **Created**: a\n* **Created**: b\n"
+        "\n## 2026-09-24\n\n* **Created**: newer\n"
     )
 
 

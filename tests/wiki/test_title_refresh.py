@@ -11,6 +11,7 @@ from typing import Any
 from llmw2 import Origin, Wiki
 from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import FakeLLM
+from tests.wiki.problems import errors
 from tests.wiki.test_librarian_classic import (
     CONSOLIDATE,
     FIND_MATCH,
@@ -142,7 +143,7 @@ def test_a_link_target_stays_the_same_when_the_entry_is_refreshed(bundle: Path, 
     wiki.ingest("Acme raised prices.")
 
     assert (bundle / "finance" / "acme-pricing.md").is_file()
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
 
 def test_archived_versions_are_not_refreshed(bundle: Path, llm: FakeLLM) -> None:

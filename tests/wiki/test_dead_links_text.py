@@ -13,6 +13,7 @@ from llmw2 import Origin, Wiki
 from llmw2.agents import revisions
 from llmw2.bundle.document import OKFDocument
 from tests.wiki.fakes import FakeLLM
+from tests.wiki.problems import errors
 from tests.wiki.test_librarian_classic import (
     CONSOLIDATE,
     FIND_MATCH,
@@ -205,7 +206,7 @@ def test_the_raw_copy_keeps_the_text_as_it_came(wiki: Wiki, llm: FakeLLM, bundle
 def test_check_reports_no_broken_link_in_a_note_whose_dead_links_became_text(wiki: Wiki, llm: FakeLLM) -> None:
     file_note(wiki, llm, "# Overview\n\nSee [the policy](policy.md), [x](../nope/x.md#a) and [[Wiki name]].")
 
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
 
 def test_a_merge_turns_dead_links_into_text(bundle: Path, llm: FakeLLM) -> None:
@@ -220,7 +221,7 @@ def test_a_merge_turns_dead_links_into_text(bundle: Path, llm: FakeLLM) -> None:
 
     body = read(bundle, result.note).body
     assert "Merged, see terms (terms.md) and Acme." in body
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
 
 def test_a_revision_turns_dead_links_into_text(bundle: Path, llm: FakeLLM) -> None:
@@ -235,7 +236,7 @@ def test_a_revision_turns_dead_links_into_text(bundle: Path, llm: FakeLLM) -> No
 
     body = read(bundle, result.note).body
     assert "NEWSUMMARYMARKER, see terms (terms.md) and Annex." in body
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
 
 def test_the_stored_body_hash_matches_the_saved_body_after_the_links_became_text(wiki: Wiki, llm: FakeLLM) -> None:
@@ -280,7 +281,7 @@ def test_a_link_to_a_note_that_exists_follows_the_note_when_it_moves_and_stays_a
     wiki.move_note("terms.md", "/finance")
 
     assert "[the terms](../finance/terms.md#top)" in read(wiki.cfg.bundle, linking.rel).body
-    assert wiki.check() == []
+    assert errors(wiki.check()) == []
 
 
 def test_inline_code_in_the_text_of_a_dead_link_does_not_keep_it_a_link(wiki: Wiki, llm: FakeLLM) -> None:

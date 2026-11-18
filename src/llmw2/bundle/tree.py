@@ -204,6 +204,11 @@ def _held(value: Any, wanted: Any) -> bool:
     return str(value) == str(wanted)
 
 
+def fields_match(fields: Any, where: dict[str, Any]) -> bool:
+    """Whether a note's `fields` (its frontmatter value, any type) hold every key of `where`, as `matching` reads them."""
+    return isinstance(fields, dict) and all(k in fields and _held(fields[k], v) for k, v in where.items())
+
+
 def matching(root: Folder, where: dict[str, Any]) -> Folder:
     """A copy of the tree with only the notes whose `fields` hold every key of `where` (compared as strings; a field that
     is a list holds a value when one of its items is equal to it).
@@ -213,8 +218,7 @@ def matching(root: Folder, where: dict[str, Any]) -> Folder:
     """
 
     def keep(note: Note) -> bool:
-        fields = note.frontmatter.get("fields")
-        return isinstance(fields, dict) and all(k in fields and _held(fields[k], v) for k, v in where.items())
+        return fields_match(note.frontmatter.get("fields"), where)
 
     def copy(folder: Folder, parent: Folder | None) -> Folder:
         out = Folder(folder.path, folder.rel, folder.description, parent=parent, routable=folder.routable)

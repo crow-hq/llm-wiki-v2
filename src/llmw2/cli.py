@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
     health = sub.add_parser("health", help="per folder and month: new subfolders and fallbacks per note filed (from log.md)")
     health.add_argument("--min-filed", type=int, default=HEALTH_MIN_FILED, help="fewest notes filed to flag a row")
     health.add_argument("--max-share", type=float, default=HEALTH_MAX_SHARE, help="largest share of new subfolders and fallbacks")
-    sub.add_parser("check", help="lint the wiki (exit 1 on problems)")
+    sub.add_parser("check", help="lint the wiki (exit 1 on errors; warnings, marks of the wiki's history, do not)")
     serve = sub.add_parser("serve", help="run the HTTP API and the web page")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
@@ -526,8 +526,8 @@ def _purge(wiki: Wiki, args: argparse.Namespace) -> int:
     if not args.yes:
         print(
             f"purge would delete {len(done.notes)} note(s), {len(done.sources)} raw copy(ies) and {len(done.archived)} archived "
-            f"version(s) of {tilde(wiki.cfg.bundle)}, and file {len(done.refiled)} other document(s) again. "
-            "Nothing was done: run it again with --yes.",
+            f"version(s) of {tilde(wiki.cfg.bundle)}, forget {done.entries} entry(ies) of the journal, and file {len(done.refiled)} "
+            "other document(s) again. Nothing was done: run it again with --yes.",
             file=sys.stderr,
         )
         return 2
@@ -539,13 +539,23 @@ def _purge(wiki: Wiki, args: argparse.Namespace) -> int:
             for item in items:
                 print(f"{name}: {item}")
         print(f"{len(done.notes)} note(s), {len(done.sources)} raw copy(ies), {len(done.archived)} archived version(s) deleted; "
-              f"{len(done.refiled)} document(s) filed again; {done.log_lines} log line(s) purged")
+              f"{done.entries} entry(ies) of the journal forgotten; {len(done.refiled)} document(s) filed again; {done.log_lines} log "
+              "line(s) purged")
         for key, message in done.errors:
             print(f"error: {key}: {message}", file=sys.stderr)
     if done.stopped:
         print(f"llmwiki2: purge stopped, the documents not filed again keep their raw copies: {done.stopped}", file=sys.stderr)
         return 2
-    return 1 if done.errors else 0
+    if done.errors:
+        return 1
+    if done.pending:
+        print(
+            f"llmwiki2: purge not complete yet, some of the text is still in: {', '.join(done.pending)}. The process that files "
+            "completes it (a wiki that files, the server), and so does `llmwiki2 purge` of the same key again",
+            file=sys.stderr,
+        )
+        return 3
+    return 0
 
 
 def _estimate(wiki: Wiki, folder: Path, as_json: bool) -> None:
@@ -654,11 +664,13 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
             print(f"{'!' if r.flag else ' '} {cells}")
         print(f"{sum(r.flag for r in rows)} flagged of {len(rows)} row(s)")
     elif args.command == "check":
-        problems = wiki.check()
-        for problem in problems:
-            print(problem)
-        print(f"{len(problems)} problem(s)", file=sys.stderr)
-        return 1 if problems else 0
+        found = wiki.check()
+        errors = [p for p in found if p.severity == "error"]
+        for problem in found:
+            print(problem if problem.severity == "error" else f"warning: {problem}")
+        warned = f", {len(found) - len(errors)} warning(s)" if len(found) > len(errors) else ""
+        print(f"{len(errors)} problem(s){warned}", file=sys.stderr)
+        return 1 if errors else 0
     elif args.command == "mcp":
         return memory_stdio(wiki, Settings(bundle=args.bundle, mode=args.mode))
     elif args.command == "serve":

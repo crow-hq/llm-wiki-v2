@@ -157,6 +157,12 @@ class OriginIndex:
             found = list(self._raws.by_hash.get(hash, {}).values())
         return sorted(found, key=lambda c: (c.at, Path(c.name).stem))
 
+    def hashes(self) -> set[str]:
+        """The hashes of the copies saved without an origin."""
+        with self._lock:
+            self._refresh()
+            return {h for h, copies in self._raws.by_hash.items() if copies}
+
     def citing(self, raws: list[str]) -> dict[str, int]:
         """The notes citing any of `raws` ("/raw/…md"), each with the highest position in `raws` it cites."""
         if not raws:

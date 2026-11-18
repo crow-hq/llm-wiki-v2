@@ -265,7 +265,8 @@ class Librarian:
                         ctx.decide("merge", "code", "appended")
                         draft = steps_classic._appended(match, match.main_body(), cand, read)
                 self.store.check_unchanged(match)  # the draft merges what was read: a note edited since is left as it is
-                raw, ref = self.save_source(source, cand)
+                raw_slug, _ = self.store.declare_filing(None, raw_title=self.raw_title(source, cand), note_title=None)
+                raw, ref = self.save_source(source, cand, slug=raw_slug)
                 note = self.store.update_note(
                     match,
                     title=self.shown(draft.title).strip() or "Untitled",
@@ -309,10 +310,13 @@ class Librarian:
                         description = cand.summary
                     folder, is_new = self.store.create_folder(folder, self._open_name(folder, self.shown(own)), self.shown(description))
                     created += [folder.label] if is_new else []
-                raw, ref = self.save_source(source, cand)
+                note_title = self.shown(cand.title).strip() or "Untitled"
+                raw_slug, note_slug = self.store.declare_filing(folder, raw_title=self.raw_title(source, cand), note_title=note_title)
+                raw, ref = self.save_source(source, cand, slug=raw_slug)
                 note = self.store.write_note(
                     folder,
-                    title=self.shown(cand.title).strip() or "Untitled",
+                    slug=note_slug,
+                    title=note_title,
                     summary=self.shown(cand.summary),
                     body=cand.body,
                     tags=clean_tags(cand.tags),
@@ -372,13 +376,19 @@ class Librarian:
             overflow=deviated,
         )
 
-    def save_source(self, source: Source, cand: Candidate) -> tuple[str, dict[str, Any]]:
+    def raw_title(self, source: Source, cand: Candidate) -> str:
+        """The title of the raw copy: the document's own; the note's, when it has none, as it is written."""
+        return source.title or self.shown(cand.title)
+
+    def save_source(self, source: Source, cand: Candidate, *, slug: str | None = None) -> tuple[str, dict[str, Any]]:
         """Keep the raw copy and build the note's source entry; called right before the note is written.
 
-        Saved this late so an interrupted ingest leaves no raw copy that no note cites.
+        Saved this late so an interrupted ingest leaves no raw copy that no note cites. `slug`: the file name `declare_filing` chose.
         """
-        title = source.title or self.shown(cand.title)  # the document's own title; the note's, when it has none, as it is written
-        raw = self.store.save_raw(source.text, title=title, resource=source.resource, origin=source.origin)
+        title = self.raw_title(source, cand)
+        raw = self.store.save_raw(
+            source.text, title=title, resource=source.resource, origin=source.origin, slug=slug, event_at=source.event_at
+        )
         ref: dict[str, Any] = {"resource": raw, "title": title, "hash": content_hash(source.text)}
         if source.origin is not None:
             ref["origin"] = source.origin.to_dict()
