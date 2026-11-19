@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from llmw2.searchindex import SearchIndex
 
 Embedder = Callable[[list[str]], Sequence[Sequence[float]]]  # texts -> one vector each
+Pending = tuple[str, str, str, Counter[str]]  # a text that is not a note yet, for `NoteSearch.find`: path, title, summary, its words
 VECTORS_FILE = ".llmw2/cache/embeddings.sqlite"  # the vectors of the embedder, by the hash of a note's text
 EMBED_BODY_CHARS = 3000
 EMBED_BATCH = 64
@@ -204,14 +205,28 @@ class NoteSearch:
                     picked = hit + [rel for rel in pool if rel not in hit]
             return [by_rel[rel] for rel in picked[:k]]
 
-    def find(self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None = None) -> list[tuple[str, str, str]]:
+    def find(
+        self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None = None, pending: Sequence[Pending] = ()
+    ) -> list[tuple[str, str, str]]:
         """The best `k` notes of the wiki (those `where` keeps, if given: a filter on `fields`) as (path, title, summary), from the
         index on disk. The wiki is listed (every file's time and size, nothing read) and only the notes new or changed since the
         index was written are read; no note is read to answer, but the candidates of the exact expressions of the query whose text
         no earlier search kept (`EXACT_KEPT`). It never
-        waits for a writer of the index (`SearchIndex.sync`), and the index's lock is not held while the query is embedded."""
+        waits for a writer of the index (`SearchIndex.sync`), and the index's lock is not held while the query is embedded.
+
+        `pending`: texts that are not notes yet, as (path, title, summary, the count of their words), already filtered by `where`.
+        Each is scored by its words as one more note of the index would be (`SearchIndex.scored`: the notes' scores do not change)
+        and comes before the first note it scores higher than, a note first at the same score and the texts in the order given among
+        themselves; then the first `k`."""
         with self._lock:
-            return self._find(store, query, k, where)
+            return self._find(store, query, k, where, pending)
+
+    def indexed(self, rels: Sequence[str]) -> set[str]:
+        """Which of `rels` the index file holds (none while there is no index file)."""
+        path = self.index.path
+        if path is None or not path.exists():
+            return set()
+        return set(self.index.hashes(rels))
 
     def written(self, store: WikiStore, written: list[str] | None) -> None:
         """A section of this process wrote `written` (None: paths not known): the index takes them now, so that a search of any process
@@ -245,19 +260,24 @@ class NoteSearch:
             self.vectors.truncate_journal(keep)
         return done
 
-    def _find(self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None) -> list[tuple[str, str, str]]:
+    def _find(
+        self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None, pending: Sequence[Pending]
+    ) -> list[tuple[str, str, str]]:
         self._root = store.root
         exact = exact_expressions(query)
+        counts = [p[3] for p in pending]
 
-        def words() -> tuple[list[str], dict[str, str], list[str]]:  # one run: a damaged file found by a step starts them all again
+        # one run: a damaged file found by a step starts them all again
+        def words() -> tuple[list[tuple[str, float]], list[float], dict[str, str], list[str]]:
             self.index.sync(store, self._entry, wait=False)
-            by_words = self.index.rank(query, max(k, EXACT_POOL), where)
+            ranked, others = self.index.scored(query, max(k, EXACT_POOL), where, counts)
             if self.embedder is None:
-                return by_words, self.index.hashes(by_words) if exact else {}, []
+                return ranked, others, self.index.hashes([rel for rel, _ in ranked]) if exact else {}, []
             hashes = self.index.hashes()
-            return by_words, hashes, [rel for rel in self.index.rels(where) if rel in hashes]  # a note taken away meanwhile goes
+            return ranked, others, hashes, [rel for rel in self.index.rels(where) if rel in hashes]  # a note taken away meanwhile goes
 
-        by_words, hashes, rels = self.index.run(words)
+        ranked, others, hashes, rels = self.index.run(words)
+        by_words = [rel for rel, _ in ranked]
         by_meaning: list[str] = []
         if self.embedder is not None:  # out of the index's lock: a writer does not wait for the embedder
             by_meaning = self._by_meaning(
@@ -279,7 +299,18 @@ class NoteSearch:
                 picked = hit + [rel for rel in pool if rel not in hit]
         picked = picked[:k]
         meta = self.index.meta(picked)
-        return [(rel, *meta[rel]) for rel in picked if rel in meta]  # a note taken away since is left out
+        found = [(rel, *meta[rel]) for rel in picked if rel in meta]  # a note taken away since is left out
+        if not pending:
+            return found
+        score = dict(ranked)
+        waiting = sorted((j for j, s in enumerate(others) if s > 0), key=lambda j: -others[j])
+        out: list[tuple[str, str, str]] = []
+        for hit in found:
+            while waiting and others[waiting[0]] > score.get(hit[0], 0.0):
+                out.append(pending[waiting.pop(0)][:3])
+            out.append(hit)
+        out += [pending[j][:3] for j in waiting]
+        return out[:k]
 
     def _order_of(self, n: int, by_words: list[str], by_meaning: list[str]) -> list[str]:
         if self.embedder is None:

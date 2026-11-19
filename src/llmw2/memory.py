@@ -240,7 +240,7 @@ class Memory:
             for an answer drawn from several notes, use `recall`. No model call. An unknown path returns an error naming it.
             """
             try:
-                return guarded(lambda: self.live().store.read(path)).full_text()
+                return guarded(lambda: self.live().read_note(path)).full_text()
             except FileNotFoundError as e:
                 raise ToolError(f"no note at {path}") from e
 

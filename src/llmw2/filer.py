@@ -40,12 +40,13 @@ import os
 import shutil
 import threading
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from llmw2.agents import lexical
 from llmw2.bundle import journal as J
 from llmw2.bundle import txn
 from llmw2.bundle.filelock import FileLock
@@ -81,6 +82,33 @@ def sha_key(text: str) -> str:
 def key_hash(key: str) -> str:
     """What a tombstone keeps of the key it purges: its hash, never the key."""
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+PENDING = "pending:"  # the path of an entry that `Wiki.search` shows before its note is in the index: this and its id
+PENDING_SUMMARY = 200  # characters of the text an entry shown by `search` has for summary
+
+
+@dataclass(frozen=True)
+class Pending:
+    """An entry as `Wiki.search` shows it, while its note is not in the index (`Hub.searchable`)."""
+
+    id: str
+    title: str  # the one the caller gave, or the first line of the text
+    text: str
+    fields: dict[str, Any]
+    note: str  # the note its filing made or met (`F`), "" before
+    at: str  # when it was acknowledged (`format_at`: the order of the strings is the order of the times)
+    words: Counter[str] = field(default_factory=Counter, compare=False)  # counted once, in `of`
+
+    @property
+    def path(self) -> str:
+        return PENDING + self.id
+
+    @staticmethod
+    def of(ident: str, title: str, text: str, fields: dict[str, Any], note: str, at: str) -> Pending:
+        """The entry shown, with the count of its words: its text, after its title when the title is not its first line."""
+        searched = text if text.lstrip().startswith(title) else f"{title}\n{text}"
+        return Pending(ident, title, text, fields, note, at, Counter(lexical.words(searched)))
 
 
 class Forgotten(FilerError):
@@ -148,11 +176,13 @@ class Hub:
         self.filing: str | None = None
         self.compact_stopped: tuple[int, int] | None = None  # (segment, bytes) when the guard of the compaction held it back
         self.files_done: set[str] = set()  # tombstones whose files and undo log this process purged: a look again does the rest only
+        self.shown: dict[str, Pending] = {}  # the entries `searchable` gives, kept after they close until the index has their note
         self.filer: Filer | None = None
         self.refs = 0
         self.prepared = False
         self._disk: tuple[float, int] = (0.0, 1 << 62)
         self._read_lock = threading.Lock()
+        self._searched_at = -float("inf")  # when `searchable` last read the journal
 
     # -- reading the journal ------------------------------------------------------------------------------------
 
@@ -168,6 +198,7 @@ class Hub:
                     self.closed_ids.clear()
                     self.let_through.clear()
                     self.errors.clear()
+                    self.shown.clear()
             if not records:
                 self.pos = pos
                 return
@@ -306,6 +337,7 @@ class Hub:
 
     def _forget(self, other: Entry) -> None:
         other.forgotten = True
+        self.shown.pop(other.id, None)  # a search shows it no more, and no copy of its text stays
         self.errors.pop(other.id, None)
         if self.by_sig.get(other.sig) == other.id:
             del self.by_sig[other.sig]  # the same text may be remembered again
@@ -345,6 +377,42 @@ class Hub:
                 del self.by_sig[gone.sig]
 
     # -- what the entries are -----------------------------------------------------------------------------------
+
+    def searchable(self, look: float) -> list[Pending]:
+        """The entries a search shows, after reading what is new: every entry open (not given up, forgotten or a tombstone), and every
+        one shown before that was filed since (`F`, `D`): the caller keeps it while its index lacks the note (`unshow` once it has it;
+        the entry's own text goes when it is done, this copy stays). A tombstone drops the copy of each entry it forgets. The journal is
+        read when the shared tail hint says it moved (a `remember` of any process on the machine), else at most once every `look`
+        seconds (a writer the hint does not show: another segment, no hint). In the order they were acknowledged, then of their ids."""
+        now = time.monotonic()
+        if self.journal.moved_since(self.pos) or now - self._searched_at >= look:
+            self.refresh()
+            self._searched_at = now
+        with self.cond:
+            for e in self.entries.values():
+                if not e.closed and e.text:
+                    title = e.title or next((line.strip() for line in e.text.splitlines() if line.strip()), "")
+                    note = str(e.filed.get("note") or "") if e.filed else ""
+                    shown = self.shown.get(e.id)
+                    if shown is None or shown.text != e.text or shown.note != note:
+                        self.shown[e.id] = Pending.of(e.id, title, e.text, dict(e.fields), note, e.at)
+            for ident, shown in list(self.shown.items()):
+                e = self.entries.get(ident)
+                if e is None or e.forgotten or e.forget is not None or e.failed is not None:
+                    del self.shown[ident]
+                elif e.closed or e.filed:
+                    note = str(e.filed.get("note") or "") if e.filed else ""
+                    if not note:
+                        del self.shown[ident]  # closed with no note: nothing to wait for
+                    elif note != shown.note:
+                        self.shown[ident] = Pending(shown.id, shown.title, shown.text, shown.fields, note, shown.at, shown.words)
+            return sorted(self.shown.values(), key=lambda p: (p.at, p.id))  # the same order in every process, whatever it read first
+
+    def unshow(self, ids: list[str]) -> None:
+        """Entries whose note the index has: a search shows the note now."""
+        with self.cond:
+            for ident in ids:
+                self.shown.pop(ident, None)
 
     def open_entries(self) -> list[Entry]:
         return [e for e in self.entries.values() if not e.closed]

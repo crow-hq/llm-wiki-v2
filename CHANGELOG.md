@@ -75,6 +75,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   note that no line of `log.md` names. A wiki written before may have such warnings (a wiki made by hand or by an older version): `llmwiki2 check`
   reports them and exits 0.
 
+- `search` finds what `remember` keeps before it is filed, in every process on the wiki: an entry of the journal whose note the index
+  does not have yet is a hit of path `pending:<id>`, titled by its title or its first line, with the start of its text for summary,
+  scored by its words as a note of the index would be (the notes keep their scores; at the same score the note comes first, then the
+  entries in the order they were acknowledged, the same in every process), and `where` holds for its `fields`. It goes once the index
+  has its note, or when a purge forgets its key. `read_note` reads it (MCP, the HTTP API and `Wiki.read_note`); `move_note` and
+  `delete_note` refuse it (it is forgotten with its key). Nothing of it is written in the index. `ask` and `recall` do not see it. A
+  search in a wiki with no journal makes none. A search reads the journal when the tail hint the processes of the machine share says it
+  moved, else at most once a moment (as it lists the files): an entry of another process is found at the next search, or after that
+  moment when the hint cannot say. Limit: between the moment a filing puts a note in the index and the moment the searching process
+  reads that it did, the entry and its note may both be hits.
+
 ### Changed
 
 - A search never waits for the write lock of the search index: a process that writes notes puts them in the index before the call

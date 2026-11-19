@@ -339,7 +339,7 @@ def create_app(
     @app.get("/note")
     def note(path: str) -> dict[str, Any]:
         try:
-            n = current().store.read(path)
+            n = current().read_note(path)
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         except FileNotFoundError as e:

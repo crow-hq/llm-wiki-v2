@@ -938,9 +938,19 @@ class SearchIndex:
     def rank(self, query: str, n: int, where: dict[str, Any] | None = None) -> list[str]:
         """The paths of the `n` best notes for `query`, best first, ties in the order of the tree. `where`: only the notes that hold it
         are ranked, as an index of just them would (their count, word frequencies and average length)."""
-        return self._guarded(lambda: self._rank(query, n, where))
+        return [rel for rel, _ in self._guarded(lambda: self._rank(query, n, where, ()))[0]]
 
-    def _rank(self, query: str, n: int, where: dict[str, Any] | None) -> list[str]:
+    def scored(
+        self, query: str, n: int, where: dict[str, Any] | None, extra: Sequence[Counter[str]]
+    ) -> tuple[list[tuple[str, float]], list[float]]:
+        """`rank` with the score of each note, and the scores of texts that are not in the index (`extra`, the counts of their words),
+        each as one more note would have with the index's counts (number of notes, mean length, notes per word): the notes' scores are
+        those of `rank`, whatever `extra` holds."""
+        return self._guarded(lambda: self._rank(query, n, where, extra))
+
+    def _rank(
+        self, query: str, n: int, where: dict[str, Any] | None, extra: Sequence[Counter[str]]
+    ) -> tuple[list[tuple[str, float]], list[float]]:
         words = dict.fromkeys(lexical.words(query))  # in the query's order, as `Bm25.scores`: the same sum in every process
         allowed: set[int] | None
         tie = self._pos
@@ -960,6 +970,8 @@ class SearchIndex:
         total: dict[int, float] = {}
         get = total.get
         postings = self._postings(words)
+        others = [0.0] * len(extra)
+        sizes = [_K1 * (1 - _B + _B * sum(c.values()) / avg) for c in extra]
         for w in words:
             docs, counts = postings[w]
             pairs: Iterable[tuple[int, int]] = zip(docs, counts, strict=True)
@@ -967,9 +979,10 @@ class SearchIndex:
             if allowed is not None:
                 pairs = [(d, f) for d, f in pairs if d in allowed]
                 found_in = len(pairs)
-            if not found_in:
-                continue
             idf = math.log(1 + (count - found_in + 0.5) / (found_in + 0.5))
+            for j, c in enumerate(extra):
+                if f := c.get(w, 0):
+                    others[j] += idf * f * (_K1 + 1) / (f + sizes[j])
             for key, f in pairs:
                 total[key] = get(key, 0.0) + idf * f * (_K1 + 1) / (f + norm[key])
         if self._hidden:  # gone from the listing while a writer holds the file: not served
@@ -979,7 +992,7 @@ class SearchIndex:
             total = {k: s for k, s in total.items() if s >= floor}
         last = len(tie)  # a note put in by a writer since this process last listed the wiki: after the listed ones, by path
         found = sorted(total, key=lambda i: (-total[i], tie.get(self._rels[i], last), self._rels[i]))[:n]
-        return [self._rels[i] for i in found]
+        return [(self._rels[i], total[i]) for i in found], others
 
     def meta(self, rels: Sequence[str]) -> dict[str, tuple[str, str]]:
         """(title, summary) of each of `rels`, from the file."""

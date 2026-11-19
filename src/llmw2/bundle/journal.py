@@ -917,6 +917,15 @@ class Journal:
         tail = self._hint.get_tail(ref.salt)
         return tail is None or tail[0] != ref.end
 
+    def moved_since(self, pos: tuple[int, int] | None) -> bool:
+        """Whether the shared tail hint, read with no system call, says a record was appended after `pos` (where the last `read_from`
+        ended) in the segment of `pos`. False when it says nothing was, and when it cannot say (no hint, a hint no process holds any more,
+        another segment): the caller reads the journal now and then all the same."""
+        if pos is None or self._pos_salt is None:
+            return pos is None
+        tail = self._hint.get_tail(self._pos_salt) if self._hint is not None else None
+        return tail is not None and tail[0] != pos[1]
+
     def seal(self) -> int:
         """Close the segment in use, so that what is written from now on goes to the next one; the number of that one. A segment with
         no record yet is not sealed: it is the one in use. Everything before the number returned can then be reused (`recycle`)."""

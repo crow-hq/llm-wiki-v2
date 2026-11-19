@@ -82,7 +82,7 @@ from llmw2.bundle.files import is_spreadsheet, sheet_sources, title_of
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash, format_at
 from llmw2.bundle.proposals import CONFIRMED, DISMISSED, OPEN, Proposal, notes_count, read_proposals, write_proposals
 from llmw2.bundle.store import CACHE_FILE, Deleted, WikiStore, authored, current_author, raw_sources
-from llmw2.bundle.tree import INDEX, LOG, Folder, Note, slugify, within_area, within_folder
+from llmw2.bundle.tree import INDEX, LOG, Folder, Note, fields_match, slugify, within_area, within_folder
 from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import (
     ConfigError,
@@ -96,7 +96,7 @@ from llmw2.errors import (
     SpendingCap,
     WikiError,
 )
-from llmw2.filer import Filing, Hub, Receipt, hub_for, release, sha_key
+from llmw2.filer import PENDING, PENDING_SUMMARY, Filing, Hub, Pending, Receipt, hub_for, release, sha_key
 from llmw2.models.cache import SqliteCache
 from llmw2.models.classifier import Classifier
 from llmw2.models.embedder import HttpEmbedder
@@ -1202,10 +1202,51 @@ class Wiki:
         The words of the notes are kept in an index file of the bundle (`.llmw2/cache/search-v<schema>.sqlite`), shared by every process on
         the wiki: a search lists the wiki's files and reads only the notes new or changed since. The file is a cache, never the
         notes themselves: delete it, or let it be damaged, and the next search builds it again.
+
+        What `remember` keeps is found before it is filed, by every process: an entry of the journal whose note the index does not
+        have yet is a hit of path `pending:<id>` (`read_note` reads it), titled by its title or first line, its first 200 characters
+        for summary, scored by its words as a note of the index would be (`where` on its `fields`); at the same score a note comes
+        first, then the entries in the order they were acknowledged. It goes once the index has its note, or when a purge forgets
+        it. Nothing of it is written in the index. `ask` does not see it. Between the moment a filing puts its note in the index and
+        the moment this process reads that it did, the entry and its note may both be hits.
         """
         if not query.strip():
             raise InputError("empty question")
-        return [Hit(rel, title, summary, i) for i, (rel, title, summary) in enumerate(self._search.find(self.store, query, k, where), 1)]
+        waiting = [
+            (p.path, self._redacted(p.title), self._redacted(p.text[:PENDING_SUMMARY]), p.words)
+            for p in self._pending(where)
+        ]
+        found = self._search.find(self.store, query, k, where, waiting)
+        return [Hit(rel, title, summary, i) for i, (rel, title, summary) in enumerate(found, 1)]
+
+    def _pending(self, where: dict[str, Any] | None = None) -> list[Pending]:
+        """The entries of the journal a search shows (`Hub.searchable`), less those whose note the index has; none, and no file made,
+        when the bundle has no journal."""
+        journal = self.cfg.bundle / J.JOURNAL_DIR
+        if self._hub is None and not (journal.is_dir() and any(journal.glob("*.wal"))):
+            return []
+        from llmw2.searchindex import LISTING_LOOK
+
+        hub = self._journal()
+        shown = hub.searchable(LISTING_LOOK)  # the journal is looked at as often as the files of the wiki
+        notes = [p.note for p in shown if p.note]
+        if notes:
+            have = self._search.indexed(notes)
+            if have:
+                hub.unshow([p.id for p in shown if p.note in have])
+                shown = [p for p in shown if p.note not in have]
+        return [p for p in shown if not where or fields_match(p.fields, where)]
+
+    def read_note(self, path: str) -> Note:
+        """The note at a bundle path, or an entry not filed yet that `search` gave (`pending:<id>`) as a note with no folder.
+        FileNotFoundError for neither."""
+        if not path.startswith(PENDING):
+            return self.store.read(path)
+        found = next((p for p in self._pending() if p.path == path), None)
+        if found is None:
+            raise FileNotFoundError(path)
+        meta = {"title": self._redacted(found.title), "description": self._redacted(found.text[:PENDING_SUMMARY]), "fields": found.fields}
+        return Note(Path(), path, meta, found.text)
 
     def _require_classifier(self) -> None:
         """In CROW mode, a classifier without its key stops here, before any model call or file."""
@@ -1504,6 +1545,7 @@ class Wiki:
         Every link to and from it follows, and so do its archived copies. InputError for no such note or folder, a
         path that is not a note, or a note already in that folder.
         """
+        _not_pending(path)
         with self.store.lock():
             return self.store.move_note(path, folder)
 
@@ -1666,6 +1708,7 @@ class Wiki:
     @by_author
     def delete_note(self, path: str, *, author: str | None = None) -> Deleted:
         """Delete a note ("finance/pricing.md"); links to it go from the other notes, and raw copies only it cites."""
+        _not_pending(path)
         with self.store.lock():
             return self.store.delete_note(path)
 
@@ -2061,3 +2104,9 @@ class Wiki:
     @property
     def usage(self) -> UsageReport:
         return self.tracker.snapshot()
+
+
+def _not_pending(path: str) -> None:
+    """An entry not filed yet (`pending:<id>`) is not a note: it is forgotten with its key (`purge`), not moved or deleted."""
+    if path.strip().startswith(PENDING):
+        raise InputError(f"{path} is a memory not filed yet: forget it with its key (purge), it cannot be moved or deleted")
