@@ -323,6 +323,11 @@ class Txn:
 
     # -- the records ------------------------------------------------------------------------------------------
 
+    def touched(self) -> list[str]:
+        """The paths inside the bundle (posix) this section wrote, created, cut or deleted."""
+        with self._guard:
+            return list(self._state)
+
     def rel(self, path: str | os.PathLike[str]) -> str | None:
         """The path inside the bundle (posix), or None for a path outside it, which a transaction does not cover."""
         full = os.path.abspath(path)

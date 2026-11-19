@@ -77,6 +77,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A search never waits for the write lock of the search index: a process that writes notes puts them in the index before the call
+  returns, and before the journal is told an entry is filed (it looks only at the files its write changed); a search that finds the
+  index behind the notes writes it only when the lock is free, and otherwise answers from what the index holds, leaving out the
+  notes gone from the folder meanwhile. A search looks at the files of the wiki at most once a moment in a process: a note changed
+  by hand, not through the library, is found by the searches after that moment. An index never built whole is still built by its
+  first search. A batch (`ingest_many`, `rebuild`) puts its notes in once, at its end.
+- A search whose query quotes an expression or holds a code no longer reads again the notes it looks for them in: a process keeps
+  the texts of the last candidates it read (at most 512), by the hash the index holds for them, and reads only a note whose text
+  changed; a purge drops them in its own process. Limit: another process that had read a purged note keeps its text in memory
+  until newer texts push it out or the process ends; it never serves it, since no note of the index has that hash any more.
+- `search` and `recall` (`ask`) leave out a note another process deletes or moves between the listing of its folder and the
+  reading of its file, and a folder removed the same way, instead of failing.
 - The order of `search` and `ask`, and the choices CROW's filing makes by words, no longer depend on the process: the scores of a
   query's words are added up in the order the query gives them, so notes with close scores come in the same order in every process
   (before, the order of a set, which changes from one process to the next, decided the last bits of the sums). Notes with the same

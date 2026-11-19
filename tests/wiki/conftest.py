@@ -84,3 +84,12 @@ def client(classic_wiki: Wiki) -> TestClient:
     from llmw2.server import create_app
 
     return TestClient(create_app(classic_wiki))
+
+
+@pytest.fixture(autouse=True)
+def listing_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tests edit notes by hand and search at once: a reader lists the wiki at every search here. The window a reader trusts its
+    last listing for (`LISTING_LOOK`) has a test of its own, which sets it back."""
+    from llmw2 import searchindex
+
+    monkeypatch.setattr(searchindex, "LISTING_LOOK", 0.0)

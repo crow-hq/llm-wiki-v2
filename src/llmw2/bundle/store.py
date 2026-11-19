@@ -90,6 +90,8 @@ PURGED = "[purged]"  # what log.md says in place of a line's text when the line 
 
 # the stores (by key) whose sections open with no undo log in this context (`WikiStore.undo_suspended`)
 _undo_off: contextvars.ContextVar[frozenset[object]] = contextvars.ContextVar("llmw2_undo_off", default=frozenset())
+# the stores (by key) whose sections do not tell `on_written` in this context (`WikiStore.written_later`)
+_told_later: contextvars.ContextVar[frozenset[object]] = contextvars.ContextVar("llmw2_told_later", default=frozenset())
 _author: contextvars.ContextVar[str | None] = contextvars.ContextVar("llmw2_author", default=None)
 
 
@@ -210,6 +212,10 @@ class WikiStore:
         self._recent: set[str] = set()
         self._relisted = False  # whether the last session `load` listed a folder again
         self._sessions = 0  # the sessions this store has had: the first fills no cache (a process of one session, the CLI, never reads it)
+        # told the paths a section wrote, once it committed and before its `after_commit` (None: a section with no undo log, which does not
+        # know them, after the lock is let go). The search index of the `Wiki` takes them, so that a reader never has to write them.
+        # It must not raise: what it fails to do is done by the next look of the index at the files.
+        self.on_written: Callable[[list[str] | None], None] | None = None
         # what `scan_notes` keeps of a folder while its names stay the same: (the names, its notes, its subfolders, the bundle paths
         # of its notes, the stamps of its notes when none was to be read again, the caller that had them)
         self._listed: dict[str, tuple[Any, list[tuple[str, str]], list[tuple[str, str]], list[str], list[Any] | None, object]] = {}
@@ -308,31 +314,66 @@ class WikiStore:
         opens with `undo=False` and writes as it always did. A log left by a dead process is undone as the lock is taken.
         `id` is stored in the commit record; `after_commit` runs once the section is durable and before the log is emptied.
         """
+        unlogged = False
         with self._exclusive(blocking=True):
             self._restore()
             if not undo or self._undo_key in _undo_off.get():
                 yield
-                return
-            section = txn.Txn(self.root, id=id)
+                unlogged = True
+            else:
+                yield from self._section(id, after_commit)
+        if unlogged:  # the paths are not known: the index looks at the files, with the lock let go
+            self.tell_written(None)
+
+    def _section(self, id: str | None, after_commit: Callable[[], None] | None) -> Iterator[None]:
+        """The transaction of a `lock` (held)."""
+        section = txn.Txn(self.root, id=id)
+        try:
+            with txn.active(section):
+                yield
+            section.commit()
+        except BaseException:
             try:
-                with txn.active(section):
-                    yield
-                section.commit()
+                section.rollback()
+            finally:
+                self.forget()  # what a session kept of the tree is not what is on disk now
+            raise
+        self.tell_written(section.touched())  # before `after_commit`: what the journal is told is filed is in the index already
+        if after_commit is not None:
+            try:
+                after_commit()
+                section.told = True
             except BaseException:
-                try:
-                    section.rollback()
-                finally:
-                    self.forget()  # what a session kept of the tree is not what is on disk now
+                section.abandon()  # done and durable: not rolled back; the log keeps its commit, and the next recovery says it
+                self.forget()
                 raise
-            if after_commit is not None:
-                try:
-                    after_commit()
-                    section.told = True
-                except BaseException:
-                    section.abandon()  # done and durable: not rolled back; the log keeps its commit, and the next recovery says it
-                    self.forget()
-                    raise
-            section.finish()
+        section.finish()
+
+    def tell_written(self, written: list[str] | None) -> None:
+        """Tell `on_written` (if set, and not held back by `written_later`) what was written; its errors are logged, never raised."""
+        if self.on_written is None or self._undo_key in _told_later.get():
+            return
+        try:
+            self.on_written(written)
+        except Exception as e:  # the section is durable all the same; the index takes the files at its next look
+            log.warning("the search index did not take what a write changed: %s", e)
+
+    @contextlib.contextmanager
+    def written_later(self) -> Iterator[None]:
+        """The sections this thread opens on this store (and the threads that run in a copy of its context) do not tell `on_written`:
+        a batch tells it once, at its end (see `Wiki.ingest_many`)."""
+        token = _told_later.set(_told_later.get() | {self._undo_key})
+        try:
+            yield
+        finally:
+            _told_later.reset(token)
+
+    def is_note_path(self, rel: str) -> bool:
+        """Whether a bundle path (posix) is where `scan_notes` would find a note."""
+        parts = rel.split("/")
+        if not parts[-1].endswith(".md") or parts[-1] in (INDEX, LOG) or parts[0] == RAW:
+            return False
+        return not any(p == CLOSED or p.startswith(".") for p in parts)
 
     @contextlib.contextmanager
     def undo_suspended(self) -> Iterator[None]:
@@ -425,13 +466,16 @@ class WikiStore:
     def _note_of(self, where: str, rel: str, folder: Folder, st: os.stat_result, stamp: Stamp, seen: dict[str, _Parsed]) -> Note | None:
         """The note of a file: from `_parsed` (the stamp is the same) or read; `seen` (what this load keeps, `_parsed` itself in a
         session) holds it once the file is older than RACY_NS, else not (a file written this very moment may change again unseen).
-        None when the file cannot be read. The first session of a store does not keep what it parses (`_fills`): the copy of the front
+        None when the file cannot be read, or is gone since the listing (another process deleted or moved the note: the load
+        goes on as if it had not been listed). The first session of a store does not keep what it parses (`_fills`): the copy of the front
         matter of every note costs about 3% of that session, and nothing in a process that has only one session will ever use it."""
         if (hit := self._parsed.get(where)) and hit.stamp == stamp and hit.changed == st.st_ctime_ns:
             seen[where] = hit
             return Note(Path(where), rel, pickle.loads(hit.frontmatter), hit.body, folder, stamp)
         try:
             doc = OKFDocument.read(Path(where))
+        except FileNotFoundError:  # gone since the listing
+            return None
         except OKFDocumentError as e:
             log.warning("skipping %s: %s", rel, e)
             return None
@@ -485,7 +529,8 @@ class WikiStore:
                         for _, link, text in parse_index(read_utf8_or_latin1(path / INDEX)):
                             if listed := subfolder_of(link):
                                 descriptions[listed] = text
-                folder.subfolders.append(self._load_folder(Path(entry.path), child_rel, descriptions.get(name, ""), folder, seen))
+                with contextlib.suppress(FileNotFoundError):  # gone since the listing
+                    folder.subfolders.append(self._load_folder(Path(entry.path), child_rel, descriptions.get(name, ""), folder, seen))
             elif name.endswith(".md") and name not in (INDEX, LOG):
                 stamp = stamp_of(st)
                 where = entry.path

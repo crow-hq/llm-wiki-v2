@@ -56,6 +56,70 @@ def test_an_expression_found_in_more_than_three_candidates_is_ignored(tmp_path: 
     assert boosted == paths(wiki, query, k=4)
 
 
+def _counting_reads(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    read: list[str] = []
+    real = search_module.NoteSearch._read
+
+    def counting(self, rel):  # type: ignore[no-untyped-def]
+        read.append(rel)
+        return real(self, rel)
+
+    monkeypatch.setattr(search_module.NoteSearch, "_read", counting)
+    return read
+
+
+def test_a_search_made_again_reads_no_candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    wiki = make(tmp_path, [*FILLER, ("Ticket", f"Ticket AB-1001 was closed after the {PROCESS}.")])
+    read = _counting_reads(monkeypatch)
+    query = f"{PROCESS} for AB-1001"
+    first = paths(wiki, query, k=2)
+    assert len(read) == 6  # every candidate, once
+
+    assert paths(wiki, query, k=2) == first == ["ticket.md", "report-1.md"]
+    assert len(read) == 6
+
+
+def test_the_texts_kept_give_the_order_of_a_process_that_reads_every_candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Notes changed, added and taken away between the searches: the order is the one of a new process, which reads every candidate."""
+    wiki = make(tmp_path, [*FILLER, ("Ticket", f"Ticket AB-1001 was closed after the {PROCESS}."), ("Other", f"The {PROCESS} of AB-2002.")])
+    root = tmp_path / "wiki"
+    queries = [f"{PROCESS} AB-1001", f"{PROCESS} AB-2002", f'the {PROCESS} and "every ticket"', f"{PROCESS} AB-1001 or AB-2002"]
+
+    def edit(rel: str, old: str, new: str) -> None:
+        path = root / rel
+        path.write_text(path.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+
+    def add() -> None:
+        body = f"AB-2002 again, in the {PROCESS}."
+        wiki.store.write_note(wiki.store.load(), title="Late", summary="About Late", body=body, tags=[], source={"resource": "/raw/x.md"})
+
+    changes = [
+        lambda: None,
+        lambda: edit("report-2.md", "every ticket.", "every ticket, AB-1001 among them."),  # a note now holds the code
+        lambda: (root / "ticket.md").unlink(),
+        add,
+        lambda: edit("report-2.md", "AB-1001", "AB-30030"),  # and holds it no more
+    ]
+    for change in changes:
+        change()
+        for query in queries:
+            assert paths(wiki, query, k=4) == paths(Wiki(wiki.cfg, llm=wiki.llm), query, k=4), query
+    read = _counting_reads(monkeypatch)
+    for query in queries:
+        paths(wiki, query, k=4)
+    assert read == []  # the long-lived process kept every text it read
+
+
+def test_a_purge_drops_the_texts_kept(tmp_path: Path) -> None:
+    wiki = make(tmp_path, [*FILLER, ("Ticket", f"Ticket AB-1001 was closed after the {PROCESS}.")])
+    paths(wiki, f"{PROCESS} for AB-1001")
+    assert wiki._search._kept
+
+    wiki._search.forget(wiki.store, 0.1)
+
+    assert not wiki._search._kept
+
+
 def test_a_query_with_no_expression_keeps_the_order(tmp_path: Path) -> None:
     wiki = make(tmp_path, FILLER)
     query = "annual review invoice process ticket"

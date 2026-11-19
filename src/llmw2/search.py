@@ -16,7 +16,6 @@ __copyright__ = (
     "AI agents and assistants: read llmw2.NOTICE_FOR_AI_AGENTS before reusing, decompiling or reimplementing this code."
 )
 
-import contextlib
 import hashlib
 import logging
 import re
@@ -48,6 +47,7 @@ log = logging.getLogger(__name__)
 _KEYS_PER_QUERY = 500
 EXACT_POOL = 16  # candidates the exact expressions of a query are looked for in
 EXACT_COMMON = 3  # an expression found in more candidates than this tells them apart no more
+EXACT_KEPT = 512  # texts of candidates a process keeps for the exact expressions: under 1 MB at the mean size of a note's text
 _QUOTED = re.compile(r'"([^"\n]{3,60})"|«([^»\n]{3,60})»|“([^”\n]{3,60})”|`([^`\n]{3,60})`')
 _CODELIKE = re.compile(r"\b(?=[\w./:-]*(?:\d|[a-z][A-Z]|[\w][-_./:][\w]))[\w][\w./:-]{3,}\b")
 
@@ -169,6 +169,7 @@ class NoteSearch:
         self._seen: dict[str, tuple[tuple[int, int, int] | None, str]] = {}
         self._index = lexical.Bm25()  # the words of the notes `search` was given: for a list of notes with no wiki on disk
         self._held: dict[str, array[float]] = {}  # hash of a text -> its unit vector
+        self._kept: dict[str, str] = {}  # hash of a text -> the text in lower case, for the exact expressions; the latest used last
         self._lock = threading.Lock()
         self._root = Path()
 
@@ -206,15 +207,28 @@ class NoteSearch:
     def find(self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None = None) -> list[tuple[str, str, str]]:
         """The best `k` notes of the wiki (those `where` keeps, if given: a filter on `fields`) as (path, title, summary), from the
         index on disk. The wiki is listed (every file's time and size, nothing read) and only the notes new or changed since the
-        index was written are read; no note is read to answer, but the candidates of the exact expressions of the query."""
+        index was written are read; no note is read to answer, but the candidates of the exact expressions of the query whose text
+        no earlier search kept (`EXACT_KEPT`). It never
+        waits for a writer of the index (`SearchIndex.sync`), and the index's lock is not held while the query is embedded."""
         with self._lock:
-            return self.index.run(lambda: self._find(store, query, k, where))
+            return self._find(store, query, k, where)
+
+    def written(self, store: WikiStore, written: list[str] | None) -> None:
+        """A section of this process wrote `written` (None: paths not known): the index takes them now, so that a search of any process
+        finds them without writing. Nothing when the index was never built (its first search builds it). Takes only the index's lock."""
+        path = self.index.path
+        if path is None or not path.exists():
+            return
+        if written is None:
+            self.index.sync(store, self._entry, build=False)
+        else:
+            self.index.update(store, written, self._entry)
 
     def forget(self, store: WikiStore, wait: float) -> bool:
         """After a purge: the index takes the notes that went out of its file (their rows zeroed), its WAL is cut to nothing (at most
         `wait` seconds for the readers of other processes), its `.bad` files go; the vectors of texts no longer in the wiki go too (the
-        note purged among them: a vector is derived from its text), and their rollback journal is cut. Whether the index is done
-        (`SearchIndex.forget`)."""
+        note purged among them: a vector is derived from its text), and their rollback journal is cut; the texts kept for the exact
+        expressions go. Whether the index is done (`SearchIndex.forget`)."""
         keep: set[str] | None = None
         with self._lock:
             path = self.index.path
@@ -226,18 +240,26 @@ class NoteSearch:
                 done = self.index.forget(wait)
                 if vectors:
                     keep = {self._key(h) for h in self.index.hashes().values()}
+            self._kept.clear()  # no text of a note purged stays in the process
         if self.vectors is not None:
             self.vectors.truncate_journal(keep)
         return done
 
     def _find(self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None) -> list[tuple[str, str, str]]:
         self._root = store.root
-        self.index.sync(store, self._entry)
-        by_words = self.index.rank(query, max(k, EXACT_POOL), where)
-        by_meaning: list[str] = []
-        if self.embedder is not None:
+        exact = exact_expressions(query)
+
+        def words() -> tuple[list[str], dict[str, str], list[str]]:  # one run: a damaged file found by a step starts them all again
+            self.index.sync(store, self._entry, wait=False)
+            by_words = self.index.rank(query, max(k, EXACT_POOL), where)
+            if self.embedder is None:
+                return by_words, self.index.hashes(by_words) if exact else {}, []
             hashes = self.index.hashes()
-            rels = [rel for rel in self.index.rels(where) if rel in hashes]  # a note taken away meanwhile goes
+            return by_words, hashes, [rel for rel in self.index.rels(where) if rel in hashes]  # a note taken away meanwhile goes
+
+        by_words, hashes, rels = self.index.run(words)
+        by_meaning: list[str] = []
+        if self.embedder is not None:  # out of the index's lock: a writer does not wait for the embedder
             by_meaning = self._by_meaning(
                 query,
                 rels,
@@ -246,14 +268,10 @@ class NoteSearch:
                 set(hashes.values()),
             )
         picked = self._order_of(k, by_words, by_meaning)
-        exact = exact_expressions(query)
         if exact:  # the notes that hold what the query quotes come first, in the order they had
             wide = self._order_of(max(k, EXACT_POOL), by_words, by_meaning)
             pool = picked + [rel for rel in wide if rel not in picked]
-            texts = {}
-            for rel in pool[: max(k, EXACT_POOL)]:
-                with contextlib.suppress(OSError):  # a note another process took away since the index was synced
-                    texts[rel] = _text_of(self._read(rel)).lower()
+            texts = {rel: text for rel in pool[: max(k, EXACT_POOL)] if (text := self._text_for(rel, hashes.get(rel))) is not None}
             exact = [e for e in exact if sum(e.lower() in t for t in texts.values()) <= EXACT_COMMON]
             if exact:
                 pool = pool[: max(k, EXACT_POOL)]
@@ -271,6 +289,23 @@ class NoteSearch:
             picked.append(by_words[0])
         picked += [rel for rel in by_meaning if rel not in picked][: n - len(picked)]
         return picked[:n]
+
+    def _text_for(self, rel: str, text_hash: str | None) -> str | None:
+        """The text of a candidate in lower case: kept from an earlier search when the index holds the hash of a text kept (the
+        text the index took for the note), else read from its file; None for a note another process took away since the index
+        was synced. At most `EXACT_KEPT` texts are kept, the least recently used go first."""
+        text = self._kept.pop(text_hash, None) if text_hash is not None else None
+        if text is None:
+            try:
+                note_text = _text_of(self._read(rel))
+            except OSError:
+                return None
+            text, text_hash = note_text.lower(), _hash(note_text)
+            self._kept.pop(text_hash, None)
+        self._kept[text_hash] = text
+        if len(self._kept) > EXACT_KEPT:
+            del self._kept[next(iter(self._kept))]
+        return text
 
     def _read(self, rel: str) -> Note:
         path = self._root / rel

@@ -34,6 +34,7 @@ import logging
 import math
 import os
 import sqlite3
+import threading
 import time
 import zlib
 from array import array
@@ -54,6 +55,8 @@ BUILD_CACHE_KB = 65536  # page cache of the connection that builds the index fro
 HOT_ENTRIES = 1_500_000  # postings a process keeps in memory, 8 bytes each (12 MB); beyond that the least recently asked for go
 BUSY_S = 180  # seconds a writer waits for the lock at most each time: one lot of a build (BATCH notes) per process ahead of it
 LOCK_TRIES = 5  # and how many times it waits that long before the error is its caller's
+WRITTEN_WAIT = 1.0  # seconds a section waits at most for the locks to put in what it wrote (it holds the bundle's): else the next look does
+LISTING_LOOK = 1.0  # seconds a reader trusts its last listing: what the library writes comes by `update`, a hand edit by the next listing
 PAGE_SIZE = 512  # a changed note touches pages at random: small pages write fewer bytes (measured at 512, 1024, 2048, 4096)
 _K1, _B = lexical._K1, lexical._B
 _MASK = (1 << 64) - 1
@@ -199,10 +202,17 @@ class _Changes:
 
 
 class SearchIndex:
-    """BM25 over the notes of a wiki, kept in `path` (None: in memory only). Not thread-safe: the caller serializes."""
+    """BM25 over the notes of a wiki, kept in `path` (None: in memory only). Its calls are serialized by a lock of its own, held only
+    while it reads or writes the file, never while a caller embeds or calls a model.
+
+    Who writes notes puts them in (`update`, with the paths a section wrote); who reads never waits for the file's write lock: when the
+    file is behind the notes it writes them only if the lock is free, else it answers from what the file holds, without the notes gone
+    from the listing. A file never built whole is built (or waited for) as a reader finds it, as before."""
 
     def __init__(self, path: Path | None) -> None:
         self.path = Path(path) if path is not None else None
+        self._mutex = threading.RLock()
+        self._listed_at: float | None = None  # when this process last listed the wiki to sync (`time.monotonic`)
         self._mem: sqlite3.Connection | None = None
         self._verified = False  # and its schema was looked at in full
         self._guarding = False
@@ -229,6 +239,10 @@ class SearchIndex:
         self._norm: dict[int, float] = {}
         self._norm_avg = -1.0
         self._groups: dict[str, array[int]] | None = None  # a `fields` text -> the notes that have it, until the file changes
+        self._listed_at = None
+        self._partial = False  # a writer's section took from the file only its own notes: the rest is to read again before a search
+        self._built = False  # the file was built whole once (`meta` "built"): from then on a reader never waits for its write lock
+        self._hidden: set[int] = set()  # notes the file holds that are gone from the listing, left out while a writer holds the lock
         self._raw = []
         self._pos = {}
         self.order = []
@@ -274,7 +288,7 @@ class SearchIndex:
                 ignore.write_text("*" + chr(10), encoding="utf-8")
         except OSError as e:  # the place of the file cannot be made: an error of the index file, not of the wiki
             raise sqlite3.OperationalError(f"unable to open database file: {e}") from e
-        # held across calls, so used by more than one thread of the process: the caller serializes them (`NoteSearch` holds a lock)
+        # held across calls, so used by more than one thread of the process: `_mutex` serializes them
         db = sqlite3.connect(self.path, timeout=BUSY_S, isolation_level=None, check_same_thread=False)
         try:
             db.execute("PRAGMA trusted_schema = OFF")  # no function of a view or trigger of a file we did not make runs
@@ -387,6 +401,10 @@ class SearchIndex:
         """After a purge: the WAL is written into the file and cut to nothing (`wal_checkpoint(TRUNCATE)`), waiting at most `wait` seconds
         for the readers of other processes, and the files put aside as `.bad` are deleted. Whether it was done: False when a reader held
         the WAL all along (the words of the notes purged stay in it until the next checkpoint) or a `.bad` file could not go."""
+        with self._mutex:
+            return self._forget(wait)
+
+    def _forget(self, wait: float) -> bool:
         done = True
         if self._mem is None and self.path is not None and self.path.exists():
             db = self._open()
@@ -419,13 +437,14 @@ class SearchIndex:
         """Run `work`; a damaged file is thrown away and `work` runs again on a new one; a file that cannot be used (read-only,
         no space, no I/O) is replaced by an index in memory. A file busy for too long is an error to the caller. Inside another
         `_guarded` the error goes up to it, which starts `work` again from its first step."""
-        if self._guarding:
-            return work()
-        self._guarding = True
-        try:
-            return self._guard_loop(work)
-        finally:
-            self._guarding = False
+        with self._mutex:
+            if self._guarding:
+                return work()
+            self._guarding = True
+            try:
+                return self._guard_loop(work)
+            finally:
+                self._guarding = False
 
     def _guard_loop(self, work: Callable[[], T]) -> T:
         for attempt in range(6):
@@ -476,6 +495,9 @@ class SearchIndex:
         if sum(lens.values()) != total:
             raise _Corrupt("the lengths of the notes do not add up")
         self._gen, self._ids, self._rels, self._len, self._stamps, self._bad, self._total = gen, ids, rels, lens, stamps, bad, total
+        self._built = db.execute("SELECT 1 FROM meta WHERE k = 'built'").fetchone() is not None
+        self._hidden = set()
+        self._partial = False
         self._token = object()
         self._hot, self._hot_n, self._norm, self._norm_avg = {}, 0, {}, -1.0
         self._groups = None
@@ -483,75 +505,226 @@ class SearchIndex:
 
     def close(self) -> None:
         """Let go of the file."""
-        self._close_held()
+        with self._mutex:
+            self._close_held()
 
     def _scan(self, store: WikiStore) -> tuple[list[str], list[tuple[str, str, Stamp]]]:
         return store.scan_notes(self._stamps, time.time_ns() - RACY_NS, self._token)
 
     # ---- sync
 
-    def sync(self, store: WikiStore, read: Reader) -> None:
-        """Bring the index to the files of the wiki: read and index the notes new or changed since, take out the notes that went."""
-        self._guarded(lambda: self._sync(store, read))
+    def sync(self, store: WikiStore, read: Reader, *, wait: bool = True, build: bool = True) -> None:
+        """Bring the index to the files of the wiki: read and index the notes new or changed since, take out the notes that went.
+        `wait` false (a reader): once the file was built whole, the lock is taken only if free; if it is not, the index answers from what
+        the file holds, without the notes gone from the listing (a writer holds the lock to put in what it changed). `build` false:
+        nothing on a file never built whole."""
+        self._guarded(lambda: self._sync(store, read, wait, build))
 
-    def _sync(self, store: WikiStore, read: Reader) -> None:
+    def update(self, store: WikiStore, written: Iterable[str], read: Reader) -> None:
+        """Put in the notes among `written` (bundle paths a section of this process wrote, created or deleted) as they are on disk now,
+        with no listing of the wiki; waits for the lock `WRITTEN_WAIT` at most, then leaves them to the next look (an error then). A file
+        never built whole is left to its first reader."""
+        rels = [rel for rel in dict.fromkeys(written) if store.is_note_path(rel)]
+        if not rels:
+            return
+        if not self._mutex.acquire(timeout=WRITTEN_WAIT):  # a thread of this process holds the index (a build): not this section's wait
+            raise sqlite3.OperationalError(f"database is locked: the index is busy in this process ({WRITTEN_WAIT} s)")
+        try:
+            self._guarded(lambda: self._update(store, rels, read))
+        finally:
+            self._mutex.release()
+
+    def _update(self, store: WikiStore, rels: list[str], read: Reader) -> None:
         db = self._open()
-        if self._gen is None or self._disk_gen(db) != self._gen:  # another process wrote (or this is the first time)
+        if not self._is_built(db):
+            return
+
+        def look() -> tuple[None, list[tuple[str, str, Stamp]], list[str]]:
+            todo: list[tuple[str, str, Stamp]] = []
+            gone: list[str] = []
+            for rel in rels:
+                path = store.root / rel
+                try:
+                    st = os.stat(path)
+                except FileNotFoundError:
+                    if rel in self._stamps:
+                        gone.append(rel)
+                    continue
+                todo.append((rel, str(path), (st.st_mtime_ns, st.st_size, st.st_ino)))
+            return None, todo, gone
+
+        # under the lock, what the file holds of these notes alone is read (another process may have written them): the bundle's lock is
+        # held, so no listing and no reading of the whole file; a search of this process reads the rest again (`_partial`)
+        if not self._write(db, read, [], [], look, WRITTEN_WAIT, catch_up=lambda: self._catch_up(db, rels))[0]:
+            raise sqlite3.OperationalError(f"database is locked: what a section wrote waits for the next look ({WRITTEN_WAIT} s)")
+
+    def _catch_up(self, db: sqlite3.Connection, rels: list[str]) -> None:
+        """The write lock is held: take from the file its generation, its total and the rows of `rels`, as they are now. What this process
+        holds of the other notes may be older: it is read again whole before a search (`_partial`)."""
+        gen = self._disk_gen(db)
+        if self._gen != gen:  # what this process holds is not the file as of `gen` (or nothing yet)
+            self._partial = True
+        for rel in rels:
+            id_ = self._ids.pop(rel, None)
+            if id_ is not None:
+                self._rels.pop(id_, None)
+                self._len.pop(id_, None)
+            self._stamps.pop(rel, None)
+            self._bad.discard(rel)
+        for chunk in _chunks(rels):
+            marks = ",".join("?" * len(chunk))
+            for id_, rel, mtime, size, ino, length, is_bad in db.execute(
+                f"SELECT id, rel, mtime, size, ino, len, bad FROM docs WHERE rel IN ({marks})", chunk
+            ):
+                self._ids[rel] = id_
+                self._rels[id_] = rel
+                self._stamps[rel] = (mtime, size, ino & _MASK)
+                if is_bad:
+                    self._bad.add(rel)
+                else:
+                    self._len[id_] = length
+        self._total = int(db.execute("SELECT v FROM meta WHERE k = 'total'").fetchone()[0])
+        self._gen = gen
+
+    def _still_racy(self, todo: list[tuple[str, str, Stamp]]) -> list[tuple[str, str, Stamp]]:
+        """A reader's notes to write, less those the file holds as written moments ago (`RACY_NS`: kept with a stamp that never
+        matches) with the same size and still that recent: the writer that wrote them put them in, and they are read again once they
+        age. A file changed by hand within that time with the same size is so seen when it ages, not at once."""
+        racy = time.time_ns() - RACY_NS
+        keep = []
+        for rel, path, stamp in todo:
+            held = self._stamps.get(rel)
+            if not (stamp[0] >= racy and held is not None and held[0] == 0 and held[1] == stamp[1]):
+                keep.append((rel, path, stamp))
+        return keep
+
+    def _is_built(self, db: sqlite3.Connection) -> bool:
+        """Whether the file was built whole once; read from the file again while it was not (another process may have built it)."""
+        if not self._built:
+            self._built = db.execute("SELECT 1 FROM meta WHERE k = 'built'").fetchone() is not None
+        return self._built
+
+    def _sync(self, store: WikiStore, read: Reader, wait: bool, build: bool) -> None:
+        db = self._open()
+        if self._gen is None or self._partial or self._disk_gen(db) != self._gen:  # another process wrote (or this is the first time)
             self._load(db)
+        if not build and not self._is_built(db):
+            return
+        now = time.monotonic()
+        if not wait and self._built and self._raw and self._listed_at is not None and now - self._listed_at < LISTING_LOOK:
+            return  # listed a moment ago: what the library wrote since is in the file already (`update`), a hand edit waits for the next
         order, todo = self._scan(store)
+        self._listed_at = now
+        self._hidden = set()
+        done = True
         if todo or order != self._raw:
-            order = self._write(db, store, read, order, todo)
+
+            def look() -> tuple[list[str], list[tuple[str, str, Stamp]], list[str]]:
+                order, todo = self._scan(store)
+                live = set(order)
+                return order, todo, [rel for rel in self._stamps if rel not in live]
+
+            live = set(order)
+            gone = [rel for rel in self._stamps if rel not in live]
+            busy = 0.0 if not wait and self._is_built(db) else None
+            if busy is not None and todo:
+                todo = self._still_racy(todo)
+            done, seen = self._write(db, read, todo, gone, look, busy, whole=True)
+            if seen is not None:
+                order = seen
+            if not done:  # a writer holds the lock: what the file holds, less the notes gone from the listing
+                live = set(order)
+                self._hidden = {self._ids[rel] for rel in self._stamps if rel not in live and rel in self._ids}
+        if done and not self._is_built(db):
+            self._mark_built(db)  # whole, and not marked yet (a file built before the mark existed)
         self._raw = order
         ordered = [rel for rel in order if rel not in self._bad] if self._bad else order
         if ordered != self.order:
             self.order = ordered
             self._pos = {rel: i for i, rel in enumerate(ordered)}
 
-    def _begin(self, db: sqlite3.Connection) -> None:
-        """Take the write lock, waiting for the others (`BUSY_S` each time, a few times over) before giving up."""
+    def _begin(self, db: sqlite3.Connection, wait: float | None = None) -> bool:
+        """Take the write lock, waiting for the others (`BUSY_S` each time, a few times over) before giving up; with `wait`, that long
+        once, and whether it was taken."""
+        if wait is not None:
+            db.execute(f"PRAGMA busy_timeout = {int(wait * 1000)}")
+            try:
+                db.execute("BEGIN IMMEDIATE")
+                return True
+            except sqlite3.OperationalError as e:
+                if not _busy(e):
+                    raise
+                return False
+            finally:
+                db.execute(f"PRAGMA busy_timeout = {BUSY_S * 1000}")
         for attempt in range(LOCK_TRIES):
             try:
                 db.execute("BEGIN IMMEDIATE")
-                return
+                return True
             except sqlite3.OperationalError as e:
                 if not _busy(e) or attempt == LOCK_TRIES - 1:
                     raise
+        return False
+
+    def _mark_built(self, db: sqlite3.Connection) -> None:
+        self._begin(db)
+        try:
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('built', 1)")
+            db.execute("COMMIT")
+        except BaseException:
+            self._rollback(db)
+            raise
+        self._built = True
 
     def _write(
         self,
         db: sqlite3.Connection,
-        store: WikiStore,
         read: Reader,
-        order: list[str],
         todo: list[tuple[str, str, Stamp]],
-    ) -> list[str]:
+        gone: list[str],
+        look: Callable[[], tuple[list[str] | None, list[tuple[str, str, Stamp]], list[str]]],
+        wait: float | None = None,
+        *,
+        whole: bool = False,
+        catch_up: Callable[[], None] | None = None,
+    ) -> tuple[bool, list[str] | None]:
         """Write what changed, `BATCH` notes to a transaction: a build of a large wiki is a series of short locks, what was committed
-        stays if the process stops, and another process that opens the wiki meanwhile takes the next lots instead of waiting."""
-        live = set(order)
-        gone = [rel for rel in self._stamps if rel not in live]
-        if not todo and not gone:
-            return order
+        stays if the process stops, and another process that opens the wiki meanwhile takes the next lots instead of waiting. `look`
+        says again what to write (and the listing, when there is one) if another process wrote while this waited; `wait`: as long
+        as that for each lot (`_begin`); `whole`: what was to write is every change of the wiki, and the file is marked built once
+        it is in. `catch_up`: what to read of the file once the lock is held, before `look` says what to write (a writer's own notes);
+        without it, the whole state when another process wrote meanwhile. Whether all of it was written, and the listing `look` gave last
+        (None if it was not called)."""
+        seen: list[str] | None = None
+        if not todo and not gone and catch_up is None:
+            return True, seen
         if len(todo) > BATCH:  # a build touches pages of the postings all over the file: a cache of them saves reads and writes
             db.execute(f"PRAGMA cache_size = -{BUILD_CACHE_KB}")
         pos = 0
-        while pos < len(todo) or gone:
-            self._begin(db)
+        while pos < len(todo) or gone or catch_up is not None:
+            if not self._begin(db, wait):
+                return False, seen
             try:
-                if self._disk_gen(db) != self._gen:  # another process wrote while this waited: start again from what is in the file
-                    self._load(db)
-                    order, todo = self._scan(store)
-                    live = set(order)
-                    gone = [rel for rel in self._stamps if rel not in live]
+                if catch_up is not None or self._disk_gen(db) != self._gen:  # another process wrote: start again from the file
+                    if catch_up is not None:
+                        catch_up()
+                        catch_up = None
+                    else:
+                        self._load(db)
+                    seen, todo, gone = look()
                     pos = 0
                     if not todo and not gone:
                         db.execute("COMMIT")
                         break
                 changes = _Changes()
                 self._index_batch(db, read, todo[pos : pos + BATCH], changes)
-                if pos + BATCH >= len(todo):
+                last = pos + BATCH >= len(todo)
+                if last:
                     for rel in gone:
                         self._remove(db, rel, changes)
                     gone = []
+                    if whole and not self._built:
+                        db.execute("INSERT OR REPLACE INTO meta VALUES ('built', 1)")
                 gen, total = self._gen, self._total
                 if changes.dirty:
                     assert gen is not None
@@ -565,8 +738,10 @@ class SearchIndex:
                 self._gen = None
                 raise
             self._apply(changes, gen, total)
+            if last and whole:
+                self._built = True
             pos += BATCH
-        return order
+        return True, seen
 
     def _lengths_of(self, changes: _Changes) -> int:
         """The lengths, before this transaction, of the notes it changed or took out."""
@@ -797,10 +972,13 @@ class SearchIndex:
             idf = math.log(1 + (count - found_in + 0.5) / (found_in + 0.5))
             for key, f in pairs:
                 total[key] = get(key, 0.0) + idf * f * (_K1 + 1) / (f + norm[key])
+        if self._hidden:  # gone from the listing while a writer holds the file: not served
+            total = {k: s for k, s in total.items() if k not in self._hidden}
         if len(total) > n:
             floor = heapq.nlargest(n, total.values())[-1]  # nothing under the n-th score can be among them
             total = {k: s for k, s in total.items() if s >= floor}
-        found = sorted(total, key=lambda i: (-total[i], tie[self._rels[i]]))[:n]
+        last = len(tie)  # a note put in by a writer since this process last listed the wiki: after the listed ones, by path
+        found = sorted(total, key=lambda i: (-total[i], tie.get(self._rels[i], last), self._rels[i]))[:n]
         return [self._rels[i] for i in found]
 
     def meta(self, rels: Sequence[str]) -> dict[str, tuple[str, str]]:

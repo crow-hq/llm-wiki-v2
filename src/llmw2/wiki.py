@@ -282,6 +282,8 @@ class Wiki:
         from llmw2.searchindex import INDEX_FILE, SearchIndex  # not with the package: `import llmw2` stays light
 
         self._search = NoteSearch(VectorCache(cfg.bundle / VECTORS_FILE), embedder, model, SearchIndex(cfg.bundle / INDEX_FILE))
+        # what a section of this process writes goes into the search index before the call returns (and before the journal is told)
+        self.store.on_written = lambda written: self._search.written(self.store, written)
         self._preparing = threading.BoundedSemaphore(cfg.concurrency)
         self._hub: Hub | None = None  # the journal of this bundle in this process, taken by the first `remember`, `status` or `drain`
         self._closed = False
@@ -712,8 +714,12 @@ class Wiki:
         A spreadsheet is read first (on worker threads) and spread into one item per sheet ("plan, Budget.csv"):
         those are the items the report and `on_result` give, each with its own result.
         """
-        with self.store.session():  # one look at the tree, then only what changed (`WikiStore.session`)
-            return self._ingest_many(items, concurrency, on_result, plan)
+        try:
+            # one look at the tree, then only what changed (`WikiStore.session`); the index takes what the batch wrote once, at its end
+            with self.store.session(), self.store.written_later():
+                return self._ingest_many(items, concurrency, on_result, plan)
+        finally:
+            self.store.tell_written(None)
 
     def _ingest_many(
         self,
