@@ -280,10 +280,57 @@ def test_a_section_after_another_process_wrote_reads_only_its_own_rows_and_the_n
     assert loads == []  # under the bundle's lock: only its own rows
     assert mine.rel in indexed(tmp_path)
     assert paths(wiki.search("xenon", k=3)) == ["xenon.md"] and paths(wiki.search("yttrium", k=3)) == [mine.rel]
-    assert loads  # the search read the rest again
+    assert loads == []  # what the other process wrote came by `recent`: its rows alone, no whole read
     fresh = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))
     assert paths(wiki.search("common", k=20)) == paths(fresh.search("common", k=20))
     for w in (fresh, other, wiki):
+        w.close()
+
+
+def test_a_reader_takes_what_another_process_wrote_from_recent_and_reads_whole_beyond_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Notes added, changed and deleted by another process: the reader takes their rows alone (`recent`), and answers as a new
+    process that reads the file whole; more rows written than `recent` keeps: it reads the file whole."""
+    wiki = build(tmp_path)
+    other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))  # another process
+    loads: list[int] = []
+    real = SI.SearchIndex._load
+
+    def counted(self: SI.SearchIndex, db: Any) -> None:
+        loads.append(1)
+        real(self, db)
+
+    monkeypatch.setattr(SI.SearchIndex, "_load", counted)
+    first = paths(wiki.search("common", k=20))[0]
+
+    def same_as_a_new_process(query: str) -> None:
+        fresh = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))
+        try:
+            assert paths(wiki.search(query, k=20)) == paths(fresh.search(query, k=20)), query
+        finally:
+            fresh.close()
+
+    loads.clear()
+    with other.store.lock():
+        other.store.write_note(other.store.load(), title="Okapi", summary="s", body="okapi common common", tags=[], source={})
+    with other.store.lock():
+        note = other.store.read(first)
+        other.store.update_note(note, title=note.title, summary="s", body="changed words, nothing alike", tags=[], source={})
+    with other.store.lock():
+        other.store.delete_note("note-1.md")
+    hits = paths(wiki.search("common", k=20))
+    assert loads == [] and "okapi.md" in hits and first not in hits and "note-1.md" not in hits
+    same_as_a_new_process("common")
+    loads.clear()
+    monkeypatch.setattr(SI, "RECENT_IDS", 4)
+    for n in range(6):  # more rows written than `recent` keeps
+        with other.store.lock():
+            other.store.write_note(other.store.load(), title=f"Gnu {n}", summary="s", body=f"gnu{n} common", tags=[], source={})
+    assert paths(wiki.search("gnu3", k=3)) == ["gnu-3.md"]
+    assert len(loads) == 1  # read whole, once
+    same_as_a_new_process("common")
+    for w in (other, wiki):
         w.close()
 
 
@@ -350,3 +397,249 @@ def test_a_load_while_another_agent_removes_a_folder_leaves_it_out(tmp_path: Pat
     assert not folder.exists() and root.find("ops") is None and len(root.all_notes()) == 6
     for w in (reader, wiki):
         w.close()
+
+
+def test_a_search_while_another_process_writes_at_every_read_does_not_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A writer that writes more often than a search reads (a fast filer, at W5k) made every attempt stale: after six, "the search
+    index cannot be rebuilt". The search reads again inside one state of the file, whatever is written meanwhile."""
+    wiki = build(tmp_path)
+    other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))  # another process: its own index and connection
+    real = SI.SearchIndex._postings
+    writes: list[int] = []
+
+    def written_meanwhile(self: SI.SearchIndex, words: Any) -> Any:
+        if self is wiki._search.index:  # between the sync of the search and its postings, the other writes a note (and its index)
+            writes.append(1)
+            with other.store.lock():
+                n = len(writes)
+                other.store.write_note(other.store.load(), title=f"Extra {n}", summary="s", body=f"common extra{n}", tags=[], source={})
+        return real(self, words)
+
+    monkeypatch.setattr(SI.SearchIndex, "_postings", written_meanwhile)
+    loads: list[int] = []
+    real_load = SI.SearchIndex._load
+
+    def counted(self: SI.SearchIndex, db: Any) -> None:
+        loads.append(1)
+        real_load(self, db)
+
+    monkeypatch.setattr(SI.SearchIndex, "_load", counted)
+    found = paths(wiki.search("common body", k=20))  # no DatabaseError ("body": a word this process never read)
+    assert len(writes) >= 2 and len(found) >= 6  # it was stale once, then read one state of the file
+    assert loads == []  # after the stale read, what was written since came from `recent`, not a whole read
+    monkeypatch.setattr(SI.SearchIndex, "_load", real_load)
+    monkeypatch.setattr(SI.SearchIndex, "_postings", real)
+    assert set(found) <= set(paths(wiki.search("common body", k=20)))  # and that state was a true one
+    for w in (other, wiki):
+        w.close()
+
+
+def test_a_search_reading_one_state_of_a_file_made_again_under_it_does_not_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """In the read transaction of a search, the file is found made again by another process: the connection is closed under the
+    transaction, and the search goes on, on the new file."""
+    wiki = build(tmp_path)
+    other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))
+    index = wiki._search.index
+    real = SI.SearchIndex._postings
+    calls: list[int] = []
+
+    def written_meanwhile(self: SI.SearchIndex, words: Any) -> Any:
+        if self is index:
+            calls.append(1)
+            if len(calls) == 2:  # inside the read transaction: as `_open` does when it finds another file at the path
+                index._close_held()
+            with other.store.lock():
+                n = len(calls)
+                other.store.write_note(other.store.load(), title=f"Extra {n}", summary="s", body=f"common extra{n}", tags=[], source={})
+        return real(self, words)
+
+    monkeypatch.setattr(SI.SearchIndex, "_postings", written_meanwhile)
+    assert paths(wiki.search("common body", k=20))  # no ProgrammingError
+    assert len(calls) >= 3
+    for w in (other, wiki):
+        w.close()
+
+
+def test_a_reader_that_listed_a_moment_ago_does_not_list_again_because_another_process_wrote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fast filer writes the index several times a second: a reader reads what it wrote from the file, and lists the wiki's files
+    no more than once a window all the same (before, every write of another process made the next search list them all)."""
+    monkeypatch.setattr(SI, "LISTING_LOOK", 60.0)
+    wiki = build(tmp_path)
+    other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))  # another process
+    listed: list[int] = []
+    real = S.WikiStore.scan_notes
+
+    def counted(self: S.WikiStore, *a: Any, **k: Any) -> Any:
+        listed.append(1)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(S.WikiStore, "scan_notes", counted)
+    for n in range(3):
+        with other.store.lock():  # a note filed by the library: the other process's index has it before its section returns
+            other.store.write_note(other.store.load(), title=f"Gnu {n}", summary="s", body=f"gnu{n} common", tags=[], source={})
+        assert paths(wiki.search(f"gnu{n}", k=3)) == [f"gnu-{n}.md"]  # read from the file, which another process wrote
+    assert listed == []  # listed when built, a moment ago: not again
+    for w in (other, wiki):
+        w.close()
+
+
+@pytest.mark.parametrize("other_writes", [False, True])
+def test_a_note_gone_while_a_writer_holds_the_index_stays_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, other_writes: bool) -> None:
+    """A note deleted while another process holds the index's write lock (a purge whose hook failed: "index" in `pending`) is left out
+    by a reader (D1); it stays out at the next listing that finds the files as they were, and after another process wrote the index
+    (the reader reads its state again): no title nor summary of it comes back."""
+    wiki = build(tmp_path)
+    gone = paths(wiki.search("common", k=8))[0]
+    holder = sqlite3.connect(_index_file(tmp_path), timeout=0, isolation_level=None)
+    holder.execute("BEGIN IMMEDIATE")  # a writer of another process holds the index all along
+    try:
+        (tmp_path / "wiki" / gone).unlink()
+        first = paths(wiki.search("common", k=8))
+        if other_writes:  # another process writes the index (gen + 1): the reader reads its state again, within the window
+            monkeypatch.setattr(SI, "LISTING_LOOK", 60.0)
+            holder.execute("UPDATE meta SET v = v + 1 WHERE k = 'gen'")
+            holder.execute("COMMIT")
+            holder.execute("BEGIN IMMEDIATE")
+        second = paths(wiki.search("common", k=8))  # else a new listing, the same as the last (LISTING_LOOK is 0 in the tests)
+        assert gone not in first and gone not in second
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
+        wiki.close()
+
+
+def _state(index: SI.SearchIndex) -> tuple[Any, ...]:
+    return (dict(index._ids), dict(index._rels), dict(index._len), dict(index._stamps), set(index._bad), index._total, index._gen,
+            index._built)
+
+
+def test_the_state_a_reader_takes_from_recent_is_the_one_a_new_read_of_the_file_gives(tmp_path: Path) -> None:
+    """Writes of every kind by another process (a note added, changed, deleted, purged; a file that is not a note): after each, what the
+    reader holds (ids, paths, lengths, stamps, files that are not notes, total, generation) is what a whole read of the file gives."""
+    wiki = build(tmp_path)
+    root = tmp_path / "wiki"
+    other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))  # another process
+    index = wiki._search.index
+    caught: list[int] = []
+    real = SI.SearchIndex._caught_up
+
+    def counted(self: SI.SearchIndex, db: Any) -> bool:
+        done = real(self, db)
+        caught.append(int(done))
+        return done
+
+    def check() -> None:
+        SI.LISTING_LOOK = 60.0  # the reader does not list the files: what it holds comes from the file alone
+        try:
+            wiki.search("common", k=20)
+        finally:
+            SI.LISTING_LOOK = 0.0
+        fresh = SI.SearchIndex(index.path)
+        try:
+            with fresh._mutex:
+                fresh._load(fresh._open())
+            assert _state(index) == _state(fresh)
+        finally:
+            fresh.close()
+
+    import llmw2.searchindex as si_module
+
+    si_module.SearchIndex._caught_up = counted  # type: ignore[method-assign]
+    try:
+        with other.store.lock():
+            other.store.write_note(other.store.load(), title="Okapi", summary="s", body="okapi common", tags=[], source={})
+        check()
+        note = other.store.read("note-2.md")
+        with other.store.lock():
+            other.store.update_note(note, title=note.title, summary="t", body="common changed, longer than before", tags=[], source={})
+        check()
+        with other.store.lock():
+            other.store.delete_note("note-3.md")
+        check()
+        other.remember("topic: rare-1\nThe rare common gazelle.", key="gazelle")
+        other.drain(60)
+        check()
+        assert other.purge("gazelle") is not None
+        check()
+        (root / "not-a-note.md").write_bytes(b"\xff\xfe not text")  # by hand: the other process's next search writes a row for it
+        other.search("common", k=3)
+        check()
+        (root / "not-a-note.md").write_bytes(b"\xff\xfe still not text, longer")  # changed by hand: a new stamp of a row that is no note
+        other.search("common", k=3)
+        check()
+        assert caught and all(caught)  # every time from `recent`
+    finally:
+        si_module.SearchIndex._caught_up = real  # type: ignore[method-assign]
+        for w in (other, wiki):
+            w.close()
+
+
+def test_a_purge_leaves_no_name_of_the_note_in_any_file_with_an_index(tmp_path: Path) -> None:
+    """B11: `recent` names rows by id, never by path: the path of a purged note (its title) is in no file of the wiki after the purge."""
+    from tests.wiki.test_purge_journal import KEY, TEXT, TITLE, disk
+    from tests.wiki.test_remember import make, notes
+
+    bundle = tmp_path / "wiki"
+    w, _ = make(bundle)
+    try:
+        w.remember(TEXT, key=KEY, title=TITLE)
+        w.drain(60)
+        w.search("falcon", k=5)  # the index is built
+        name = Path(str(notes(bundle)[0])).stem
+        report = w.purge(KEY)
+        assert report is not None and report.pending == []
+        assert name.encode() not in disk(bundle)
+    finally:
+        w.close()
+
+
+def test_recent_stays_within_its_bound_whatever_is_written() -> None:
+    """Writes of more rows than `recent` holds (a build, a batch) are not kept, writes that name no row count as one: after a
+    thousand of each, `recent` holds at most RECENT_IDS generations, a few hundred bytes."""
+    import json
+    import types
+
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE meta (k TEXT PRIMARY KEY, v)")
+    me = types.SimpleNamespace(_ids={})
+    for gen in range(1, 1001):
+        changes = SI._Changes()
+        changes.docs = {f"n{i}": (i, 1, False) for i in range(SI.RECENT_IDS + 1)}
+        SI.SearchIndex._note_recent(me, db, gen, changes)  # type: ignore[arg-type]
+    for gen in range(1001, 2001):
+        SI.SearchIndex._note_recent(me, db, gen, SI._Changes())  # type: ignore[arg-type]
+    value = db.execute("SELECT v FROM meta WHERE k = 'recent'").fetchone()[0]
+    assert len(json.loads(value)) <= SI.RECENT_IDS and len(value) < 16 * SI.RECENT_IDS
+    db.close()
+
+
+@pytest.mark.parametrize("planted", ['[[{gen}, null]]', '[[{gen}, ["a.md"]]]', "not json at all"])
+def test_a_recent_of_another_shape_neither_stops_a_writer_nor_fails_a_search(tmp_path: Path, planted: str) -> None:
+    """`recent` written by an earlier form (a None, paths) or not JSON: a writer starts it again from none, a reader reads the file
+    whole; no write is stopped for good, no search fails."""
+    wiki = build(tmp_path)
+    other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))  # another process
+    db = sqlite3.connect(_index_file(tmp_path), isolation_level=None)
+
+    def plant() -> None:
+        gen = int(db.execute("SELECT v FROM meta WHERE k = 'gen'").fetchone()[0])
+        db.execute("INSERT OR REPLACE INTO meta VALUES ('recent', ?)", (planted.format(gen=gen + 1),))
+
+    try:
+        plant()
+        with other.store.lock():  # the hook writes the index over it
+            other.store.write_note(other.store.load(), title="Ibex", summary="s", body="ibex common", tags=[], source={})
+        assert "ibex.md" in indexed(tmp_path)
+        plant()  # and what a reader finds after the other process wrote: that shape again
+        with db:
+            db.execute("UPDATE meta SET v = v + 1 WHERE k = 'gen'")
+        assert paths(wiki.search("ibex", k=3)) == ["ibex.md"]
+        with other.store.lock():  # a write after it goes through too
+            other.store.write_note(other.store.load(), title="Kudu", summary="s", body="kudu common", tags=[], source={})
+        assert paths(wiki.search("kudu", k=3)) == ["kudu.md"]
+    finally:
+        db.close()
+        for w in (other, wiki):
+            w.close()

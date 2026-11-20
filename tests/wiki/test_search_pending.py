@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -170,13 +171,18 @@ def test_the_journal_is_read_again_only_when_its_tail_moved(bundle: Path, monkey
     """The shared tail hint says when another process appended: a search reads the journal then, and not at every search."""
     w = seeded(bundle)
     w.remember("topic: sea-2\nA first memory of the seal.", key="seal")  # this process holds the hint now
+    preparer = w._journal().journal._preparer
+    if preparer is not None:
+        preparer.join(60)  # the segments made ahead of time, in a thread of their own: done before anything is counted
     assert paths(w, "seal")
     monkeypatch.setattr(SI, "LISTING_LOOK", 3600.0)
     reads: list[int] = []
     real = F.Hub.refresh
+    searching = threading.current_thread()
 
     def counted(self: F.Hub) -> None:
-        reads.append(1)
+        if threading.current_thread() is searching:  # only the reads of the searches: another thread of the process is not counted
+            reads.append(1)
         real(self)
 
     monkeypatch.setattr(F.Hub, "refresh", counted)

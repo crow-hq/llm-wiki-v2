@@ -644,6 +644,8 @@ class Filer(threading.Thread):
         self.forget_at = 0.0  # a tombstone left pending is looked at again after this time (`time.monotonic`)
         self.forget_tries = 0  # looks at it that did not complete it: the delay doubles, as for an entry that failed
         self.forget_for: str | None = None  # the tombstone those looks were at: a new one starts again from no delay
+        self._lot = contextlib.ExitStack()  # the session of the store the entries of a lot are filed in (`_serve`)
+        self._in_lot = 0
 
     def stop(self) -> None:
         self.stopping = True
@@ -681,45 +683,65 @@ class Filer(threading.Thread):
         self.kicked.clear()
 
     def _serve(self) -> None:
+        """File the entries one after the other. Consecutive entries are filed in one session of the store (`WikiStore.session`): its
+        first `load` lists the tree, the next ones only what changed; it ends when the queue is empty, after `PLAN_BATCH` entries, before
+        the completion of a purge, while a failed entry waits to be tried again, and when the filer stops, so the store keeps nothing of
+        the folders between two lots, nor while nothing is filed."""
+        from llmw2.wiki import PLAN_BATCH  # the lot of a plan: as many documents as a batch files in one session
+
         hub = self.hub
         with contextlib.suppress(Exception):
             self.wiki.store.recover()  # a section that a process died in, and the `F` record it owes
-        while not self.stopping:
-            try:
-                hub.refresh()
-                entry = hub.next_open()
-                tombs = hub.forgets()
-            except Exception as e:  # a journal that cannot be read: said, and tried again
-                self._failed_read(e)
-                self._sleep(IDLE_POLL * 4)
-                continue
-            if tombs and tombs[0].id != self.forget_for:
-                self.forget_for, self.forget_tries, self.forget_at = tombs[0].id, 0, 0.0
-            if tombs and hub.journal.stuck is None and time.monotonic() >= self.forget_at:
+        try:
+            while not self.stopping:
                 try:
-                    finished = self.wiki._finish_forget(tombs[0])
-                except Exception as e:  # tried again later; the purge stays pending
+                    hub.refresh()
+                    entry = hub.next_open()
+                    tombs = hub.forgets()
+                except Exception as e:  # a journal that cannot be read: said, and tried again
                     self._failed_read(e)
-                    finished = False
-                if finished:
-                    self.forget_tries = 0
+                    self._sleep(IDLE_POLL * 4)
                     continue
-                # a reader holding the index, the guard of the compaction, an error: looked at again later, the filing goes on meanwhile
-                self.forget_tries += 1
-                self.forget_at = time.monotonic() + min(RETRY_LAST, RETRY_FIRST * 2 ** (self.forget_tries - 1))
-            if entry is None:
-                self.state = "idle"
+                if tombs and tombs[0].id != self.forget_for:
+                    self.forget_for, self.forget_tries, self.forget_at = tombs[0].id, 0, 0.0
+                if tombs and hub.journal.stuck is None and time.monotonic() >= self.forget_at:
+                    self._end_lot()  # the purge works on the files: the lot's session ends first
+                    try:
+                        finished = self.wiki._finish_forget(tombs[0])
+                    except Exception as e:  # tried again later; the purge stays pending
+                        self._failed_read(e)
+                        finished = False
+                    if finished:
+                        self.forget_tries = 0
+                        continue
+                    # a reader holding the index, the guard of the compaction, an error: looked at again later, the filing goes on
+                    self.forget_tries += 1
+                    self.forget_at = time.monotonic() + min(RETRY_LAST, RETRY_FIRST * 2 ** (self.forget_tries - 1))
+                if entry is None:
+                    self._end_lot()
+                    self.state = "idle"
+                    if self.dirty:
+                        self.dirty = False
+                        self._compact()
+                    with hub.cond:
+                        if not self.stopping and not hub.open_entries():
+                            hub.cond.wait(IDLE_POLL)
+                    continue
+                if not self._in_lot:
+                    self._lot.enter_context(self.wiki.store.session())
+                self._in_lot += 1
+                self._file(entry)
+                if self._in_lot >= PLAN_BATCH:
+                    self._end_lot()
                 if self.dirty:
                     self.dirty = False
                     self._compact()
-                with hub.cond:
-                    if not self.stopping and not hub.open_entries():
-                        hub.cond.wait(IDLE_POLL)
-                continue
-            self._file(entry)
-            if self.dirty:
-                self.dirty = False
-                self._compact()
+        finally:
+            self._end_lot()
+
+    def _end_lot(self) -> None:
+        self._lot.close()
+        self._in_lot = 0
 
     def _failed_read(self, e: Exception) -> None:
         self.hub.last_error = f"{type(e).__name__}: {e}"
@@ -794,6 +816,7 @@ class Filer(threading.Thread):
         log.warning("filing entry %s failed, to be tried again: %s", entry.id, message)
         self.state = "error"
         delay = 0.05 if quick else min(RETRY_LAST, RETRY_FIRST * 2 ** (count - 1))
+        self._end_lot()  # the session holds for the whole process: an `ask` meanwhile sees the files as they are
         self._sleep(delay)
 
 

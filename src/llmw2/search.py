@@ -276,7 +276,7 @@ class NoteSearch:
             hashes = self.index.hashes()
             return ranked, others, hashes, [rel for rel in self.index.rels(where) if rel in hashes]  # a note taken away meanwhile goes
 
-        ranked, others, hashes, rels = self.index.run(words)
+        ranked, others, hashes, rels = self.index.run(words, reading=True)
         by_words = [rel for rel, _ in ranked]
         by_meaning: list[str] = []
         if self.embedder is not None:  # out of the index's lock: a writer does not wait for the embedder

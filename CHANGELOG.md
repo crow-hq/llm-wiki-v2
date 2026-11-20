@@ -94,12 +94,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The filer of `remember` files consecutive entries in one session of the store, up to the 50 documents of a plan's batch: the tree is
+  listed whole once for the lot, then only the folders that changed, instead of twice an entry; the session ends when the queue is
+  empty, while a failed entry waits to be tried again, and before a purge is completed. After a document filed alone, the split of its folder looks first at the folder's own
+  listing, and loads the tree only when the folder may hold enough notes to split. A note edited by hand in place, leaving its folder's
+  time as it was, is seen by the next lot.
+- A search that another process writes the index under while it reads (a fast filer at every step) reads again inside one state of
+  the file, whatever is written meanwhile, instead of failing after a few attempts with "the search index cannot be rebuilt".
 - A search never waits for the write lock of the search index: a process that writes notes puts them in the index before the call
   returns, and before the journal is told an entry is filed (it looks only at the files its write changed); a search that finds the
   index behind the notes writes it only when the lock is free, and otherwise answers from what the index holds, leaving out the
   notes gone from the folder meanwhile. A search looks at the files of the wiki at most once a moment in a process: a note changed
-  by hand, not through the library, is found by the searches after that moment. An index never built whole is still built by its
-  first search. A batch (`ingest_many`, `rebuild`) puts its notes in once, at its end.
+  by hand, not through the library, is found by the searches after that moment, and so, by meaning (with an embedder), is a note
+  another process filed (by its words it is found at once, from the index). The index file keeps which notes its last writes changed,
+  so a search that finds it written by another process reads those rows only, not the state of every note. An index never built whole
+  is still built by its first search. A batch (`ingest_many`, `rebuild`) puts its notes in once, at its end.
 - A search whose query quotes an expression or holds a code no longer reads again the notes it looks for them in: a process keeps
   the texts of the last candidates it read (at most 512), by the hash the index holds for them, and reads only a note whose text
   changed; a purge drops them in its own process. Limit: another process that had read a purged note keeps its text in memory

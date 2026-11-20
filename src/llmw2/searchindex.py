@@ -57,6 +57,12 @@ BUSY_S = 180  # seconds a writer waits for the lock at most each time: one lot o
 LOCK_TRIES = 5  # and how many times it waits that long before the error is its caller's
 WRITTEN_WAIT = 1.0  # seconds a section waits at most for the locks to put in what it wrote (it holds the bundle's): else the next look does
 LISTING_LOOK = 1.0  # seconds a reader trusts its last listing: what the library writes comes by `update`, a hand edit by the next listing
+# rows a file names in `recent` (its last writes, by generation, a generation with no row counted as one): a reader that finds the
+# file written by another process reads those rows instead of all (`_caught_up`); a write of more rows, or older writes, are read whole.
+# Measured with eight readers that search every 0.2 to 2 s, rows behind at each catch-up: filings that link and merge notes (the A1M
+# sequence) p99 54, max 57; one row a filing p99 33. 88 covers those, and stays within three pages of 512 even at one row a
+# generation (some 1.5 KB at most)
+RECENT_IDS = 88
 PAGE_SIZE = 512  # a changed note touches pages at random: small pages write fewer bytes (measured at 512, 1024, 2048, 4096)
 _K1, _B = lexical._K1, lexical._B
 _MASK = (1 << 64) - 1
@@ -188,6 +194,23 @@ def _busy(e: sqlite3.Error) -> bool:
 def _chunks(items: Sequence[str], n: int = 500) -> Iterable[Sequence[str]]:
     for i in range(0, len(items), n):
         yield items[i : i + n]
+
+
+def _recent(db: sqlite3.Connection) -> list[list[Any]] | None:
+    """`recent` as [[generation, [row id, ...]], ...]; None when there is none, or it has any other shape (not JSON, a None of an earlier
+    form, paths): whoever reads it reads the file whole, whoever writes it starts again from none."""
+    row = db.execute("SELECT v FROM meta WHERE k = 'recent'").fetchone()
+    if row is None:
+        return None
+    try:
+        recent = json.loads(row[0])
+    except (TypeError, ValueError):
+        return None
+    good = isinstance(recent, list) and all(
+        isinstance(r, list) and len(r) == 2 and type(r[0]) is int and isinstance(r[1], list) and all(type(i) is int for i in r[1])
+        for r in recent
+    )
+    return recent if good else None
 
 
 class _Changes:
@@ -391,11 +414,12 @@ class SearchIndex:
                         return
                     time.sleep(0.1)
 
-    def run(self, work: Callable[[], T]) -> T:
+    def run(self, work: Callable[[], T], *, reading: bool = False) -> T:
         """Run `work`, which may sync and ask the index; if the file turns out to be damaged `work` runs again from its start on a new
         one (see `_guarded`). `search` runs a whole search so: a damage found by the last step does not leave the answer to a state
-        that was just thrown away."""
-        return self._guarded(work)
+        that was just thrown away. `reading`: `work` only needs to read (its sync never waits for the write lock); when another process
+        wrote while it read, it runs again inside one read transaction, which sees one state of the file whatever is written meanwhile."""
+        return self._guarded(work, reading)
 
     def forget(self, wait: float) -> bool:
         """After a purge: the WAL is written into the file and cut to nothing (`wal_checkpoint(TRUNCATE)`), waiting at most `wait` seconds
@@ -433,7 +457,7 @@ class SearchIndex:
                     done = False
         return done
 
-    def _guarded(self, work: Callable[[], T]) -> T:
+    def _guarded(self, work: Callable[[], T], reading: bool = False) -> T:
         """Run `work`; a damaged file is thrown away and `work` runs again on a new one; a file that cannot be used (read-only,
         no space, no I/O) is replaced by an index in memory. A file busy for too long is an error to the caller. Inside another
         `_guarded` the error goes up to it, which starts `work` again from its first step."""
@@ -442,16 +466,30 @@ class SearchIndex:
                 return work()
             self._guarding = True
             try:
-                return self._guard_loop(work)
+                return self._guard_loop(work, reading)
             finally:
                 self._guarding = False
 
-    def _guard_loop(self, work: Callable[[], T]) -> T:
+    def _guard_loop(self, work: Callable[[], T], reading: bool = False) -> T:
+        snapshot = False
         for attempt in range(6):
             try:
-                return work()
+                if not snapshot:
+                    return work()
+                # a writer that writes more often than `work` reads made it stale again and again: one state of the file for all of it
+                db = self._open()
+                db.execute("BEGIN")
+                try:
+                    return work()
+                finally:
+                    # closed meanwhile when the file was made again under it (`_open`): nothing of that state is held any more
+                    with contextlib.suppress(sqlite3.ProgrammingError):
+                        if db.in_transaction:
+                            db.execute("COMMIT")
             except _Stale:
-                self._gen = None  # the next sync reads the file again
+                # what this process holds is still the file as of `_gen`: the next sync takes what was written since (`recent`), or
+                # all of it; the postings read meanwhile go with the state read again (`_read_again`)
+                snapshot = reading
             except sqlite3.DatabaseError as e:
                 if self._mem is not None or _busy(e):
                     raise
@@ -496,12 +534,19 @@ class SearchIndex:
             raise _Corrupt("the lengths of the notes do not add up")
         self._gen, self._ids, self._rels, self._len, self._stamps, self._bad, self._total = gen, ids, rels, lens, stamps, bad, total
         self._built = db.execute("SELECT 1 FROM meta WHERE k = 'built'").fetchone() is not None
+        self._read_again()
+
+    def _read_again(self) -> None:
+        """After the state of the notes was read again from the file (`_load`, `_caught_up`): what was derived from the old one goes."""
+        if self._hidden:  # notes gone from the files that the file still holds: the next search lists the files again to leave them out
+            self._listed_at = None
         self._hidden = set()
         self._partial = False
         self._token = object()
         self._hot, self._hot_n, self._norm, self._norm_avg = {}, 0, {}, -1.0
         self._groups = None
-        self._raw = []
+        # the listing (`_raw`) stays: it says what the files were when they were listed, whoever wrote the file since; a reader that
+        # listed a moment ago does not list again because another process wrote (`LISTING_LOOK`)
 
     def close(self) -> None:
         """Let go of the file."""
@@ -554,8 +599,13 @@ class SearchIndex:
             return None, todo, gone
 
         # under the lock, what the file holds of these notes alone is read (another process may have written them): the bundle's lock is
-        # held, so no listing and no reading of the whole file; a search of this process reads the rest again (`_partial`)
-        if not self._write(db, read, [], [], look, WRITTEN_WAIT, catch_up=lambda: self._catch_up(db, rels))[0]:
+        # held, so no listing and no reading of the whole file; what the others wrote since comes from `recent`, else a search of this
+        # process reads the rest again (`_partial`)
+        def catch_up() -> None:
+            if self._gen is None or self._partial or self._disk_gen(db) == self._gen or not self._caught_up(db):
+                self._catch_up(db, rels)
+
+        if not self._write(db, read, [], [], look, WRITTEN_WAIT, catch_up=catch_up)[0]:
             raise sqlite3.OperationalError(f"database is locked: what a section wrote waits for the next look ({WRITTEN_WAIT} s)")
 
     def _catch_up(self, db: sqlite3.Connection, rels: list[str]) -> None:
@@ -586,6 +636,54 @@ class SearchIndex:
         self._total = int(db.execute("SELECT v FROM meta WHERE k = 'total'").fetchone()[0])
         self._gen = gen
 
+    def _caught_up(self, db: sqlite3.Connection) -> bool:
+        """Another process wrote the file since this one read it: take only the rows it wrote, which `recent` names by id for each
+        generation since, read in one state of the file. False (read it whole) when `recent` does not cover every generation since (a
+        write of many rows, an older writer, another file) or what it gives does not add up."""
+        own = not db.in_transaction
+        if own:
+            db.execute("BEGIN")
+        try:
+            assert self._gen is not None
+            gen = self._disk_gen(db)
+            kept = _recent(db) if gen[0] == self._gen[0] else None
+            recent = {g: ids for g, ids in kept or []}  # none, or of another shape: the file is read whole
+            wanted = range(self._gen[1] + 1, gen[1] + 1)
+            if not wanted or any(recent.get(g) is None for g in wanted):
+                return False
+            ids = sorted({i for g in wanted for i in recent[g]})
+            for id_ in ids:  # what this process held of these rows goes; what the file holds of them now comes
+                rel = self._rels.pop(id_, None)
+                self._len.pop(id_, None)
+                if rel is not None and self._ids.get(rel) == id_:
+                    del self._ids[rel]
+                    self._stamps.pop(rel, None)
+                    self._bad.discard(rel)
+            for chunk in _chunks(ids):
+                marks = ",".join("?" * len(chunk))
+                for id_, rel, mtime, size, ino, length, is_bad in db.execute(
+                    f"SELECT id, rel, mtime, size, ino, len, bad FROM docs WHERE id IN ({marks})", chunk
+                ):
+                    self._ids[rel] = id_
+                    self._rels[id_] = rel
+                    self._stamps[rel] = (mtime, size, ino & _MASK)
+                    if is_bad:
+                        self._bad.add(rel)
+                    else:
+                        self._bad.discard(rel)
+                        self._len[id_] = length
+            self._total = int(db.execute("SELECT v FROM meta WHERE k = 'total'").fetchone()[0])
+            if sum(self._len.values()) != self._total:
+                self._gen = None
+                return False
+            self._gen = gen
+            self._built = db.execute("SELECT 1 FROM meta WHERE k = 'built'").fetchone() is not None
+        finally:
+            if own and db.in_transaction:
+                db.execute("COMMIT")
+        self._read_again()
+        return True
+
     def _still_racy(self, todo: list[tuple[str, str, Stamp]]) -> list[tuple[str, str, Stamp]]:
         """A reader's notes to write, less those the file holds as written moments ago (`RACY_NS`: kept with a stamp that never
         matches) with the same size and still that recent: the writer that wrote them put them in, and they are read again once they
@@ -606,7 +704,8 @@ class SearchIndex:
 
     def _sync(self, store: WikiStore, read: Reader, wait: bool, build: bool) -> None:
         db = self._open()
-        if self._gen is None or self._partial or self._disk_gen(db) != self._gen:  # another process wrote (or this is the first time)
+        held = self._gen is not None and not self._partial  # what this process holds is the file as of `_gen`
+        if not held or (self._disk_gen(db) != self._gen and not self._caught_up(db)):  # another process wrote: what it wrote, or all
             self._load(db)
         if not build and not self._is_built(db):
             return
@@ -617,14 +716,14 @@ class SearchIndex:
         self._listed_at = now
         self._hidden = set()
         done = True
-        if todo or order != self._raw:
+        live = set(order)
+        if todo or order != self._raw or any(rel not in live for rel in self._stamps):  # a note gone: written, or left out
 
             def look() -> tuple[list[str], list[tuple[str, str, Stamp]], list[str]]:
                 order, todo = self._scan(store)
                 live = set(order)
                 return order, todo, [rel for rel in self._stamps if rel not in live]
 
-            live = set(order)
             gone = [rel for rel in self._stamps if rel not in live]
             busy = 0.0 if not wait and self._is_built(db) else None
             if busy is not None and todo:
@@ -646,6 +745,10 @@ class SearchIndex:
     def _begin(self, db: sqlite3.Connection, wait: float | None = None) -> bool:
         """Take the write lock, waiting for the others (`BUSY_S` each time, a few times over) before giving up; with `wait`, that long
         once, and whether it was taken."""
+        if db.in_transaction:  # a reader inside one state of the file (`run`, `reading`): it does not write, or ends that state first
+            if wait is not None:
+                return False
+            db.execute("COMMIT")
         if wait is not None:
             db.execute(f"PRAGMA busy_timeout = {int(wait * 1000)}")
             try:
@@ -665,6 +768,19 @@ class SearchIndex:
                 if not _busy(e) or attempt == LOCK_TRIES - 1:
                     raise
         return False
+
+    def _note_recent(self, db: sqlite3.Connection, gen: int, changes: _Changes) -> None:
+        """The write lock is held, before `_apply`: `recent` keeps, for the last generations, the ids of the rows this one wrote (ids,
+        never paths: a purged note leaves no name in the file), at most RECENT_IDS in all, a generation with none counted as one; a
+        generation of more is not kept (a reader that does not find it reads the file whole)."""
+        ids = {doc[0] for doc in changes.docs.values()}
+        ids.update(self._ids[rel] for rel in [*changes.stamps, *changes.gone] if rel in self._ids)
+        recent = [r for r in _recent(db) or [] if r[0] < gen]  # a `recent` of another shape (another version, a file sent): from none
+        if len(ids) <= RECENT_IDS:  # a generation of more rows is not kept: a reader that does not find it reads the file whole
+            recent.append([gen, sorted(ids)])
+        while recent and sum(max(1, len(r[1])) for r in recent) > RECENT_IDS:  # each generation counts, one with no id too
+            recent.pop(0)
+        db.execute("INSERT OR REPLACE INTO meta VALUES ('recent', ?)", (json.dumps(recent, separators=(",", ":")),))
 
     def _mark_built(self, db: sqlite3.Connection) -> None:
         self._begin(db)
@@ -732,6 +848,7 @@ class SearchIndex:
                     total += sum(length for _, length, bad in changes.docs.values() if not bad) - self._lengths_of(changes)
                     db.execute("UPDATE meta SET v = ? WHERE k = 'gen'", (gen[1],))
                     db.execute("UPDATE meta SET v = ? WHERE k = 'total'", (total,))
+                    self._note_recent(db, gen[1], changes)
                 db.execute("COMMIT")
             except BaseException:
                 self._rollback(db)
@@ -819,6 +936,7 @@ class SearchIndex:
                 else:
                     db.execute("UPDATE docs SET mtime = ?, size = ?, ino = ? WHERE id = ?", (mtime, size, ino, row[0]))
                     changes.docs[rel] = (row[0], 0, True)
+                    changes.dirty = True  # a stamp the other processes hold too (`recent`)
                 changes.stamps[rel] = stamp
                 continue
             text, title, summary, fields = entry
@@ -826,6 +944,7 @@ class SearchIndex:
             if row is not None and not row[2] and row[1] == digest:  # the same text: its file's time changed, or its `fields` alone
                 if self._stamps.get(rel) != stamp:
                     db.execute("UPDATE docs SET mtime = ?, size = ?, ino = ? WHERE id = ?", (mtime, size, ino, row[0]))
+                    changes.dirty = True  # a stamp the other processes hold too (`recent`)
                 if row[3] != fields:  # what decides whether a note changed holds its `fields` too
                     db.execute("UPDATE docbody SET fields = ? WHERE id = ?", (fields, row[0]))
                     changes.dirty = True

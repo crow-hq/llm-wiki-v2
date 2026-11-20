@@ -1491,6 +1491,9 @@ class Wiki:
         """
         if self.cfg.mode != "crow" or result.action == "unchanged":
             return
+        rel = result.folder.strip("/")
+        if not rel or rel.count("/") + 1 >= min(PLAN_DEPTH, self.cfg.max_depth) or self.store.note_files(rel) < SPLIT_AT:
+            return  # what the folder's own listing says: the tree is loaded only when a split may be tried
         folder = self.store.load().find(result.folder)
         if folder is None or folder.is_root or folder.depth >= min(PLAN_DEPTH, self.cfg.max_depth) or len(folder.notes) < SPLIT_AT:
             return

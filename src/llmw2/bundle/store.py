@@ -558,6 +558,16 @@ class WikiStore:
             self._dirs[key] = (mtime, scanned - mtime > RACY_NS, folder)
         return folder
 
+    def note_files(self, rel: str) -> int:
+        """How many files of the folder at `rel` (`""` the root) a `load` would take for its notes, read from its listing alone: at least
+        as many as the notes it would find there (a file that is not a note counts too). 0 for a folder that is not there."""
+        try:
+            with os.scandir(self.root / rel) as listing:
+                names = [e.name for e in listing if e.is_file()]
+            return sum(1 for n in names if n.endswith(".md") and n not in (INDEX, LOG) and not n.startswith("."))
+        except (FileNotFoundError, NotADirectoryError):
+            return 0
+
     def scan_notes(
         self, known: Mapping[str, Stamp | None], racy_before: int, owner: object = None
     ) -> tuple[list[str], list[tuple[str, str, Stamp]]]:
