@@ -15,7 +15,7 @@ __copyright__ = (
 
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
@@ -29,16 +29,17 @@ from llmw2.bundle.store import WikiStore
 from llmw2.bundle.tree import Folder, Note, matching
 from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import InputError, ModelError
+from llmw2.filer import PENDING
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport
-from llmw2.search import NoteSearch
+from llmw2.search import NoteSearch, Pending
 
 log = logging.getLogger(__name__)
 
 NO_ANSWER = "The wiki has no notes relevant to this question."
 _BRACKET = re.compile(r"\[([^\[\]]+)\]")
-_NOTE_PATH = re.compile(r"[^\s\[\];,]+\.md")
+_NOTE_PATH = re.compile(r"[^\s\[\];,]+\.md|" + re.escape(PENDING) + r"[\w-]+")  # a note, or an entry not filed yet (`Wiki.search`)
 
 
 @dataclass
@@ -86,16 +87,18 @@ class Researcher:
         self.search = search
         self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="researcher/system")
 
-    def ask(self, question: str, where: dict[str, Any] | None = None) -> Answer:
-        """`where` (field -> value) keeps the notes whose `fields` have all of them: a filter, not an access control."""
+    def ask(self, question: str, where: dict[str, Any] | None = None, pending: Sequence[tuple[Pending, Note]] = ()) -> Answer:
+        """`where` (field -> value) keeps the notes whose `fields` have all of them: a filter, not an access control. `pending`: entries
+        not filed yet (already kept by `where`), each as the search takes it and as a note with no folder (`pending:<id>`): the search
+        finds them as it does in `Wiki.search`, and the answer may read and cite them; a navigation of the folders does not see them."""
         ctx = self.ctx
         with ctx.llm.usage.span() as used:
             root = self.store.load()
             if self.search is not None:
-                ctx.search = self._finder(root, where)
+                ctx.search = self._finder(root, where, pending)
             if where:
                 root = matching(root, where)
-            notes = check_select(self.steps.select(ctx, root, question), root)
+            notes = check_select(self.steps.select(ctx, root, question), root, [n for _, n in pending])
             notes, past = self._with_history(question, notes)
             asked = f"{question}\n\n{revisions.HISTORY_HINT}" if past else question
             if self._conflicting(question, notes):
@@ -113,12 +116,15 @@ class Researcher:
         titles = {n.rel: n.title for n in notes if n.rel in citations}
         return Answer(text, citations, [n.rel for n in notes], ctx.decisions, used, titles={c: titles[c] for c in citations})
 
-    def _finder(self, root: Folder, where: dict[str, Any] | None) -> Callable[[str, int], list[Note]]:
-        """The search of the notes `where` keeps, as `Wiki.search` runs it."""
+    def _finder(
+        self, root: Folder, where: dict[str, Any] | None, pending: Sequence[tuple[Pending, Note]] = ()
+    ) -> Callable[[str, int], list[Note]]:
+        """The search of the notes `where` keeps, and of the entries not filed yet, as `Wiki.search` runs it."""
         search = self.search
         assert search is not None
-        by_rel = {n.rel: n for n in root.all_notes()}
-        return lambda query, k: [by_rel[rel] for rel, _, _ in search.find(self.store, query, k, where) if rel in by_rel]
+        by_rel = {n.rel: n for n in root.all_notes()} | {n.rel: n for _, n in pending}
+        waiting = [hit for hit, _ in pending]
+        return lambda query, k: [by_rel[rel] for rel, _, _ in search.find(self.store, query, k, where, waiting) if rel in by_rel]
 
     def _with_rows(self, question: str, notes: list[Note]) -> list[Note]:
         """The notes as the answer reads them: a spreadsheet sheet's note gets the rows of its sources the question needs.

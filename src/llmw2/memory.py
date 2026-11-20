@@ -157,8 +157,9 @@ class Memory:
 
             Call it before you answer about the user's work, documents, people, decisions or anything from before, in any
             language. Not to save something: use `remember`; for matching notes with no answer written, `search`. A model
-            writes the answer. Returns {answer, notes, titles}: `notes` are the cited paths, to read in full with `read_note`.
-            With your models, it returns a `job` with requests instead: answer them with `reply`.
+            writes the answer. Returns {answer, notes, titles}: `notes` are the cited paths, to read in full with `read_note`;
+            `pending:<id>` is a memory saved and not filed yet, read the same way. With your models, it returns a `job` with
+            requests instead: answer them with `reply`.
             """
             return self.run(lambda wiki: answered(wiki.ask(question, where)))
 
@@ -237,7 +238,8 @@ class Memory:
             """Return the full text of one note: its title, its summary and its Markdown body.
 
             Call it to read in full a note that `recall` cited or `search` found, before quoting details its summary lacks;
-            for an answer drawn from several notes, use `recall`. No model call. An unknown path returns an error naming it.
+            for an answer drawn from several notes, use `recall`. No model call. `pending:<id>` gives the memory saved and not
+            filed yet, or once filed the note it went in. An unknown path returns an error naming it.
             """
             try:
                 return guarded(lambda: self.live().read_note(path)).full_text()

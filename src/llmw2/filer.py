@@ -183,6 +183,8 @@ class Hub:
         self._disk: tuple[float, int] = (0.0, 1 << 62)
         self._read_lock = threading.Lock()
         self._searched_at = -float("inf")  # when `searchable` last read the journal
+        self._folds = 0  # reads that changed the entries: `searchable` looks at them again only after one
+        self._shown_list: tuple[int, list[Pending]] | None = None  # what `searchable` gave, and after which read
 
     # -- reading the journal ------------------------------------------------------------------------------------
 
@@ -199,6 +201,7 @@ class Hub:
                     self.let_through.clear()
                     self.errors.clear()
                     self.shown.clear()
+                    self._folds += 1
             if not records:
                 self.pos = pos
                 return
@@ -206,6 +209,7 @@ class Hub:
                 self.pos = pos
                 for rec in records:
                     self._fold(rec)
+                self._folds += 1
                 self.cond.notify_all()
 
     def _fold(self, rec: J.Record) -> None:
@@ -389,6 +393,8 @@ class Hub:
             self.refresh()
             self._searched_at = now
         with self.cond:
+            if self._shown_list is not None and self._shown_list[0] == self._folds:
+                return list(self._shown_list[1])  # nothing read since: the same entries, not looked at again one by one
             for e in self.entries.values():
                 if not e.closed and e.text:
                     title = e.title or next((line.strip() for line in e.text.splitlines() if line.strip()), "")
@@ -406,13 +412,16 @@ class Hub:
                         del self.shown[ident]  # closed with no note: nothing to wait for
                     elif note != shown.note:
                         self.shown[ident] = Pending(shown.id, shown.title, shown.text, shown.fields, note, shown.at, shown.words)
-            return sorted(self.shown.values(), key=lambda p: (p.at, p.id))  # the same order in every process, whatever it read first
+            out = sorted(self.shown.values(), key=lambda p: (p.at, p.id))  # the same order in every process, whatever it read first
+            self._shown_list = (self._folds, out)
+            return list(out)
 
     def unshow(self, ids: list[str]) -> None:
         """Entries whose note the index has: a search shows the note now."""
         with self.cond:
             for ident in ids:
                 self.shown.pop(ident, None)
+            self._shown_list = None
 
     def open_entries(self) -> list[Entry]:
         return [e for e in self.entries.values() if not e.closed]

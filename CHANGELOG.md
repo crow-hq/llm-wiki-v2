@@ -80,11 +80,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scored by its words as a note of the index would be (the notes keep their scores; at the same score the note comes first, then the
   entries in the order they were acknowledged, the same in every process), and `where` holds for its `fields`. It goes once the index
   has its note, or when a purge forgets its key. `read_note` reads it (MCP, the HTTP API and `Wiki.read_note`); `move_note` and
-  `delete_note` refuse it (it is forgotten with its key). Nothing of it is written in the index. `ask` and `recall` do not see it. A
-  search in a wiki with no journal makes none. A search reads the journal when the tail hint the processes of the machine share says it
-  moved, else at most once a moment (as it lists the files): an entry of another process is found at the next search, or after that
-  moment when the hint cannot say. Limit: between the moment a filing puts a note in the index and the moment the searching process
-  reads that it did, the entry and its note may both be hits.
+  `delete_note` refuse it (it is forgotten with its key). Nothing of it is written in the index. In CROW mode `ask` and `recall` read
+  it too, as the search finds it and as long as a note may be, and may cite it: `Answer.citations` and the `notes` of `recall` can
+  hold `pending:<id>`, which `read_note` reads whole (once the entry is filed, it gives the note it went in, from the journal; for an
+  entry forgotten or not known, the same "no note" as a path with none); in classic mode the answer navigates the folders and does
+  not see it. A search in a wiki with no journal makes none. A search reads the journal when the tail hint the processes of the
+  machine share says it moved, else at most once a moment (as it lists the files): an entry of another process is found at the next
+  search, or after that moment when the hint cannot say. Limits: between the moment a filing puts a note in the index and the moment
+  the searching process reads that it did, the entry and its note may both be hits; when the processes do not share the tail hint, a
+  search in another process may still show an entry for up to that moment (`LISTING_LOOK`, about a second) after a purge forgot it,
+  and no more after it (no byte of the entry stays on disk); `pending:<id>` of an entry filed leads to the note at the path its
+  filing gave, the one there now, also when that note was deleted and another one took its path since.
 
 ### Changed
 

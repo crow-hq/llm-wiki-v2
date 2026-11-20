@@ -103,6 +103,7 @@ from llmw2.models.embedder import HttpEmbedder
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport, UsageTracker
 from llmw2.search import VECTORS_FILE, Embedder, Hit, NoteSearch, VectorCache
+from llmw2.search import Pending as SearchPending
 
 PLAN_DEPTH = 3  # levels `plan` may lay out (and never below max_depth)
 PLAN_OPENING = 220  # characters of each document's opening `plan` reads
@@ -1185,11 +1186,17 @@ class Wiki:
 
     def ask(self, question: str, where: dict[str, Any] | None = None) -> Answer:
         """Answer a question from the wiki. `where` (field -> value) restricts it to the notes whose `fields` hold all of
-        them, compared as text. It filters what is read: the rest of the wiki (its pages, links and index) shows every note."""
+        them, compared as text. It filters what is read: the rest of the wiki (its pages, links and index) shows every note.
+
+        In CROW mode, what `remember` keeps is read before it is filed, as `search` finds it: an entry of the journal whose note the
+        index does not have yet may be read and cited as `pending:<id>` (`Answer.citations`, `read_note`), until the index has its
+        note or a purge forgets it. In classic mode the answer navigates the folders, and does not see it."""
         if not question.strip():
             raise InputError("empty question")
         self._require_classifier()
-        return self.researcher().ask(question, where)
+        chars = self.cfg.effective_note_chars  # an entry is read as long as a note may be
+        pending = [(self._pending_hit(p), self._pending_note(p, chars)) for p in self._pending(where)] if self.cfg.mode == "crow" else []
+        return self.researcher().ask(question, where, pending)
 
     def search(self, query: str, k: int = 8, where: dict[str, Any] | None = None) -> list[Hit]:
         """The best `k` notes for `query` (8 by default, as the command line, the HTTP API and the MCP tool), with no model call
@@ -1207,16 +1214,12 @@ class Wiki:
         have yet is a hit of path `pending:<id>` (`read_note` reads it), titled by its title or first line, its first 200 characters
         for summary, scored by its words as a note of the index would be (`where` on its `fields`); at the same score a note comes
         first, then the entries in the order they were acknowledged. It goes once the index has its note, or when a purge forgets
-        it. Nothing of it is written in the index. `ask` does not see it. Between the moment a filing puts its note in the index and
+        it. Nothing of it is written in the index. `ask` reads it in CROW mode. Between the moment a filing puts its note in the index and
         the moment this process reads that it did, the entry and its note may both be hits.
         """
         if not query.strip():
             raise InputError("empty question")
-        waiting = [
-            (p.path, self._redacted(p.title), self._redacted(p.text[:PENDING_SUMMARY]), p.words)
-            for p in self._pending(where)
-        ]
-        found = self._search.find(self.store, query, k, where, waiting)
+        found = self._search.find(self.store, query, k, where, [self._pending_hit(p) for p in self._pending(where)])
         return [Hit(rel, title, summary, i) for i, (rel, title, summary) in enumerate(found, 1)]
 
     def _pending(self, where: dict[str, Any] | None = None) -> list[Pending]:
@@ -1237,16 +1240,40 @@ class Wiki:
                 shown = [p for p in shown if p.note not in have]
         return [p for p in shown if not where or fields_match(p.fields, where)]
 
+    def _pending_hit(self, p: Pending) -> SearchPending:
+        """An entry as the search takes it: path, title, summary (both passed through `redact`, as a filed note's are), its words."""
+        return p.path, self._redacted(p.title), self._redacted(p.text[:PENDING_SUMMARY]), p.words
+
+    def _pending_note(self, p: Pending, body_chars: int | None = None) -> Note:
+        """An entry as a note with no folder, whose file is none (a name in the journal's folder that no file has); `body_chars`: it
+        holds at most this much of the text (an answer reads it as it reads a note). Made only for `ask` and `read_note`."""
+        _, title, summary, _ = self._pending_hit(p)
+        meta = {"title": title, "description": summary, "fields": p.fields}
+        return Note(self.cfg.bundle / J.JOURNAL_DIR / p.id, p.path, meta, p.text[:body_chars])
+
     def read_note(self, path: str) -> Note:
-        """The note at a bundle path, or an entry not filed yet that `search` gave (`pending:<id>`) as a note with no folder.
-        FileNotFoundError for neither."""
+        """The note at a bundle path, or an entry that `search` or `ask` gave as `pending:<id>`: while it is not filed, the entry as a
+        note with no folder; once filed, the note it went in (the `F` record of the journal says which). FileNotFoundError, as for a
+        path with no note, for an entry forgotten by a purge, one this process does not know, and a note gone since."""
         if not path.startswith(PENDING):
             return self.store.read(path)
         found = next((p for p in self._pending() if p.path == path), None)
-        if found is None:
-            raise FileNotFoundError(path)
-        meta = {"title": self._redacted(found.title), "description": self._redacted(found.text[:PENDING_SUMMARY]), "fields": found.fields}
-        return Note(Path(), path, meta, found.text)
+        if found is not None:
+            return self._pending_note(found)
+        if (filed := self._filed_note(path.removeprefix(PENDING))) is not None:
+            return self.store.read(filed)
+        raise FileNotFoundError(path)
+
+    def _filed_note(self, ident: str) -> str | None:
+        """The note an entry of the journal went in, from its `F` record; None for an entry forgotten, not filed or not known."""
+        if self._hub is None and not (self.cfg.bundle / J.JOURNAL_DIR).is_dir():
+            return None
+        hub = self._journal()
+        hub.refresh()
+        e = hub.entries.get(ident)
+        if e is None or e.forgotten or e.forget is not None or not e.filed:
+            return None
+        return str(e.filed.get("note") or "") or None
 
     def _require_classifier(self) -> None:
         """In CROW mode, a classifier without its key stops here, before any model call or file."""

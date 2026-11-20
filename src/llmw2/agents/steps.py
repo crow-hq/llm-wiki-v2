@@ -27,7 +27,7 @@ import hashlib
 import inspect
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, TypeVar
 
@@ -377,10 +377,11 @@ def check_relate(out: object, note: Note, others: list[Note]) -> list[Note]:
     return out
 
 
-def check_select(out: object, root: Folder) -> list[Note]:
+def check_select(out: object, root: Folder, pending: Sequence[Note] = ()) -> list[Note]:
+    """What a `select` step returned: notes of the wiki, or of `pending` (entries not filed yet, which the search may give)."""
     if not isinstance(out, list):
         raise StepError("select", f"must return a list of notes, not {type(out).__name__}")
-    known = {id(n) for n in root.all_notes()}
+    known = {id(n) for n in root.all_notes()} | {id(n) for n in pending}
     if any(id(n) not in known for n in out):
         raise StepError("select", "must return only notes of the wiki")
     return out

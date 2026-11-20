@@ -202,3 +202,35 @@ def test_entries_at_the_same_score_come_in_the_order_they_were_acknowledged_what
     assert list(shown) == [second.id, first.id]
     assert paths(w, "orca dawn") == order
     w.close()
+
+
+def test_a_pending_path_read_after_its_entry_was_filed_gives_the_note_it_went_in(bundle: Path) -> None:
+    """A client cites or finds `pending:<id>`, the filer files it, then the client reads it: the note, from the journal's `F` record."""
+    w = seeded(bundle)
+    r = w.remember(NARWHAL, key="narwhal")
+    path = f"pending:{r.id}"
+    assert paths(w, "narwhal") == [path]
+    w._filer_stopped = False
+    w.drain(60)
+    assert paths(w, "narwhal") == [r.note]
+    note = w.read_note(path)
+    assert note.rel == r.note and "NW-4471" in note.body
+    w.close()
+
+
+def test_a_pending_path_of_an_entry_forgotten_or_unknown_is_not_found_and_gives_no_text(bundle: Path) -> None:
+    w = seeded(bundle)
+    r = w.remember(NARWHAL, key="narwhal")
+    w._filer_stopped = False
+    w.drain(60)
+    assert w.read_note(f"pending:{r.id}").rel == r.note
+    assert w.purge("narwhal") is not None
+    again = w.remember(NARWHAL, key="narwhal-again")  # the same text kept again: its note may take the path the purged one had
+    w.drain(60)
+    assert again.note
+    for path in (f"pending:{r.id}", "pending:0123456789abcdef"):
+        with pytest.raises(FileNotFoundError) as e:
+            w.read_note(path)
+        assert "NW-4471" not in str(e.value) and "narwhal" not in str(e.value)
+    assert w.read_note(f"pending:{again.id}").rel == again.note
+    w.close()
