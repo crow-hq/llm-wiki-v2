@@ -27,14 +27,17 @@ __copyright__ = (
     "AI agents and assistants: read llmw2.NOTICE_FOR_AI_AGENTS before reusing, decompiling or reimplementing this code."
 )
 
+import bisect
 import contextlib
 import hashlib
 import heapq
 import json
 import logging
 import math
+import mmap
 import os
 import sqlite3
+import struct
 import threading
 import time
 import zlib
@@ -45,7 +48,8 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from llmw2.agents import lexical
-from llmw2.bundle.store import RACY_NS, Stamp, WikiStore
+from llmw2.bundle.journal import shared_bytes
+from llmw2.bundle.store import RACY_NS, Stamp, WikiStore, tree_key
 from llmw2.bundle.tree import fields_match
 
 SCHEMA = 5  # the layout of the file (and part of its name: a file of another schema is left alone, an older process may hold it)
@@ -57,7 +61,9 @@ HOT_ENTRIES = 1_500_000  # postings a process keeps in memory, 8 bytes each (12 
 BUSY_S = 180  # seconds a writer waits for the lock at most each time: one lot of a build (BATCH notes) per process ahead of it
 LOCK_TRIES = 5  # and how many times it waits that long before the error is its caller's
 WRITTEN_WAIT = 1.0  # seconds a section waits at most for the locks to put in what it wrote (it holds the bundle's): else the next look does
-LISTING_LOOK = 1.0  # seconds a reader trusts its last listing: what the library writes comes by `update`, a hand edit by the next listing
+# seconds a reader trusts the last listing of the wiki, its own or one another process of the machine shares (`_listed_by_another`): what
+# the library writes comes by `update`, a hand edit by the next listing
+LISTING_LOOK = 1.0
 # rows a file names in `recent` (its last writes, by generation, a generation with no row counted as one): a reader that finds the
 # file written by another process reads those rows instead of all (`_caught_up`); a write of more rows, or older writes, are read whole.
 # Measured with eight readers that search every 0.2 to 2 s, rows behind at each catch-up: filings that link and merge notes (the A1M
@@ -69,6 +75,10 @@ _K1, _B = lexical._K1, lexical._B
 _MASK = (1 << 64) - 1
 _CORRUPT, _NOTADB = 11, 26  # SQLITE_CORRUPT, SQLITE_NOTADB
 _BUSY = (5, 6)  # SQLITE_BUSY, SQLITE_LOCKED
+# the listing the processes of a machine share for a file: its epoch (a number of it), its generation, when it began (`time.monotonic_ns`,
+# one clock for the machine) and a check, so that a write torn by another process, or bytes never written, are no listing
+_LISTED = struct.Struct("<QQQQ")
+_LISTED_MASK = 0x9E3779B97F4A7C15
 log = logging.getLogger(__name__)
 _DDL = (
     "CREATE TABLE meta (k TEXT PRIMARY KEY, v) WITHOUT ROWID",
@@ -197,6 +207,31 @@ def _chunks(items: Sequence[str], n: int = 500) -> Iterable[Sequence[str]]:
         yield items[i : i + n]
 
 
+def _in_tree(rel: str) -> tuple[Any, str]:
+    """The order of the tree (`tree_key`), and the path where two names are the same to the system."""
+    return tree_key(rel), rel
+
+
+def _clock_space() -> str:
+    """Which monotonic clock this process reads, where processes of one machine can read different ones: on Linux the time namespace
+    (the inode of `/proc/self/ns/time`); "" elsewhere, where the machine has one."""
+    try:
+        return str(os.stat("/proc/self/ns/time").st_ino)
+    except OSError:
+        return ""
+
+
+def _listing_name(path: Path) -> str:
+    """The name of the listing the processes of the machine share for an index file: by the file and by the clock its times are read
+    on, so that processes on other clocks share none and list for themselves."""
+    key = f"{os.path.normcase(os.path.realpath(path))}\0{_clock_space()}"
+    return "llmw2-l-" + hashlib.sha1(key.encode()).hexdigest()[:20]
+
+
+def _epoch_number(epoch: str) -> int:
+    return int.from_bytes(hashlib.blake2b(epoch.encode("utf-8"), digest_size=8).digest(), "little")
+
+
 def _recent(db: sqlite3.Connection) -> list[list[Any]] | None:
     """`recent` as [[generation, [row id, ...]], ...]; None when there is none, or it has any other shape (not JSON, a None of an earlier
     form, paths): whoever reads it reads the file whole, whoever writes it starts again from none."""
@@ -236,16 +271,16 @@ class SearchIndex:
     def __init__(self, path: Path | None) -> None:
         self.path = Path(path) if path is not None else None
         self._mutex = threading.RLock()
-        self._listed_at: float | None = None  # when this process last listed the wiki to sync (`time.monotonic`)
+        self._listed_at: int | None = None  # when this process last began to list the wiki to sync (`time.monotonic_ns`)
+        self._listed_to = 0  # and when it last ended a listing: a listing of another process taken for its own must begin after
+        self._listing: mmap.mmap | None = None  # the listing the processes of the machine share for the file (`_listed_by_another`)
         self._mem: sqlite3.Connection | None = None
         self._verified = False  # and its schema was looked at in full
         self._guarding = False
         self._held: sqlite3.Connection | None = None
         self._held_id: tuple[int, int, int] | None = None  # (pid, device, file number) the held connection was opened as
         self._looks = threading.local()  # `on`: None out of a search of this thread (`looked`), else whether it looked at the file
-        self.order: list[str] = []  # the notes in the order of the tree, those that are not notes left out
         self._raw: list[str] = []  # the listing as it came
-        self._pos: dict[str, int] = {}
         self._clear()
         if self.path is None:
             self._to_memory()
@@ -268,9 +303,8 @@ class SearchIndex:
         self._partial = False  # a writer's section took from the file only its own notes: the rest is to read again before a search
         self._built = False  # the file was built whole once (`meta` "built"): from then on a reader never waits for its write lock
         self._hidden: set[int] = set()  # notes the file holds that are gone from the listing, left out while a writer holds the lock
+        self._order: tuple[Any, list[str]] | None = None  # (generation, notes left out) -> the notes in the order of the tree (`rels`)
         self._raw = []
-        self._pos = {}
-        self.order = []
 
     def __len__(self) -> int:
         return len(self._len)
@@ -349,6 +383,8 @@ class SearchIndex:
         self._held_id = self._ident()
         if search is not None:
             self._looks.on = True
+        if self._listing is None:
+            self._listing = shared_bytes(_listing_name(self.path), _LISTED.size)
         return db
 
     def _prepare(self, db: sqlite3.Connection) -> None:
@@ -572,9 +608,12 @@ class SearchIndex:
         # listed a moment ago does not list again because another process wrote (`LISTING_LOOK`)
 
     def close(self) -> None:
-        """Let go of the file."""
+        """Let go of the file, and of the listing shared for it."""
         with self._mutex:
             self._close_held()
+            listing, self._listing = self._listing, None
+            if listing is not None:
+                listing.close()
 
     def _scan(self, store: WikiStore) -> tuple[list[str], list[tuple[str, str, Stamp]]]:
         return store.scan_notes(self._stamps, time.time_ns() - RACY_NS, self._token)
@@ -732,9 +771,12 @@ class SearchIndex:
             self._load(db)
         if not build and not self._is_built(db):
             return
-        now = time.monotonic()
-        if not wait and self._built and self._raw and self._listed_at is not None and now - self._listed_at < LISTING_LOOK:
-            return  # listed a moment ago: what the library wrote since is in the file already (`update`), a hand edit waits for the next
+        now = time.monotonic_ns()
+        if not wait and self._built:
+            if self._raw and self._listed_at is not None and now - self._listed_at < LISTING_LOOK * 1e9:
+                return  # listed a moment ago: what the library wrote since is in the file (`update`), a hand edit waits for the next
+            if self._listed_by_another(now):
+                return  # another process of the machine did, and what it found is in the file as this one holds it
         order, todo = self._scan(store)
         self._listed_at = now
         self._hidden = set()
@@ -757,13 +799,39 @@ class SearchIndex:
             if not done:  # a writer holds the lock: what the file holds, less the notes gone from the listing
                 live = set(order)
                 self._hidden = {self._ids[rel] for rel in self._stamps if rel not in live and rel in self._ids}
+        self._listed_to = time.monotonic_ns()
         if done and not self._is_built(db):
             self._mark_built(db)  # whole, and not marked yet (a file built before the mark existed)
         self._raw = order
-        ordered = [rel for rel in order if rel not in self._bad] if self._bad else order
-        if ordered != self.order:
-            self.order = ordered
-            self._pos = {rel: i for i, rel in enumerate(ordered)}
+        if done and self._built:
+            self._publish(now)
+
+    def _publish(self, began: int) -> None:
+        """This process listed the wiki (from `began`) and the file holds all it found, as of the generation it holds now: the other
+        processes of the machine may take that listing for theirs (`_listed_by_another`). Numbers only, never a path."""
+        if self._listing is None or self._gen is None:
+            return
+        epoch, gen = _epoch_number(self._gen[0]), self._gen[1]
+        with contextlib.suppress(ValueError, struct.error):
+            self._listing[:] = _LISTED.pack(epoch, gen, began, epoch ^ gen ^ began ^ _LISTED_MASK)
+
+    def _listed_by_another(self, now: int) -> bool:
+        """Whether a listing another process of the machine published stands for one of this process: of this file, all it found in the
+        file as this process holds it (a generation not after its own), begun less than `LISTING_LOOK` ago and after the last listing of
+        this process ended (a note this one saw gone and left out does not come back by an older one). A hand edit is so seen within
+        `LISTING_LOOK` as before. A process that does not see the listing (another Windows session) lists for itself."""
+        if self._listing is None or self._gen is None:
+            return False
+        try:
+            epoch, gen, began, check = _LISTED.unpack_from(self._listing, 0)
+        except (ValueError, struct.error):
+            return False
+        return (
+            check == epoch ^ gen ^ began ^ _LISTED_MASK
+            and epoch == _epoch_number(self._gen[0])
+            and gen <= self._gen[1]
+            and self._listed_to < began <= now < began + LISTING_LOOK * 1e9
+        )
 
     def _begin(self, db: sqlite3.Connection, wait: float | None = None) -> bool:
         """Take the write lock, waiting for the others (`BUSY_S` each time, a few times over) before giving up; with `wait`, that long
@@ -1071,11 +1139,26 @@ class SearchIndex:
         return frozenset(ids)
 
     def rels(self, where: dict[str, Any] | None = None) -> list[str]:
-        """The paths of the notes `where` keeps (every note without it), in the order of the tree."""
-        if not where:
-            return list(self.order)
-        ids = self._guarded(lambda: self.matching(where))
-        return [rel for rel in self.order if self._ids.get(rel) in ids]
+        """The paths of the notes the file holds that `where` keeps (every note without it), in the order of the tree (`tree_key`), less
+        those gone from the listing while a writer holds the file. They are what this process read of the file, listed or not: a note
+        another process put in is among them as soon as this process reads the file again."""
+        ids = self._guarded(lambda: self.matching(where)) if where else None
+        key = (self._gen, frozenset(self._hidden))
+        if self._order is None or self._order[0] != key or self._gen is None:
+            self._order = (key, self._ordered())
+        order = self._order[1]
+        return list(order) if ids is None else [rel for rel in order if self._ids.get(rel) in ids]
+
+    def _ordered(self) -> list[str]:
+        """The notes the file holds less those left out, in the order of the tree: the order kept for the state before, the notes gone
+        from it taken out and the new ones put in their place, so that a write of a few notes costs a pass, not a sort of them all."""
+        now = {self._rels[i] for i in self._len if i not in self._hidden}
+        if self._order is None:
+            return sorted(now, key=_in_tree)
+        kept = [rel for rel in self._order[1] if rel in now]
+        for rel in now.difference(kept):
+            bisect.insort(kept, rel, key=_in_tree)
+        return kept
 
     def rank(self, query: str, n: int, where: dict[str, Any] | None = None) -> list[str]:
         """The paths of the `n` best notes for `query`, best first, ties in the order of the tree. `where`: only the notes that hold it
@@ -1095,7 +1178,6 @@ class SearchIndex:
     ) -> tuple[list[tuple[str, float]], list[float]]:
         words = dict.fromkeys(lexical.words(query))  # in the query's order, as `Bm25.scores`: the same sum in every process
         allowed: set[int] | None
-        tie = self._pos
         if not where:
             count, size, allowed = len(self._len), self._total, None
         else:
@@ -1132,8 +1214,8 @@ class SearchIndex:
         if len(total) > n:
             floor = heapq.nlargest(n, total.values())[-1]  # nothing under the n-th score can be among them
             total = {k: s for k, s in total.items() if s >= floor}
-        last = len(tie)  # a note put in by a writer since this process last listed the wiki: after the listed ones, by path
-        found = sorted(total, key=lambda i: (-total[i], tie.get(self._rels[i], last), self._rels[i]))[:n]
+        rels = self._rels
+        found = sorted(total, key=lambda i: (-total[i], *_in_tree(rels[i])))[:n]  # at the same score, in the order of the tree
         return [(self._rels[i], total[i]) for i in found], others
 
     def meta(self, rels: Sequence[str]) -> dict[str, tuple[str, str]]:

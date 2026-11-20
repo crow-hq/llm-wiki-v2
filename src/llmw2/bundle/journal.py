@@ -372,11 +372,31 @@ def _look_after(data: bytes, start: int, seq: int, salt: int, base: int = 0) -> 
 # -- the hint shared by the processes --------------------------------------------------------------------------------------
 
 
-class _Hint:
-    """A few bytes that processes share and that never reach the disk: the salt of a segment and the offset the last flush covered.
+def shared_bytes(name: str, size: int) -> mmap.mmap | None:
+    """`size` bytes that the processes of the machine share by `name` and that never reach the disk, zeros when new; None where they cannot
+    be had. `/dev/shm` on POSIX, a named mapping on Windows (a process of another session does not see it). Not
+    `multiprocessing.shared_memory`, whose resource tracker would delete it under Python 3.11-3.12. The name can be guessed: on POSIX a
+    file of that name that another user made, or a link, is not used (None: this process shares nothing and loses nothing)."""
+    try:
+        if sys.platform == "win32":
+            return mmap.mmap(-1, size, tagname=name)
+        fd = os.open(f"/dev/shm/{name}", os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            st = os.fstat(fd)
+            if st.st_uid != os.geteuid():
+                return None
+            if st.st_size < size:
+                os.ftruncate(fd, size)
+            return mmap.mmap(fd, size)
+        finally:
+            os.close(fd)
+    except (OSError, ValueError, AttributeError, OverflowError):
+        return None
 
-    `/dev/shm` on POSIX, a named mapping on Windows (a process of another session does not see it, and nothing is lost: it
-    flushes for itself). Not `multiprocessing.shared_memory`, whose resource tracker would delete it under Python 3.11-3.12.
+
+class _Hint:
+    """A few bytes that processes share and that never reach the disk (`shared_bytes`): the salt of a segment and the offset the last
+    flush covered. A process that does not see them (another Windows session) loses nothing: it flushes for itself.
 
     Two hints live here, the flush offset (`get`/`put`) and the tail (`get_tail`/`put_tail`). Both are accelerators, never
     the truth, and both have two limits that are known and not closed:
@@ -388,21 +408,8 @@ class _Hint:
     Restore a backup of a journal with the machine's `/dev/shm/llmw2-j-*` files removed."""
 
     def __init__(self, journal_dir: Path) -> None:
-        self.mm: mmap.mmap | None = None
         name = "llmw2-j-" + hashlib.sha1(os.path.normcase(os.path.realpath(journal_dir)).encode()).hexdigest()[:20]
-        try:
-            if sys.platform == "win32":
-                self.mm = mmap.mmap(-1, HINT_SIZE, tagname=name)
-            else:
-                fd = os.open(f"/dev/shm/{name}", os.O_RDWR | os.O_CREAT, 0o600)
-                try:
-                    if os.fstat(fd).st_size < HINT_SIZE:
-                        os.ftruncate(fd, HINT_SIZE)
-                    self.mm = mmap.mmap(fd, HINT_SIZE)
-                finally:
-                    os.close(fd)
-        except (OSError, ValueError, AttributeError, OverflowError):
-            self.mm = None
+        self.mm = shared_bytes(name, HINT_SIZE)
 
     @property
     def available(self) -> bool:

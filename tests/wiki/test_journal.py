@@ -727,5 +727,31 @@ def test_a_recycled_segment_is_not_written_by_the_hint_it_had(tmp_path: Path) ->
     assert [int(t.split()[1]) for t in again] == sorted(int(t.split()[1]) for t in again)
 
 
+def test_shared_bytes_another_user_made_under_the_name_are_not_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """POSIX: the bytes the processes share are a file of `/dev/shm` whose name can be guessed. A file of that name that another user
+    made is not mapped (None: no sharing, nothing lost); one of this user is. The POSIX branch runs here on any system, `/dev/shm`
+    put in a folder of the test."""
+    import types
 
+    real_open = os.open
 
+    def opened(path: str, flags: int, mode: int = 0o777) -> int:
+        if path.startswith("/dev/shm/"):
+            path = str(tmp_path / path.removeprefix("/dev/shm/"))
+        return real_open(path, flags | getattr(os, "O_BINARY", 0), mode)
+
+    owner = [0]
+
+    class PosixOs(types.SimpleNamespace):
+        def __getattr__(self, name: str) -> object:
+            return getattr(os, name)
+
+    monkeypatch.setattr(J, "sys", types.SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(J, "os", PosixOs(open=opened, geteuid=lambda: owner[0]))
+    (tmp_path / "llmw2-test").write_bytes(b"")
+    owner[0] = os.stat(tmp_path / "llmw2-test").st_uid
+    mine = J.shared_bytes("llmw2-test", 64)
+    assert mine is not None and len(mine) == 64
+    mine.close()
+    owner[0] += 1  # the file is another user's
+    assert J.shared_bytes("llmw2-test", 64) is None

@@ -162,6 +162,14 @@ def same_stamp(a: Stamp, b: Stamp) -> bool:
     return a[:2] == b[:2] and (a[2] == b[2] or 0 in (a[2], b[2]))
 
 
+def tree_key(rel: str) -> tuple[tuple[int, str], ...]:
+    """Where a note's bundle path comes in the order of the tree, the order `scan_notes` lists the notes in: in each folder its notes by
+    name, then its folders by name, names as the system compares them (`os.path.normcase`, which also turns `/` into the system's
+    separator)."""
+    *folders, name = os.path.normcase(rel).split(os.sep)
+    return (*((1, folder) for folder in folders), (0, name))
+
+
 class _Parsed(NamedTuple):  # a tuple, not a dataclass: one is made for every note of the tree at the first load
     """A note file as `load` last read it (inside a session too, and between sessions), valid while its modification time, size, inode
     and change time (where the system has one, see `changed`) are the same."""
@@ -571,8 +579,8 @@ class WikiStore:
     def scan_notes(
         self, known: Mapping[str, Stamp | None], racy_before: int, owner: object = None
     ) -> tuple[list[str], list[tuple[str, str, Stamp]]]:
-        """Every note of the wiki as `load` would list it, with nothing read: (the bundle paths in the order of the tree, the
-        notes to read again). A note is to read again when it is not in `known` (bundle path -> the stamp it had when it was
+        """Every note of the wiki as `load` would list it, with nothing read: (the bundle paths in the order of the tree, `tree_key`,
+        the notes to read again). A note is to read again when it is not in `known` (bundle path -> the stamp it had when it was
         read), or has another time or size, or was written after `racy_before` (nanoseconds: a file that recent may change
         again with the same time, see `RACY_NS`); each comes as (bundle path, file path, stamp).
 

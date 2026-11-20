@@ -643,3 +643,217 @@ def test_a_recent_of_another_shape_neither_stops_a_writer_nor_fails_a_search(tmp
         db.close()
         for w in (other, wiki):
             w.close()
+
+
+def _listings(monkeypatch: pytest.MonkeyPatch) -> list[S.WikiStore]:
+    """The stores that list the wiki's files, one item a listing."""
+    listed: list[S.WikiStore] = []
+    real = S.WikiStore.scan_notes
+
+    def counted(self: S.WikiStore, *a: Any, **k: Any) -> Any:
+        listed.append(self)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(S.WikiStore, "scan_notes", counted)
+    return listed
+
+
+def test_the_processes_of_a_machine_list_the_wiki_once_a_window_between_them(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Processes that search one wiki take the listing one of them made (shared in the machine's memory, no byte on disk) instead of
+    listing for themselves, and answer as the one that listed: the same notes, in the same order at the same score (the order of the
+    tree, notes before folders, not the order of the paths)."""
+    wiki = build(tmp_path)
+    root = tmp_path / "wiki"
+    (root / "aa").mkdir()
+    (root / "aa" / "copy.md").write_bytes((root / "note-0.md").read_bytes())  # by hand: the same text, in a folder
+    _age(root)
+    first = paths(wiki.search("common", k=8))  # lists (the window is 0 here) and writes the note found
+    assert first[0] == "note-0.md" and first[-1] == "aa/copy.md"  # all at one score: in the order of the tree
+    monkeypatch.setattr(SI, "LISTING_LOOK", 60.0)
+    others = [Wiki(wiki.cfg, llm=ContentLLM(UsageTracker())) for _ in range(4)]  # other processes, which never listed
+    listed = _listings(monkeypatch)
+    try:
+        for other in others:
+            assert paths(other.search("common", k=8)) == first
+        assert listed == []  # the listing of the first stands for theirs
+    finally:
+        for w in (*others, wiki):
+            w.close()
+
+
+def test_a_hand_edit_after_a_listing_another_process_shared_is_seen_after_the_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(SI, "LISTING_LOOK", 0.5)
+    wiki = build(tmp_path)
+    other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))  # another process, which never listed
+    time.sleep(0.6)
+    target = paths(wiki.search("common", k=1))[0]  # lists: its window is over, and shares the listing
+    note = tmp_path / "wiki" / target
+    note.write_text(note.read_text(encoding="utf-8").replace("common", "yak"), encoding="utf-8")  # by hand, after that listing
+    listed = _listings(monkeypatch)
+    try:
+        assert other.search("yak", k=3) == []  # within the window of the listing it took: not seen yet
+        assert listed == []
+        time.sleep(0.6)
+        _age(tmp_path / "wiki")
+        assert paths(other.search("yak", k=3)) == [target]  # after it: listed, seen
+        assert listed == [other.store]
+    finally:
+        for w in (other, wiki):
+            w.close()
+
+
+def test_a_listing_whose_findings_could_not_be_written_is_not_shared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A note deleted by hand while another process holds the index's write lock: the process that lists leaves it out but cannot write
+    the file, so it shares no listing; another process lists for itself and leaves the note out too."""
+    monkeypatch.setattr(SI, "LISTING_LOOK", 0.5)
+    wiki = build(tmp_path)
+    other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))
+    gone = paths(wiki.search("common", k=8))[0]
+    time.sleep(0.6)  # the listing shared so far is over
+    holder = sqlite3.connect(_index_file(tmp_path), timeout=0, isolation_level=None)
+    holder.execute("BEGIN IMMEDIATE")  # a writer of another process holds the index all along
+    try:
+        (tmp_path / "wiki" / gone).unlink()
+        assert gone not in paths(wiki.search("common", k=8))  # listed, left out, not written
+        assert gone not in paths(other.search("common", k=8))  # within the window of that listing: listed again
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
+        for w in (other, wiki):
+            w.close()
+
+
+def test_a_note_left_out_does_not_come_back_by_a_listing_older_than_the_one_that_saw_it_gone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A process that saw a note gone and left it out (a writer holds the index) reads the file again after another process wrote it: it
+    lists again rather than take the listing another process shared before the note went."""
+    wiki = build(tmp_path)
+    other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))
+    gone = paths(other.search("common", k=8))[0]  # the other process lists and shares its listing: the note is there
+    holder = sqlite3.connect(_index_file(tmp_path), timeout=0, isolation_level=None)
+    holder.execute("BEGIN IMMEDIATE")
+    try:
+        (tmp_path / "wiki" / gone).unlink()
+        assert gone not in paths(wiki.search("common", k=8))  # listed after it went: left out
+        monkeypatch.setattr(SI, "LISTING_LOOK", 60.0)
+        holder.execute("UPDATE meta SET v = v + 1 WHERE k = 'gen'")  # another process writes the index: read again from the file
+        holder.execute("COMMIT")
+        holder.execute("BEGIN IMMEDIATE")
+        assert gone not in paths(wiki.search("common", k=8))
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
+        for w in (other, wiki):
+            w.close()
+
+
+def test_a_listing_shared_at_a_later_generation_than_a_reader_holds_is_not_taken(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A reader inside one state of the file (a read transaction, as a search that another process writes under) holds an earlier
+    generation than the one a listing was shared at: what that listing found is not in what it holds, so it lists for itself."""
+    wiki = build(tmp_path)
+    monkeypatch.setattr(SI, "LISTING_LOOK", 60.0)
+    reader = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))  # takes the listing the first one shared when it built the index
+    listed = _listings(monkeypatch)
+    try:
+        assert paths(reader.search("common", k=1)) and listed == []
+        index = reader._search.index
+        db = index._open()
+        db.execute("BEGIN")
+        index._disk_gen(db)  # the reader's state of the file starts here
+        note = tmp_path / "wiki" / "note-1.md"
+        note.write_text(note.read_text(encoding="utf-8").replace("common", "yak"), encoding="utf-8")  # by hand
+        wiki._search.index._listed_at = None  # the first one's window is over: it lists, writes the edit, shares its listing
+        assert paths(wiki.search("yak", k=1)) == ["note-1.md"] and listed == [wiki.store]
+        index.sync(reader.store, reader._search._entry, wait=False)  # in its state of the file the edit is not written
+        assert listed == [wiki.store, reader.store]
+        db.execute("COMMIT")
+    finally:
+        for w in (reader, wiki):
+            w.close()
+
+
+def test_the_notes_looked_at_by_meaning_keep_the_order_of_the_tree_as_notes_come_and_go(tmp_path: Path) -> None:
+    """The order a process keeps for its notes (`rels`, the candidates by meaning) follows the writes of another process note by note,
+    and is the one a process that reads the file anew gives: the order of the tree."""
+    wiki = build(tmp_path)
+    index = wiki._search.index
+    assert index.rels() == [f"note-{i}.md" for i in range(6)]
+    other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))  # another process
+    try:
+        with other.store.lock():
+            folder, _ = other.store.create_folder(other.store.load(), "aa", "Kept apart")
+            other.store.write_note(folder, title="Zebra", summary="s", body="zebra common", tags=[], source={})
+            other.store.write_note(other.store.load(), title="Aardvark", summary="s", body="aardvark common", tags=[], source={})
+            other.store.delete_note("note-2.md")
+        wiki.search("common", k=3)
+        fresh = SI.SearchIndex(index.path)
+        try:
+            with fresh._mutex:
+                fresh._load(fresh._open())
+            assert index.rels() == fresh.rels() == sorted(fresh.rels(), key=lambda rel: (S.tree_key(rel), rel))
+            assert index.rels()[0] == "aardvark.md" and index.rels()[-1] == "aa/zebra.md" and "note-2.md" not in index.rels()
+        finally:
+            fresh.close()
+    finally:
+        for w in (other, wiki):
+            w.close()
+
+
+def test_the_key_of_the_tree_gives_the_order_of_the_listing(tmp_path: Path) -> None:
+    root = tmp_path / "wiki"
+    for rel in ("b.md", "a.md", "C.md", "a/z.md", "a/b/c.md", "a/b/D.md", "ab/x.md", "B/y.md", "a b/w.md", "a-c.md", "a/Zz.md"):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("x", encoding="utf-8")
+    order, _ = S.WikiStore(root, actor="test").scan_notes({}, 0)
+    assert len(order) == 11
+    assert sorted(reversed(order), key=S.tree_key) == order
+
+
+def test_processes_on_different_clocks_do_not_share_a_listing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The times of a shared listing are read on one monotonic clock: processes that read another one (another time namespace, Linux)
+    share no listing and list for themselves."""
+    monkeypatch.setattr(SI, "_clock_space", lambda: "one")
+    wiki = build(tmp_path)  # lists and shares its listing
+    monkeypatch.setattr(SI, "LISTING_LOOK", 60.0)
+    monkeypatch.setattr(SI, "_clock_space", lambda: "another")
+    other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))  # a process on another clock
+    listed = _listings(monkeypatch)
+    try:
+        assert paths(other.search("common", k=8))
+        assert listed == [other.store]
+    finally:
+        for w in (other, wiki):
+            w.close()
+
+
+@pytest.mark.skipif(not os.path.exists("/proc/self/ns/time"), reason="no time namespaces here")
+def test_the_clock_of_a_shared_listing_is_the_time_namespace_where_there_is_one() -> None:
+    assert SI._clock_space() == str(os.stat("/proc/self/ns/time").st_ino)
+
+
+def test_the_notes_by_meaning_come_in_the_order_load_gives(tmp_path: Path) -> None:
+    """The order `rels` keeps (the candidates by meaning, and the ties) is the order of the tree as `WikiStore.load` gives it: in each
+    folder its notes, then its folders, by name, capitals, common prefixes, accents and subfolders included."""
+    wiki = build(tmp_path, n=1)
+    root = tmp_path / "wiki"
+    note = (root / "note-0.md").read_bytes()
+    names = ["B.md", "a.md", "ab.md", "a-b.md", "Zeta.md", "été.md", "Äpfel.md", "zürich.md", "a/x.md", "a/B/y.md",
+             "a/b2/w.md", "ab/v.md", "A b/u.md", "école/t.md", "Zz/s.md", "a/a.md"]
+    for rel in names:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_bytes(note)
+    _age(root)
+    wiki.search("common", k=3)  # lists (the window is 0 here) and writes the notes found
+    expected = [n.rel for n in wiki.store.load().all_notes()]
+    assert sorted(expected) == sorted([*names, "note-0.md"])
+    assert wiki._search.index.rels() == expected
+    fresh = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))  # another process, which reads the file anew
+    try:
+        fresh.search("common", k=3)
+        assert fresh._search.index.rels() == expected
+    finally:
+        fresh.close()
+        wiki.close()

@@ -104,7 +104,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A search never waits for the write lock of the search index: a process that writes notes puts them in the index before the call
   returns, and before the journal is told an entry is filed (it looks only at the files its write changed); a search that finds the
   index behind the notes writes it only when the lock is free, and otherwise answers from what the index holds, leaving out the
-  notes gone from the folder meanwhile. A search looks at the files of the wiki at most once a moment in a process: a note changed
+  notes gone from the folder meanwhile. A search looks at the files of the wiki at most once a moment on the machine: a process takes
+  the listing another process of the machine made a moment ago, when what that listing found is in the index as it holds it (the
+  processes share a few numbers in memory, never on disk; a process of another Windows session, or of another time namespace on
+  Linux, lists for itself, and so does one that finds the name in `/dev/shm` taken by a file of another user, which the tail hint of
+  the journal no longer uses either). A note changed
   by hand, not through the library, is found by the searches after that moment, and so, by meaning (with an embedder), is a note
   another process filed (by its words it is found at once, from the index). The index file keeps which notes its last writes changed,
   so a search that finds it written by another process reads those rows only, not the state of every note. An index never built whole
@@ -120,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The order of `search` and `ask`, and the choices CROW's filing makes by words, no longer depend on the process: the scores of a
   query's words are added up in the order the query gives them, so notes with close scores come in the same order in every process
   (before, the order of a set, which changes from one process to the next, decided the last bits of the sums). Notes with the same
-  score keep the order of the tree.
+  score keep the order of the tree, a note another process filed since the last listing too (before, it came after the notes listed).
 - `WikiStore.load` keeps what it parsed of each note (by modification time, size, inode and change time) between the sessions of a
   process, from its second session on (as it already did outside a session): a purge, a batch of documents or a filing no longer
   parses the whole tree again, only the notes whose file changed. Three things to know: the first session of a process (the first
