@@ -16,7 +16,8 @@ How it writes: a process keeps its connection open (WAL, `synchronous=NORMAL`: a
 take the last ones, which the next sync reads again from the notes since their files say so; a checkpoint every `CHECKPOINT_PAGES`
 pages), and deleted rows are zeroed (`secure_delete`). After a purge `forget` empties the WAL into the file (`TRUNCATE`) and deletes the
 files put aside as `.bad`, so that the words, titles and summaries of a note purged are in no file of the cache. The connection is
-tied to the file and to the process that opened it (`_ident`): a file replaced under it, or a fork, opens a new one.
+tied to the file and to the process that opened it (`_ident`): a file replaced under it, or a fork, opens a new one; a search looks
+at the file once, at its first step (`looked`).
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ import time
 import zlib
 from array import array
 from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -241,6 +242,7 @@ class SearchIndex:
         self._guarding = False
         self._held: sqlite3.Connection | None = None
         self._held_id: tuple[int, int, int] | None = None  # (pid, device, file number) the held connection was opened as
+        self._looks = threading.local()  # `on`: None out of a search of this thread (`looked`), else whether it looked at the file
         self.order: list[str] = []  # the notes in the order of the tree, those that are not notes left out
         self._raw: list[str] = []  # the listing as it came
         self._pos: dict[str, int] = {}
@@ -290,6 +292,20 @@ class SearchIndex:
             return None
         return (os.getpid(), st.st_dev, st.st_ino)
 
+    @contextlib.contextmanager
+    def looked(self) -> Iterator[None]:
+        """One search: its steps share one look at the file (`_ident`, a `stat`). The first step that opens the file looks, the others of
+        this thread trust it (a connection opened meanwhile was looked at when it was opened); a file replaced by another process, or a
+        fork, is seen by the first step of the next search, before it reads. The lock is not held across the steps."""
+        if getattr(self._looks, "on", None) is not None:  # inside a search already
+            yield
+            return
+        self._looks.on = False
+        try:
+            yield
+        finally:
+            self._looks.on = None
+
     def _close_held(self) -> None:
         held, self._held = self._held, None
         held_id, self._held_id = self._held_id, None
@@ -299,8 +315,13 @@ class SearchIndex:
     def _open(self) -> sqlite3.Connection:
         if self._mem is not None:
             return self._mem
+        search = getattr(self._looks, "on", None)
         if self._held is not None:
+            if search:  # this search looked at the file already
+                return self._held
             if self._held_id == self._ident():
+                if search is not None:
+                    self._looks.on = True
                 return self._held
             self._close_held()  # the file was replaced or removed under it, or this is a fork of the process that opened it
         assert self.path is not None
@@ -326,6 +347,8 @@ class SearchIndex:
         db.execute(f"PRAGMA wal_autocheckpoint = {CHECKPOINT_PAGES}")
         self._held = db
         self._held_id = self._ident()
+        if search is not None:
+            self._looks.on = True
         return db
 
     def _prepare(self, db: sqlite3.Connection) -> None:

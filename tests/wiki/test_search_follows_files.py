@@ -9,6 +9,8 @@ import os
 import time
 from pathlib import Path
 
+import pytest
+
 from llmw2 import Wiki
 from llmw2.bundle.store import RACY_NS
 from llmw2.search import VECTORS_FILE, VectorCache, _hash, _text_of
@@ -109,3 +111,34 @@ def test_the_vector_goes_under_the_hash_of_the_text_it_was_made_from(tmp_path: P
     emb.seen.clear()
     wiki.search("parcels")
     assert emb.seen == ["parcels"]  # the next search finds the new vector where it looks for it
+
+
+@pytest.mark.parametrize("query, embedder", [("quarter", False), ('quarter "passwords"', False), ("quarter", True)])
+def test_a_search_looks_at_the_index_file_once_and_still_sees_a_replaced_file_or_a_fork(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, query: str, embedder: bool
+) -> None:
+    """Each step of a search (sync, scores, hashes, the notes by meaning, titles) opens the index's file: the first looks at it, the
+    others trust that look. A file replaced by another process (a rebuild) or a fork is seen by the next search, before it reads."""
+    wiki = make(tmp_path, Embedder() if embedder else None)
+    expected = paths(wiki.search(query, k=1))
+    index = wiki._search.index
+    real = index._ident
+    seen: list[tuple[int, int, int] | None] = []
+    shift = [0, 0]  # added to the pid (a fork) and to the file number (a file replaced)
+
+    def ident() -> tuple[int, int, int] | None:
+        seen.append(real())
+        pid, dev, ino = seen[-1] or (0, 0, 0)
+        return (pid + shift[0], dev, ino + shift[1])
+
+    monkeypatch.setattr(index, "_ident", ident)
+    index._held_id = ident()  # what the held connection was opened as
+    seen.clear()
+
+    assert paths(wiki.search(query, k=1)) == expected
+    assert len(seen) == 1  # one look for the whole search, not one for each of its steps
+
+    for shift[:] in ([0, 1], [1, 0]):  # a file replaced by another process, a fork: both seen before any read
+        held = index._held
+        assert paths(wiki.search(query, k=1)) == expected
+        assert index._held is not held

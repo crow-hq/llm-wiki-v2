@@ -218,7 +218,7 @@ class NoteSearch:
         Each is scored by its words as one more note of the index would be (`SearchIndex.scored`: the notes' scores do not change)
         and comes before the first note it scores higher than, a note first at the same score and the texts in the order given among
         themselves; then the first `k`."""
-        with self._lock:
+        with self._lock, self.index.looked():  # one look at the index's file for the whole search
             return self._find(store, query, k, where, pending)
 
     def indexed(self, rels: Sequence[str]) -> set[str]:

@@ -109,6 +109,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   another process filed (by its words it is found at once, from the index). The index file keeps which notes its last writes changed,
   so a search that finds it written by another process reads those rows only, not the state of every note. An index never built whole
   is still built by its first search. A batch (`ingest_many`, `rebuild`) puts its notes in once, at its end.
+- A search looks at the file of the search index once, at its first step (a `stat`: is it the file its connection was opened on?),
+  instead of at each of its steps: a file replaced by another process (a rebuild), or a fork, is still seen before the search reads.
 - A search whose query quotes an expression or holds a code no longer reads again the notes it looks for them in: a process keeps
   the texts of the last candidates it read (at most 512), by the hash the index holds for them, and reads only a note whose text
   changed; a purge drops them in its own process. Limit: another process that had read a purged note keeps its text in memory

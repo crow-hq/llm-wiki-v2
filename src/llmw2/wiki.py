@@ -1219,7 +1219,8 @@ class Wiki:
         """
         if not query.strip():
             raise InputError("empty question")
-        found = self._search.find(self.store, query, k, where, [self._pending_hit(p) for p in self._pending(where)])
+        with self._search.index.looked():  # one look at the index's file for the queue (`_pending`) and the search
+            found = self._search.find(self.store, query, k, where, [self._pending_hit(p) for p in self._pending(where)])
         return [Hit(rel, title, summary, i) for i, (rel, title, summary) in enumerate(found, 1)]
 
     def _pending(self, where: dict[str, Any] | None = None) -> list[Pending]:

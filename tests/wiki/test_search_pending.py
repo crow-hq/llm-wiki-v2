@@ -93,6 +93,20 @@ def test_a_filed_entry_leaves_for_its_note_once(bundle: Path) -> None:
     w.close()
 
 
+def test_a_search_that_asks_the_index_about_the_queue_looks_at_its_file_once(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    w = seeded(bundle)
+    r = w.remember(NARWHAL, key="narwhal")
+    assert paths(w, "narwhal") == [f"pending:{r.id}"]
+    w._filer_stopped = False
+    w.drain(60)
+    index = w._search.index
+    real = index._ident
+    seen: list[int] = []
+    monkeypatch.setattr(index, "_ident", lambda: seen.append(1) or real())
+    assert paths(w, "narwhal") == [r.note]  # the queue asks the index whether it has the entry's note, then the search runs
+    assert len(seen) == 1
+    w.close()
+
 def test_a_purge_forgets_the_entry_and_drops_the_copy_the_search_kept(bundle: Path) -> None:
     w = seeded(bundle)
     r = w.remember(NARWHAL, key="narwhal")
