@@ -6,15 +6,18 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from llmw2 import Wiki
-from llmw2.bundle.store import RACY_NS
+from llmw2.bundle.store import RACY_NS, WikiStore
 from llmw2.search import VECTORS_FILE, VectorCache, _hash, _text_of
-from tests.wiki.test_search import Embedder, make, paths
+from llmw2.searchindex import INDEX_FILE
+from tests.wiki.test_search import MEANING, Embedder, make, paths
 
 
 def _age(path: Path) -> None:
@@ -142,3 +145,46 @@ def test_a_search_looks_at_the_index_file_once_and_still_sees_a_replaced_file_or
         held = index._held
         assert paths(wiki.search(query, k=1)) == expected
         assert index._held is not held
+
+
+@pytest.mark.parametrize("writer", ["another process", "this process"])
+def test_a_note_filed_is_found_by_meaning_at_the_next_search_with_no_listing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, writer: str
+) -> None:
+    """With an embedder, the notes looked at by meaning are those the index file holds, not those of the last listing: a note filed by
+    another process, or by this one, is found by meaning at the next search, as by its words, before any listing."""
+    from llmw2 import searchindex
+
+    emb = Embedder({**MEANING, "dirigible": [0.0, 1.0, 0.0], "zeppelin": [0.0, 1.0, 0.0]})
+    wiki = make(tmp_path, emb)
+    assert paths(wiki.search("dirigible", k=1)) == ["security.md"]  # nearest by meaning so far; lists and builds the index
+    monkeypatch.setattr(searchindex, "LISTING_LOOK", 60.0)
+    other = Wiki(wiki.cfg, llm=wiki.llm) if writer == "another process" else wiki
+    listed: list[int] = []
+    real = WikiStore.scan_notes
+
+    def counted(self: WikiStore, *a: Any, **k: Any) -> Any:
+        listed.append(1)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(WikiStore, "scan_notes", counted)
+    with other.store.lock():  # filed by the library: in the index before the section returns
+        other.store.write_note(other.store.load(), title="Zeppelin", summary="Airships", body="A zeppelin flies.", tags=[], source={})
+    assert paths(wiki.search("dirigible", k=1)) == ["zeppelin.md"]  # no word in common: by meaning
+    assert listed == []
+    other.close()
+    wiki.close()
+
+
+def test_a_note_gone_while_a_writer_holds_the_index_is_not_found_by_meaning(tmp_path: Path) -> None:
+    wiki = make(tmp_path, Embedder())
+    assert paths(wiki.search("parcels", k=1)) == ["shipping.md"]  # by meaning too: its vector is kept
+    holder = sqlite3.connect(tmp_path / "wiki" / INDEX_FILE, timeout=0, isolation_level=None)
+    holder.execute("BEGIN IMMEDIATE")  # a writer of another process holds the index
+    try:
+        (tmp_path / "wiki" / "shipping.md").unlink()
+        assert "shipping.md" not in paths(wiki.search("parcels", k=4))
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
+        wiki.close()

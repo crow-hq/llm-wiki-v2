@@ -109,8 +109,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   processes share a few numbers in memory, never on disk; a process of another Windows session, or of another time namespace on
   Linux, lists for itself, and so does one that finds the name in `/dev/shm` taken by a file of another user, which the tail hint of
   the journal no longer uses either). A note changed
-  by hand, not through the library, is found by the searches after that moment, and so, by meaning (with an embedder), is a note
-  another process filed (by its words it is found at once, from the index). The index file keeps which notes its last writes changed,
+  by hand, not through the library, is found by the searches after that moment. A note filed by any process is found at the next
+  search, by its words and, with an embedder, by meaning: the notes looked at by meaning are those of the index, not those of the last
+  listing. The index file keeps which notes its last writes changed,
   so a search that finds it written by another process reads those rows only, not the state of every note. An index never built whole
   is still built by its first search. A batch (`ingest_many`, `rebuild`) puts its notes in once, at its end.
 - A search looks at the file of the search index once, at its first step (a `stat`: is it the file its connection was opened on?),
