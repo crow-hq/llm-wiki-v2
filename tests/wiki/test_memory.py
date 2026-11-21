@@ -21,6 +21,7 @@ from mcp import Client
 from llmw2 import Wiki, WikiConfig
 from llmw2.agents.researcher import NO_ANSWER
 from llmw2.errors import ConfigError
+from llmw2.filer import sha_key
 from llmw2.memory import KEEP, NO_LIFESPAN, OFF, Memory
 from llmw2.models.relay import Relay
 from llmw2.server import create_app
@@ -67,7 +68,7 @@ def test_the_memory_offers_recall_remember_and_read_note_with_the_readers_marked
         "recall": True, "remember": False, "reply": False, "search": True, "read_note": True, "rebuild": False,
         "create_area": False, "propose_area": False, "proposals": True, "confirm_area": False,
         "folders": True, "move_note": False, "describe_folder": False, "rename_area": False, "merge_areas": False,
-        "delete_note": False,
+        "delete_note": False, "status": True, "forget": False,
     }
     assert "recall" in instructions and "Never store secrets" in instructions
     assert "remember_file" not in read_only and "remember_file" not in instructions  # over HTTP: no file of the server
@@ -157,16 +158,21 @@ def test_remember_file_and_sync_folder_file_documents_from_this_computer(
     assert not synced.is_error and synced.structured_content["errors"] == []
 
 
-def test_remember_files_the_text_as_a_note_and_read_note_reads_it_back(classic_wiki: Wiki, llm: FakeLLM) -> None:
+def test_remember_keeps_the_text_files_it_as_a_note_and_read_note_reads_it_back(classic_wiki: Wiki, llm: FakeLLM) -> None:
     # ARRANGE
     script_ingest(llm)
 
     # ACT
     kept = call(classic_wiki, "remember", {"text": "Revenue is booked on delivery.", "title": "Revenue recognition"})
+    classic_wiki.drain(30)
     read = call(classic_wiki, "read_note", {"path": NOTE})
+    classic_wiki.close()
 
     # ASSERT
-    assert not kept.is_error and kept.structured_content == {"action": "created", "note": NOTE, "folder": "/finance", "related": []}
+    body = kept.structured_content
+    assert not kept.is_error and {k: body[k] for k in ("action", "note", "folder", "related")} == {
+        "action": "queued", "note": "", "folder": "", "related": []
+    }
     assert not read.is_error and text(read).startswith("Title: Revenue recognition")
 
 
@@ -194,7 +200,7 @@ def test_recall_on_a_wiki_with_nothing_relevant_says_so_without_writing_an_answe
         ("recall", {"question": "  "}, "empty question"),
         ("read_note", {"path": "finance/missing.md"}, "no note at finance/missing.md"),
         ("read_note", {"path": "../outside.md"}, "outside"),
-        ("remember", {"text": ""}, "nothing to ingest"),
+        ("remember", {"text": ""}, "nothing to remember"),
     ],
 )
 def test_a_tool_the_wiki_refuses_tells_the_client_why(crow_wiki: Wiki, tool: str, arguments: dict[str, Any], said: str) -> None:
@@ -272,7 +278,7 @@ def test_mcp_speaks_the_protocol_whether_the_memory_is_on_or_off(bundle: Any, ll
     assert (started.status_code, started.json()["result"]["serverInfo"]["name"]) == (200, "llm-wiki")
     assert [t["name"] for t in listed.json()["result"]["tools"]] == [
         "recall", "remember", "rebuild", "reply", "search", "read_note", "create_area", "propose_area", "proposals", "confirm_area",
-        "folders", "move_note", "describe_folder", "rename_area", "merge_areas", "delete_note",
+        "folders", "move_note", "describe_folder", "rename_area", "merge_areas", "delete_note", "status", "forget",
     ]
 
 
@@ -355,7 +361,10 @@ def test_with_the_clients_models_remember_and_recall_go_through_requests_and_cro
     found, asking = through(memory, "recall", {"question": "When is revenue booked?"})
 
     # ASSERT
-    assert kept.structured_content == {"status": "done", "action": "created", "note": NOTE, "folder": "/finance", "related": []}
+    assert kept.structured_content == {
+        "status": "done", "action": "created", "note": NOTE, "folder": "/finance", "related": [],
+        "key": sha_key("Revenue is booked on delivery."),  # what `forget` takes it out by
+    }
     assert [r["step"] for r in writing] == ["librarian/summarize", "librarian/name_folder"]  # an empty wiki: one way only
     assert found.structured_content == {
         "status": "done",

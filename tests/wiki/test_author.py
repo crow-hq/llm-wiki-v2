@@ -342,11 +342,15 @@ def test_the_memory_files_under_the_name_of_the_client(classic_wiki: Wiki, llm: 
     script_ingest(llm)
 
     # ACT
-    call_tool(classic_wiki, "remember", {"text": "Booked on delivery.", "title": "Memo"}, "claude-code")
-    call_tool(classic_wiki, "create_area", {"name": "labs", "description": "Experiments."}, "codex")
+    try:
+        call_tool(classic_wiki, "remember", {"text": "Booked on delivery.", "title": "Memo"}, "claude-code")
+        classic_wiki.drain(30)  # filed in the background, under the name the entry keeps
+        call_tool(classic_wiki, "create_area", {"name": "labs", "description": "Experiments."}, "codex")
 
-    # ASSERT
-    assert authors(classic_wiki)[0] == "codex" and set(authors(classic_wiki)[1:]) == {"claude-code"}
+        # ASSERT
+        assert authors(classic_wiki)[0] == "codex" and set(authors(classic_wiki)[1:]) == {"claude-code"}
+    finally:
+        classic_wiki.close()  # the remember started its filer: a filer left running reads its journal while the next tests run
 
 
 def test_the_memory_over_http_names_the_user_agent_or_x_author(bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> None:

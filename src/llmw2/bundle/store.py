@@ -230,6 +230,9 @@ class Deleted:
     sources: list[str] = field(default_factory=list)  # raw copies that no remaining note cites ("/raw/…")
     archived: list[str] = field(default_factory=list)  # archived versions of the notes deleted ("/.archive/…")
     unlinked: list[str] = field(default_factory=list)  # remaining notes that lost a link to what went
+    # what is not done yet: "journal", the text of entries `remember` kept is still in the journal's segments (the filer of the process
+    # that holds its lease seals and reuses them at its next look)
+    pending: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

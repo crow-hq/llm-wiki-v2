@@ -478,8 +478,9 @@ def memory_stdio(wiki: Wiki, settings: Settings | None = None) -> int:
     """`llmwiki2 mcp`: the wiki as an MCP memory over stdio, on whatever the settings say, until the client closes it.
 
     Nothing goes to stdout but the protocol: messages go to stderr. The tools that read this computer's files are on, as
-    the memory runs as the user who started the client. Never set up (no settings file, no OKF_MCP_MODELS), as when a
-    client starts it from a registry, the client's models do the work, the first choice `llmwiki2 setup` offers.
+    the memory runs as the user who started the client. When the client closes it, what `remember` queued gets a short drain
+    (`Memory.close`). Never set up (no settings file, no OKF_MCP_MODELS), as when a client starts it from a registry, the
+    client's models do the work, the first choice `llmwiki2 setup` offers.
     """
     if settings is not None and not settings.saved() and not settings.env.get("OKF_MCP_MODELS"):
         wiki.cfg.mcp_models = "client"
@@ -496,7 +497,11 @@ def memory_stdio(wiki: Wiki, settings: Settings | None = None) -> int:
         return 2
     wiki.cfg.mcp = True  # started for this: on, whatever the settings say
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s", stream=sys.stderr)
-    Memory(lambda: wiki, local_files=True).server.run("stdio")
+    memory = Memory(lambda: wiki, local_files=True)
+    try:
+        memory.server.run("stdio")
+    finally:
+        memory.close()  # what its `remember` queued: a short drain, the rest is filed by the next process
     return 0
 
 

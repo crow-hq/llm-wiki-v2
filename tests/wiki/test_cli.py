@@ -579,8 +579,11 @@ def test_mcp_serves_the_memory_over_stdio_with_the_files_of_this_computer(
             self.server.run = lambda transport: served.append((wiki().cfg.mcp, transport))  # type: ignore[method-assign]
             served.append((local_files, "made"))
 
+        def close(self, timeout: float = memory.CLOSE_DRAIN) -> None:
+            served.append((timeout == memory.CLOSE_DRAIN, "closed"))
+
     monkeypatch.setattr(memory, "Memory", Spy)
 
     assert run(bundle, "mcp") == 0
 
-    assert served == [(True, "made"), (True, "stdio")]  # on, whatever the settings say
+    assert served == [(True, "made"), (True, "stdio"), (True, "closed")]  # on, whatever the settings say; closed with its short drain

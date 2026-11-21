@@ -8,7 +8,9 @@
 
 Its tools are served over Streamable HTTP, at /mcp of the wiki's own server:
 - `recall`: a question, answered with the notes the answer cites;
-- `remember`: a text, filed like any note;
+- `remember`: a text, kept at once and filed like any note in the background (with the client's models, before it returns);
+- `status`: what `remember` kept that is still waiting to be filed;
+- `forget`: a memory `remember` kept, by its key or its id, taken out for good with what was written from it;
 - `search`: the notes that best match a query, with no model call;
 - `read_note`: one note in full;
 - `rebuild`: every note filed again on the same folders, from the wiki's own raw copies (destructive, asks for a confirmation);
@@ -59,6 +61,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Any, TypeVar
 
+import anyio
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
@@ -74,11 +77,13 @@ from llmw2.agents.librarian import IngestResult
 from llmw2.agents.researcher import Answer
 from llmw2.batch import BatchReport, deviations
 from llmw2.bundle.files import extract_text
-from llmw2.errors import WikiError
+from llmw2.bundle.origin import Origin
+from llmw2.errors import InputError, WikiError
+from llmw2.filer import PENDING, Receipt, sha_key
 from llmw2.models.relay import LLM_CONFIG, Relay, RelayClassifier, RelayLLM, relayed
 from llmw2.models.usage import UsageTracker
 from llmw2.sources import LocalFolderSource, SyncReport, sync
-from llmw2.wiki import Wiki
+from llmw2.wiki import Purged, Wiki
 
 T = TypeVar("T")
 F = TypeVar("F", bound=Callable[..., Any])
@@ -98,8 +103,8 @@ conversation, in the user's language.{files}
 - Call `search` to find notes by their words with no answer written (fast, no model), when you will read them yourself.
 - Call `read_note` to read a cited note in full.
 - To reorganize when the user asks ("move…", "sposta…", "rinomina…", "cancella…"): `folders` lists the folders, then \
-`move_note`, `describe_folder`, `rename_area`, `merge_areas`, `delete_note`. Delete or merge only what the user asked \
-for; when unsure, ask first.
+`move_note`, `describe_folder`, `rename_area`, `merge_areas`, `delete_note`; `forget` for what `remember` kept. Delete, \
+forget or merge only what the user asked for; when unsure, ask first.
 - When `recall` or `remember` returns requests instead of a result, the memory works with your models: follow its `how`.
 Never store secrets: keys, passwords, tokens."""
 # With the files of this computer (stdio): the documents the user points at.
@@ -123,6 +128,10 @@ HOW = (
 )
 WAIT = 50.0  # seconds a tool waits for the work's next requests: under the 60 s that a client such as Codex gives a tool
 KEEP = 600.0  # seconds a job's result waits after its end for a client to come back for it
+# seconds the server waits, at its end, for what its `remember` queued to be filed. It bounds that wait, not the exit: the filer
+# then ends the entry it is on (with real models, possibly longer), and a stdio client such as the SDK's ends the server 2 s after it
+# closed it. What is left, or cut, stays in the journal for the next process on the wiki.
+CLOSE_DRAIN = 1.5
 # Closed world: every tool acts on this wiki alone (and, over stdio, on the files the user points at).
 READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 WRITES = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)  # files and merges notes, never deletes
@@ -140,6 +149,7 @@ class Memory:
         self.app: Starlette | None = None  # the SDK's app, made by each lifespan: its session manager runs only once
         self._jobs: dict[str, Relay] = {}  # the work going on with the client's models, by job id
         self._jobs_lock = threading.Lock()
+        self._queued = False  # a `remember` of this server went to the journal: `close` gives it a short drain
         # WARNING: the SDK sets the level of the whole process's logging, and INFO would log every request.
         instructions = INSTRUCTIONS.format(files=FILES if local_files else "")
         self.server: MCPServer = MCPServer("llm-wiki", instructions=instructions, version=__version__, log_level="WARNING")
@@ -167,19 +177,31 @@ class Memory:
         def remember(
             text: Annotated[str, Field(description="What to keep, self-contained; Markdown is fine")],
             title: Annotated[str | None, Field(description="A short title; empty: the memory names it")] = None,
+            key: Annotated[
+                str | None, Field(description="Optional: a name for this memory, e.g. pref-editor; with a new text, a new version of it")
+            ] = None,
             ctx: Context | None = None,
         ) -> dict[str, Any]:
-            """Save a fact, decision or text in the long-term memory, in the folder and note where it belongs.
+            """Save a fact, decision or text in the long-term memory: kept at once, then filed in the folder and note where it belongs.
 
             Call it when the user asks you to remember or note something, and on your own when something durable is settled (a
             decision and why, a preference, a fact about a project or a person): one topic per call, self-contained. For a
             document on disk, use `remember_file`. A classifier picks the folder and whether to merge into the note on the same
-            subject; a model writes the note and links related ones. Returns {action: created | merged | unchanged, note,
-            folder, related}. Adds or merges, never deletes. Never store secrets.
-            With your models, it returns a `job` with requests instead: answer them with `reply`.
+            subject; a model writes the note and links related ones, after the call returns. Returns {action: queued, note: "",
+            folder: "", related: [], id, key, state}: from then on `search` and `recall` find it, as `pending:<id>` until it is
+            filed, and `read_note` reads it; `status` says what is still waiting. The same text again, or the same key and text,
+            returns the first one's receipt (once filed, action unchanged with its note). `forget` takes it out by its key or
+            id. Adds or merges, never deletes. Never store secrets.
+            With your models, it returns a `job` with requests instead: answer them with `reply`; it is filed when it ends.
             """
-            by = author_of(ctx)
-            return self.run(lambda wiki: filed(wiki.ingest(text, title=title or None, author=by)))
+            by, wiki = author_of(ctx), self.live()
+            if wiki.cfg.mcp_models != "wiki":  # the client's models: filed now, as a job; the key is the text's origin
+                origin = Origin("remember", "", key) if key else None
+                named = key or sha_key(text)  # what `forget` takes it out by, as for a receipt
+                return self.run(lambda w: {**filed(w.ingest(text, title=title or None, origin=origin, author=by)), "key": named})
+            kept = guarded(lambda: queued(wiki.remember(text, title=title or None, key=key or None, author=by, timeout=WAIT)))
+            self._queued = True
+            return kept
 
         @tool(server, DELETES)
         def rebuild(
@@ -239,7 +261,8 @@ class Memory:
 
             Call it to read in full a note that `recall` cited or `search` found, before quoting details its summary lacks;
             for an answer drawn from several notes, use `recall`. No model call. `pending:<id>` gives the memory saved and not
-            filed yet, or once filed the note it went in. An unknown path returns an error naming it.
+            filed yet, or once filed the note it went in, while the memory still holds its entry (filed recently); later, read
+            the note by its path. An unknown path returns an error naming it.
             """
             try:
                 return guarded(lambda: self.live().read_note(path)).full_text()
@@ -387,14 +410,60 @@ class Memory:
             """Delete one note for good; the links to it are removed from the other notes.
 
             Call it only when the user asked to delete that note; to put it elsewhere, use `move_note`. Cannot be undone.
-            Without confirm=true it refuses and changes nothing. Returns the note deleted; an unknown path returns an error.
+            Without confirm=true it refuses and changes nothing. Returns what went (notes, sources, ...) and `pending`: "journal"
+            while the text of a memory filed into it is still in the memory's journal, which the memory takes out on its own
+            shortly; an unknown path returns an error.
             """
             if confirm is not True:
                 raise ToolError(f"deleting {path} cannot be undone: if the user asked for it, call it with confirm=true")
+            if path.strip().startswith(PENDING):
+                # a memory not filed yet, as `search` shows it: a client of the release before deletes what it found; forgotten as
+                # `forget` by its id does, with what a delete returns and what `forget` returns, and `forgot`: the entry
+                ident = path.strip().removeprefix(PENDING)
+                kept = {"notes": [], "folders": [], "sources": [], "archived": [], "unlinked": [], "pending": []}
+                return {**kept, **self.forget_id(ident, ctx), "forgot": PENDING + ident}
             try:
                 return guarded(lambda: self.live().delete_note(path, author=author_of(ctx))).to_dict()
             except FileNotFoundError as e:
                 raise ToolError(f"no note at {path}") from e
+
+        @tool(server, READ_ONLY)
+        def status() -> dict[str, Any]:
+            """Say how many memories that `remember` kept are still waiting to be filed, and whether the memory is filing them.
+
+            Call it when a memory you saved is not in a note yet, or before you tell the user that everything is filed; to read
+            one, use `read_note` with its `pending:<id>`. No model call, nothing changed. Returns {queue, queue_limit, filing,
+            failed, oldest_s, filer, last_error, journal_bytes, disk_free, warnings}: `warnings` says in words what needs a look,
+            and names the notes the limit on top-level folders sent to an existing folder instead of a new one.
+            """
+            return guarded(lambda: self.live().status())
+
+        @tool(server, DELETES)
+        def forget(
+            key: Annotated[str | None, Field(description="The key that remember returned or was given, e.g. pref-editor")] = None,
+            id: Annotated[str | None, Field(description="Or the id that remember returned (pending:<id> too)")] = None,
+            confirm: Annotated[bool, Field(description="true when the user asked for it: it cannot be undone")] = False,
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            """Forget for good a memory that `remember` kept, by its key or its id: queued or filed, every version of it.
+
+            Call it only when the user asks you to forget something they had you remember; to delete one note, use
+            `delete_note`. Cannot be undone: the memory's text and every note written from it are deleted, the links to them
+            are removed, and the other memories those notes held are filed again. Without confirm=true it refuses and changes
+            nothing; give a key or an id, not both. An id works while the memory still holds its entry (queued, or filed
+            recently); the key always does. Returns what went (notes, sources, entries…) and `pending`: empty when no file of
+            the memory holds what was kept under this key any more, else what still does, emptied shortly. A key nothing was
+            kept under, or an id the memory no longer holds, returns an error.
+            """
+            if confirm is not True:
+                raise ToolError("forgetting cannot be undone: if the user asked for it, call it with confirm=true")
+            key, ident = key or None, (id or "").removeprefix(PENDING) or None
+            if (key is None) == (ident is None):
+                raise ToolError("give the memory's key or its id: one of the two")
+            if ident is not None:
+                return self.forget_id(ident, ctx)
+            named, by = str(key), author_of(ctx)
+            return self.run(lambda wiki: forgotten(wiki.purge(named, author=by), named))
 
         if not local_files:
             return
@@ -478,9 +547,32 @@ class Memory:
             out["unknown"] = unknown  # ids no request waits for: answered already, or never given
         return out
 
+    def forget_id(self, ident: str, ctx: Context | None) -> dict[str, Any]:
+        """`forget` by the id of a receipt: the memory's key, read from the journal while it holds the entry, purged."""
+        receipt = guarded(lambda: self.live().receipt(ident))
+        if receipt is None:
+            raise ToolError(f"no memory with id {ident}: it is not in the journal any more, forget it by its key")
+        named, by = str(receipt.key), author_of(ctx)
+        return self.run(lambda wiki: forgotten(wiki.purge(named, author=by), named))
+
+    def close(self, timeout: float = CLOSE_DRAIN) -> None:
+        """At the server's end: what its `remember` queued is filed for up to `timeout` seconds, unless another process files it.
+
+        What is not done by then stays in the journal, and the next process on the wiki files it; a client that ends the server
+        sooner loses nothing either. Nothing to do when this server queued nothing."""
+        if not self._queued:
+            return
+        try:
+            wiki = self.wiki()
+            now = wiki.status()
+            if now["queue"] and now["filer"] != "other":
+                wiki.drain(timeout)
+        except (TimeoutError, WikiError):
+            pass  # left queued: filed by the next process
+
     @asynccontextmanager
     async def lifespan(self, _app: object) -> AsyncGenerator[None, None]:
-        """The host app's lifespan: a fresh SDK app and session manager each time, as one runs only once."""
+        """The host app's lifespan: a fresh SDK app and session manager each time, as one runs only once; at its end, `close`."""
         self.app = self.server.streamable_http_app(
             stateless_http=True,
             json_response=True,
@@ -491,6 +583,7 @@ class Memory:
                 yield
         finally:
             self.app = None
+            await anyio.to_thread.run_sync(self.close)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """ASGI: the MCP endpoint, on or off (see `live`), once the server's lifespan has made it."""
@@ -535,6 +628,20 @@ def answered(answer: Answer) -> dict[str, Any]:
 def filed(result: IngestResult) -> dict[str, Any]:
     out: dict[str, Any] = {"action": result.action, "note": result.note, "folder": result.folder, "related": result.related}
     return {**out, **deviated([result])}
+
+
+def queued(receipt: Receipt) -> dict[str, Any]:
+    """`remember` with the wiki's models: the keys of `filed` and the receipt. Queued, no note yet ("", as for no note); the same text
+    given again once filed, "unchanged" with the note it went in, as an `ingest` of a text the wiki holds says."""
+    state, note = receipt.state, receipt.note or ""
+    action, folder = ("unchanged", "/" + note.rpartition("/")[0]) if state == "filed" and note else ("queued", "")
+    return {"action": action, "note": note, "folder": folder, "related": [], "id": receipt.id, "key": receipt.key, "state": state}
+
+
+def forgotten(report: Purged | None, key: str) -> dict[str, Any]:
+    if report is None:
+        raise InputError(f"nothing is kept under the key {key}")
+    return report.to_dict()
 
 
 def rebuilt(done: BatchReport) -> dict[str, Any]:

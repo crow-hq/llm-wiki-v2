@@ -256,23 +256,24 @@ def test_documents_lists_what_a_connector_has(tmp_path: Path) -> None:
 # -- the MCP memory -------------------------------------------------------------------------------
 
 
-def mcp(wiki: Wiki, tool: str, arguments: dict[str, Any]) -> Any:
+def mcp(wiki: Wiki, tool: str, arguments: dict[str, Any], *, local_files: bool = False) -> Any:
     wiki.cfg.mcp = True
 
     async def go() -> Any:
-        async with Client(Memory(lambda: wiki).server) as client:
+        async with Client(Memory(lambda: wiki, local_files=local_files).server) as client:
             return await client.call_tool(tool, arguments)
 
     return asyncio.run(go())
 
 
-def test_remember_reports_the_deviation_of_the_note_it_filed(bundle: Path) -> None:
-    # ARRANGE
+def test_remember_file_reports_the_deviation_of_the_note_it_filed(bundle: Path, tmp_path: Path) -> None:
+    # ARRANGE: a document is filed before the tool returns (`remember` queues, and its deviation is in the note and the log)
     wiki = capped(bundle)
+    folder = docs(tmp_path / "docs")
 
     # ACT
-    deviated = mcp(wiki, "remember", {"text": GREEN, "title": "Green"}).structured_content
-    plain = mcp(wiki, "remember", {"text": RED, "title": "Red"}).structured_content
+    deviated = mcp(wiki, "remember_file", {"path": str(folder / "green.md")}, local_files=True).structured_content
+    plain = mcp(wiki, "remember_file", {"path": str(folder / "red.md")}, local_files=True).structured_content
 
     # ASSERT
     assert deviated["deviated"] == 1 and deviated["deviations"][0]["root"] == TAKEN
@@ -280,10 +281,26 @@ def test_remember_reports_the_deviation_of_the_note_it_filed(bundle: Path) -> No
     assert "deviated" not in plain and "deviations" not in plain
 
 
+def test_status_names_the_note_of_a_remember_the_limit_deviated(bundle: Path) -> None:
+    # ARRANGE: `remember` answers before the filing, so its deviation is told by `status`
+    wiki = capped(bundle)
+    mcp(wiki, "remember", {"text": GREEN, "title": "Green"})
+    mcp(wiki, "remember", {"text": RED, "title": "Red"})
+    wiki.drain(30)
+
+    # ACT
+    said = [w for w in mcp(wiki, "status", {}).structured_content["warnings"] if "limit" in w]
+
+    # ASSERT
+    (deviated,) = [rel for rel, mark in notes(wiki).items() if mark]
+    assert len(said) == 1 and said[0].startswith("1 memories") and said[0].endswith(f": {deviated}")
+
+
 def test_the_rebuild_tool_refuses_without_confirm_and_then_files_the_raw_copies_again(bundle: Path) -> None:
     # ARRANGE
     wiki = capped(bundle)
     mcp(wiki, "remember", {"text": GREEN, "title": "Green"})
+    wiki.drain(30)
 
     # ACT
     refused = mcp(wiki, "rebuild", {})

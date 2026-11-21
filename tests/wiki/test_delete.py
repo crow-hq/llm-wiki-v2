@@ -84,7 +84,7 @@ def test_delete_note_when_other_notes_link_to_it_then_their_links_go_and_the_wik
     assert "budget.md" in body(classic_wiki, filed.plan)  # the other links stay
     assert deleted.to_dict() == {
         "notes": [filed.price_list], "folders": [], "sources": [filed.raw_prices], "archived": [],
-        "unlinked": [filed.plan, filed.budget],
+        "unlinked": [filed.plan, filed.budget], "pending": [],
     }
     assert exists(classic_wiki, filed.raw_plan)  # the plan still cites it
     assert errors(classic_wiki.check()) == []

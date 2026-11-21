@@ -529,11 +529,23 @@ class Wiki:
         """Where the queue is, as a dict of JSON values with these keys: `queue` (entries not done), `queue_limit`, `filing` (the id the
         filer of this process is on, or None), `failed` (entries given up), `oldest_s` (age of the oldest entry not done, or None),
         `filer` ("running", "idle", "error" for this process's filer; "other" when another process holds the lease; "none"),
-        `last_error`, `journal_bytes`, `disk_free` and `warnings` (a list of sentences). It reads what is new in the journal and nothing
+        `last_error`, `journal_bytes`, `disk_free` and `warnings` (a list of sentences; among them, the notes of the filings this process
+        has read that the limit on top-level folders sent to an existing root). It reads what is new in the journal and nothing
         else: it does not take the append lock, does not read the journal from its start and does not run `check()`, and its time does
         not grow with the notes."""
         hub = self._journal()
         return _filer.status(hub, self.cfg.bundle)
+
+    def receipt(self, ident: str) -> Receipt | None:
+        """The receipt of the entry `remember` gave this id (`Receipt.id`), as this process reads the journal; None for an id the journal
+        does not hold: never written, or done and gone from it since (the `key` of its receipt still names the memory, for `purge`). A
+        wiki with no journal makes none."""
+        if self._hub is None and not (self.cfg.bundle / J.JOURNAL_DIR).is_dir():
+            return None
+        hub = self._journal()
+        hub.refresh()
+        e = hub.entries.get(ident)
+        return Receipt(e.id, e.key, e.at, e.event_at, hub) if e is not None and e.forget is None else None
 
     # -- the filer's side ------------------------------------------------------------------------------------------------
 
@@ -1746,7 +1758,8 @@ class Wiki:
 
     @by_author
     def delete_note(self, path: str, *, author: str | None = None) -> Deleted:
-        """Delete a note ("finance/pricing.md"); links to it go from the other notes, and raw copies only it cites."""
+        """Delete a note ("finance/pricing.md"); links to it go from the other notes, and raw copies only it cites. When a raw copy
+        deleted may hold the text of an entry `remember` kept (`_forget_journal`), that text goes from the journal too."""
         _not_pending(path)
         # the wiki is read before the lock, in one of the places the memory allows, kept until the session's copy of it goes: the section
         # lists again only the folders changed meanwhile; with no place, the section reads it under the lock
@@ -1754,19 +1767,62 @@ class Wiki:
             if place:
                 self.store.load()
             with self.store.lock():
-                return self.store.delete_note(path)
+                note = next((n for n in self.store.load().all_notes() if n.rel == path.strip().lstrip("/")), None)
+                remembered = self._remembered_raws([note] if note is not None else [])
+                deleted = self.store.delete_note(path)
+        self._forget_journal(deleted, remembered)
+        return deleted
+
+    def _remembered_raws(self, notes: list[Note]) -> list[str]:
+        """The raw copies these notes cite that a `remember` may have filed (an origin of `remember`, or none): their text may be in the
+        journal's segments too. A raw copy never moves, whatever moves the notes (a split, `move_note`, `rename_area`, `merge_areas`)."""
+        found = []
+        for resource in dict.fromkeys(r for n in notes for r in raw_sources(n.frontmatter)):
+            with contextlib.suppress(OSError, ValueError):  # a raw copy that cannot be read (OKFDocumentError is a ValueError)
+                origin = self.store.read_raw(resource)[0].get("origin")
+                if not isinstance(origin, dict) or origin.get("source") == "remember":
+                    found.append(resource)
+        return found
+
+    def _forget_journal(self, deleted: Deleted, remembered: list[str] | None) -> None:
+        """A delete took out raw copies that a `remember` may have filed (`remembered`; None: every raw copy went): the entries are done,
+        and their text is still in the journal's segments until those are reused. The journal is sealed and every segment before is
+        reused, as a purge completes: a tombstone of no key (it forgets no entry, and has no file to delete), durable at once, whose
+        completion zeroes what is done in them, what is open carried forward. Done now if this process can take the lease; else the
+        filer of the process that holds it does it at its next look, and `deleted.pending` says "journal". Nothing waits for a lease."""
+        if remembered is not None and not set(remembered) & set(deleted.sources):
+            return
+        if not self._has_journal():
+            return
+        hub = self._journal()
+        hub.refresh()
+        if not hub.closed_total:
+            return  # no entry was ever done: no text of one is in a raw copy
+        nothing = _filer.key_hash(_filer.TEXT_KEY + os.urandom(16).hex())  # the hash of no key: no entry is forgotten
+        tomb = hub.journal.append_entry("", state={"forget": {"kh": nothing}}).id
+        hub.journal.append(J.T_FILED, {"id": tomb, "files": True})
+        hub.refresh()
+        hub.files_done.add(tomb)
+        if not self._close_forget(tomb, True, 0.0):
+            deleted.pending.append("journal")
 
     @by_author
     def delete_folder(self, path: str, *, author: str | None = None) -> Deleted:
         """Delete a folder ("/finance") with everything in it, as `delete_note` does for each note."""
         with self.store.lock(undo=False):  # moves or deletes whole folders: not covered by the undo log
-            return self.store.delete_folder(path)
+            folder = self.store.load().find(path)
+            remembered = self._remembered_raws(folder.all_notes() if folder is not None and not folder.is_root else [])
+            deleted = self.store.delete_folder(path)
+        self._forget_journal(deleted, remembered)
+        return deleted
 
     @by_author
     def clear(self, *, author: str | None = None) -> Deleted:
         """Empty the wiki: every note, folder, raw copy and archived version, and the sync cursors. Cannot be undone."""
         with self.store.lock(undo=False):  # moves or deletes whole folders: not covered by the undo log
-            return self.store.clear()
+            deleted = self.store.clear()
+        self._forget_journal(deleted, None)  # every raw copy went: the journal's done entries go too
+        return deleted
 
     @by_author
     def rebuild(

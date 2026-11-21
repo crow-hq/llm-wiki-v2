@@ -1021,6 +1021,16 @@ def status(hub: Hub, root: Path) -> dict[str, Any]:
     free = hub.disk_free()
     if free < DISK_RESERVE:
         warnings.append(f"less than {DISK_RESERVE >> 20} MiB free on the disk of the wiki: new entries are refused")
+    with hub.cond:  # the filings the process has read whose note the limit on top-level folders sent to an existing root
+        deviated = list(dict.fromkeys(
+            str(e.filed.get("note") or "") for e in hub.entries.values() if e.filed and e.filed.get("overflow") and not e.forgotten
+        ))
+    if deviated:
+        more = f" and {len(deviated) - 10} more" if len(deviated) > 10 else ""
+        warnings.append(
+            f"{len(deviated)} memories were filed in an existing top-level folder, as the limit on them allows no new one (see the "
+            f"\"Deviated note\" lines of log.md): {', '.join(deviated[:10])}{more}"
+        )
     return {
         "queue": len(open_),
         "queue_limit": QUEUE_LIMIT,

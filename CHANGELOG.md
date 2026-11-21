@@ -91,9 +91,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   search in another process may still show an entry for up to that moment (`LISTING_LOOK`, about a second) after a purge forgot it,
   and no more after it (no byte of the entry stays on disk); `pending:<id>` of an entry filed leads to the note at the path its
   filing gave, the one there now, also when that note was deleted and another one took its path since.
+- The memory has two more tools: `status`, what `remember` kept that is still waiting to be filed (the dict of `Wiki.status`, read-only),
+  and `forget(key | id, confirm)`, which takes out for good a memory `remember` kept, by its key or by the id of its receipt (also as
+  `pending:<id>`), queued or filed, every version of it, with the notes written from it, as `Wiki.purge` does; it refuses without
+  `confirm=true`, with neither or both, for an id the journal no longer holds (forget it by the key) and for a key nothing was kept
+  under, and returns what `purge` reports, `pending` included. Limit: an id is known while the journal holds its entry, that is
+  while it is queued, and once filed until its segment is reused (a purge reuses them; the process that remembered it knows it
+  longer); the key always works. The same holds for `read_note("pending:<id>")` once the entry is filed: later, the note is read by
+  its path. `pending` is about that key: the same text kept under another key stays. `remember` takes a `key`, which names the memory
+  (the same key with a new text is a new version of it). `Wiki.receipt(id)` gives the receipt of an entry back by its id. With the
+  client's models `forget` runs as a job like the other tools, the `key` of `remember` is the origin of the text, and its result has
+  the `key` it was filed under (the one given, or `text:<sha256 of the text>`), so that a memory given no key can be forgotten too.
+- `status` (`Wiki.status` and the memory's tool) names, in `warnings`, the notes of the filings the process has read that the limit on
+  top-level folders sent to an existing root: with the wiki's models the memory's `remember` answers before the filing, and this is
+  where its deviation is told.
 
 ### Changed
 
+- With the wiki's own models, the memory's `remember` keeps the text in the journal and answers as soon as it is on the disk, before any
+  model is called, as `Wiki.remember` does: it no longer waits for the wiki to be free nor for the filing. The result keeps the keys of
+  the release before and their types, with the values of "nothing filed yet" (`action: "queued"`, `note: ""`, `folder: ""`, `related:
+  []`), and adds the receipt's `id`, `key` and `state`: an addition, so the next release is a minor one. The same text again (or the same
+  key and text) returns the first one's receipt; once it is filed, with `action: "unchanged"` and the note and folder it went in, as the
+  release before said for a text the wiki held. `search` finds the memory at once, `recall` reads it and `read_note` reads
+  `pending:<id>`, then the note it went in; its deviation, when the limit on top-level folders sends its note elsewhere, is in the note
+  and in `log.md`, no longer in the result but in the `warnings` of `status` (`remember_file`, `sync_folder` and `rebuild`, filed before
+  they return, still report theirs). A filing that fails is retried, then given up, in the background: `status` says so. When the
+  server ends (the client closes `llmwiki2 mcp`, or `llmwiki2 serve` stops) the server waits up to `CLOSE_DRAIN` seconds (1.5) for what
+  its `remember` queued to be filed, unless another process holds the lease and files it. That bounds the wait, not the exit: the filer
+  then ends the entry it is on (with real models it may take longer), and a stdio client such as the SDK's ends the server 2 s after it
+  closed it. What is left, or cut, stays in the journal for the next process on the wiki: a server killed after it answered loses
+  nothing. With the client's models (`mcp_models` "client" or "hybrid") `remember` still files before it returns, as a job.
+- `delete_note`, `delete_folder` and `clear` take the text of the entries `remember` kept out of the journal too, when a raw copy they
+  delete may hold one (an origin of `remember`, or none, as a text given with no origin) and the journal has entries done: the journal is
+  sealed and the segments before are reused, as a purge completes (what is not filed yet is carried forward), so no file of the wiki's
+  folder keeps the text, as with the release before, where the memory's `remember` did not go through the journal. Raw copies never
+  move, so a note moved or split since its filing is found all the same. The tombstone that asks for it is durable at once; the call
+  waits for no lease: when another process holds the journal's lease, its filer seals and reuses at its next look, and the result says
+  so in a new key, `pending: ["journal"]`, as `Purged.pending` does (the memory's `delete_note` returns it too). Effects: after such a
+  delete the ids of the entries already filed are gone with their segments, so `read_note("pending:<id>")` and `forget(id)` no longer
+  find them (`forget` by key always does); each seal takes a new segment (16 MiB of zeros written on Windows, `fallocate` on Linux),
+  and a reuse zeroes the old ones: count it with the purges in the wear of the disk. A note filed from a document with another origin
+  costs the journal nothing.
+- The memory's `delete_note` of `pending:<id>` (a memory not filed yet, as `search` shows it) forgets it as `forget` by that id does, for
+  the clients of the release before that search and delete the first hit; it refused before. The result has the keys of a delete
+  (`notes`, `folders`, `sources`, `archived`, `unlinked`, `pending`), those of `forget` (`entries`, ...), and `forgot`: the
+  `pending:<id>` forgotten. Like `forget`, it takes out every version kept under the memory's key.
 - The filer of `remember` files consecutive entries in one session of the store, up to the 50 documents of a plan's batch: the tree is
   listed whole once for the lot, then only the folders that changed, instead of twice an entry; the session ends when the queue is
   empty, while a failed entry waits to be tried again, and before a purge is completed. After a document filed alone, the split of its folder looks first at the folder's own

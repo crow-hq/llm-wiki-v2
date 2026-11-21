@@ -129,7 +129,8 @@ codex mcp add llm-wiki --url http://127.0.0.1:8000/mcp
 ### What it can do
 
 The client gets its tools: `recall` answers from your notes and documents, citing them; `remember` files what it
-learns, in the right folder, merged and linked like any note (CROW); `search` finds notes by their words with no model
+learns, in the right folder, merged and linked like any note (CROW), answering at once while the filing goes on (`status`
+says what waits, `forget` takes a memory out); `search` finds notes by their words with no model
 call; `read_note` reads a note in full; `folders`, `move_note`, `describe_folder`, `rename_area`, `merge_areas` and
 `delete_note` reorganize the wiki (the last two only when you ask); `rebuild` (with `confirm`) files every note again on
 the same folders, from the memory's own raw copies. Started from the terminal (`llmwiki2 mcp`) it also files documents

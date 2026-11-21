@@ -63,12 +63,16 @@ class _Server:
         assert transport == "stdio"
 
 
+def _memory():
+    return type("M", (), {"server": _Server(), "close": lambda self: None})()
+
+
 @pytest.fixture
 def started(monkeypatch, tmp_path):
     """Start `llmwiki2 mcp` with no client: the wiki's config as the memory would see it."""
     import llmw2.memory
 
-    monkeypatch.setattr(llmw2.memory, "Memory", lambda make, local_files: type("M", (), {"server": _Server()})())
+    monkeypatch.setattr(llmw2.memory, "Memory", lambda make, local_files: _memory())
 
     def start(saved: dict | None = None, **env: str):
         path = tmp_path / f"settings-{len(list(tmp_path.glob('settings-*')))}.json"  # a new one each time
@@ -101,7 +105,7 @@ def test_a_memory_never_used_answers_from_an_empty_wiki(monkeypatch, tmp_path):
     from mcp import Client
 
     real, made = llmw2.memory.Memory, []
-    monkeypatch.setattr(llmw2.memory, "Memory", lambda make, local_files: made.append(make) or type("M", (), {"server": _Server()})())
+    monkeypatch.setattr(llmw2.memory, "Memory", lambda make, local_files: made.append(make) or _memory())
     settings = Settings({"OKF_CONFIG": str(tmp_path / "never.json"), "OKF_BUNDLE": str(tmp_path / "wiki")})
     assert memory_stdio(Wiki(settings.config()), settings) == 0
     assert (tmp_path / "wiki").is_dir()
