@@ -309,6 +309,19 @@ class SearchIndex:
     def __len__(self) -> int:
         return len(self._len)
 
+    def notes(self) -> int:
+        """How many notes the index holds: what this process read of it, else a count read from its file on a connection of its own that
+        only reads and never waits (0 with no file, or one that cannot be read now)."""
+        if self._len:
+            return len(self._len)
+        if self.path is None or not self.path.exists():
+            return 0
+        try:
+            with contextlib.closing(sqlite3.connect(f"{self.path.as_uri()}?mode=ro", uri=True, timeout=0)) as db:
+                return int(db.execute("SELECT count(*) FROM docs WHERE bad = 0").fetchone()[0])
+        except sqlite3.Error:
+            return 0
+
     # ---- the file
 
     def _to_memory(self) -> None:
@@ -480,12 +493,32 @@ class SearchIndex:
         wrote while it read, it runs again inside one read transaction, which sees one state of the file whatever is written meanwhile."""
         return self._guarded(work, reading)
 
-    def forget(self, wait: float) -> bool:
-        """After a purge: the WAL is written into the file and cut to nothing (`wal_checkpoint(TRUNCATE)`), waiting at most `wait` seconds
-        for the readers of other processes, and the files put aside as `.bad` are deleted. Whether it was done: False when a reader held
-        the WAL all along (the words of the notes purged stay in it until the next checkpoint) or a `.bad` file could not go."""
-        with self._mutex:
-            return self._forget(wait)
+    @contextlib.contextmanager
+    def held(self, wait: float | None) -> Iterator[bool]:
+        """This process's lock of the index (a build or a search of another thread holds it), waiting at most `wait` seconds (None: as
+        long as it takes); yields whether it is held. The calls made inside take it again at once."""
+        got = self._mutex.acquire(timeout=-1 if wait is None else wait)
+        try:
+            yield got
+        finally:
+            if got:
+                self._mutex.release()
+
+    def forget(self, store: WikiStore, read: Reader, wait: float | None) -> bool:
+        """After a purge: the notes gone from the wiki go from the file (their rows zeroed), the WAL is written into the file and cut to
+        nothing (`wal_checkpoint(TRUNCATE)`), and the files put aside as `.bad` are deleted. `wait`: the most it waits in all, for the
+        other threads of this process, the write lock and the readers of other processes (a purge's budget); None: the locks as long as
+        they take, the readers not at all. Whether it was done: False when a lock did not come in time, a reader held the WAL all along
+        (the words of the notes purged stay in it until the next checkpoint) or a `.bad` file could not go."""
+        end = None if wait is None else time.monotonic() + wait
+
+        def left() -> float | None:
+            return None if end is None else max(0.0, end - time.monotonic())
+
+        with self.held(wait) as got:
+            if not got or not self._guarded(lambda: self._sync(store, read, True, True, end)):
+                return False
+            return self._forget(left() or 0.0)
 
     def _forget(self, wait: float) -> bool:
         done = True
@@ -764,19 +797,21 @@ class SearchIndex:
             self._built = db.execute("SELECT 1 FROM meta WHERE k = 'built'").fetchone() is not None
         return self._built
 
-    def _sync(self, store: WikiStore, read: Reader, wait: bool, build: bool) -> None:
+    def _sync(self, store: WikiStore, read: Reader, wait: bool, build: bool, until: float | None = None) -> bool:
+        """`until`: the write lock is waited for until then (`time.monotonic`), all the lots together, whatever `wait` says. Whether the
+        file has every change."""
         db = self._open()
         held = self._gen is not None and not self._partial  # what this process holds is the file as of `_gen`
         if not held or (self._disk_gen(db) != self._gen and not self._caught_up(db)):  # another process wrote: what it wrote, or all
             self._load(db)
         if not build and not self._is_built(db):
-            return
+            return True
         now = time.monotonic_ns()
         if not wait and self._built:
             if self._raw and self._listed_at is not None and now - self._listed_at < LISTING_LOOK * 1e9:
-                return  # listed a moment ago: what the library wrote since is in the file (`update`), a hand edit waits for the next
+                return True  # listed a moment ago: what the library wrote since is in the file (`update`), a hand edit waits
             if self._listed_by_another(now):
-                return  # another process of the machine did, and what it found is in the file as this one holds it
+                return True  # another process of the machine did, and what it found is in the file as this one holds it
         order, todo = self._scan(store)
         self._listed_at = now
         self._hidden = set()
@@ -790,10 +825,10 @@ class SearchIndex:
                 return order, todo, [rel for rel in self._stamps if rel not in live]
 
             gone = [rel for rel in self._stamps if rel not in live]
-            busy = 0.0 if not wait and self._is_built(db) else None
+            busy = 0.0 if until is not None or (not wait and self._is_built(db)) else None
             if busy is not None and todo:
                 todo = self._still_racy(todo)
-            done, seen = self._write(db, read, todo, gone, look, busy, whole=True)
+            done, seen = self._write(db, read, todo, gone, look, busy, whole=True, until=until)
             if seen is not None:
                 order = seen
             if not done:  # a writer holds the lock: what the file holds, less the notes gone from the listing
@@ -805,6 +840,7 @@ class SearchIndex:
         self._raw = order
         if done and self._built:
             self._publish(now)
+        return done
 
     def _publish(self, began: int) -> None:
         """This process listed the wiki (from `began`) and the file holds all it found, as of the generation it holds now: the other
@@ -894,12 +930,14 @@ class SearchIndex:
         *,
         whole: bool = False,
         catch_up: Callable[[], None] | None = None,
+        until: float | None = None,
     ) -> tuple[bool, list[str] | None]:
         """Write what changed, `BATCH` notes to a transaction: a build of a large wiki is a series of short locks, what was committed
         stays if the process stops, and another process that opens the wiki meanwhile takes the next lots instead of waiting. `look`
         says again what to write (and the listing, when there is one) if another process wrote while this waited; `wait`: as long
         as that for each lot (`_begin`); `whole`: what was to write is every change of the wiki, and the file is marked built once
-        it is in. `catch_up`: what to read of the file once the lock is held, before `look` says what to write (a writer's own notes);
+        it is in. `until`: in place of `wait`, the lots wait for the lock until then, all together (a purge's budget). `catch_up`: what
+        to read of the file once the lock is held, before `look` says what to write (a writer's own notes);
         without it, the whole state when another process wrote meanwhile. Whether all of it was written, and the listing `look` gave last
         (None if it was not called)."""
         seen: list[str] | None = None
@@ -909,7 +947,7 @@ class SearchIndex:
             db.execute(f"PRAGMA cache_size = -{BUILD_CACHE_KB}")
         pos = 0
         while pos < len(todo) or gone or catch_up is not None:
-            if not self._begin(db, wait):
+            if not self._begin(db, wait if until is None else max(0.0, until - time.monotonic())):
                 return False, seen
             try:
                 if catch_up is not None or self._disk_gen(db) != self._gen:  # another process wrote: start again from the file

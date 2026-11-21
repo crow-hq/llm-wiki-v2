@@ -110,27 +110,33 @@ class VectorCache:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self, wait: float = 30) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite3.connect(self.path, timeout=30)
+        db = sqlite3.connect(self.path, timeout=wait)
         db.execute("PRAGMA journal_mode=PERSIST")
         db.execute("CREATE TABLE IF NOT EXISTS vectors (key TEXT PRIMARY KEY, value BLOB NOT NULL) WITHOUT ROWID")
         return db
 
-    def truncate_journal(self, keep: set[str] | None = None) -> None:
+    def truncate_journal(self, keep: set[str] | None = None, wait: float | None = None) -> bool:
         """After a purge: drop the vectors no key of `keep` names (texts no longer in the wiki; None: drop none), their pages zeroed
         (`secure_delete`), and cut the rollback journal to nothing, in one write made with no room allowed to the journal
-        (`journal_size_limit = 0`)."""
+        (`journal_size_limit = 0`). `wait`: the most it waits for the file's lock, then False with nothing done (None: as any write)."""
         if not self.path.exists():
-            return
-        with closing(self._connect()) as db, db:
-            db.execute("PRAGMA secure_delete = ON")
-            db.execute("PRAGMA journal_size_limit = 0")
-            if keep is not None:
-                stale = [k for (k,) in db.execute("SELECT key FROM vectors") if k not in keep]
-                db.executemany("DELETE FROM vectors WHERE key = ?", ((k,) for k in stale))
-            db.execute("INSERT OR REPLACE INTO vectors VALUES ('', x'')")
-            db.execute("DELETE FROM vectors WHERE key = ''")
+            return True
+        try:
+            with closing(self._connect() if wait is None else self._connect(wait)) as db, db:
+                db.execute("PRAGMA secure_delete = ON")
+                db.execute("PRAGMA journal_size_limit = 0")
+                if keep is not None:
+                    stale = [k for (k,) in db.execute("SELECT key FROM vectors") if k not in keep]
+                    db.executemany("DELETE FROM vectors WHERE key = ?", ((k,) for k in stale))
+                db.execute("INSERT OR REPLACE INTO vectors VALUES ('', x'')")
+                db.execute("DELETE FROM vectors WHERE key = ''")
+        except sqlite3.OperationalError as e:
+            if wait is None or "locked" not in str(e):
+                raise
+            return False
+        return True
 
     def get(self, keys: Sequence[str]) -> dict[str, array[float]]:
         if not keys or not self.path.exists():
@@ -239,25 +245,36 @@ class NoteSearch:
         else:
             self.index.update(store, written, self._entry)
 
-    def forget(self, store: WikiStore, wait: float) -> bool:
-        """After a purge: the index takes the notes that went out of its file (their rows zeroed), its WAL is cut to nothing (at most
-        `wait` seconds for the readers of other processes), its `.bad` files go; the vectors of texts no longer in the wiki go too (the
-        note purged among them: a vector is derived from its text), and their rollback journal is cut; the texts kept for the exact
-        expressions go. Whether the index is done (`SearchIndex.forget`)."""
+    def forget(self, store: WikiStore, wait: float | None) -> bool:
+        """After a purge: the index takes the notes that went out of its file (their rows zeroed), its WAL is cut to nothing, its `.bad`
+        files go; the vectors of texts no longer in the wiki go too (the note purged among them: a vector is derived from its text), and
+        their rollback journal is cut; the texts kept for the exact expressions go. `wait`: the most it waits in all, for the locks of the
+        index and of the vectors and for the readers of the index's WAL (a purge's budget); None (the filer): the locks as long as they
+        take, the readers not at all. Whether all of it was done (`SearchIndex.forget`); when a lock did not come in time, the vectors are
+        left to the next look too."""
+        end = None if wait is None else time.monotonic() + wait
+
+        def left() -> float | None:
+            return None if end is None else max(0.0, end - time.monotonic())
+
         keep: set[str] | None = None
-        with self._lock:
+        if not self._lock.acquire(timeout=-1 if wait is None else wait):  # a search of this process holds it (its embedder)
+            return False
+        try:
             path = self.index.path
             vectors = self.vectors is not None and self.vectors.path.exists()
             if (path is None or not path.exists()) and not vectors:  # never searched: neither holds anything to forget
                 done = True
             else:
-                self.index.run(lambda: self.index.sync(store, self._entry))
-                done = self.index.forget(wait)
-                if vectors:
-                    keep = {self._key(h) for h in self.index.hashes().values()}
+                with self.index.held(left()) as held:
+                    done = held and self.index.forget(store, self._entry, left())
+                    if vectors and held and (done or end is None):
+                        keep = {self._key(h) for h in self.index.hashes().values()}
             self._kept.clear()  # no text of a note purged stays in the process
-        if self.vectors is not None:
-            self.vectors.truncate_journal(keep)
+        finally:
+            self._lock.release()
+        if self.vectors is not None and (done or end is None):
+            done = self.vectors.truncate_journal(keep, left()) and done
         return done
 
     def _find(

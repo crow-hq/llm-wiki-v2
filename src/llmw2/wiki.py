@@ -77,11 +77,11 @@ from llmw2.batch import BatchReport, Item
 from llmw2.bundle import journal as J
 from llmw2.bundle import txn
 from llmw2.bundle.check import Problem, check
-from llmw2.bundle.filelock import FileLock
+from llmw2.bundle.filelock import FileLock, WaitBudget
 from llmw2.bundle.files import is_spreadsheet, sheet_sources, title_of
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash, format_at
 from llmw2.bundle.proposals import CONFIRMED, DISMISSED, OPEN, Proposal, notes_count, read_proposals, write_proposals
-from llmw2.bundle.store import CACHE_FILE, Deleted, WikiStore, authored, current_author, raw_sources
+from llmw2.bundle.store import CACHE_FILE, Deleted, LockBusy, WikiStore, authored, current_author, raw_sources
 from llmw2.bundle.tree import INDEX, LOG, Folder, Note, fields_match, slugify, within_area, within_folder
 from llmw2.config import PROMPT_ROOM, WikiConfig
 from llmw2.errors import (
@@ -204,9 +204,11 @@ class Purged:
     errors: list[tuple[str, str]] = field(default_factory=list)  # (document, message) of those that could not be filed again
     stopped: str | None = None  # why filing them again ended before the last (a model failing); None when it ran to the end
     log_rewritten: bool = False  # log.md was written whole: a line was too short to be overwritten in place (it costs the whole file)
-    entries: int = 0  # entries of the journal (`remember`) forgotten
-    # what still holds some of it, to be emptied later (see `purge`): "journal" (the filer that holds the lease finishes), "index" (a
-    # reader of another process held its WAL: the next checkpoint empties it); [] when the text is in no file of the wiki
+    entries: int = 0  # entries of the journal (`remember`) forgotten (with "files" pending: to be forgotten by whoever completes it)
+    # what still holds some of it, to be emptied later (see `purge`): "files" (another writer held the wiki for all the wait: nothing was
+    # deleted yet, only the tombstone is written), "undo" (the undo log is not zeroed yet), "journal" (the filer that holds the lease
+    # finishes), "index" (a reader or a writer of another process held the index or the vectors: the next look empties it); [] when the
+    # text is in no file of the wiki
     pending: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -849,6 +851,8 @@ class Wiki:
         """A batch takes back, when it ends, the folders its plans made that are still empty, the deepest first: a stopped
         batch leaves the next run the tree it would have found had this one never run, and a finished one no folder the
         documents did not use. A folder with a note, or one made by anyone else, stays."""
+        if not made:  # nothing to take back: the lock is not taken (a purge filing again waits for it only within its wait)
+            return
         with self.store.lock():
             for folder in sorted(made, key=lambda f: f.rel.count("/"), reverse=True):
                 self.store.remove_empty_folder(folder.rel, "empty, planned by a batch and not used")
@@ -863,6 +867,8 @@ class Wiki:
         Returns what moved, in order, as (path before, path after): a note's, or a folder's with all it holds."""
         planned = {f.rel for f in made}
         moved: list[tuple[str, str]] = []
+        if not planned:
+            return moved
         with self.store.lock(undo=False):  # a wrapper's subfolders are moved whole
             while planned:
                 root = self.store.load()
@@ -1742,8 +1748,13 @@ class Wiki:
     def delete_note(self, path: str, *, author: str | None = None) -> Deleted:
         """Delete a note ("finance/pricing.md"); links to it go from the other notes, and raw copies only it cites."""
         _not_pending(path)
-        with self.store.lock():
-            return self.store.delete_note(path)
+        # the wiki is read before the lock, in one of the places the memory allows, kept until the session's copy of it goes: the section
+        # lists again only the folders changed meanwhile; with no place, the section reads it under the lock
+        with self.store.session(), self.store.reading(self._search.index.notes()) as place:
+            if place:
+                self.store.load()
+            with self.store.lock():
+                return self.store.delete_note(path)
 
     @by_author
     def delete_folder(self, path: str, *, author: str | None = None) -> Deleted:
@@ -1808,15 +1819,25 @@ class Wiki:
         A tombstone, durable before anything is deleted, holds the hash of the key, never the key; the segments of the journal that
         held the entries, and the records of the filings, are zeroed, and the undo log is zeroed whole. When the report says
         `journal: "done"` the text of the document is in no file of the wiki's folder (what the disk's own firmware keeps of blocks
-        written before is not in reach of a file). `"pending"`: another process holds the journal's lease and has not finished in
-        `FORGET_WAIT` seconds; it finishes at its next look at the journal, and a process that dies before is taken up by the next one.
+        written before is not in reach of a file). The purge waits `FORGET_WAIT` seconds in all, whatever it waits for (the wiki's lock
+        in each of its sections and in the filing again, the index, the vectors, the filer of another process); the work of its sections
+        does not count, the look at the index and the closing of the journal count whole (they are short). Not in it, rare: an index file
+        never built whole or of another schema, which the purge builds or makes again as a search would.
+        What it could not do in that time is in `pending`, and the process that holds the journal's lease finishes it at its next look (a
+        process that dies before is taken up by the next one, and a purge of any key takes it up when nobody files): `"files"` another
+        writer held the wiki all along, only the tombstone is written and nothing else is done yet; `"undo"` the undo log is not zeroed;
+        `"journal"` the filer of another process has not finished; `"index"` a reader or a writer of another process held the index or
+        the vectors.
 
         With `dry_run` nothing is changed: the report says what would go and what would be filed again. If filing the others
-        again stops (a model failing) the report has `stopped` and `errors`: their old raw copies stay, no note cites them, and
-        a `rebuild` files them. Cannot be undone.
+        again stops (a model failing, or the wiki's lock not coming in the wait) the report has `stopped` and `errors`: their old raw
+        copies stay, no note cites them, and a `rebuild` files them. Cannot be undone.
 
-        The notes are found by what the store parsed of them, kept from the second session of the process on (a purge is one) and
-        checked against each file's modification time, size, inode and change time. Limit: where there is no change time (Windows),
+        The wiki is read before its lock is taken, and the section that deletes lists again only the folders changed meanwhile, as a
+        batch does: a citation of the purged copy added by hand, in place, while the purge waited for the lock (up to `FORGET_WAIT`) is
+        not seen, and that note stays, citing a copy that is gone (`check` says so). The notes are found by what the store parsed of
+        them, kept from the second session of the process on (a purge is one) and checked against each file's modification time,
+        size, inode and change time. Limit: where there is no change time (Windows),
         a note another program rewrote in place with the same size and its old modification time put back by hand (`cp -p`,
         `rsync -t`) is not seen by a purge in a process that had parsed it before: it may keep a citation it did not know of, or be
         written over, until its size or time changes. A process that starts afresh parses every file, and the first purge of a CLI
@@ -1848,29 +1869,43 @@ class Wiki:
                 if tomb:
                     hub.journal.append(J.T_FILED, {"id": tomb[0], "files": True})
 
-            found = self._purge(key, False, mark, files_done)
-            report = found or Purged()
-            mark()  # no raw copy: only entries of the journal
-            if found is None:
-                with self.store.lock(undo=False):
-                    if not self._raws_of(key):  # one that came meanwhile is the scan's, at the next look
-                        files_done()
-            hub.refresh()
-            report.entries = len(queued)
-            self._wipe_undo()
-            hub.files_done.add(tomb[0])
-            deadline = time.monotonic() + _filer.FORGET_WAIT  # one wait in all, for the index and for `O`, once the files are done
-            index_done = self._search.forget(self.store, max(0.0, deadline - time.monotonic()))  # and the vectors' journal is cut
-            if not self._close_forget(tomb[0], index_done, deadline):
-                report.pending.append("journal")
-            if not index_done:
-                report.pending.append("index")  # the tombstone stays open: the filer empties the index when the reader lets it
-            self._finish_others(tomb[0])
-            return report
+            waits = WaitBudget(_filer.FORGET_WAIT)  # every wait of the purge, in one
+            with self.store.waiting(waits):
+                files = True
+                try:
+                    found = self._purge(key, False, mark, files_done)
+                except LockBusy:  # the section that deletes did not get the wiki: nothing is deleted
+                    found, files = None, False
+                report = found or Purged()
+                mark()  # no raw copy, or no lock: the tombstone alone, which whoever completes it takes up from the hash
+                if files and found is None:
+                    try:
+                        with self.store.written_later(), self.store.lock(undo=False):  # no note is written: nothing for the index
+                            if not self._raws_of(key):  # one that came meanwhile is the scan's, at the next look
+                                files_done()
+                    except LockBusy:
+                        files = False
+                hub.refresh()
+                report.entries = len(queued)
+                if not files:  # what a purge cut right after its tombstone leaves: the filer scans for the key and does the rest
+                    report.pending = ["files", "undo", "journal", "index"]
+                    if hub.filer is not None:
+                        hub.filer.kick()
+                    return report
+                wiped = self._wipe_undo()
+                if wiped:
+                    hub.files_done.add(tomb[0])
+                with waits.wait() as wait:
+                    index_done = self._search.forget(self.store, wait)  # and the vectors' journal is cut
+                with waits.wait() as wait:
+                    closed = self._close_forget(tomb[0], index_done and wiped, wait)
+                report.pending = [*([] if wiped else ["undo"]), *([] if closed else ["journal"]), *([] if index_done else ["index"])]
+                self._finish_others(tomb[0], waits)  # the tombstone stays open while anything is pending: the filer finishes it
+                return report
 
-    def _finish_others(self, done_id: str) -> None:
+    def _finish_others(self, done_id: str, waits: WaitBudget | None = None) -> None:
         """The tombstones of other keys left open (a purge cut, a reader that held the index), completed here when the lease is free: a
-        wiki with no filer (the command line, `ingest` only) completes them at its next purge."""
+        wiki with no filer (the command line, `ingest` only) completes them at its next purge, within what is left of its wait."""
         hub = self._journal()
         hub.refresh()
         others = [t for t in hub.forgets() if t.id != done_id]
@@ -1881,7 +1916,9 @@ class Wiki:
             return  # the filer that holds it completes them
         try:
             for t in others:
-                self._finish_forget(t)
+                self._finish_forget(t, waits)
+        except LockBusy:  # the wait is over: the rest at the next look
+            pass
         finally:
             lease.release()
 
@@ -1911,18 +1948,23 @@ class Wiki:
         keys |= {_filer.TEXT_KEY + h.removeprefix("sha256:") for h in self.store.unclaimed_hashes()}
         return keys
 
-    def _wipe_undo(self) -> None:
-        with self.store.lock(undo=False):  # no section is open: the undo log of the purge's own sections is zeroed whole
-            txn.wipe(self.store.root)
+    def _wipe_undo(self) -> bool:
+        """Zero the undo log whole; False when the purge's wait for the wiki's lock ran out (`WikiStore.waiting`)."""
+        try:
+            # no section is open: the undo log of the purge's own sections is zeroed whole; no note is written, nothing for the index
+            with self.store.written_later(), self.store.lock(undo=False):
+                txn.wipe(self.store.root)
+        except LockBusy:
+            return False
+        return True
 
-    def _close_forget(self, tomb_id: str, complete: bool, deadline: float) -> bool:
+    def _close_forget(self, tomb_id: str, complete: bool, wait: float) -> bool:
         """Seal and reuse the journal for a tombstone, with the lease: now if it is free, else the filer that holds it does it, and this
-        waits for its `O` until `deadline`. `complete` false (the index is not empty yet): the journal is reused if the lease is free
-        now, nobody is waited for, and `O` is the filer's. Whether the journal holds nothing of it any more."""
+        waits for its `O` at most `wait` seconds. `complete` false (the index or the undo log is not empty yet): the journal is reused if
+        the lease is free now, nobody is waited for, and `O` is the filer's. Whether the journal holds nothing of it any more."""
         hub = self._journal()
         lease = FileLock(self.store.root / J.JOURNAL_DIR / "filer.lock")
-        if not complete:
-            deadline = time.monotonic()
+        deadline = time.monotonic() + (wait if complete else 0.0)
         while True:
             hub.refresh()
             tomb = hub.entries.get(tomb_id)
@@ -1940,14 +1982,16 @@ class Wiki:
             with hub.cond:
                 hub.cond.wait(_filer.IDLE_POLL)
 
-    def _finish_forget(self, tomb: _filer.Entry) -> bool:
+    def _finish_forget(self, tomb: _filer.Entry, waits: WaitBudget | None = None) -> bool:
         """The filer holds the lease and found a tombstone with no `O` (a purge that another process left pending, or that died): what the
         purge does, again, from the hash of the key (the raw copies still there say which key it is), then the journal. Each step can be
-        done twice."""
+        done twice. `waits`: a purge that completes it within its own wait (LockBusy when the wiki's lock does not come); None, the
+        filer: the locks as long as they take."""
         assert tomb.forget is not None
         hub = self._journal()
         if not tomb.forget.get("files"):
-            with self.store.lock(undo=False):  # a purge deleting now holds it, and says its files are done before it lets go
+            # a purge deleting now holds it, and says its files are done before it lets go; no note is written, nothing for the index
+            with self.store.written_later(), self.store.lock(undo=False):
                 hub.refresh()
         if not tomb.forget.get("files"):  # the purge did not say its files were done: it was cut, and the hash says which key it was
             kh = str(tomb.forget.get("kh", ""))
@@ -1957,9 +2001,14 @@ class Wiki:
             hub.journal.append(J.T_FILED, {"id": tomb.id, "files": True})
             hub.refresh()
         if tomb.id not in hub.files_done:  # once per tombstone in a process: a look again for the index alone does not wipe again
-            self._wipe_undo()
+            if not self._wipe_undo():
+                raise LockBusy("the undo log is not zeroed yet")
             hub.files_done.add(tomb.id)
-        index_done = self._search.forget(self.store, 0)  # no wait here: the filer looks again later
+        if waits is None:
+            index_done = self._search.forget(self.store, None)  # the readers not waited for: the filer looks again later
+        else:
+            with waits.wait() as wait:
+                index_done = self._search.forget(self.store, wait)
         return _filer.close_forget(hub, tomb, complete=index_done) and index_done
 
     def _purge(
@@ -1974,41 +2023,57 @@ class Wiki:
     def _purge_files(
         self, key: str, dry_run: bool, mark: Callable[[], None] | None = None, done: Callable[[], None] | None = None
     ) -> Purged | None:
-        """`mark` runs inside the section that deletes, before it does; `done` once that section committed (under the lock)."""
-        with self.store.lock(after_commit=None if dry_run else done):
-            raws = self._raws_of(key)
-            if not raws:
-                return None
-            if mark is not None and not dry_run:
-                mark()
-            root = self.store.load()
-            notes = [n for n in root.all_notes() if set(raws).intersection(raw_sources(n.frontmatter))]
-            others = self._cited_by(notes, set(raws))  # read before anything is deleted
-            gone_rels = {n.rel for n in notes}
-            elsewhere = {r for n in root.all_notes() if n.rel not in gone_rels for r in raw_sources(n.frontmatter)}  # filing adds none
-            report = Purged(refiled=[_named(item) for item, _ in others])
-            if dry_run:
-                went = {n.rel for n in notes}
-                report.notes, report.sources = sorted(went), raws
-                went_archived = self.store.archived_of(went.__contains__, raws)
-                report.archived = [f"/{p.relative_to(self.store.root).as_posix()}" for p in went_archived]
-                return report
-            kept = {r for _, olds in others for r in olds}
-            deleted = self.store.purge_notes(root, notes, raws, keep=kept)
-            report.notes, report.sources = deleted.notes, deleted.sources
-            report.archived, report.unlinked = deleted.archived, deleted.unlinked
-            # a link is written "[title](path)", and a raw copy's file name holds the title: all are names of the note
-            report.log_lines = self.store.scrub_log(
-                [*deleted.notes, *(f"[{n.title}](" for n in notes), *(PurePath(r).name for r in deleted.sources)]
-            )
+        """`mark` runs inside the section that deletes, before it does; `done` once that section committed (under the lock). Called in a
+        session: the wiki is read before the lock, and the section lists again only the folders changed meanwhile."""
+        with self.store.reading(self._search.index.notes()) as place:  # the wiki read before the lock, or with no place under it
+            if place and self._raws_of(key):
+                self.store.load()
+            with self.store.lock(after_commit=None if dry_run else done):
+                raws = self._raws_of(key)
+                if not raws:
+                    return None
+                if mark is not None and not dry_run:
+                    mark()
+                root = self.store.load()
+                notes = [n for n in root.all_notes() if set(raws).intersection(raw_sources(n.frontmatter))]
+                others = self._cited_by(notes, set(raws))  # read before anything is deleted
+                gone_rels = {n.rel for n in notes}
+                elsewhere = {r for n in root.all_notes() if n.rel not in gone_rels for r in raw_sources(n.frontmatter)}  # filing adds none
+                report = Purged(refiled=[_named(item) for item, _ in others])
+                if dry_run:
+                    went = {n.rel for n in notes}
+                    report.notes, report.sources = sorted(went), raws
+                    went_archived = self.store.archived_of(went.__contains__, raws)
+                    report.archived = [f"/{p.relative_to(self.store.root).as_posix()}" for p in went_archived]
+                    return report
+                kept = {r for _, olds in others for r in olds}
+                deleted = self.store.purge_notes(root, notes, raws, keep=kept)
+                report.notes, report.sources = deleted.notes, deleted.sources
+                report.archived, report.unlinked = deleted.archived, deleted.unlinked
+                # a link is written "[title](path)", and a raw copy's file name holds the title: all are names of the note
+                report.log_lines = self.store.scrub_log(
+                    [*deleted.notes, *(f"[{n.title}](" for n in notes), *(PurePath(r).name for r in deleted.sources)]
+                )
         filed: set[int] = set()
         if others:
-            done = self.ingest_many([item for item, _ in others], plan=False)
+            with self.store.written_later():  # the index takes them at the end of the purge (`NoteSearch.forget`), within its wait
+                try:
+                    done = self.ingest_many([item for item, _ in others], plan=False)
+                except LockBusy as e:  # the wait ran out outside the filing of a document: none is counted filed, all keep their copies
+                    done = BatchReport(not_done=[item for item, _ in others], stopped=str(e))
             report.stopped = done.stopped
             report.errors = [(_named(item), str(r)) for item, r in done.results if isinstance(r, Exception)]
             report.errors += [(_named(item), "not filed: the run stopped") for item in done.not_done]
             report.filed = [r.note for _, r in done.results if isinstance(r, IngestResult) and r.note]
             filed = {id(item) for item, r in done.results if isinstance(r, IngestResult)}
+        try:
+            self._purged(key, report, others, filed, elsewhere)
+        except LockBusy as e:  # the purge's wait is over: the raw copies those had before stay, no note cites them
+            report.stopped = report.stopped or str(e)
+        return report
+
+    def _purged(self, key: str, report: Purged, others: list[tuple[Item, list[str]]], filed: set[int], elsewhere: set[str]) -> None:
+        """The last section of a purge: the old raw copies of what was filed again go, and the log says it."""
         with self.store.lock():
             if filed:  # the old raw copies of what was filed again go, unless a note still cites them
                 old = [r for item, olds in others if id(item) in filed for r in olds if r not in elsewhere]
@@ -2022,7 +2087,6 @@ class Wiki:
                 f"origin {digest}: {len(report.notes)} notes, {len(report.sources)} raw copies and {len(report.archived)} archived "
                 f"versions deleted, {len(report.refiled)} other documents filed again",
             )
-        return report
 
     def _cited_by(self, notes: list[Note], purged: set[str]) -> list[tuple[Item, list[str]]]:
         """The other documents the notes cite, as `rebuild` would file them (an origin from its latest raw copy, a copy with no

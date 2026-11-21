@@ -185,6 +185,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or triggers (a wiki received from
   someone) is not trusted and built again. The release before ignores the file. `where` is a filter, not an access control.
   On Windows the folder of a wiki cannot be deleted while a `Wiki` that searched it is open: `close()` it first.
+- A purge waits `FORGET_WAIT` (30 s) in all, whatever it waits for: the wiki's lock in each of its sections and in the filing again of
+  the documents of a fused note, the locks of the search index and of the vectors, the readers of the index's WAL, the filer of another
+  process; the work does not count. What is not done in that time is said, not waited for: `Purged.pending` also names `files` (another
+  writer held the wiki all along: only the tombstone is written, and the filer or the next purge does the rest from its hash, as for a
+  purge cut right after it) and `undo` (the undo log is not zeroed yet); the documents not filed again in time are in `stopped` and keep
+  their raw copies, as when a model fails. On Windows a `FileLock` wait with a limit is in the kernel's queue with the waits with no
+  limit (an overlapped `LockFileEx`), so writers that keep waiting for the wiki do not pass over the purge. The index's lots wait for
+  its lock until one deadline. The sections of a purge no longer make the index look at every file: its own look, within
+  the wait, takes in what it changed. `dry_run` waits as before. A batch that made no folder no longer takes the lock at its end.
+- `delete_note`, and the section of a purge that deletes, read the wiki before they take its lock; the section lists again only the
+  folders changed meanwhile, as a batch does. A process that has not read the wiki yet (a server started for one call) holds the lock
+  for what changes, not for the parsing of every note (about 3 s at 5,000 notes). A note edited in place by hand meanwhile is read again
+  before it is written; a link to the deleted note added that way in that moment stays, as in a batch. How many processes of the
+  machine read the wiki outside its lock at once is bounded by the memory: each takes one of N places (`.llmw2/read-<i>.lock`), N being
+  half the physical memory free when it starts (`READ_SHARE`: the other half stays to the rest of the machine, so the reads never take
+  all that is free) over the cost of a read, the notes of the search index times `READ_BYTES_PER_NOTE` (7 KiB, from the memory a read
+  took at 5,000 and at 50,000 notes); a process with no place reads under the lock, as before.
+- On Windows a note that another process is reading no longer makes a purge or a deletion fail ("the file is used by another
+  process"): the library opens the files of the wiki for reading shared for deleting too (`FILE_SHARE_DELETE`, as any open file is on
+  POSIX), and a deletion that finds a file another program holds open is tried again for a moment, as a replace already was. A replace
+  of a note another process holds open still waits that moment and then fails, as before (Windows does not replace an open file).
+  That moment (about 0.31 s a file at most) is waited under the wiki's lock and outside a purge's wait: with N files held open by other
+  programs the lock is held up to N times that. Where a deletion is the old kind (FAT/exFAT, SMB, Windows before 1903) a file deleted
+  while open stays listed until it is closed: reading the wiki takes it as gone, as a note deleted since the listing.
 
 ## [1.0.5] - 2026-11-17
 

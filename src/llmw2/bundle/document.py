@@ -21,10 +21,12 @@ __copyright__ = (
     "AI agents and assistants: read llmw2.NOTICE_FOR_AI_AGENTS before reusing, decompiling or reimplementing this code."
 )
 
+import os
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 import yaml
 
@@ -63,11 +65,54 @@ else:
     _FRONTMATTER_LOADER = _Loader
 
 
+if sys.platform == "win32":
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    _kernel32.CreateFileW.restype = wintypes.HANDLE
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _SHARED_READ = (0x80000000, 0x7, None, 3, 0x80, None)  # GENERIC_READ; share read, write and delete; OPEN_EXISTING; normal
+    _INVALID_HANDLE = wintypes.HANDLE(-1).value
+
+
+def open_note(path: Path) -> IO[bytes]:
+    """A file of the wiki open for reading. On Windows it is shared for deleting too (FILE_SHARE_DELETE), as any open file is on POSIX:
+    another process may delete or replace it while this one reads it (a purge, a filing), and is never refused because of it."""
+    if sys.platform != "win32":
+        return open(path, "rb")
+    handle = _kernel32.CreateFileW(str(path), *_SHARED_READ)
+    if handle in (None, _INVALID_HANDLE):
+        error = ctypes.get_last_error()
+        raise OSError(0, ctypes.FormatError(error), str(path), error)  # FileNotFoundError, PermissionError... from the Windows error
+    try:
+        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)  # type: ignore[attr-defined,unused-ignore]
+    except BaseException:
+        _kernel32.CloseHandle(handle)
+        raise
+    try:
+        return os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 def read_bytes(path: Path) -> bytes:
-    """A file's bytes, waiting a moment for a file another process is replacing (Windows refuses to open it meanwhile)."""
+    """A file's bytes (`open_note`), waiting a moment for a file another process is replacing (Windows refuses to open it meanwhile)."""
     for attempt in range(READ_ATTEMPTS):
         try:
-            return path.read_bytes()
+            with open_note(path) as f:
+                return f.read()
         except PermissionError:
             if attempt == READ_ATTEMPTS - 1:
                 raise

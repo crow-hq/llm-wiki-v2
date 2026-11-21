@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -100,15 +101,15 @@ def test_characters_splitlines_breaks_on_stay_in_the_body(separator: str) -> Non
 def test_a_file_being_replaced_by_another_process_is_read_once_it_is_there(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "note.md"
     path.write_bytes(NOTE.replace("\n", "\r\n").encode("utf-8"))
-    real, refused = Path.read_bytes, []
+    real, refused = document.open_note, []
 
-    def read_bytes(self: Path) -> bytes:
+    def open_note(path: Path) -> Any:
         if len(refused) < 2:  # Windows refuses to open a file while another process replaces it
-            refused.append(self)
-            raise PermissionError(13, "Permission denied", str(self))
-        return real(self)
+            refused.append(path)
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path)
 
-    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    monkeypatch.setattr(document, "open_note", open_note)
     monkeypatch.setattr(document.time, "sleep", lambda _: None)
 
     doc = OKFDocument.read(path)
@@ -121,10 +122,10 @@ def test_a_file_that_stays_refused_raises(tmp_path: Path, monkeypatch: pytest.Mo
     path = tmp_path / "note.md"
     path.write_text(NOTE, encoding="utf-8")
 
-    def read_bytes(self: Path) -> bytes:
-        raise PermissionError(13, "Permission denied", str(self))
+    def open_note(path: Path) -> Any:
+        raise PermissionError(13, "Permission denied", str(path))
 
-    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    monkeypatch.setattr(document, "open_note", open_note)
     monkeypatch.setattr(document.time, "sleep", lambda _: None)
 
     with pytest.raises(PermissionError):

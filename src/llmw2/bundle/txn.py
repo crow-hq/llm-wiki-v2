@@ -674,9 +674,18 @@ class Txn:
 
 
 def unlink(path: str | os.PathLike[str], *, missing_ok: bool = False) -> None:
+    """Delete a file; on Windows, one another program holds open for a moment (with no FILE_SHARE_DELETE: the library's own reads share
+    it, `document.open_note`) is tried again, as a replace is."""
     if (t := current()) is not None:
         t.before_remove(path)
-    Path(path).unlink(missing_ok=missing_ok)
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            Path(path).unlink(missing_ok=missing_ok)
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(0.01 * 2**attempt)
 
 
 def mkdir(path: str | os.PathLike[str], *, parents: bool = False, exist_ok: bool = False) -> None:

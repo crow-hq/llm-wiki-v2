@@ -639,9 +639,9 @@ def test_the_wait_for_o_starts_once_the_files_are_done(bundle: Path, monkeypatch
         time.sleep(1.5)
         return got
 
-    def close(self: Any, tomb_id: str, complete: bool, deadline: float) -> bool:
-        left.append(deadline - time.monotonic())
-        return real_close(self, tomb_id, complete, deadline)
+    def close(self: Any, tomb_id: str, complete: bool, wait: float) -> bool:
+        left.append(wait)
+        return real_close(self, tomb_id, complete, wait)
 
     monkeypatch.setattr(W.Wiki, "_purge", slow)
     monkeypatch.setattr(W.Wiki, "_close_forget", close)

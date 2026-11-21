@@ -9,7 +9,9 @@ kernel drops it when the process dies, so there is no stale lock to expire. In f
 `threading.Lock` per file of the process, so the lock holds across threads too, whatever the handles do.
 
 `acquire()` waits in the kernel (`flock` on POSIX, `LockFileEx` on Windows) instead of polling; `try_acquire()` never waits;
-both accept a `timeout`, measured on the monotonic clock. Waiting is not ordered: whoever the kernel wakes takes the lock.
+both accept a `timeout`, measured on the monotonic clock. On Windows the kernel hands the lock to the first in its queue when it is let
+go, so a wait with a limit is in that queue too (an overlapped `LockFileEx`, cancelled when the limit comes): a try every few ms would
+never get a lock that others keep waiting for. Elsewhere a wait with a limit tries again every `POLL_S` (`flock` has no queue).
 The lock is not reentrant. Local file systems only, as for the rest of the bundle.
 """
 
@@ -46,8 +48,13 @@ if sys.platform == "win32":
 
     _LOCKFILE_FAIL_IMMEDIATELY = 0x1
     _LOCKFILE_EXCLUSIVE_LOCK = 0x2
+    _ERROR_PATH_NOT_FOUND = 3
     _ERROR_LOCK_VIOLATION = 33
+    _ERROR_OPERATION_ABORTED = 995
     _ERROR_IO_PENDING = 997
+    _WAIT_OBJECT_0 = 0
+    _OVERLAPPED_OPEN = (0xC0000000, 0x7, None, 4, 0x40000000, None)  # read and write, shared, OPEN_ALWAYS, FILE_FLAG_OVERLAPPED
+    _INVALID_HANDLE = wintypes.HANDLE(-1).value
 
     class _Overlapped(ctypes.Structure):
         _fields_ = [
@@ -76,6 +83,26 @@ if sys.platform == "win32":
         ctypes.POINTER(_Overlapped),
     ]
     _kernel32.UnlockFileEx.restype = wintypes.BOOL
+    _kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    _kernel32.CreateFileW.restype = wintypes.HANDLE
+    _kernel32.CreateEventW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
+    _kernel32.CreateEventW.restype = wintypes.HANDLE
+    _kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    _kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    _kernel32.CancelIoEx.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Overlapped)]
+    _kernel32.CancelIoEx.restype = wintypes.BOOL
+    _kernel32.GetOverlappedResult.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Overlapped), ctypes.POINTER(wintypes.DWORD), wintypes.BOOL]
+    _kernel32.GetOverlappedResult.restype = wintypes.BOOL
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _kernel32.CloseHandle.restype = wintypes.BOOL
 
     def _handle(fd: int) -> int:
         import msvcrt
@@ -95,6 +122,45 @@ if sys.platform == "win32":
     def _unlock(fd: int) -> None:
         over = _Overlapped()
         _kernel32.UnlockFileEx(_handle(fd), 0, 1, 0, ctypes.byref(over))
+
+    def _queued_lock(path: Path, seconds: float) -> int | None:
+        """Wait for the lock in the kernel's queue, at most `seconds`, on a handle of its own; the handle that holds it, or None."""
+        handle = _kernel32.CreateFileW(str(path), *_OVERLAPPED_OPEN)
+        if handle in (None, _INVALID_HANDLE):
+            error = ctypes.get_last_error()
+            if error != _ERROR_PATH_NOT_FOUND:
+                raise ctypes.WinError(error)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handle = _kernel32.CreateFileW(str(path), *_OVERLAPPED_OPEN)
+            if handle in (None, _INVALID_HANDLE):
+                raise ctypes.WinError(ctypes.get_last_error())
+        event = _kernel32.CreateEventW(None, True, False, None)
+        over = _Overlapped()
+        over.hEvent = event
+        got = False
+        try:
+            if _kernel32.LockFileEx(handle, _LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, ctypes.byref(over)):
+                got = True
+            else:
+                error = ctypes.get_last_error()
+                if error != _ERROR_IO_PENDING:
+                    raise ctypes.WinError(error)
+                if _kernel32.WaitForSingleObject(event, min(0xFFFFFFFE, max(0, int(seconds * 1000)))) != _WAIT_OBJECT_0:
+                    _kernel32.CancelIoEx(handle, ctypes.byref(over))
+                done = wintypes.DWORD()
+                got = bool(_kernel32.GetOverlappedResult(handle, ctypes.byref(over), ctypes.byref(done), True))  # granted, or cancelled
+                if not got and (error := ctypes.get_last_error()) != _ERROR_OPERATION_ABORTED:
+                    raise ctypes.WinError(error)
+        finally:
+            _kernel32.CloseHandle(event)
+            if not got:
+                _kernel32.CloseHandle(handle)
+        return handle if got else None
+
+    def _queued_unlock(handle: int) -> None:
+        over = _Overlapped()
+        _kernel32.UnlockFileEx(handle, 0, 1, 0, ctypes.byref(over))
+        _kernel32.CloseHandle(handle)
 
 else:
     import fcntl
@@ -123,10 +189,11 @@ class FileLock:
         self._kept: int | None = None
         self._thread = _thread_lock(self.path)
         self._fd: int | None = None
+        self._queued: int | None = None  # Windows: the handle of a wait with a limit that got the lock (`_queued_lock`)
 
     @property
     def held(self) -> bool:
-        return self._fd is not None
+        return self._fd is not None or self._queued is not None
 
     def try_acquire(self) -> bool:
         """Take the lock if it is free right now; whether it was."""
@@ -134,11 +201,21 @@ class FileLock:
 
     def acquire(self, timeout: float | None = None) -> bool:
         """Take the lock, waiting as long as `timeout` seconds (None: as long as it takes); whether it was taken."""
-        if self._fd is not None:
+        if self.held:
             raise RuntimeError("the lock is held by this object already: it is not reentrant")
         deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
         if not self._thread.acquire(timeout=-1 if deadline is None else max(0.0, deadline - time.monotonic())):
             return False
+        if sys.platform == "win32" and not self._directory and deadline is not None and (left := deadline - time.monotonic()) > 0:
+            try:  # in the kernel's queue, as the waits with no limit are
+                self._queued = _queued_lock(self.path, left)
+            except BaseException:
+                self._thread.release()
+                raise
+            if self._queued is None:
+                self._thread.release()
+                return False
+            return True
         fd = self._kept
         try:
             if fd is None:
@@ -189,6 +266,13 @@ class FileLock:
             time.sleep(min(POLL_S, left))
 
     def release(self) -> None:
+        if self._queued is not None:
+            handle, self._queued = self._queued, None
+            try:
+                _queued_unlock(handle)
+            finally:
+                self._thread.release()
+            return
         fd, self._fd = self._fd, None
         if fd is None:
             return
@@ -216,3 +300,23 @@ class FileLock:
         finally:
             if got:
                 self.release()
+
+
+class WaitBudget:
+    """Seconds of waiting shared by the waits of one call: each wait takes from it what it waited, the work between them takes nothing.
+    Waits made at the same time (threads) are each taken whole: the call never waits longer than the budget, only less."""
+
+    def __init__(self, seconds: float) -> None:
+        self.left = max(0.0, seconds)
+        self._guard = threading.Lock()
+
+    @contextlib.contextmanager
+    def wait(self) -> Iterator[float]:
+        """`with budget.wait() as left:` wait at most `left` seconds in the block; the time the block took is taken from the budget."""
+        start = time.monotonic()
+        try:
+            yield self.left
+        finally:
+            spent = time.monotonic() - start
+            with self._guard:
+                self.left = max(0.0, self.left - spent)

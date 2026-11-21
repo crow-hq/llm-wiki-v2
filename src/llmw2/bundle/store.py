@@ -46,7 +46,7 @@ import yaml
 
 from llmw2.bundle import logfile, txn
 from llmw2.bundle.document import DELIMITER, OKFDocument, OKFDocumentError, read_bytes
-from llmw2.bundle.filelock import FileLock
+from llmw2.bundle.filelock import FileLock, WaitBudget
 from llmw2.bundle.origin import Origin, OriginRecord, content_hash
 from llmw2.bundle.origin_index import OriginIndex
 from llmw2.bundle.tree import (
@@ -73,7 +73,7 @@ from llmw2.bundle.tree import (
     split_see_also,
     subfolder_of,
 )
-from llmw2.errors import InputError, NoteChanged
+from llmw2.errors import InputError, NoteChanged, WikiError
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +86,10 @@ REPLACE_ATTEMPTS = 6  # about 0.3 s in all: long enough for a reader to close th
 AUTHOR_MAX = 60  # characters of an author's name in a log line
 LINK_PREFILTER = 50  # notes deleted at once up to which only the notes naming their files are checked for links to them
 PURGED = "[purged]"  # what log.md says in place of a line's text when the line named something purged
+# the memory a process takes to read the whole wiki, per note: measured, +33 MB at 5,000 notes and +346 MB at 50,000 (about 7 KiB each)
+READ_BYTES_PER_NOTE = 7 << 10
+READ_SHARE = 2  # the reads outside the lock take at most 1/READ_SHARE of the free memory: the rest stays to the rest of the machine
+READ_PLACE = ".llmw2/read-{}.lock"  # a place to read the whole wiki outside its lock (`WikiStore.reading`)
 
 
 # the stores (by key) whose sections open with no undo log in this context (`WikiStore.undo_suspended`)
@@ -93,6 +97,43 @@ _undo_off: contextvars.ContextVar[frozenset[object]] = contextvars.ContextVar("l
 # the stores (by key) whose sections do not tell `on_written` in this context (`WikiStore.written_later`)
 _told_later: contextvars.ContextVar[frozenset[object]] = contextvars.ContextVar("llmw2_told_later", default=frozenset())
 _author: contextvars.ContextVar[str | None] = contextvars.ContextVar("llmw2_author", default=None)
+# the store (by key) whose sections wait for the lock only what a budget has left, in this context (`WikiStore.waiting`)
+_bounded: contextvars.ContextVar[tuple[object, WaitBudget] | None] = contextvars.ContextVar("llmw2_bounded", default=None)
+
+
+class LockBusy(WikiError):
+    """Another writer held the wiki for all the wait that the call allows itself (`WikiStore.waiting`): nothing of the section was done."""
+
+
+def free_memory() -> int | None:
+    """The physical memory free now, in bytes; None where the system does not say."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class Status(ctypes.Structure):
+                _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong)] + [
+                    (name, ctypes.c_ulonglong) for name in ("total", "free", "page", "page_free", "virtual", "virtual_free", "extended")
+                ]
+
+            status = Status()
+            status.length = ctypes.sizeof(Status)
+            if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):  # type: ignore[attr-defined,unused-ignore]
+                return None
+            return int(status.free)
+        return os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def read_places(notes: int) -> int:
+    """How many processes of the machine may read the whole wiki outside its lock at once: as many reads of `notes` notes
+    (`READ_BYTES_PER_NOTE`) as half the memory free now holds (`READ_SHARE`), at least one; one when the notes or the memory are not
+    known. Together they never take more than that half (besides the one reading under the lock, as a section always did)."""
+    free = free_memory()
+    if notes <= 0 or free is None:
+        return 1
+    return max(1, free // READ_SHARE // (notes * READ_BYTES_PER_NOTE))
 
 
 def clean_author(author: str | None) -> str | None:
@@ -384,6 +425,39 @@ class WikiStore:
         return not any(p == CLOSED or p.startswith(".") for p in parts)
 
     @contextlib.contextmanager
+    def reading(self, notes: int) -> Iterator[bool]:
+        """One of the places of the machine to read the whole wiki outside its lock (`read_places`: as many as the free memory holds), for
+        as long as the block lasts; yields whether it got one. Without one the caller reads under the lock, one process at a time, as
+        a section always did: what reads at once is bounded by the memory, never more than the places plus the one holding the lock. A
+        place is a `FileLock`: tried each, then, in a call that bounds its waits (`waiting`), waited for in the kernel's queue within what
+        is left; the kernel lets it go when the process dies."""
+        n = read_places(notes)
+        # tried in order up to the first free one: as many tries as readers there are, files made only as far as they go
+        got = next((place for i in range(n) if (place := FileLock(self.root / READ_PLACE.format(i))).try_acquire()), None)
+        bounded = _bounded.get()
+        if got is None and bounded is not None and bounded[0] is self._undo_key:
+            place = FileLock(self.root / READ_PLACE.format(os.getpid() % n))
+            with bounded[1].wait() as left:
+                if place.acquire(left):
+                    got = place
+        try:
+            yield got is not None
+        finally:
+            if got is not None:
+                got.release()
+
+    @contextlib.contextmanager
+    def waiting(self, budget: WaitBudget) -> Iterator[None]:
+        """The sections this thread opens on this store (and the threads that run in a copy of its context: the workers of an
+        `ingest_many`) wait for the lock at most what `budget` has left, and raise LockBusy, having done nothing, when it does not come:
+        a call that bounds all its waits (`Wiki.purge`)."""
+        token = _bounded.set((self._undo_key, budget))
+        try:
+            yield
+        finally:
+            _bounded.reset(token)
+
+    @contextlib.contextmanager
     def undo_suspended(self) -> Iterator[None]:
         """The sections this thread opens on this store (and the threads that run in a copy of its context: the workers of an
         `ingest_many`) have no undo log while this is held; those of other threads keep theirs. For a rebuild, which starts from
@@ -412,8 +486,19 @@ class WikiStore:
             lock = FileLock(path)
         else:
             lock = FileLock(self.root, directory=True)
-        with lock.attempt(None if blocking else 0) as got:
-            yield got
+        bounded = _bounded.get() if blocking else None
+        if bounded is None or bounded[0] is not self._undo_key:
+            with lock.attempt(None if blocking else 0) as got:
+                yield got
+            return
+        with bounded[1].wait() as left:
+            got = lock.acquire(left)
+        if not got:
+            raise LockBusy(f"another writer held the wiki at {self.root} for longer than this call waits")
+        try:
+            yield True
+        finally:
+            lock.release()
 
     @contextlib.contextmanager
     def session(self) -> Iterator[None]:
@@ -485,8 +570,8 @@ class WikiStore:
             return Note(Path(where), rel, pickle.loads(hit.frontmatter), hit.body, folder, stamp)
         try:
             doc = OKFDocument.read(Path(where))
-        except FileNotFoundError:  # gone since the listing
-            return None
+        except (FileNotFoundError, PermissionError):  # gone since the listing; or deleted while another process had it open, where the
+            return None  # deletion is the old kind (FAT/exFAT, SMB, Windows before 1903): the name stays listed and refuses to open
         except OKFDocumentError as e:
             log.warning("skipping %s: %s", rel, e)
             return None
