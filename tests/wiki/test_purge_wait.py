@@ -495,6 +495,26 @@ def test_a_note_another_program_holds_open_for_a_moment_is_purged_once_it_lets_g
     assert leftovers(bundle, SECRET, TITLE, KEY) == []
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="POSIX deletes a file that another process holds open")
+def test_the_restore_of_an_interrupted_filing_takes_out_a_note_another_program_holds_open_for_a_moment(tmp_path: Path) -> None:
+    """The restore of a section that made a note deletes it; a reader that holds it open for a moment (an ordinary open, no
+    FILE_SHARE_DELETE: another program, or a release of the library before its reads shared deleting) must not leave it there, or the
+    entry it was filing is filed again into a second note."""
+    from llmw2.bundle import txn
+
+    note = tmp_path / "about-charlie.md"
+    note.write_text("# About charlie" + chr(10), encoding="utf-8")
+    held = open(note, "rb")  # noqa: SIM115 - held open on purpose, let go a moment later
+    closer = threading.Timer(0.05, held.close)  # well inside the retries (about 0.3 s), even on a loaded machine
+    closer.start()
+    try:
+        why = txn._undo_one(note, txn._Path("new", 0, declared=True))
+    finally:
+        closer.join(10)
+        held.close()
+    assert why is None and not note.exists()
+
+
 def test_the_library_reads_a_note_through_the_open_that_shares_deleting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from llmw2.bundle import document
 

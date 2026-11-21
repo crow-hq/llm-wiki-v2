@@ -202,6 +202,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   half the physical memory free when it starts (`READ_SHARE`: the other half stays to the rest of the machine, so the reads never take
   all that is free) over the cost of a read, the notes of the search index times `READ_BYTES_PER_NOTE` (7 KiB, from the memory a read
   took at 5,000 and at 50,000 notes); a process with no place reads under the lock, as before.
+- The restore of an interrupted filing tries again for a moment, too, the deletion of a note the filing had made, as a deletion does:
+  a note another program held open (or a process of a release whose reads did not share deleting) was left there, and the entry it was
+  filing went, when filed again, into a second note; the wait is under the wiki's lock, at most about 0.3 s a file.
 - On Windows a note that another process is reading no longer makes a purge or a deletion fail ("the file is used by another
   process"): the library opens the files of the wiki for reading shared for deleting too (`FILE_SHARE_DELETE`, as any open file is on
   POSIX), and a deletion that finds a file another program holds open is tried again for a moment, as a replace already was. A replace

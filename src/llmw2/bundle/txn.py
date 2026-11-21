@@ -678,6 +678,12 @@ def unlink(path: str | os.PathLike[str], *, missing_ok: bool = False) -> None:
     it, `document.open_note`) is tried again, as a replace is."""
     if (t := current()) is not None:
         t.before_remove(path)
+    _remove(path, missing_ok=missing_ok)
+
+
+def _remove(path: str | os.PathLike[str], *, missing_ok: bool = False) -> None:
+    """Delete a file, tried again for a moment while another program holds it open (Windows): `unlink`, and the restore of a section
+    that made the file, which otherwise leaves it there (and the entry it was filing is filed again: a second note)."""
     for attempt in range(REPLACE_ATTEMPTS):
         try:
             Path(path).unlink(missing_ok=missing_ok)
@@ -1014,7 +1020,7 @@ def _undo_one(path: Path, one: _Path, trash: Path | None = None) -> str | None:
         if now is None:
             return None
         if one.declared or digest(now) in one.posts or _torn(now):
-            path.unlink()
+            _remove(path)
             return None
         return "it did not exist before the interrupted filing and now has other content"
     if one.kind == "copy":
