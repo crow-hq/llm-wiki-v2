@@ -131,8 +131,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so in a new key, `pending: ["journal"]`, as `Purged.pending` does (the memory's `delete_note` returns it too). Effects: after such a
   delete the ids of the entries already filed are gone with their segments, so `read_note("pending:<id>")` and `forget(id)` no longer
   find them (`forget` by key always does); each seal takes a new segment (16 MiB of zeros written on Windows, `fallocate` on Linux),
-  and a reuse zeroes the old ones: count it with the purges in the wear of the disk. A note filed from a document with another origin
-  costs the journal nothing.
+  and a reuse zeroes the old ones: count it with the purges in the wear of the disk. The deletes of a run share a seal: the filer lets
+  a delete's tombstone wait `filer.FORGET_GROUP` (1 s) and completes with it every other delete's tombstone then open, and it
+  completes them with the journal alone (their section is done: no zeroing of the undo log, no look at the index), so the deletes of
+  other processes do not queue behind it for the wiki's lock and the index; the text stays on the journal's disk up to that second
+  longer. Limit, as before: the index is emptied of the note by the delete itself (the hook of its section; for `delete_folder` and
+  `clear`, the sync after the lock); if that fails, the text stays in the index until its next sync, and no `pending: ["index"]` says
+  so (a purge does). While the journal is sealed, a `remember` may wait for its admission up to its timeout. A note filed from a
+  document with another origin costs the journal nothing.
 - The memory's `delete_note` of `pending:<id>` (a memory not filed yet, as `search` shows it) forgets it as `forget` by that id does, for
   the clients of the release before that search and delete the first hit; it refused before. The result has the keys of a delete
   (`notes`, `folders`, `sources`, `archived`, `unlinked`, `pending`), those of `forget` (`entries`, ...), and `forgot`: the

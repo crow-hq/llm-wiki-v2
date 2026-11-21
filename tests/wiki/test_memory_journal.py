@@ -302,6 +302,58 @@ def test_delete_note_does_not_wait_for_a_lease_another_process_holds(wiki: Wiki)
     assert gone_from_disk(wiki, SECRET)
 
 
+def test_a_run_of_deletes_shares_one_seal_and_leaves_no_byte(wiki: Wiki, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Deletes of memories one after the other while the filer of this process holds the lease: each returns at once ("journal"), and
+    the filer completes their tombstones together, with one seal (and one reuse of what is before it) for the run, not one each."""
+    memory = Memory(lambda: wiki)
+    birds = ["falcon", "heron", "osprey", "kestrel"]
+    for bird in birds:
+        one(memory, "remember", {"text": f"topic: birds-{bird}\nThe {bird} {SECRET}.", "title": bird.title()})
+    wiki.drain(30)
+    paths = [str(one(memory, "search", {"query": bird}).structured_content["result"][0]["path"]) for bird in birds]
+    seals: list[int] = []
+    real = J.Journal.seal
+
+    def seal(self: J.Journal) -> int:
+        seals.append(1)
+        return real(self)
+
+    monkeypatch.setattr(J.Journal, "seal", seal)
+
+    for path in paths:
+        assert wiki.delete_note(path).notes == [path]
+
+    assert gone_from_disk(wiki, SECRET)  # B11 for each of them
+    assert 1 <= len(seals) < len(paths)
+
+
+def test_the_filer_completes_a_deletes_tombstone_with_the_journal_alone(wiki: Wiki, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tombstone of a delete is of the journal alone: its section committed before it was written, so the filer that completes it
+    zeroes no undo log and asks nothing of the index (the work, and the wait for the wiki's lock and the index, that the deletes of other
+    processes would queue behind); what it leaves is in no file all the same."""
+    memory = Memory(lambda: wiki)
+    path = remembered_secret(wiki, memory)
+    asked: list[str] = []
+    real_wipe, real_forget = Wiki._wipe_undo, type(wiki._search).forget
+
+    def wipe(self: Wiki) -> bool:
+        asked.append("undo")
+        return real_wipe(self)
+
+    def forget(self: Any, *a: Any, **k: Any) -> Any:
+        asked.append("index")
+        return real_forget(self, *a, **k)
+
+    monkeypatch.setattr(Wiki, "_wipe_undo", wipe)
+    monkeypatch.setattr(type(wiki._search), "forget", forget)
+
+    deleted = wiki.delete_note(path)
+
+    assert deleted.pending == ["journal"]  # the filer of this process holds the lease
+    assert gone_from_disk(wiki, SECRET)
+    assert asked == []
+
+
 def test_delete_folder_and_clear_take_the_journals_copies_out_too(wiki: Wiki) -> None:
     memory = Memory(lambda: wiki)
     path = remembered_secret(wiki, memory)

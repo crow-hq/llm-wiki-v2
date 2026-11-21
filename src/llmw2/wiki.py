@@ -1859,7 +1859,9 @@ class Wiki:
         and their text is still in the journal's segments until those are reused. The journal is sealed and every segment before is
         reused, as a purge completes: a tombstone of no key (it forgets no entry, and has no file to delete), durable at once, whose
         completion zeroes what is done in them, what is open carried forward. Done now if this process can take the lease; else the
-        filer of the process that holds it does it at its next look, and `deleted.pending` says "journal". Nothing waits for a lease."""
+        filer of the process that holds it does it at its next look, and `deleted.pending` says "journal". Nothing waits for a lease.
+        The tombstone says it is of the journal alone (`journal`): its files are done, no undo log or index is its own, and the tombstones
+        of the kind open together are completed with one seal (`filer.close_forget`), so a run of deletes does not seal once each."""
         if remembered is not None and not set(remembered) & set(deleted.sources):
             return
         if not self._has_journal():
@@ -1869,8 +1871,7 @@ class Wiki:
         if not hub.closed_total:
             return  # no entry was ever done: no text of one is in a raw copy
         nothing = _filer.key_hash(_filer.TEXT_KEY + os.urandom(16).hex())  # the hash of no key: no entry is forgotten
-        tomb = hub.journal.append_entry("", state={"forget": {"kh": nothing}}).id
-        hub.journal.append(J.T_FILED, {"id": tomb, "files": True})
+        tomb = hub.journal.append_entry("", state={"forget": {"kh": nothing, "files": True, "journal": True}}).id
         hub.refresh()
         hub.files_done.add(tomb)
         if not self._close_forget(tomb, True, 0.0):
@@ -2115,6 +2116,8 @@ class Wiki:
         filer: the locks as long as they take."""
         assert tomb.forget is not None
         hub = self._journal()
+        if tomb.forget.get("journal"):  # a delete's (`_forget_journal`): its section committed before it, the journal is all that is left
+            return _filer.close_forget(hub, tomb)
         if not tomb.forget.get("files"):
             # a purge deleting now holds it, and says its files are done before it lets go; no note is written, nothing for the index
             with self.store.written_later(), self.store.lock(undo=False):

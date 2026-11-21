@@ -81,6 +81,7 @@ ATTEMPTS = 3  # failed attempts for a reason that will not pass (the entry is th
 ENTRY_OVERHEAD = 1024  # bytes an entry costs in the journal besides its text (its record, and the records of its state)
 CLOSED_KEPT = 4096  # entries done that a process remembers, for the duplicates and the receipts
 DISK_LOOK = 1.0  # seconds a look at the free space of the disk is believed
+FORGET_GROUP = 1.0  # seconds the filer lets a delete's tombstone (`journal`) wait, so that the deletes of a run share one seal
 FORGET_WAIT = 30.0  # seconds `purge` waits for the filer that holds the lease to complete its tombstone, before it says "pending"
 TEXT_KEY = "text:"  # the key of an entry remembered without one: this and the hash of its text
 ENTRY_KEYS = ("queue", "queue_limit", "filing", "failed", "oldest_s", "filer", "last_error", "journal_bytes", "disk_free", "warnings")
@@ -815,6 +816,8 @@ class Filer(threading.Thread):
                     continue
                 if tombs and tombs[0].id != self.forget_for:
                     self.forget_for, self.forget_tries, self.forget_at = tombs[0].id, 0, 0.0
+                    if tombs[0].forget is not None and tombs[0].forget.get("journal"):  # the deletes that follow it are closed with it
+                        self.forget_at = time.monotonic() + FORGET_GROUP
                 if tombs and hub.journal.stuck is None and time.monotonic() >= self.forget_at:
                     self._end_lot()  # the purge works on the files: the lot's session ends first
                     try:
@@ -1009,21 +1012,34 @@ def close_forget(hub: Hub, tomb: Entry, *, complete: bool = True) -> bool:
     the lease. The number of the next segment (`upto`) is made durable first, in a copy of the tombstone, so a purge cut half way and
     taken up again reuses up to the same segment and seals nothing new. False when the guard of the compaction held it back.
     `complete` false: something outside the journal still holds the text (the index, while a reader holds its WAL): the segments are
-    reused all the same, and `O` waits for the filer's next look."""
+    reused all the same, and `O` waits for the filer's next look.
+    The other tombstones of the journal alone (`journal`: a delete's, whose files are done and that have nothing else to wait for) open
+    now are completed with it: each was written before the seal, so the one seal covers them all, and a run of deletes seals once."""
     j = hub.journal
     assert tomb.forget is not None
     j.finish_recycling()  # a reuse that a crash cut half way: its segment is no longer listed, and its old bytes are still there
-    upto = tomb.forget.get("upto")
-    if not isinstance(upto, int):
-        upto = tomb.forget["upto"] = j.seal()
-        j.sync(carry(hub, tomb))
+    hub.refresh()
+    peers = [t for t in hub.forgets() if t.id != tomb.id and t.forget is not None and t.forget.get("journal")]
+    fresh = [t for t in (tomb, *peers) if not isinstance(t.forget.get("upto"), int)]  # a tombstone cut half way keeps its own
+    if fresh:
+        number = j.seal()
+        last = None
+        for t in fresh:
+            t.forget["upto"] = number
+            last = carry(hub, t)
+        j.sync(last)
         hub.refresh()
+    upto = max(int(t.forget["upto"]) for t in (tomb, *peers))
     hub.compact_stopped = None
     for number, _path, _header in j.segments():
         if number < upto and not reuse(hub, number, notes_gone=True):
             return False
-    if complete:
-        j.append(J.T_CLEANED, {"id": tomb.id})
+    done = [t.id for t in peers] + ([tomb.id] if complete else [])
+    last = None
+    for tid in done:
+        last = j.append(J.T_CLEANED, {"id": tid}, sync=False)
+    if last is not None:
+        j.sync(last)
         hub.refresh()
     return True
 
