@@ -141,7 +141,7 @@ def test_a_client_of_the_release_before_reads_the_keys_it_knew_with_nothing_file
     assert tool.input_schema["required"] == ["text"]
     assert {k: body[k] for k in ("action", "note", "folder", "related")} == {"action": "queued", "note": "", "folder": "", "related": []}
     assert [type(body[k]) for k in ("action", "note", "folder", "related")] == [str, str, str, list]  # the types of 1.0.5: "" is no note
-    assert set(body) == {"action", "note", "folder", "related", "id", "key", "state"}
+    assert set(body) == {"action", "note", "folder", "related", "saved", "id", "key", "state"} and body["saved"] is True
 
 
 def test_the_same_text_given_again_once_filed_is_unchanged_with_its_note_as_in_the_release_before(wiki: Wiki) -> None:

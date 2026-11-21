@@ -71,6 +71,7 @@ import sys
 import threading
 import time
 import zlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -117,6 +118,10 @@ QUARANTINE = ".quarantine"  # a segment file with a header that is not valid, ke
 
 class JournalError(WikiError):
     """The journal cannot be used as asked."""
+
+
+class AdmitBusy(JournalError):
+    """Other writers held the admission lock for the whole wait an `append` with `admit` was given: nothing was written."""
 
 
 class JournalVersionError(JournalError):
@@ -455,6 +460,17 @@ class _Hint:
         if got != salt or chk != (got ^ off ^ seq ^ prev ^ _HINT_MASK):
             return None
         return off, seq, prev
+
+    def word(self) -> tuple[int, int, int] | None:
+        """(salt, tail offset, tail seq) as the last writer left them, whatever the segment: what a waiter compares to see that the
+        journal moved (a record of any process, a new segment), with no system call. (0, 0, 0) while no writer left a valid one."""
+        if self.mm is None:
+            return None
+        try:
+            got, off, seq, prev, chk = _TAIL.unpack_from(self.mm, 24)
+        except (ValueError, struct.error):
+            return None
+        return (got, off, seq) if chk == (got ^ off ^ seq ^ prev ^ _HINT_MASK) else (0, 0, 0)
 
     def put_tail(self, salt: int, off: int, seq: int, prev: int) -> None:
         """Always the last writer's word: it holds the append lock and has caught up, so what it wrote is the tail, even when the hint it
@@ -933,6 +949,31 @@ class Journal:
         tail = self._hint.get_tail(self._pos_salt) if self._hint is not None else None
         return tail is not None and tail[0] != pos[1]
 
+    def tail_word(self) -> tuple[int, int, int] | None:
+        """The shared tail hint as it is now (`_Hint.word`), read with no system call: it changes with every record a process that shares
+        it appends, closures of entries and new segments included. None when there is no hint."""
+        return self._hint.word() if self._hint is not None else None
+
+    def at_tail(self, pos: tuple[int, int] | None) -> bool:
+        """Whether the shared tail hint says that nothing was appended after `pos` (where the last `read_from` ended): True only when it
+        says so for the segment of `pos`; False when it says otherwise and when it cannot say. A writer with no hint is not seen."""
+        if pos is None or self._pos_salt is None or self._hint is None:
+            return False
+        tail = self._hint.get_tail(self._pos_salt)
+        return tail is not None and tail[0] == pos[1]
+
+    def grown_since(self, pos: tuple[int, int] | None) -> tuple[int, int] | None:
+        """(records, bytes) appended after `pos` (where the last `read_from` ended, on its last record) in the segment of `pos`, as the
+        shared tail hint says them, with no system call: an upper bound of what a read would find there. None when it cannot say (no
+        hint, another segment, `pos` not at the end of the last record read)."""
+        last = self._last
+        if pos is None or self._pos_salt is None or self._hint is None or last is None or (last[0], last[3]) != pos:
+            return None
+        tail = self._hint.get_tail(self._pos_salt)
+        if tail is None or tail[0] < pos[1] or tail[1] <= last[2]:
+            return None
+        return tail[1] - last[2] - 1, tail[0] - pos[1]
+
     def seal(self) -> int:
         """Close the segment in use, so that what is written from now on goes to the next one; the number of that one. A segment with
         no record yet is not sealed: it is the one in use. Everything before the number returned can then be reused (`recycle`)."""
@@ -966,15 +1007,41 @@ class Journal:
 
     # -- appending ----------------------------------------------------------------------------------------------------------
 
-    def append(self, rtype: int, meta: dict[str, Any], text: bytes = b"", *, sync: bool = True, flags: int = 0) -> Ref:
-        """Write a record at the tail and, unless `sync` is false, return when it is on the disk (the ack)."""
+    def append(
+        self,
+        rtype: int,
+        meta: dict[str, Any],
+        text: bytes = b"",
+        *,
+        sync: bool = True,
+        flags: int = 0,
+        admit: Callable[[], None] | None = None,
+        admit_wait: float | None = None,
+    ) -> Ref:
+        """Write a record at the tail and, unless `sync` is false, return when it is on the disk (the ack). `admit`, when given, is called
+        with the admission lock held (`admit.lock`, which every write given an `admit` takes, and nothing else), before the write and
+        until it is done: what it raises stops the write, so a check it makes (the queue's room) holds against every other write given
+        one, in any process. The other records (the filer's, a purge's) take only the append lock: they never wait for a check.
+        `admit_wait`: seconds the admission lock is waited for (None: as long as it takes), then `AdmitBusy` and nothing written; the
+        flush of the ack is not bounded (it is the durability)."""
         if not self.writable:
             raise JournalError("this journal was opened to be read")
         if rtype not in KNOWN_TYPES:
             raise JournalError(f"record type {chr(rtype)!r} is reserved and is not written")
         body = encode_body(meta, text)
-        with self._flock("append.lock"):
-            ref = self._write(rtype, flags, body, str(meta.get("id", "")))
+        if admit is None:
+            with self._flock("append.lock"):
+                ref = self._write(rtype, flags, body, str(meta.get("id", "")))
+        else:
+            gate = self._flock("admit.lock")
+            if not gate.acquire(timeout=admit_wait):
+                raise AdmitBusy(f"other writers held the journal's admission for {admit_wait:.2f} s")
+            try:
+                admit()
+                with self._flock("append.lock"):
+                    ref = self._write(rtype, flags, body, str(meta.get("id", "")))
+            finally:
+                gate.release()
         if sync:
             self._sync_until(ref)
         return ref
@@ -1020,6 +1087,8 @@ class Journal:
         id: str | None = None,
         state: dict[str, Any] | None = None,
         sync: bool = True,
+        admit: Callable[[], None] | None = None,
+        admit_wait: float | None = None,
     ) -> Ref:
         """An entry (`E`): what `remember` is asked to keep. The id is 16 hex characters, new each time. `at` is when it was acknowledged
         and `event_at` (only when given) when the thing it tells of happened; both are written by `format_at`, as the raw copy writes
@@ -1027,7 +1096,7 @@ class Journal:
         `X`): the copy is one record, so that a cut in the middle of it cannot leave an entry without its state."""
         ident = id or secrets.token_hex(8)
         meta = entry_meta(ident, key, hash, title, origin, fields, author, at, event_at, state)
-        return self.append(T_ENTRY, meta, text.encode("utf-8"), sync=sync)
+        return self.append(T_ENTRY, meta, text.encode("utf-8"), sync=sync, admit=admit, admit_wait=admit_wait)
 
     # -- the flush (group commit) ------------------------------------------------------------------------------------------
 

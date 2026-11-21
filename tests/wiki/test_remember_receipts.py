@@ -125,7 +125,7 @@ def test_a_full_queue_with_a_slow_filer_waits_and_does_not_raise_after_the_stall
         w.remember("topic: a-1\none")
         w.remember("topic: a-2\ntwo")
         threading.Timer(1.0, llm.gate.set).start()  # the filer is slow, not stopped: longer than STALL
-        r = w.remember("topic: a-3\nthree")  # no timeout: waits for room
+        r = w.remember("topic: a-3\nthree", timeout=None)  # no bound, asked for: waits for room while entries are filed
         assert r.wait(30)["action"] == "created"
     finally:
         llm.gate.set()

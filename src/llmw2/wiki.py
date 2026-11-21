@@ -43,6 +43,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import tempfile
 import threading
@@ -91,7 +92,6 @@ from llmw2.errors import (
     FilerError,
     InputError,
     NoteChanged,
-    QueueFull,
     ReplyInvalid,
     SpendingCap,
     WikiError,
@@ -156,6 +156,10 @@ def _named(item: Item) -> str:
 
 
 _REMEMBERED = Origin("remember", "", "").key  # "remember::": the origin of what `remember` was given a key for
+
+
+class _NoRoom(Exception):
+    """`remember` found no room under the journal's admission lock (another process took the last place): nothing was written."""
 
 
 def _entry_key(key: str) -> str:
@@ -370,9 +374,11 @@ class Wiki:
         fields: dict[str, Any] | None = None,
         author: str | None = None,
         at: datetime | None = None,
-        timeout: float | None = None,
+        timeout: float | None = _filer.REMEMBER_WAIT,
     ) -> Receipt:
-        """Keep a text now and file it in the background; returns when the entry is on the disk, before any model is called.
+        """Keep a text now and file it in the background; returns when the entry is on the disk, before any model is called: from then on
+        it is saved (`search` finds it as `pending:<id>`, in any process and after a restart), and it is filed (in its note) later, when
+        the receipt's `state` says "filed".
 
         `key` names the memory: the same key with the same text is the same memory (the receipt of the first is returned, nothing is
         written), with another text it is a new version of it. Without a `key` it is the hash of the text, so that a retry of the same
@@ -390,8 +396,13 @@ class Wiki:
         as they accumulate. Entries open or given up that hold more than half a segment of text (8 MiB at 16 MiB segments) stop
         the reuse of the journal behind them (`status` and `check` say so) until it is done.
 
-        `timeout` bounds the wait for room when the queue is full (`QueueFull`, nothing written). `DiskFull` when the disk has less than
-        the reserve filing needs. `InputError` for an empty text, a `fields` that is not JSON, an `at` with no zone."""
+        `timeout` bounds the wait for room when the queue is full: `REMEMBER_WAIT` (0.2 s) by default, None to wait as long as entries are
+        being filed. Then `QueueFull`: NOT saved, nothing written, with `queue`, `queue_limit`, `oldest_s` and `retry_after_s`. The room
+        is checked and the entry written under the journal's admission lock, so the limits hold against every process. A process that keeps
+        `QUEUE_LIMIT // 8` entries of its own waiting does not get the last `QUEUE_LIMIT // 8` places (`filer.places`): they are kept for
+        writers that keep few, so that a busy job, or several, never leaves a person with a full queue. A purge is never
+        held by a full queue. `DiskFull` when the disk has less than the reserve filing needs. `InputError` for an empty text, a `fields`
+        that is not JSON, an `at` with no zone."""
         if self._closed:
             raise WikiError("this wiki is closed")
         if not isinstance(text, str) or not text.strip():
@@ -429,49 +440,108 @@ class Wiki:
         deadline = None if timeout is None else time.monotonic() + timeout
         stalled = time.monotonic()
         closed = hub.closed_total
-        while True:
-            hub.refresh()
-            known = hub.find(sig)
-            if known is not None:
-                self._start_filer()
-                return Receipt(known.id, known.key, known.at, known.event_at, hub)
+
+        def room() -> bool:
             failed = hub.failed_count()
             opened_bytes, given_bytes = hub.backlog_bytes()
             if failed >= _filer.QUEUE_LIMIT or given_bytes + cost > limit:
                 # the entries given up fill the queue (in number or in bytes): waiting brings no room, and nothing is dropped silently
                 raise FailedBacklog(
-                    f"{failed} entries were given up ({given_bytes} bytes) and fill the queue; their text stays in the journal and nothing "
-                    "was written now; no call clears them yet, so remembering resumes only when one does (a later step)"
+                    f"NOT saved: nothing was written. {failed} entries were given up ({given_bytes} bytes) and fill the queue; their "
+                    "text stays in the journal; no call clears them yet, so remembering resumes only when one does (a later step)",
+                    queue=hub.open_n + failed,
+                    queue_limit=_filer.QUEUE_LIMIT,
                 )
-            if hub.open_n + failed < _filer.QUEUE_LIMIT and opened_bytes + given_bytes + cost <= limit:
-                break
+            return hub.open_n + failed < _filer.places(hub.own_open()) and opened_bytes + given_bytes + cost <= limit
+
+        ident = secrets.token_hex(8)  # the entry's id: counted among this process's own entries as it is admitted
+        busy = False  # the last attempt found the journal's admission held for the whole of its wait
+
+        def admit() -> None:
+            check()
+            hub.mine.add(ident)
+
+        def check() -> None:
+            # Under the journal's admission lock, which only the entries of `remember` take, the room is checked again against the tail,
+            # so that callers of several processes never pass the check together; the filer's records never wait for it. No read when the
+            # shared tail hint says nothing was written since this process's, or so little that there is room even if all of it were new
+            # entries (a burst far from the limit); else the journal is read to its tail first (a writer the hint does not show is read
+            # at its next look).
+            if hub.journal.at_tail(hub.pos):
+                if not room():
+                    raise _NoRoom
+                return
+            grown = hub.journal.grown_since(hub.pos)
+            if grown is not None:
+                records, size = grown
+                failed = hub.failed_count()
+                opened_bytes, given_bytes = hub.backlog_bytes()
+                if (
+                    hub.open_n + failed + records < _filer.places(hub.own_open())
+                    and opened_bytes + given_bytes + size + records * _filer.ENTRY_OVERHEAD + cost <= limit
+                ):
+                    return
+            hub.refresh()
+            if not room():
+                raise _NoRoom
+
+        while True:
+            word = hub.journal.tail_word()  # before the read: a move after it wakes the wait below
+            hub.refresh()
+            known = hub.find(sig)
+            if known is not None:
+                self._start_filer()
+                return Receipt(known.id, known.key, known.at, known.event_at, hub)
+            if room():
+                if hub.disk_free() < _filer.DISK_RESERVE:
+                    raise DiskFull(f"less than {_filer.DISK_RESERVE >> 20} MiB free on the disk of the wiki: nothing was kept")
+                if not hub.prepared:
+                    hub.journal.prepare_async()
+                    hub.prepared = True
+                stamp = format_at(datetime.now(UTC))
+                try:
+                    ref = hub.journal.append_entry(
+                        text,
+                        key=text_key,
+                        hash=digest,
+                        title=title,
+                        origin=origin,
+                        fields=fields,
+                        author=name,
+                        at=stamp,
+                        event_at=event_at,
+                        id=ident,
+                        admit=admit,
+                        admit_wait=None if deadline is None else max(0.0, deadline - time.monotonic()) + _filer.ADMIT_MARGIN,
+                    )
+                except J.AdmitBusy:
+                    busy = True  # the admission was held all along by other writers: nothing written, a refusal at the deadline
+                except _NoRoom:
+                    pass  # another process took the last place since: waited for as a full queue
+                except OSError as e:
+                    hub.mine.discard(ident)
+                    if isinstance(e, DiskFull) or e.errno == errno.ENOSPC:
+                        raise DiskFull(f"the disk of the wiki is full: nothing was kept ({e})") from e
+                    raise
+                else:
+                    self._start_filer()
+                    hub.notify()
+                    return Receipt(ref.id, text_key, stamp, event_at, hub, (ref.seg, ref.end))
             self._start_filer()
             if hub.closed_total != closed:
                 closed, stalled = hub.closed_total, time.monotonic()
             nobody = time.monotonic() - stalled >= _filer.STALL and (
                 hub.nobody_files() or (hub.filer is not None and hub.filer.state == "error")
             )  # a filer that is slow is not a stall
-            if (deadline is not None and time.monotonic() >= deadline) or nobody:
-                raise QueueFull("entries are waiting to be filed (the queue is full in number or in bytes): try again later")
-            with hub.cond:
-                hub.cond.wait(_filer.IDLE_POLL)
-        if hub.disk_free() < _filer.DISK_RESERVE:
-            raise DiskFull(f"less than {_filer.DISK_RESERVE >> 20} MiB free on the disk of the wiki: nothing was kept")
-        if not hub.prepared:
-            hub.journal.prepare_async()
-            hub.prepared = True
-        stamp = format_at(datetime.now(UTC))
-        try:
-            ref = hub.journal.append_entry(
-                text, key=text_key, hash=digest, title=title, origin=origin, fields=fields, author=name, at=stamp, event_at=event_at
-            )
-        except OSError as e:
-            if isinstance(e, DiskFull) or e.errno == errno.ENOSPC:
-                raise DiskFull(f"the disk of the wiki is full: nothing was kept ({e})") from e
-            raise
-        self._start_filer()
-        hub.notify()
-        return Receipt(ref.id, text_key, stamp, event_at, hub, (ref.seg, ref.end))
+            if nobody:
+                raise hub.queue_full("stall", limit=_filer.QUEUE_LIMIT)
+            left = None if deadline is None else deadline - time.monotonic()
+            if left is not None and left <= 0:
+                taken = hub.open_n + hub.failed_count()
+                share = _filer.places(hub.own_open()) <= taken < _filer.QUEUE_LIMIT  # room there is, not for a process keeping this many
+                why = "busy" if busy and taken < _filer.places(hub.own_open()) else ("share" if share else "full")
+                raise hub.queue_full(why, limit=_filer.QUEUE_LIMIT)
+            hub.wait_moved(_filer.HINT_LOOK if left is None else min(left, _filer.HINT_LOOK), word)
 
     def drain(self, timeout: float | None = None) -> None:
         """Return when every entry written before the call (by any process) is done: filed, and its folder split if it had to be.

@@ -59,14 +59,14 @@ from collections.abc import AsyncGenerator, Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any, TypeVar, cast
 
 import anyio
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
@@ -78,7 +78,7 @@ from llmw2.agents.researcher import Answer
 from llmw2.batch import BatchReport, deviations
 from llmw2.bundle.files import extract_text
 from llmw2.bundle.origin import Origin
-from llmw2.errors import InputError, WikiError
+from llmw2.errors import FailedBacklog, InputError, QueueFull, WikiError
 from llmw2.filer import PENDING, Receipt, sha_key
 from llmw2.models.relay import LLM_CONFIG, Relay, RelayClassifier, RelayLLM, relayed
 from llmw2.models.usage import UsageTracker
@@ -127,6 +127,9 @@ HOW = (
     "for (often one JSON object) and nothing else. Requests given together can be answered at the same time."
 )
 WAIT = 50.0  # seconds a tool waits for the work's next requests: under the 60 s that a client such as Codex gives a tool
+# seconds `remember` waits for room in the queue of entries to file, then answers NOT saved with when to try again: a tool call that
+# hangs looks like a stuck assistant, so it stays under the second an agent expects of a tool (B3), not WAIT
+REMEMBER_WAIT = 1.0
 KEEP = 600.0  # seconds a job's result waits after its end for a client to come back for it
 # seconds the server waits, at its end, for what its `remember` queued to be filed. It bounds that wait, not the exit: the filer
 # then ends the entry it is on (with real models, possibly longer), and a stdio client such as the SDK's ends the server 2 s after it
@@ -188,10 +191,15 @@ class Memory:
             decision and why, a preference, a fact about a project or a person): one topic per call, self-contained. For a
             document on disk, use `remember_file`. A classifier picks the folder and whether to merge into the note on the same
             subject; a model writes the note and links related ones, after the call returns. Returns {action: queued, note: "",
-            folder: "", related: [], id, key, state}: from then on `search` and `recall` find it, as `pending:<id>` until it is
-            filed, and `read_note` reads it; `status` says what is still waiting. The same text again, or the same key and text,
-            returns the first one's receipt (once filed, action unchanged with its note). `forget` takes it out by its key or
-            id. Adds or merges, never deletes. Never store secrets.
+            folder: "", related: [], saved: true, id, key, state}: saved means on disk, and from then on `search` and `recall`
+            find it, as `pending:<id>` until it is filed (state "filed": in its note), and `read_note` reads it; `status` says
+            what is still waiting. When the queue of memories to file stays full for a second it fails (an error of the tool) with
+            {action: not_saved, saved: false, retry_after_s, message}: NOT saved, nothing kept. Then reply to the user in this
+            turn: say it is not saved yet and when to try again (retry_after_s); call remember at most once more before you
+            reply, and do not wait for the queue with `status`.
+            The same text again, or the same key and text, returns the first one's receipt (once filed, action unchanged with
+            its note). `forget` takes it out by its key or id, even when the queue is full. Adds or merges, never deletes.
+            Never store secrets.
             With your models, it returns a `job` with requests instead: answer them with `reply`; it is filed when it ends.
             """
             by, wiki = author_of(ctx), self.live()
@@ -199,7 +207,15 @@ class Memory:
                 origin = Origin("remember", "", key) if key else None
                 named = key or sha_key(text)  # what `forget` takes it out by, as for a receipt
                 return self.run(lambda w: {**filed(w.ingest(text, title=title or None, origin=origin, author=by)), "key": named})
-            kept = guarded(lambda: queued(wiki.remember(text, title=title or None, key=key or None, author=by, timeout=WAIT)))
+            def keep() -> dict[str, Any]:
+                try:
+                    return queued(wiki.remember(text, title=title or None, key=key or None, author=by, timeout=REMEMBER_WAIT))
+                except QueueFull as e:  # nothing written: said so, as a result a 1.0.5 client reads too
+                    return not_saved(e)
+
+            kept = guarded(keep)
+            if not kept["saved"]:  # an error of the tool, so that a client that judges by isError never counts it as done
+                return cast(dict[str, Any], refused(kept))  # the SDK passes a CallToolResult through as it is
             self._queued = True
             return kept
 
@@ -434,9 +450,10 @@ class Memory:
             Call it when a memory you saved is not in a note yet, or before you tell the user that everything is filed; to read
             one, use `read_note` with its `pending:<id>`. No model call, nothing changed. Returns {queue, queue_limit, filing,
             failed, oldest_s, filer, last_error, journal_bytes, disk_free, warnings}: `warnings` says in words what needs a look,
-            and names the notes the limit on top-level folders sent to an existing folder instead of a new one.
+            and names the notes the limit on top-level folders sent to an existing folder instead of a new one. Filing goes on
+            by itself: there is nothing for you to start.
             """
-            return guarded(lambda: self.live().status())
+            return guarded(lambda: for_client(self.live().status()))
 
         @tool(server, DELETES)
         def forget(
@@ -635,7 +652,75 @@ def queued(receipt: Receipt) -> dict[str, Any]:
     given again once filed, "unchanged" with the note it went in, as an `ingest` of a text the wiki holds says."""
     state, note = receipt.state, receipt.note or ""
     action, folder = ("unchanged", "/" + note.rpartition("/")[0]) if state == "filed" and note else ("queued", "")
-    return {"action": action, "note": note, "folder": folder, "related": [], "id": receipt.id, "key": receipt.key, "state": state}
+    return {
+        "action": action,
+        "note": note,
+        "folder": folder,
+        "related": [],
+        "saved": True,
+        "id": receipt.id,
+        "key": receipt.key,
+        "state": state,
+    }
+
+
+NO_FILER = "no filer is running: drain() starts one"  # the end of the warning of `Wiki.status`, which names a call of the library
+
+
+def for_client(st: dict[str, Any]) -> dict[str, Any]:
+    """`Wiki.status` as an MCP client reads it: no warning names a call that the client cannot make. The server files by itself (the
+    next `remember` starts its filer, or the process that holds the wiki files)."""
+    queue = st.get("queue")
+    st["warnings"] = [
+        f"{queue} memories are waiting to be filed; filing resumes automatically, and nothing is lost or needs doing"
+        if isinstance(w, str) and w.endswith(NO_FILER)
+        else w
+        for w in st.get("warnings", [])
+    ]
+    return st
+
+
+def refusal(e: QueueFull) -> str:
+    """The one line a refused `remember` answers (a full queue, or a journal busy for the whole wait): NOT saved, and what to tell the
+    user, in words a model cannot read as saved and that end the turn."""
+    if isinstance(e, FailedBacklog):
+        return (
+            "NOT saved: the memory's queue is full of memories it could not file, and it kept nothing of this one. Tell the user now "
+            "that it is not saved and that the memory needs a look (status says why); do not call remember again in this turn."
+        )
+    when = f"in about {e.retry_after_s:g} s" if e.retry_after_s is not None else "later"
+    if e.reason == "busy":  # the queue had room: the journal was busy, not full
+        return (
+            "NOT saved: the memory was busy saving other memories (or closing its journal after a delete) and kept nothing of this one. "
+            f"Tell the user now that it is not saved yet and to try again {when}; call remember at most once more in this turn."
+        )
+    earlier = "an earlier memory" if e.queue == 1 else f"{e.queue} earlier memories"
+    return (
+        f"NOT saved: the memory is still filing {earlier} and kept nothing of this one. Tell the user now that it is "
+        f"not saved yet and to try again {when}; call remember at most once more in this turn."
+    )
+
+
+def not_saved(e: QueueFull) -> dict[str, Any]:
+    """`remember` refused by a full queue: the keys of `filed`, with no note, and why, in words a model cannot read as saved."""
+    return {
+        "action": "not_saved",
+        "note": "",
+        "folder": "",
+        "related": [],
+        "saved": False,
+        "retry_after_s": e.retry_after_s,
+        "queue": e.queue,
+        "queue_limit": e.queue_limit,
+        "oldest_s": e.oldest_s,
+        "message": refusal(e),
+    }
+
+
+def refused(body: dict[str, Any]) -> CallToolResult:
+    """The result of a `remember` that kept nothing: an error of the tool (`isError`), whose text says NOT saved, with the keys of
+    `not_saved` as its structured content."""
+    return CallToolResult(content=[TextContent(type="text", text=str(body["message"]))], structured_content=body, is_error=True)
 
 
 def forgotten(report: Purged | None, key: str) -> dict[str, Any]:

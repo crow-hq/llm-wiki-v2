@@ -21,7 +21,8 @@ the purge itself if the lease is free, else the filer at its next look at the jo
 
 Limits that are known: the duplicate of an entry is recognised when it is acknowledged only among what this process has read of the
 journal; between processes it is recognised when it is filed, where `wait()` gives `unchanged` and the note that already holds the
-text. The queue is limited by `QUEUE_LIMIT` per bundle, and a caller that waits for room is not served in order across processes.
+text. The queue is limited by `QUEUE_LIMIT` per bundle, and a caller that waits for room is not served in order across processes: it
+waits `REMEMBER_WAIT` seconds by default, then `QueueFull` (NOT saved, with the state of the queue and when to try again).
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ import os
 import shutil
 import threading
 import time
-from collections import Counter, OrderedDict
+from collections import Counter, OrderedDict, deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,7 +51,7 @@ from llmw2.agents import lexical
 from llmw2.bundle import journal as J
 from llmw2.bundle import txn
 from llmw2.bundle.filelock import FileLock
-from llmw2.errors import FilerError, InputError, NoteChanged, ReplyInvalid, StepError
+from llmw2.errors import FilerError, InputError, NoteChanged, QueueFull, ReplyInvalid, StepError
 
 if TYPE_CHECKING:
     from llmw2.agents.librarian import IngestResult
@@ -60,6 +61,17 @@ log = logging.getLogger(__name__)
 
 QUEUE_LIMIT = 256  # entries that are not done: a caller that finds this many waits for room
 STALL = 10.0  # seconds with no entry closed while a caller waits for room: then QueueFull
+# seconds `remember` waits for room by default, then QueueFull: the p99 of the acknowledgement (0.2 s), so a caller under the rate the
+# filer keeps up with never waits, and one over it hears so at once instead of hanging (a dialogue turn, a node's callback, an MCP tool)
+REMEMBER_WAIT = 0.2
+HINT_POLL = 0.05  # a caller waiting for room looks at the shared tail hint this often (no system call), reads the journal if it moved
+HINT_LOOK = 1.0  # ... and reads it anyway this often: a writer the hint does not show (another Windows session)
+# the part of the 100 ms past `timeout` that the journal's admission lock may still be waited for, once the wait for room is over: the
+# rest is for the write and the flush of the ack, which is not bounded (it is the durability)
+ADMIT_MARGIN = 0.05
+RATE_WINDOW = 60.0  # seconds of closures a process counts for the rate of the filer that `QueueFull` gives its retry time by
+PACE_SAMPLE = 20  # filings whose time (`ms` of the `F` record) give that rate to a process that saw too few close
+PACE_SEEN = 5  # entries a process must have seen close before the pace it saw is believed
 DISK_RESERVE = 64 << 20  # bytes free on the disk of the bundle, under which nothing is accepted
 LEASE_POLL = 0.2  # a process that does not file looks again for the lease this often
 IDLE_POLL = 0.05  # the filer looks at the journal for entries of other processes this often
@@ -72,6 +84,15 @@ DISK_LOOK = 1.0  # seconds a look at the free space of the disk is believed
 FORGET_WAIT = 30.0  # seconds `purge` waits for the filer that holds the lease to complete its tombstone, before it says "pending"
 TEXT_KEY = "text:"  # the key of an entry remembered without one: this and the hash of its text
 ENTRY_KEYS = ("queue", "queue_limit", "filing", "failed", "oldest_s", "filer", "last_error", "journal_bytes", "disk_free", "warnings")
+
+
+def places(own: int) -> int:
+    """The places of the queue that a process keeping `own` entries of its own open may fill: all of them while it keeps fewer than
+    `QUEUE_LIMIT // 8`; once it keeps that many, all but the last `QUEUE_LIMIT // 8` (224 of 256). Those are kept for the writers that
+    keep few (a person's few memories), so that no busy process, nor several together, takes the whole queue, and one that writes alone
+    (a robot) still has most of it. Under a limit of 8 (a share of no entry) every process may fill all of it."""
+    share = QUEUE_LIMIT // 8
+    return QUEUE_LIMIT if share == 0 or own < share else QUEUE_LIMIT - share
 
 
 def sha_key(text: str) -> str:
@@ -185,12 +206,16 @@ class Hub:
         self._searched_at = -float("inf")  # when `searchable` last read the journal
         self._folds = 0  # reads that changed the entries: `searchable` looks at them again only after one
         self._shown_list: tuple[int, list[Pending]] | None = None  # what `searchable` gave, and after which read
+        self._rate: deque[tuple[float, int]] = deque()  # (when, closed_total) after the reads that folded records: the filer's pace
+        self.refreshes = 0  # reads of the journal (`refresh`): a caller that waits for room makes few
+        self.mine: set[str] = set()  # entries this process wrote (`remember`) that are not closed: its share of the queue (`places`)
 
     # -- reading the journal ------------------------------------------------------------------------------------
 
     def refresh(self) -> None:
         """Read what was written since the last look and fold it into the entries."""
         with self._read_lock:
+            self.refreshes += 1
             records, pos = self.journal.read_from(self.pos)
             if self.journal.restarted:  # the bundle was deleted and made again under this process: what it knew is of another journal
                 with self.cond:
@@ -201,6 +226,7 @@ class Hub:
                     self.let_through.clear()
                     self.errors.clear()
                     self.shown.clear()
+                    self.mine.clear()  # its entries were of the other journal: none of them is open in this one
                     self._folds += 1
             if not records:
                 self.pos = pos
@@ -210,6 +236,10 @@ class Hub:
                 for rec in records:
                     self._fold(rec)
                 self._folds += 1
+                now = time.monotonic()
+                self._rate.append((now, self.closed_total))  # after the fold: the closures of a first read are the baseline, not a pace
+                while len(self._rate) > 1 and self._rate[1][0] <= now - RATE_WINDOW:
+                    self._rate.popleft()
                 self.cond.notify_all()
 
     def _fold(self, rec: J.Record) -> None:
@@ -369,6 +399,7 @@ class Hub:
 
     def _closed(self, e: Entry) -> None:
         self._recount(e)
+        self.mine.discard(e.id)
         self.closed_total += 1
         if e.failed is not None and not e.forgotten:
             return  # an entry given up is kept, text included: the compaction carries it forward, and it counts in the queue limit
@@ -462,6 +493,86 @@ class Hub:
     def notify(self) -> None:
         with self.cond:
             self.cond.notify_all()
+
+    def wait_moved(self, timeout: float, word: tuple[int, int, int] | None) -> None:
+        """Wait up to `timeout` seconds for the journal to move from `word` (`Journal.tail_word`, taken before the caller last read the
+        journal, so that a move in between is not missed): a record of any process that shares the tail hint (an entry closed, a new
+        one, a new segment), or a notice of a thread of this process. It looks at the hint every `HINT_POLL` with no system call and
+        reads nothing, so many processes waiting for room do not read the journal over and over. With no hint, it waits `IDLE_POLL`."""
+        end = time.monotonic() + timeout
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                return
+            with self.cond:
+                if self.cond.wait(min(IDLE_POLL if word is None else HINT_POLL, left)) or word is None:
+                    return
+            if self.journal.tail_word() != word:
+                return
+
+    def own_open(self) -> int:
+        """The entries this process wrote that are open in what it read of the journal: its share of the queue. Counted from the entries,
+        so that an id whose closure this process could not see (a journal read again from its start) never counts."""
+        return sum(1 for ident in list(self.mine) if (e := self.entries.get(ident)) is not None and not e.closed)
+
+    def pace(self) -> float | None:
+        """Entries closed a second, as this process saw them in the last `RATE_WINDOW` seconds, once it saw `PACE_SEEN` close; before, as
+        the last filings in the journal took (`_filing_pace`): one or two closures in a process that just started (an MCP session) say
+        little, and a pace drawn from them gave retry times of an hour; None when there is neither."""
+        if self._rate:
+            since, base = self._rate[0]
+            span = time.monotonic() - since
+            if span >= 0.5 and self.closed_total - base >= PACE_SEEN:
+                return (self.closed_total - base) / span
+        return self._filing_pace()
+
+    def _filing_pace(self) -> float | None:
+        """Entries filed a second by the time the last filings took (`ms` of their `F` records, the median of the last
+        `PACE_SAMPLE`): what a process that has not seen an entry close yet (a new one, an MCP session) can tell from the journal it
+        read. Each filing counts its own section only, not the split and the look between two entries: a little fast."""
+        took: list[int] = []
+        for e in reversed(self.entries.values()):
+            ms = e.filed.get("ms") if e.filed else None
+            if isinstance(ms, int) and ms > 0:
+                took.append(ms)
+                if len(took) >= PACE_SAMPLE:
+                    break
+        if not took:
+            return None
+        took.sort()
+        return 1000.0 / took[len(took) // 2]
+
+    def queue_full(self, why: str, *, limit: int) -> QueueFull:
+        """The `QueueFull` that `remember` raises: NOT saved, with the queue as this process read it and when to try again."""
+        oldest: float | None = None
+        first = self.next_open()
+        if first is not None:
+            with contextlib.suppress(ValueError):
+                oldest = max(0.0, round((datetime.now(UTC) - datetime.fromisoformat(first.at)).total_seconds(), 1))
+        queue = self.open_n + self.failed_n
+        pace = self.pace()
+        retry = round(max(1.0, queue / pace), 1) if pace and why != "stall" else None
+        what = {
+            "stall": f"no entry was filed for {STALL:g} s and nobody files: try again once the wiki is opened with models",
+            "full": f"try again in about {retry:g} s" if retry is not None else "try again later",
+        }["stall" if why == "stall" else "full"]
+        if why == "busy":
+            message = (
+                f"NOT saved: nothing was written. The queue is not full ({queue} of {limit} places taken): the journal's admission was "
+                f"held for the whole wait by other writers (other entries being saved, or the journal being sealed after a delete or "
+                f"a purge); {what}."
+            )
+        elif why == "share":
+            message = (
+                f"NOT saved: nothing was written. This process keeps {self.own_open()} entries waiting to be filed, so it does not get the "
+                f"last {limit // 8} places of the queue ({queue} of {limit} taken): they are kept for writers that keep few; {what}."
+            )
+        else:
+            message = (
+                f"NOT saved: nothing was written. The queue of entries waiting to be filed is full ({queue} of {limit} entries, or "
+                f"{self.open_bytes + self.failed_bytes} of {self.journal.segment_size // 2} bytes); {what}."
+            )
+        return QueueFull(message, queue=queue, queue_limit=limit, oldest_s=oldest, retry_after_s=retry, reason=why)
 
     # -- the disk -----------------------------------------------------------------------------------------------
 

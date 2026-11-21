@@ -137,6 +137,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the clients of the release before that search and delete the first hit; it refused before. The result has the keys of a delete
   (`notes`, `folders`, `sources`, `archived`, `unlinked`, `pending`), those of `forget` (`entries`, ...), and `forgot`: the
   `pending:<id>` forgotten. Like `forget`, it takes out every version kept under the memory's key.
+- The memory's `remember` waits for room in a full queue for 1 s (`REMEMBER_WAIT` of `llmw2.memory`), no longer up to 50 s (`WAIT`):
+  a tool call that hangs looks like a stuck assistant, and an agent expects a tool to answer within a second. Then it fails as an error
+  of the tool (`isError: true`), so that a client that judges the outcome by it never counts it as done. Its text is one line that
+  begins with "NOT saved" and tells the assistant what to do: tell the user now that it is not saved yet and when to try again, and call
+  `remember` at most once more in the turn (the description says the same). Its structured content has the keys of the release before
+  (`action: "not_saved"`, `note: ""`, `folder: ""`, `related: []`) with `saved: false`, `retry_after_s`, `queue`, `queue_limit`,
+  `oldest_s` and that `message`; nothing is written. A result that kept the text says `saved: true` ("filed", in its note, is the
+  `state` that comes after). `forget` never waits for the queue. The memory's `status` names no call of the library in its warnings:
+  where `Wiki.status` says that no filer runs and `drain()` starts one, it says that filing resumes automatically and nothing needs
+  doing.
 - The filer of `remember` files consecutive entries in one session of the store, up to the 50 documents of a plan's batch: the tree is
   listed whole once for the lot, then only the folders that changed, instead of twice an entry; the session ends when the queue is
   empty, while a failed entry waits to be tried again, and before a purge is completed. After a document filed alone, the split of its folder looks first at the folder's own
@@ -255,6 +265,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   That moment (about 0.31 s a file at most) is waited under the wiki's lock and outside a purge's wait: with N files held open by other
   programs the lock is held up to N times that. Where a deletion is the old kind (FAT/exFAT, SMB, Windows before 1903) a file deleted
   while open stays listed until it is closed: reading the wiki takes it as gone, as a note deleted since the listing.
+- `Wiki.remember` waits for room in a full queue 0.2 s by default (`timeout=REMEMBER_WAIT`), then raises `QueueFull`; it waited with no
+  bound. A loop that counted on that wait to slow down to the filer's pace (an import made of `remember` calls) now gets `QueueFull`
+  instead: pass `timeout=None` to wait as before, or give the documents to `remember_file` or `ingest`, which do not go through the
+  queue. 0.2 s is the p99 the acknowledgement is held to: a caller under the rate the filer keeps up with never waits that long, and one
+  over it hears so at once instead of hanging (a dialogue turn, a node's callback, a tool call). `QueueFull` begins with "NOT saved" and
+  carries `queue`, `queue_limit`, `oldest_s` and `retry_after_s`: the queue over the rate this process saw entries filed at in the last
+  minute once it saw 5 filed or, in a process that saw fewer (a new MCP session), over the rate the last 20 filings in the journal took
+  (their `ms`); None with neither. A caller waiting for room looks at the journal's shared
+  tail hint every 50 ms, with no system call, and reads the journal only when it moved (and once a second for a writer the hint does not
+  show), where it read it every 50 ms whatever happened, scanning the segments' headers each time. The room is checked again under a
+  lock of the journal that only these entries take (`admit.lock`; the filer's records never wait for it), against the tail: with no
+  read when the shared tail hint says nothing, or too little to fill the queue, was written since, else after reading to the tail. So
+  callers of several processes no longer pass the limits together: 50 processes kept 275 entries for a limit of 256, and the limit in
+  bytes (half a segment) could be passed in the same way. That lock is waited for only until the wait for room ends, and 50 ms more
+  (`ADMIT_MARGIN`): a caller behind a long line of others is refused then, nothing written, with the true reason: `QueueFull.reason`
+  "busy" and "the queue is not full: the journal's admission was held ... by other writers (other entries being saved, or the journal
+  being sealed after a delete or a purge)"; over MCP, "the memory was busy saving other memories", never "still filing N", which reads
+  as a full queue. `reason` is "full", "share", "busy" or "stall". The flush of the acknowledgement is not bounded (it is the durability), so on a slow disk a call can still last a
+  little longer than `timeout` and 100 ms. A purge does not go through the queue's limits: a full queue never refuses or holds it.
+- The last places of `remember`'s queue are kept for the writers that keep few entries waiting: a process that keeps `QUEUE_LIMIT // 8`
+  entries of its own not yet filed (32 of 256) does not get the last `QUEUE_LIMIT // 8` places (it stops at 224 of 256); one that keeps
+  fewer may fill the queue to the limit. So a job that writes faster than the filer (an agent, a script, another MCP client), or several
+  already busy, leave 32 places to a person in another process, who needs a few; a process that writes alone (a robot) still has 224.
+  A process counts the entries it wrote itself that are open in what it read of the journal, in memory: nothing new is written in the
+  journal. A job alone now stops at 224: with the default wait it gets `QueueFull`, whose message says that the process keeps that many;
+  `timeout=None` waits for its place. Limits: the share tells processes apart, not clients nor authors, so with `llmwiki2 serve` every
+  client is in one process (once the server keeps 32 entries waiting it does not get the last 32 places), and a person and a job in the
+  same process are not told apart; after a restart a process counts from zero, so a job gains up to 31 places more; a new job's first
+  31 entries count as few, and may take places of the 32 kept until it keeps more. Under a limit of 8 there is no share.
 
 ## [1.0.5] - 2026-11-17
 
