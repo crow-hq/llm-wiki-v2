@@ -6,18 +6,22 @@
 from __future__ import annotations
 
 import re
+import zlib
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from llmw2 import Wiki, WikiConfig
-from llmw2.agents import steps_crow
+from llmw2.agents import steps_classic, steps_crow
 from llmw2.agents.researcher import NO_ANSWER
+from llmw2.agents.steps import CLASSIC, CROW, StepContext, Steps
 from llmw2.bundle.tree import Folder, Note
 from llmw2.config import CrowConfig
 from llmw2.errors import ModelError
 from llmw2.models.classifier import Classifier
+from llmw2.models.usage import UsageTracker
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 
 ANSWER = "researcher/answer"
@@ -229,3 +233,129 @@ def test_passage_normalises_spaces_and_leaves_out_see_also() -> None:
 def test_passage_of_a_short_note_is_the_whole_body_and_of_an_empty_one_is_empty() -> None:
     assert steps_crow.passage(make_note("A short body."), "short") == "A short body."
     assert steps_crow.passage(make_note(""), "anything") == ""
+
+
+# -- the tree is loaded only when the step looks at it ----------------------------------------------------------------------------
+
+
+def on_the_tree(ctx: StepContext, root: Folder, question: str) -> list[Note]:
+    """CROW's select given the whole tree, as any `select` but CROW's own is."""
+    return steps_crow.select(ctx, root, question)
+
+
+def counted_loads(wiki: Wiki, monkeypatch: pytest.MonkeyPatch) -> list[Folder]:
+    """The trees `wiki.store.load` returns from now on, one per call."""
+    loads: list[Folder] = []
+    load = wiki.store.load
+
+    def counted() -> Folder:
+        loads.append(load())
+        return loads[-1]
+
+    monkeypatch.setattr(wiki.store, "load", counted)
+    return loads
+
+
+def scores(text: str) -> float:
+    """A probability for each question to the classifier, fixed by its text, so that the reordering changes the order."""
+    return zlib.crc32(text.encode("utf-8")) % 1000 / 1000
+
+
+@pytest.mark.parametrize("question", [QUESTION, "zebra giraffe"])  # a question the search answers, and one it does not (navigation)
+def test_the_models_are_asked_the_same_with_the_notes_read_from_their_files_as_with_the_tree(bundle: Path, question: str) -> None:
+    def run(steps: Steps | None) -> tuple[Any, ...]:
+        tracker = UsageTracker()
+        llm, classifier = FakeLLM(tracker), FakeClassifier(tracker)
+        classifier.noul_scores = {OP: scores, "ask/conflict": scores}
+        llm.add(NAVIGATE, {"open": ["legal"], "select": ["overview.md"]}, {"select": ["legal/nda-template.md"]})
+        llm.add(ANSWER, "See [overview.md] and [legal/nda-template.md] and [finance/revenue-policy.md].")
+        wiki = Wiki(WikiConfig(bundle=bundle, mode="crow"), llm=llm, classifier=classifier, steps=steps)
+        answer = wiki.ask(question)
+        return llm.calls, classifier.calls, answer.text, answer.citations, answer.notes, answer.titles, answer.decisions
+
+    tracker = UsageTracker()
+    make_wiki(bundle, FakeLLM(tracker), FakeClassifier(tracker))
+
+    by_index, with_tree = run(None), run(replace(CROW, select=on_the_tree))
+
+    assert by_index == with_tree
+    assert by_index[4]  # some notes were read
+
+
+def test_a_question_the_search_answers_reads_only_the_notes_found_and_does_not_load_the_tree(
+    wiki: Wiki, classifier: FakeClassifier, llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_load() -> Folder:
+        raise AssertionError("the tree was loaded")
+
+    read: list[str] = []
+    reading = wiki.store.note_at
+
+    def counted(rel: str) -> Note | None:
+        read.append(rel)
+        return reading(rel)
+
+    monkeypatch.setattr(wiki.store, "load", no_load)
+    monkeypatch.setattr(wiki.store, "note_at", counted)
+    llm.add(ANSWER, "Answer.")
+
+    answer = wiki.ask(QUESTION)
+
+    assert answer.notes and set(answer.notes) <= set(read)
+    assert sorted(read) == sorted(h.path for h in wiki.search(QUESTION, k=16))  # each note found, once
+
+
+def test_the_tree_is_loaded_to_navigate_when_the_search_finds_nothing(
+    wiki: Wiki, classifier: FakeClassifier, llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loads = counted_loads(wiki, monkeypatch)
+    llm.add(NAVIGATE, {"select": ["overview.md"]}).add(ANSWER, "Answer.")
+
+    answer = wiki.ask("zebra giraffe")
+
+    assert len(loads) == 1 and answer.notes == ["overview.md"]
+
+
+@pytest.mark.parametrize("case", ["where", "another select", "classic"])
+def test_where_another_select_and_classic_are_given_the_whole_tree(
+    bundle: Path, classifier: FakeClassifier, llm: FakeLLM, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    given: list[object] = []
+
+    def spy(ctx: StepContext, root: Folder, question: str) -> list[Note]:
+        given.append(root)
+        return steps_crow.select(ctx, root, question) if case != "classic" else steps_classic.select(ctx, root, question)
+
+    tracker = UsageTracker()
+    make_wiki(bundle, FakeLLM(tracker), FakeClassifier(tracker))
+    base = CLASSIC if case == "classic" else CROW
+    steps = replace(base, select=spy) if case != "where" else CROW
+    wiki = Wiki(WikiConfig(bundle=bundle, mode=base.name), llm=llm, classifier=classifier, steps=steps)
+    loads = counted_loads(wiki, monkeypatch)
+    llm.add(NAVIGATE, {"select": ["overview.md"], "done": True}).add(ANSWER, "Answer.")
+
+    wiki.ask(QUESTION, where={"team": "ops"} if case == "where" else None)
+
+    assert len(loads) == 1
+    assert all(isinstance(root, Folder) for root in given)
+
+
+def test_a_note_deleted_between_the_search_and_its_reading_is_neither_read_nor_cited(
+    wiki: Wiki, classifier: FakeClassifier, llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    found = wiki._search.find
+    gone = "legal/nda-template.md"
+
+    def find_then_delete(*args: Any, **kwargs: Any) -> list[tuple[str, str, str]]:
+        out = found(*args, **kwargs)
+        (wiki.cfg.bundle / gone).unlink(missing_ok=True)  # another process deletes it now
+        return out
+
+    assert gone in [h.path for h in wiki.search(QUESTION, k=16)]
+    monkeypatch.setattr(wiki._search, "find", find_then_delete)
+    llm.add(ANSWER, f"See [{gone}].")
+
+    answer = wiki.ask(QUESTION)
+
+    assert gone not in answer.notes and answer.citations == [] and answer.notes
+    assert "NDA template" not in [t for ts in asked(classifier) for t in ts]

@@ -17,12 +17,12 @@ import logging
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any
+from typing import Any, cast
 
 from llmw2.agents import conflicts, note_checks, revisions
 from llmw2.agents.base import Decision
 from llmw2.agents.prompts import Prompts
-from llmw2.agents.steps import StepContext, Steps, check_answer, check_select
+from llmw2.agents.steps import CROW, StepContext, Steps, check_answer, check_select
 from llmw2.bundle.document import OKFDocumentError
 from llmw2.bundle.sheets import SHEET_CHARS, rows_for
 from llmw2.bundle.store import WikiStore
@@ -93,12 +93,23 @@ class Researcher:
         finds them as it does in `Wiki.search`, and the answer may read and cite them; a navigation of the folders does not see them."""
         ctx = self.ctx
         with ctx.llm.usage.span() as used:
-            root = self.store.load()
-            if self.search is not None:
-                ctx.search = self._finder(root, where, pending)
-            if where:
-                root = matching(root, where)
-            notes = check_select(self.steps.select(ctx, root, question), root, [n for _, n in pending])
+            known = [n for _, n in pending]  # the notes not of the tree that `select` may return
+            root: Folder | None
+            if self.search is not None and not where and self.steps.select is CROW.select:
+                # CROW's own select reads the notes the search finds, and the tree only to navigate when it finds none: the notes
+                # found are read from their files, and the tree is loaded only if the step looks at it
+                tree = _Tree(self.store)
+                ctx.search = self._reader(pending, known)
+                out = self.steps.select(ctx, cast(Folder, tree), question)  # it stands for the root, see `_Tree`
+                root = tree.loaded
+            else:
+                root = self.store.load()
+                if self.search is not None:
+                    ctx.search = self._finder(root, where, pending)
+                if where:
+                    root = matching(root, where)
+                out = self.steps.select(ctx, root, question)
+            notes = check_select(out, root, known)
             notes, past = self._with_history(question, notes)
             asked = f"{question}\n\n{revisions.HISTORY_HINT}" if past else question
             if self._conflicting(question, notes):
@@ -125,6 +136,27 @@ class Researcher:
         by_rel = {n.rel: n for n in root.all_notes()} | {n.rel: n for _, n in pending}
         waiting = [hit for hit, _ in pending]
         return lambda query, k: [by_rel[rel] for rel, _, _ in search.find(self.store, query, k, where, waiting) if rel in by_rel]
+
+    def _reader(self, pending: Sequence[tuple[Pending, Note]], known: list[Note]) -> Callable[[str, int], list[Note]]:
+        """`_finder` with no `where` and no tree: each note found is taken as a load would take it (`WikiStore.note_at`), once; one gone
+        since the search, or no longer a note, is left out, as a load would leave it out. The notes taken are added to `known`."""
+        search = self.search
+        assert search is not None
+        by_rel = {n.rel: n for _, n in pending}
+        waiting = [hit for hit, _ in pending]
+
+        def find(query: str, k: int) -> list[Note]:
+            out = []
+            for rel, _, _ in search.find(self.store, query, k, None, waiting):
+                if rel not in by_rel:
+                    if (note := self.store.note_at(rel)) is None:
+                        continue
+                    by_rel[rel] = note
+                    known.append(note)
+                out.append(by_rel[rel])
+            return out
+
+        return find
 
     def _with_rows(self, question: str, notes: list[Note]) -> list[Note]:
         """The notes as the answer reads them: a spreadsheet sheet's note gets the rows of its sources the question needs.
@@ -193,6 +225,20 @@ class Researcher:
             except (FileNotFoundError, InputError, OKFDocumentError):
                 log.warning("the archived version of %s is missing: %s", note.rel, previous)
         return out, True
+
+
+class _Tree:
+    """The root folder for CROW's own `select`, loaded at the first attribute the step reads (`loaded`, None until then). Only that
+    step is given it: it is not a `Folder` (no `isinstance`; the folders under it have the loaded root as parent)."""
+
+    def __init__(self, store: WikiStore) -> None:
+        self._store = store
+        self.loaded: Folder | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        if self.loaded is None:
+            self.loaded = self._store.load()
+        return getattr(self.loaded, name)
 
 
 def _latest_raws(note: Note) -> list[str]:

@@ -471,13 +471,16 @@ class WikiStore:
     def _fills(self) -> bool:
         return not self._depth or self._sessions > 1
 
-    def _note_of(self, where: str, rel: str, folder: Folder, st: os.stat_result, stamp: Stamp, seen: dict[str, _Parsed]) -> Note | None:
+    def _note_of(
+        self, where: str, rel: str, folder: Folder | None, st: os.stat_result, stamp: Stamp, seen: dict[str, _Parsed]
+    ) -> Note | None:
         """The note of a file: from `_parsed` (the stamp is the same) or read; `seen` (what this load keeps, `_parsed` itself in a
         session) holds it once the file is older than RACY_NS, else not (a file written this very moment may change again unseen).
         None when the file cannot be read, or is gone since the listing (another process deleted or moved the note: the load
         goes on as if it had not been listed). The first session of a store does not keep what it parses (`_fills`): the copy of the front
         matter of every note costs about 3% of that session, and nothing in a process that has only one session will ever use it."""
-        if (hit := self._parsed.get(where)) and hit.stamp == stamp and hit.changed == st.st_ctime_ns:
+        # `same_stamp`: on Windows a listing gives no inode and `note_at` (a stat of the file) does
+        if (hit := self._parsed.get(where)) and same_stamp(hit.stamp, stamp) and hit.changed == st.st_ctime_ns:
             seen[where] = hit
             return Note(Path(where), rel, pickle.loads(hit.frontmatter), hit.body, folder, stamp)
         try:
@@ -702,6 +705,23 @@ class WikiStore:
         stamp = stamp_of(path.stat())
         doc = OKFDocument.read(path)
         return Note(path, path.relative_to(root).as_posix(), doc.frontmatter, doc.body, stamp=stamp)
+
+    def note_at(self, rel: str) -> Note | None:
+        """The note at a bundle path as `load` would give it, with no folder: from what this process parsed of its file if the file did
+        not change since (it is kept for the next time, as a load keeps it, and dropped once the file is gone). None where a load finds
+        no note, or for a file gone."""
+        parts = rel.split("/")
+        if not self.is_note_path(rel) or any(not p or ":" in p or "\\" in p for p in parts):
+            return None
+        where = os.path.join(self.root, *parts)
+        try:
+            st = os.stat(where)
+        except OSError:  # gone: what was parsed of it is of no use any more
+            self._parsed.pop(where, None)
+            return None
+        if not stat.S_ISREG(st.st_mode):
+            return None
+        return self._note_of(where, rel, None, st, stamp_of(st), self._parsed)
 
     # -- writing --------------------------------------------------------------
 

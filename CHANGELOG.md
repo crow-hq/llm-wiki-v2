@@ -122,6 +122,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   until newer texts push it out or the process ends; it never serves it, since no note of the index has that hash any more.
 - `search` and `recall` (`ask`) leave out a note another process deletes or moves between the listing of its folder and the
   reading of its file, and a folder removed the same way, instead of failing.
+- In CROW mode `ask` (`recall`) no longer loads the tree of the wiki: it takes only the notes the search offers, as a load takes
+  them (`WikiStore.note_at`: from what the process parsed of a note, if its file did not change), and loads the tree only when the
+  search finds none and the answer navigates the folders. With `where`, or a `select` step of one's own, it loads the tree as before.
+  What the models are asked, the answer and its citations are the same. What changes is the moment the wiki is read: before, the
+  tree was loaded and then searched, so a note written or moved by another process after the load was left out, and a note merged
+  meanwhile was read as it was at the load; now each note is read as it is when the search gives it. A note another process deletes
+  between the search and its reading is left out (before, it was read as the tree had it), and the reordering may then let in the
+  ninth note. A process that only asks keeps in memory the notes it was offered, no longer every note of the wiki.
 - The order of `search` and `ask`, and the choices CROW's filing makes by words, no longer depend on the process: the scores of a
   query's words are added up in the order the query gives them, so notes with close scores come in the same order in every process
   (before, the order of a set, which changes from one process to the next, decided the last bits of the sums). Notes with the same

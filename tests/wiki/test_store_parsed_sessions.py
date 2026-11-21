@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from llmw2.bundle import document as document_module
-from llmw2.bundle.store import WikiStore
+from llmw2.bundle.store import WikiStore, same_stamp
 from tests.wiki.test_batch_session import aged
 
 
@@ -236,3 +236,45 @@ def test_the_first_session_of_a_store_keeps_nothing_and_the_second_fills_the_cac
         store.load()
     assert reads == []
     assert len(WikiStore(store.root, actor="plain").load().all_notes()) == 3  # outside a session the cache is filled at once
+
+
+
+def test_note_at_gives_the_note_a_load_gives_and_parses_it_again_only_when_its_file_changed(tmp_path: Path, reads: list[str]) -> None:
+    store = make_store(tmp_path)
+    aged(store)
+    rel = "area/" + note_files(store)[0].name
+    loaded = next(n for n in store.load().all_notes() if n.rel == rel)
+    reads.clear()
+
+    first, again = store.note_at(rel), store.note_at(rel)
+
+    assert first is not None and again is not None and reads == []  # the load parsed it: neither parses it again
+    assert (first.rel, first.title, first.body, first.frontmatter) == (loaded.rel, loaded.title, loaded.body, loaded.frontmatter)
+    assert first.stamp is not None and loaded.stamp is not None and same_stamp(first.stamp, loaded.stamp)
+    assert first.folder is None and first.frontmatter is not again.frontmatter  # a copy of the front matter each time
+    path = store.root / rel
+    path.write_text(path.read_text(encoding="utf-8").replace("Body number", "Body changed, number"), encoding="utf-8")
+    changed = store.note_at(rel)
+    assert changed is not None and "Body changed" in changed.body and len(reads) == 1
+
+
+@pytest.mark.parametrize(
+    "rel", ["area/missing.md", "area/index.md", "log.md", "_raw/0.md", ".llmw2/x.md", "area", "../outside.md", "C:/x.md", "area//x.md"]
+)
+def test_note_at_gives_none_where_a_load_finds_no_note(tmp_path: Path, rel: str) -> None:
+    store = make_store(tmp_path)
+    (tmp_path / "outside.md").write_bytes(note_files(store)[0].read_bytes())  # a note out of the wiki
+
+    assert store.note_at(rel) is None
+
+
+def test_note_at_drops_what_was_parsed_of_a_file_gone(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    aged(store)
+    store.load()  # parses every note and keeps it
+    path = note_files(store)[0]
+    assert str(path) in store._parsed
+
+    path.unlink()
+
+    assert store.note_at("area/" + path.name) is None and str(path) not in store._parsed
