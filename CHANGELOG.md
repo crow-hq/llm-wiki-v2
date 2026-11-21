@@ -294,6 +294,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client is in one process (once the server keeps 32 entries waiting it does not get the last 32 places), and a person and a job in the
   same process are not told apart; after a restart a process counts from zero, so a job gains up to 31 places more; a new job's first
   31 entries count as few, and may take places of the 32 kept until it keeps more. Under a limit of 8 there is no share.
+- What a process keeps of the folders between two looks at the files of the wiki (the listing a search does at most once a moment)
+  holds no object per note but its name, its path and three numbers: about half the memory it took, in every process that searches.
 
 ## [1.0.5] - 2026-11-17
 

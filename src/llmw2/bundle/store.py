@@ -28,6 +28,7 @@ import contextlib
 import contextvars
 import hashlib
 import logging
+import operator
 import os
 import pickle
 import re
@@ -36,6 +37,7 @@ import sys
 import threading
 import time
 import uuid
+from array import array
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -191,11 +193,26 @@ def _entry(title: str, link: str, text: str) -> str:
 RACY_NS = 2_000_000_000  # a file this recent is read again: two writes in one clock tick can leave the same time and size
 
 Stamp = tuple[int, int, int]  # st_mtime_ns, st_size, st_ino
+Stamps = tuple["array[int]", "array[int]"]  # the stamps of a folder's notes (`_kept_stamps`)
 STALE = -2  # the time of a kept folder that no folder has: the next load lists it again
+_U64 = (1 << 64) - 1
+_STAMP = operator.attrgetter("st_mtime_ns", "st_size", "st_ino")
+_TIME, _SIZE, _INO = (operator.attrgetter(a) for a in ("st_mtime_ns", "st_size", "st_ino"))
 
 
 def stamp_of(st: os.stat_result) -> Stamp:
     return (st.st_mtime_ns, st.st_size, st.st_ino)
+
+
+def _kept_stamps(stats: list[os.stat_result]) -> Stamps:
+    """The stamps of a folder's notes as `scan_notes` keeps them, with no object per note: the times then the sizes in one array,
+    the inodes in another (unsigned; an inode wider than 64 bits, ReFS, by its low 64)."""
+    kept = array("q", map(_TIME, stats))
+    kept.extend(map(_SIZE, stats))
+    try:
+        return kept, array("Q", map(_INO, stats))
+    except OverflowError:
+        return kept, array("Q", [n & _U64 for n in map(_INO, stats)])
 
 
 def same_stamp(a: Stamp, b: Stamp) -> bool:
@@ -268,9 +285,10 @@ class WikiStore:
         # know them, after the lock is let go). The search index of the `Wiki` takes them, so that a reader never has to write them.
         # It must not raise: what it fails to do is done by the next look of the index at the files.
         self.on_written: Callable[[list[str] | None], None] | None = None
-        # what `scan_notes` keeps of a folder while its names stay the same: (the names, its notes, its subfolders, the bundle paths
-        # of its notes, the stamps of its notes when none was to be read again, the caller that had them)
-        self._listed: dict[str, tuple[Any, list[tuple[str, str]], list[tuple[str, str]], list[str], list[Any] | None, object]] = {}
+        # what `scan_notes` keeps of a folder while its names stay the same: (its names as listed, the names of its notes, its
+        # subfolders, the bundle paths of its notes, the stamps of its notes when none was to be read again (`_kept_stamps`), the caller
+        # that had them). Nothing per note but its two strings and three numbers: every process that searches holds it for the wiki whole.
+        self._listed: dict[str, tuple[tuple[str, ...], list[str], list[tuple[str, str]], list[str], Stamps | None, object]] = {}
         self._held: dict[str, Note] = {}  # note path -> the note a kept folder holds
         self._loose: dict[str, list[Note | Folder]] = {}  # folder path -> what a write added at the end of its kept lists
         self._session_guard = threading.RLock()
@@ -701,9 +719,11 @@ class WikiStore:
                 kept_dirs.pop(path, None)
                 return
             kept = kept_dirs.get(path)
-            if kept is None or kept[0] != entries.keys():
-                notes: list[tuple[str, str]] = []
+            listed = tuple(entries)  # in the order of the listing: the same names in another order only build the folder again
+            if kept is None or kept[0] != listed:
+                notes: list[str] = []
                 subs: list[tuple[str, str]] = []
+                rels: list[str] = []
                 for name in sorted(entries, key=os.path.normcase):
                     if name == CLOSED or name.startswith(".") or (not rel and name == RAW):
                         continue
@@ -715,23 +735,23 @@ class WikiStore:
                     if stat.S_ISDIR(mode):
                         subs.append((entries[name].path, child))
                     elif name.endswith(".md") and name not in (INDEX, LOG):
-                        notes.append((name, child))
-                kept = kept_dirs[path] = (frozenset(entries), notes, subs, [c for _, c in notes], None, None)
+                        notes.append(name)
+                        rels.append(child)
+                kept = kept_dirs[path] = (listed, notes, subs, rels, None, None)
             _, notes, subs, rels, clean, had = kept
             try:
-                stats = [entries[name].stat() for name, _ in notes]
+                stats = [entries[name].stat() for name in notes]
             except OSError:  # a note gone since the listing: the folder is looked at again by name next time
                 kept_dirs.pop(path, None)
-                stats = []
-                notes = [(name, child) for name, child in notes if os.path.exists(entries[name].path)]
-                rels = [c for _, c in notes]
-                stats = [entries[name].stat() for name, _ in notes]
-            stamps = [(st.st_mtime_ns, st.st_size, st.st_ino) for st in stats]
+                there = [i for i, name in enumerate(notes) if os.path.exists(entries[name].path)]
+                notes, rels = [notes[i] for i in there], [rels[i] for i in there]
+                stats = [entries[name].stat() for name in notes]
+            stamps = _kept_stamps(stats)
             if clean is not None and owner is not None and had is owner and clean == stamps:  # the same as when the caller last had it all
                 order.extend(rels)
             else:
                 read = False
-                for (name, child), stamp in zip(notes, stamps, strict=True):
+                for name, child, stamp in zip(notes, rels, map(_STAMP, stats), strict=True):
                     order.append(child)
                     held = known.get(child)
                     if held is None or stamp[0] >= racy_before or held[:2] != stamp[:2] or (held[2] != stamp[2] and held[2] and stamp[2]):
@@ -739,7 +759,7 @@ class WikiStore:
                         read = True
                 if path in kept_dirs:
                     old = kept_dirs[path]
-                    kept_dirs[path] = (*old[:4], None if read or any(s[0] >= racy_before for s in stamps) else stamps, owner)
+                    kept_dirs[path] = (*old[:4], None if read or any(st.st_mtime_ns >= racy_before for st in stats) else stamps, owner)
             for sub_path, sub_rel in subs:
                 walk(sub_path, sub_rel)
 
