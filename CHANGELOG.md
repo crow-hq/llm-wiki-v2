@@ -201,7 +201,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   store still leaves the index empty. The index, in and out of a session, no longer trusts the stamp of a file written in the last two
   seconds (two writes in one clock tick can leave the same time and size: it is read again the next time), and compares the change
   time too, as the parse cache of `WikiStore.load` does. Outside a session it lists every folder for the notes, as before, and keeps
-  the listing, so a note added and then deleted between two sessions is no longer taken as citing its copies.
+  the listing, so a note added and then deleted between two sessions is no longer taken as citing its copies. Any process that opens
+  the wiki may become the filer, and the one that takes the filing over loads the tree first: with processes that live briefly (CI, a
+  process for each task, crashes over and over) filing does less than with one that stays, and a long-lived shared server
+  (`llmwiki2 serve`, or an MCP server that stays up) is the better choice (README, "Many agents, short processes"); what the first lot
+  keeps and the index of the raw copies make that takeover cheaper.
 - A search that another process writes the index under while it reads (a fast filer at every step) reads again inside one state of
   the file, whatever is written meanwhile, instead of failing after a few attempts with "the search index cannot be rebuilt".
 - A search never waits for the write lock of the search index: a process that writes notes puts them in the index before the call

@@ -145,6 +145,15 @@ from your disk: `remember_file` and `sync_folder`. Which models do the work is a
 - **Hybrid.** The client's model writes, and the wiki's classifier (Jev through OpenRouter, or Ollama or Laya on your
   computer) decides: fewer round trips than the above, and no Haiku subagents.
 
+### Many agents, short processes
+
+Any process that opens the wiki can become the one that files what `remember` keeps, one at a time; when that role moves to
+another process, the new one loads the tree first. With processes that live briefly (CI jobs, one process for each task,
+repeated crashes) the role keeps moving and filing does less: 200 MCP servers started over 5 minutes filed between 0.44 and
+0.57 of what one server that stays up files, measured before this release made the move cheaper. Nothing is lost, but the
+queue fills sooner. In that case share one long-lived server that every agent connects to: `llmwiki2 serve` with the memory
+started (above, "With the page"), or an MCP server that stays up.
+
 Docker, the tools and security: [docs/wiki/memory.md](https://github.com/crow-hq/llm-wiki-v2/blob/main/docs/wiki/memory.md).
 
 ## Why not RAG?
