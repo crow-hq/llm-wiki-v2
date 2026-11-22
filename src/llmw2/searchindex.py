@@ -472,7 +472,7 @@ class SearchIndex:
 
     def _schema(self, db: sqlite3.Connection) -> None:
         """The tables of this schema, made (or made again when the file is of another schema or tokenizer) under the write lock."""
-        if self._current(db):
+        if self._current(db) or self._made_meanwhile(db):
             return
         db.execute("BEGIN IMMEDIATE")
         try:
@@ -490,6 +490,29 @@ class SearchIndex:
         except BaseException:
             self._rollback(db)
             raise
+
+    def _made_meanwhile(self, db: sqlite3.Connection) -> bool:
+        """Whether another connection made the tables while this one waited for the write lock to make them: a build makes them and
+        goes on at once with its first lot, under that lock, and a search does not wait for the lot (it reads the tables). False once
+        the lock is free (this connection makes them) or after `BUSY_S`, as a wait for the lock would."""
+        end = time.monotonic() + BUSY_S
+        db.execute("PRAGMA busy_timeout = 0")
+        try:
+            while time.monotonic() < end:
+                try:
+                    db.execute("BEGIN IMMEDIATE")
+                except sqlite3.OperationalError as e:
+                    if not _busy(e):
+                        raise
+                    if self._current(db):
+                        return True
+                    time.sleep(0.05)
+                else:
+                    db.execute("ROLLBACK")
+                    return False
+            return False
+        finally:
+            db.execute(f"PRAGMA busy_timeout = {BUSY_S * 1000}")
 
     @staticmethod
     def _drop_all(db: sqlite3.Connection) -> None:

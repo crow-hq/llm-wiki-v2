@@ -271,7 +271,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (and the `partial` key of `recall`) gives the sentence. A CROW `ask` or `recall` whose search finds no note during the build does
   not walk the folders, as it does once the index is whole: the walk loads the whole tree, the notes the build is reading (on a fresh
   copy of a 50,000-note wiki with a local model, 128 s before the first model call), so the answer says at once that no note was found
-  and that the index is being built. Notes changed by hand during the build are seen once the build reaches them.
+  and that the index is being built. A search that opens the file while the build makes its tables reads them once made, instead of
+  waiting for the write lock the build keeps for its first lot (it could wait up to 180 s and fail with "database is locked"). Notes
+  changed by hand during the build are seen once the build reaches them.
   Once the file is marked built (from then on the writers put their notes in themselves) the build lists the wiki once more, waiting
   for the writers' locks, so the notes written while the file was not built are in it; only then is the file marked complete (`meta`
   "complete") and the answers are those of the index whole again. A file built whole by an earlier version is completed by one such

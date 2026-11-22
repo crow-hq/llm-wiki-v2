@@ -462,3 +462,36 @@ def test_the_file_is_read_whole_only_once_the_notes_left_to_the_build_are_in(tmp
     hits = w.search("zqwindow", 3)
     assert hits.partial is None and _paths(hits) == ["ops/zq-window.md"]
     assert _rows(_index_file(tmp_path)) == _fresh_rows(w)
+
+
+def test_a_search_that_read_no_tables_yet_does_not_wait_for_the_first_lot_of_the_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(si, "BUILD_WAIT", 0.05)
+    wiki = _random_wiki(tmp_path, 30)
+    _no_index(tmp_path)
+    gate = Gate(monkeypatch)
+    w = Wiki(wiki.cfg, llm=wiki.llm)
+    _at_gate(w, gate)  # the build made the tables and holds the write lock in its first lot
+    stale = [True]
+    real = si.SearchIndex._current
+
+    def current(db: sqlite3.Connection) -> bool:
+        if threading.current_thread().name != BUILDER and stale:
+            stale.pop()
+            return False  # as read a moment before the build made the tables
+        return real(db)
+
+    monkeypatch.setattr(si.SearchIndex, "_current", staticmethod(current))
+    other = Wiki(wiki.cfg, llm=wiki.llm)  # another reader of the file, which sees it for the first time
+    out: list[Hits] = []
+    t = threading.Thread(target=lambda: out.append(other.search("alpha", 3)))
+    t.start()
+    t.join(30)
+    waited = t.is_alive()
+    gate.open.set()
+    t.join(30)
+    assert not waited and not stale  # it read the tables made meanwhile, and did not wait for the lot
+    assert out and out[0].partial == Partial(0, 30)
+    other.close()
+    w.close()
