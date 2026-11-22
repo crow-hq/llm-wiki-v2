@@ -79,12 +79,18 @@ from typing import Any, Literal
 
 from llmw2.bundle.filelock import FileLock
 from llmw2.bundle.origin import format_at
-from llmw2.errors import WikiError
+from llmw2.errors import BundleFormatError, WikiError
 
 SEGMENT_SIZE = 16 << 20  # a constant, not a setting
 JOURNAL_DIR = ".llmw2/journal"
 MAGIC = b"LLMWJRN1"
 VERSION = 1  # the format this code writes
+# The format of the wiki's folder as a whole, in `.llmw2/format` (one integer): written when the journal is born, the first thing of the
+# folder a release before it (1.x, format 1, with no such file) does not know. A version opens a folder whose format is at most its own
+# and refuses (`BundleFormatError`, nothing changed) one that says a newer format, or one it cannot read; with no file the format is 1.
+# A version that changes the folder so that an older one would lose or bring back something there raises it; the release says so.
+BUNDLE_FORMAT = 2
+FORMAT_FILE = ".llmw2/format"
 KNOWN_VERSIONS = (1,)  # the formats it reads
 HEADER_SIZE = 64
 _HEADER = struct.Struct("<8sHHQQ16sI")  # magic, v, flags, number, salt, node, crc of the 44 bytes before it
@@ -114,6 +120,60 @@ T_UNDO = ord("U")  # a record of the undo log of a section (`llmw2.bundle.txn`),
 T_RESERVED = (ord("I"), ord("S"))  # images, a section of several entries: not implemented
 KNOWN_TYPES = (T_ENTRY, T_SEAL, T_FILED, T_DONE, T_ATTEMPT, T_ABANDON, T_CLEANED, T_UNDO)
 QUARANTINE = ".quarantine"  # a segment file with a header that is not valid, kept aside under this suffix (see `check`)
+
+
+FORMAT_READS = 6  # tries of the read of `FORMAT_FILE` while another program holds it (an antivirus, an indexer: Windows), as txn's
+
+
+def bundle_format(root: Path) -> int:
+    """The format the wiki's folder says it is in (`FORMAT_FILE`); 1 when it says nothing (a folder of a 1.x release). `BundleFormatError`
+    when what the file holds is not one integer. A read that another program holds up is tried again for a moment, then its `OSError`
+    is raised as it is: a system error, not a format."""
+    path = Path(root) / FORMAT_FILE
+    for attempt in range(FORMAT_READS):
+        try:
+            data = path.read_bytes()
+            break
+        except FileNotFoundError:
+            return 1
+        except PermissionError:
+            if attempt == FORMAT_READS - 1:
+                raise
+            time.sleep(0.01 * 2**attempt)
+    try:
+        text = data.decode("utf-8").strip()
+    except UnicodeDecodeError as e:
+        raise BundleFormatError(f"{path} does not hold a format number ({e}): this version of llmw2 does not open the wiki") from e
+    if not text.isdigit():
+        raise BundleFormatError(f"{path} does not hold a format number ({text[:20]!r}): this version of llmw2 does not open the wiki")
+    return int(text)
+
+
+def check_format(root: Path) -> None:
+    """Refuse a wiki's folder that says a newer format than `BUNDLE_FORMAT` (`BundleFormatError`): before anything is read or written."""
+    found = bundle_format(root)
+    if found > BUNDLE_FORMAT:
+        raise BundleFormatError(
+            f"the wiki at {root} is in format {found} ({FORMAT_FILE}), newer than the format {BUNDLE_FORMAT} this version of llmw2 knows: "
+            "install a newer llmw2 to open it (nothing was changed)"
+        )
+
+
+def write_format(root: Path) -> None:
+    """Say the folder's format (`BUNDLE_FORMAT`), once: a file written whole, then put in place. A folder that says a format already
+    keeps it. What a process that died between the two left (`format.<pid>.tmp`) is taken away."""
+    path = Path(root) / FORMAT_FILE
+    for left in path.parent.glob("format.*.tmp"):
+        with contextlib.suppress(OSError):
+            left.unlink()
+    if path.exists():
+        return
+    tmp = path.with_name(f"format.{os.getpid()}.tmp")
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(f"{BUNDLE_FORMAT}\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 
 class JournalError(WikiError):
@@ -704,6 +764,8 @@ class Journal:
 
     def _claim_or_make(self, headers: list[tuple[Path, Header | None]], number: int) -> None:
         """The prepare lock is held: a free (recycled) segment is numbered and used before a new one is written."""
+        if number == 1:  # the journal is born: something a 1.x does not know, so the folder says its format before it holds an entry
+            write_format(self.root)
         for path, h in headers:
             if h is not None and h.number == 0 and h.version == VERSION:
                 fd = os.open(path, os.O_RDWR | _BINARY)

@@ -1137,6 +1137,12 @@ def status(hub: Hub, root: Path) -> dict[str, Any]:
             else "at that many remember refuses new entries; there is no call yet that clears them"
         )
         warnings.append(f"{failed} entries given up (text kept in the journal) fill {failed} of {QUEUE_LIMIT} places of the queue: {what}")
+    if open_ or failed:
+        warnings.append(
+            f"{len(open_) + failed} entries wait in the journal: before opening this wiki with llmw2 1.x, let the queue empty (queue and "
+            "failed at 0): a 1.x does not know the journal, so its forget would not take them out (this version files them when it opens "
+            "the wiki again) and its delete would leave their text in the journal"
+        )
     if forgets := len(hub.forgets()):
         warnings.append(f"{forgets} purges are not complete in the journal yet: the process that holds the lease finishes them")
     if hub.compact_stopped is not None:

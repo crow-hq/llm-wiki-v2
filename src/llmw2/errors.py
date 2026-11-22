@@ -98,6 +98,11 @@ class QueueFull(WikiError):
         self.reason = reason
 
 
+class BundleFormatError(WikiError):
+    """The wiki's folder says (`.llmw2/format`) it was written in a format newer than the one this version of llmw2 knows, or says it
+    in words this version cannot read: the wiki is not opened, and nothing is changed. Install the version that wrote it, or a newer one."""
+
+
 class DiskFull(WikiError, OSError):
     """The disk of the bundle has less room than the reserve that filing needs, or a write failed for lack of room: nothing was
     acknowledged. (An `OSError` too, so that code that handles a full disk handles this.)"""

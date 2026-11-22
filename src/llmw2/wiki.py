@@ -276,6 +276,7 @@ class Wiki:
         self.tracker = llm.usage if llm else classifier.usage if classifier else UsageTracker(cfg.usage_log)
         if classifier is not None and classifier.usage is not self.tracker:
             raise ValueError("the llm and the classifier must record into the same UsageTracker")
+        J.check_format(cfg.bundle)  # a folder in a newer format than this version knows is not opened (BundleFormatError)
         self.store = WikiStore(cfg.bundle, actor=cfg.actor)
         if cfg.link_scope != "wiki":
             self.store.link_reach = within_area if cfg.link_scope == "root" else within_folder

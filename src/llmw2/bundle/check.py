@@ -169,6 +169,12 @@ def _check_logged(root: Path, notes: dict[str, OKFDocument]) -> list[Problem]:
     return [Problem(rel, "no log line names it", WARNING) for rel in notes if rel.rpartition("/")[2] not in named]
 
 
+def folder_is_llmw2(root: Path, folder: str) -> bool:
+    """Whether `folder` (of an `os.walk` of the bundle) is its `.llmw2/`: there the leftover of the format's write (`format.<pid>.tmp`,
+    taken away when the journal is born again) is no damage to the wiki."""
+    return Path(folder) == Path(root) / ".llmw2"
+
+
 def _check_leftovers(root: Path) -> list[Problem]:
     """The temporary file of a write that was cut (`.<name>.<pid>.<thread>.tmp`), anywhere in the bundle."""
     found: list[Problem] = []
@@ -177,7 +183,7 @@ def _check_leftovers(root: Path) -> list[Problem]:
         found += [
             Problem((Path(folder) / name).relative_to(root).as_posix(), "left by an interrupted write")
             for name in sorted(files)
-            if name.endswith(".tmp")
+            if name.endswith(".tmp") and not (folder_is_llmw2(root, folder) and name.startswith("format."))
         ]
     return found
 

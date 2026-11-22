@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrading from 1.x
+
+- From 1.x there is nothing to do: this version opens a 1.x wiki as it is, and makes its journal the first time `remember` (or a purge)
+  needs it. A major version, because the wiki's folder changes in a way 1.x does not know: from then on `.llmw2/format` says `2`.
+- To open the same wiki with a 1.x again (going back, or two versions on one wiki), first let the queue of `remember` empty: `status`
+  with `queue` and `failed` at 0 (it says so in its warnings while entries wait). Otherwise a 1.x does not know the journal: its
+  `purge` does not take out the entries still queued, which this version files when it opens the wiki again (a memory forgotten comes
+  back), and its `delete_note` leaves their text in the journal's segments. A note a 1.x deletes stays in this version's search index
+  until its next sync (a look at the files that changed, at the next search). Locks are shared, so a 1.x and this version on one wiki
+  at the same time still exclude each other; the rest of what 1.x does not know (the undo log, the trash) it leaves alone, and the
+  restore of an interrupted section here compares the files with what it saved and leaves alone what a 1.x changed meanwhile.
+- `.llmw2/format` holds the format of the wiki's folder, one integer, written when the journal is born. A version opens a folder whose
+  format is at most its own (no file: format 1, a 1.x folder) and refuses one that says a newer format, or whose file holds no format
+  number (`BundleFormatError`, nothing changed): from this version on, an older release never writes over a newer wiki. A read of the
+  file that another program holds (an antivirus, an indexer) is tried again for a moment, then its system error is raised as it is.
+  The format is looked at when a `Wiki` opens: a process already open does not see a format written after it. 1.x does not read the
+  file, so for it the step above stays.
+
 ### Added
 
 - Every write section of the bundle is a transaction (`llmw2.bundle.txn`): the image of each file is saved in an undo log, made durable,
@@ -69,7 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folder; what a disk keeps of blocks written before is out of reach of a file and is not promised. The first purge of a wiki that
   never used `remember` makes its journal (three segments, 48 MiB of disk, once: space, not wear that comes again). The release
   before this one does not know the journal: it leaves `.llmw2/journal/` alone, and its `purge` does not forget the entries queued
-  there, which this version files later; a tombstone left open is completed by the next purge or filer of this version.
+  there, which this version files later (see "Upgrading from 1.x"); a tombstone left open is completed by the next purge or filer of
+  this version.
 
 - `Problem.severity` (`"error"` or `"warning"`). `check` now also reports, as errors, a raw copy that no note (nor archived version of one) cites and a
   temporary file an interrupted write left anywhere in the bundle, and, as warnings, a See-also entry the note it points to does not have back and a
@@ -112,7 +131,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - With the wiki's own models, the memory's `remember` keeps the text in the journal and answers as soon as it is on the disk, before any
   model is called, as `Wiki.remember` does: it no longer waits for the wiki to be free nor for the filing. The result keeps the keys of
   the release before and their types, with the values of "nothing filed yet" (`action: "queued"`, `note: ""`, `folder: ""`, `related:
-  []`), and adds the receipt's `id`, `key` and `state`: an addition, so the next release is a minor one. The same text again (or the same
+  []`), and adds the receipt's `id`, `key` and `state`: an addition, which a client of the release before reads as it did. The same text again (or the same
   key and text) returns the first one's receipt; once it is filed, with `action: "unchanged"` and the note and folder it went in, as the
   release before said for a text the wiki held. `search` finds the memory at once, `recall` reads it and `read_note` reads
   `pending:<id>`, then the note it went in; its deviation, when the limit on top-level folders sends its note elsewhere, is in the note
