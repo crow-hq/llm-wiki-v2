@@ -2225,7 +2225,8 @@ class Wiki:
                 report.archived, report.unlinked = deleted.archived, deleted.unlinked
                 # a link is written "[title](path)", and a raw copy's file name holds the title: all are names of the note
                 report.log_lines = self.store.scrub_log(
-                    [*deleted.notes, *(f"[{n.title}](" for n in notes), *(PurePath(r).name for r in deleted.sources)]
+                    [*deleted.notes, *(f"[{n.title}](" for n in notes), *(PurePath(r).name for r in deleted.sources)],
+                    spare={n.rel for n in root.all_notes() if n.rel not in gone_rels},  # a note that stays keeps its lines
                 )
         filed: set[int] = set()
         if others:

@@ -297,8 +297,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never by title or path, so that a purge does not leave the title of a note in the records of other entries.
 - A purge no longer writes `log.md` whole: each line that names what was purged is overwritten where it stands by a line of the same
   length in bytes (`* **Verb**: [purged]`, blanks, and ` · by <author>` when the line had one), so the file keeps its size and every
-  other line its place, and the cost of a purge no longer grows with the log. The undo log keeps the bytes of those lines only, in a
-  file of the trash that is zeroed and flushed before it is deleted (a copy the trash holds of a file a section overwrote is zeroed
+  other line its place, and the cost of a purge no longer grows with the log. A line that links, by the same title, a note that stays
+  (two notes of one topic in two folders) is not taken: its note keeps a line that names it. The undo log keeps the bytes of those
+  lines only, in a file of the trash that is zeroed and flushed before it is deleted (a copy the trash holds of a file a section overwrote is zeroed
   too, and a trash a crash left with no record is emptied at the next lock). A line too short to hold the marker makes the file be
   written whole, as before: `Purged.log_rewritten` says so.
 - The cache of the vectors keeps its rollback journal between writes (`journal_mode=PERSIST`): the file is no longer made and deleted

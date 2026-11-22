@@ -392,6 +392,32 @@ def test_a_merged_note_always_cites_the_raw_copy_of_what_was_merged_into_it(bund
         w.close()
 
 
+def test_a_purge_leaves_the_log_lines_of_a_note_that_stays_with_the_same_title(bundle: Path) -> None:
+    """Two notes with the same title in two folders (memories filed under one topic): purging one takes its log lines, link by title
+    included, and leaves the other's, so `check` still finds a line that names it."""
+    from llmw2.bundle.check import check
+    from llmw2.bundle.origin import Origin
+
+    w, _ = make(bundle)
+    try:
+        store = w.store
+        made = {}
+        for folder_name, ident in (("alpha", "gone"), ("beta", "kept")):
+            folder, _ = store.create_folder(store.load(), folder_name, f"{folder_name.title()}.")
+            raw = store.save_raw(f"The {ident} text.", title="Rem", resource=None, origin=Origin("local", "x", ident))
+            note = store.write_note(folder, title="About rem-3", summary="A memory.", body=f"The {ident} text.", tags=[],
+                                    source={"resource": raw, "title": "Rem"})
+            store.append_log("Created", f"from {raw}", link=note.rel, link_title=note.title)
+            made[ident] = note.rel
+        report = w.purge(Origin("local", "x", "gone").key)
+        assert report is not None and report.notes == [made["gone"]]
+        log = (bundle / "log.md").read_text(encoding="utf-8")
+        assert f"[About rem-3]({made['kept']})" in log and f"[About rem-3]({made['gone']})" not in log
+        assert not [p for p in check(bundle) if "no log line names it" in p.message]
+    finally:
+        w.close()
+
+
 # -- a purge cut, and the lease of another process -----------------------------------------------------------------------------
 
 

@@ -1238,11 +1238,12 @@ class WikiStore:
                 deleted.sources.append(resource)
         deleted.sources = list(dict.fromkeys(deleted.sources))
 
-    def scrub_log(self, names: Iterable[str]) -> int:
+    def scrub_log(self, names: Iterable[str], spare: Collection[str] = ()) -> int:
         """Say `[purged]` in place of the text of every line of log.md that names one of `names`; how many lines changed.
 
         A line keeps its verb and its author (` · by <author>`), loses the rest: the title, the path, the link. The line is
-        found by a name as it is written in it: a path, a raw copy's file name, "[title](" for a link.
+        found by a name as it is written in it: a path, a raw copy's file name, "[title](" for a link. A link "[title](path)" whose
+        path is one of `spare` (a note that stays, with the same title as one that goes) is not taken by its title.
 
         Each line is overwritten where it stands, by a line of the same length (spaces after `[purged]` make up the difference):
         the file is not rewritten, so the cost of a purge does not grow with the log, and the undo keeps the bytes of the lines, not
@@ -1264,9 +1265,16 @@ class WikiStore:
             return 0
         edits: list[tuple[int, bytes, bytes]] = []
         done = -1
+        kept_paths = {p.lstrip("/") for p in spare}
         for m in re.finditer(b"|".join(re.escape(n) for n in needles), data):
             if m.start() < done:  # another name of the line that was just taken
                 continue
+            if kept_paths and m.group(0).startswith(b"[") and m.group(0).endswith(b"]("):
+                line_end = data.find(b"\n", m.end())
+                close = data.find(b")", m.end(), len(data) if line_end < 0 else line_end)
+                target = data[m.end():close].decode(enc, errors="replace").split("#")[0] if close >= 0 else ""
+                if target.lstrip("/") in kept_paths:  # a note that stays and has the title of one that goes: its line is its own
+                    continue
             start = data.rfind(b"\n", 0, m.start()) + 1
             end = data.find(b"\n", m.end())
             end = len(data) if end < 0 else end
