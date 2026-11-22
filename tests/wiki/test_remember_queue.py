@@ -136,6 +136,31 @@ def test_a_process_that_saw_no_entry_filed_gives_a_retry_time_from_the_last_fili
         fresh.journal.close()
 
 
+def test_the_age_of_the_oldest_entry_does_not_follow_the_wall_clock_once_read(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A robot's clock set right six hours later (it was behind when the entries were written): the oldest entry has not waited six
+    hours, and `status` says neither that nor a stall."""
+    from datetime import datetime as real_datetime
+    from datetime import timedelta
+
+    w = make(bundle)
+    try:
+        w._stop_filer()
+        w.remember("topic: a-1\none")
+        assert w.status()["oldest_s"] < 60  # read by this process now, by the clock as it is
+
+        class Later(real_datetime):  # the wall clock six hours ahead from now on
+            @classmethod
+            def now(cls, tz=None):  # type: ignore[no-untyped-def,override]
+                return real_datetime.now(tz) + timedelta(seconds=21_700)
+
+        monkeypatch.setattr(F, "datetime", Later)
+        st = w.status()
+        assert st["oldest_s"] is not None and st["oldest_s"] < 60
+        assert not any("has waited" in x for x in st["warnings"])
+    finally:
+        w.close()
+
+
 def test_a_pace_seen_from_one_or_two_closures_is_not_believed(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A process that saw one entry close in a long while would tell an hour; the time the last filings took tells better."""
     monkeypatch.setattr(F, "QUEUE_LIMIT", 2)

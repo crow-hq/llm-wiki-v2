@@ -87,6 +87,15 @@ TEXT_KEY = "text:"  # the key of an entry remembered without one: this and the h
 ENTRY_KEYS = ("queue", "queue_limit", "filing", "failed", "oldest_s", "filer", "last_error", "journal_bytes", "disk_free", "warnings")
 
 
+def wall_age(at: str) -> float:
+    """Seconds from `at` (an entry's acknowledgement, ISO with a zone) to now by the wall clock, at least 0; 0 for an `at` that is not
+    a time."""
+    try:
+        return max(0.0, (datetime.now(UTC) - datetime.fromisoformat(at)).total_seconds())
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def places(own: int) -> int:
     """The places of the queue that a writer keeping `own` entries of its own open may fill: all of them while it keeps fewer than
     `QUEUE_LIMIT // 8`; once it keeps that many, all but the last `QUEUE_LIMIT // 8` (224 of 256). Those are kept for the writers that
@@ -154,6 +163,7 @@ class Entry:
     event_at: str | None
     seg: int
     seen: float = field(default_factory=time.monotonic)  # when this process first read it
+    age0: float = 0.0  # how old it was then, by the wall clock (`at`): the one time its age trusts that clock (`Hub.age`)
     filed: dict[str, Any] | None = None  # the `F` record: what the filing did
     done: bool = False
     failed: str | None = None  # the `X` record
@@ -310,6 +320,7 @@ class Hub:
                 rec.seg,
             )
             e.cost = Hub.entry_cost(rec.size)
+            e.age0 = wall_age(e.at)
             self._state_of(e, meta)  # a copy carried forward is the first record of the entry that this process reads
             self.entries[ident] = e
             self.by_sig[e.sig] = ident
@@ -458,6 +469,13 @@ class Hub:
                 self.shown.pop(ident, None)
             self._shown_list = None
 
+    @staticmethod
+    def age(e: Entry) -> float:
+        """How long the entry has waited, in seconds: its age by the wall clock when this process first read it, then the monotonic time
+        since. A wall clock set back or forward later (a robot that finds the time again, a laptop's clock corrected) does not change it;
+        one that was wrong when the process first read the entry (written under a clock set back, read after it was set right) does."""
+        return e.age0 + max(0.0, time.monotonic() - e.seen)
+
     def open_entries(self) -> list[Entry]:
         return [e for e in self.entries.values() if not e.closed]
 
@@ -555,7 +573,7 @@ class Hub:
         first = self.next_open()
         if first is not None:
             with contextlib.suppress(ValueError):
-                oldest = max(0.0, round((datetime.now(UTC) - datetime.fromisoformat(first.at)).total_seconds(), 1))
+                oldest = round(self.age(first), 1)
         queue = self.open_n + self.failed_n
         pace = self.pace()
         retry = round(max(1.0, queue / pace), 1) if pace and why != "stall" else None
@@ -1115,7 +1133,7 @@ def status(hub: Hub, root: Path) -> dict[str, Any]:
     oldest: float | None = None
     if open_:
         with contextlib.suppress(ValueError):
-            oldest = max(0.0, round((datetime.now(UTC) - datetime.fromisoformat(open_[0].at)).total_seconds(), 1))
+            oldest = round(hub.age(open_[0]), 1)
     size = 0
     journal_dir = root / J.JOURNAL_DIR
     with contextlib.suppress(OSError), os.scandir(journal_dir) as it:
