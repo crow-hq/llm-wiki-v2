@@ -43,7 +43,8 @@ def cache_bytes(bundle: Path) -> bytes:
     return b"".join(p.read_bytes() for p in sorted((bundle / ".llmw2" / "cache").glob("*")) if p.is_file() and p.name != ".gitignore")
 
 
-def test_after_a_purge_no_file_of_the_cache_holds_a_word_or_the_title_of_the_note(bundle: Path) -> None:
+def test_after_a_purge_no_file_of_the_cache_holds_a_word_or_the_title_of_the_note(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(si, "BUILD_WAIT", 30.0)  # the first search answers whole, however slow the machine (else partial)
     w = make(bundle)
     try:
         for i in range(6):
@@ -55,9 +56,12 @@ def test_after_a_purge_no_file_of_the_cache_holds_a_word_or_the_title_of_the_not
         assert report is not None and report.pending == ["journal"] and len(report.notes) == 1
         data = cache_bytes(bundle)
         assert WORD.encode() not in data and b"Odd stone note" not in data
-        assert w.search("rivers") and all("odd" not in h.path for h in w.search(WORD))
+        # the WAL as the purge leaves it: a search after it may write there again (the notes written less than RACY_NS before it,
+        # read again once older), and on a slow machine it does
         wal = si.INDEX_FILE + "-wal"
         assert not (bundle / wal).exists() or (bundle / wal).stat().st_size == 0
+        assert w.search("rivers") and all("odd" not in h.path for h in w.search(WORD))
+        assert WORD.encode() not in cache_bytes(bundle)
     finally:
         w.close()
 

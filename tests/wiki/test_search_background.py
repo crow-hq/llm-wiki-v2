@@ -66,6 +66,13 @@ class Gate:
         monkeypatch.setattr(NoteSearch, "_entry", entry)
 
 
+def _at_gate(w: Wiki, gate: Gate) -> None:
+    """Start the build in the background, as the first search does, and wait until it holds at the gate: a test that searches then
+    finds the same on a slow machine, where the first search could answer before the build gets there."""
+    w._search._building(w.store)
+    assert gate.reached.wait(60)
+
+
 def _paths(hits: list[Hit]) -> list[str]:
     return [h.path for h in hits]
 
@@ -88,8 +95,8 @@ def test_searches_while_the_file_is_built_are_partial_and_whole_once_it_is(tmp_p
     gate = Gate(monkeypatch, after=25)  # two lots committed; the build holds the write lock in the third
     w = Wiki(wiki.cfg, llm=wiki.llm)
 
+    _at_gate(w, gate)
     first = w.search("alpha river", 8)
-    assert gate.reached.is_set()
     build = w._search._build
     assert build is not None and build._index is not None and build._index._held is not None
     assert build._index._held.in_transaction  # the search above did not wait for the write lock
@@ -141,6 +148,7 @@ def test_a_note_written_while_the_build_runs_is_in_the_file_when_it_is_done(tmp_
     _no_index(tmp_path)
     gate = Gate(monkeypatch)  # the build listed the wiki and holds at its first read
     w = Wiki(wiki.cfg, llm=wiki.llm)
+    _at_gate(w, gate)
     assert w.search("alpha").partial == Partial(0, 30)
     with w.store.lock():  # a section, as the library writes: its hook tells the index, which sees no file built whole and leaves it
         note = w.store.write_note(
@@ -276,6 +284,7 @@ def test_a_purge_reads_again_the_notes_kept_while_the_file_is_built(tmp_path: Pa
     _no_index(tmp_path)
     gate = Gate(monkeypatch)
     w = Wiki(wiki.cfg, llm=wiki.llm)
+    _at_gate(w, gate)
     w.search("alpha")
     with w.store.lock():
         note = w.store.write_note(w.store.load(), title="Gone", summary="zqpurged", body="zqpurged", tags=[], source={"resource": "/p.md"})
@@ -297,6 +306,7 @@ def test_a_note_purged_from_a_lot_not_marked_yet_leaves_the_file_when_the_build_
     _no_index(tmp_path)
     gate = Gate(monkeypatch, after=15)  # one lot committed, the file not marked; the build holds the write lock in the second
     w = Wiki(wiki.cfg, llm=wiki.llm)
+    _at_gate(w, gate)
     w.search("alpha")
     secret = sorted(_committed(tmp_path))[0]
     with closing(sqlite3.connect(_index_file(tmp_path))) as db:
@@ -343,6 +353,7 @@ def test_an_answer_found_while_the_file_is_built_says_its_notes_may_be_incomplet
     gate = Gate(monkeypatch, after=3)  # three of the four notes committed
     reply = "Revenue is booked monthly [finance/revenue-policy.md]."
     llm.add(ANSWER, reply, reply)
+    _at_gate(wiki, gate)
 
     during = wiki.ask(QUESTION)
     assert during.partial is not None and during.text.endswith(PARTIAL_HINT)
@@ -366,6 +377,7 @@ def test_the_mcp_search_says_partial_in_a_line_and_in_its_structured_content(tmp
     _no_index(tmp_path)
     gate = Gate(monkeypatch, after=15)  # one lot committed
     w = Wiki(wiki.cfg, llm=wiki.llm)
+    _at_gate(w, gate)
     out = call(w, "search", {"query": "alpha river", "k": 8})  # through the SDK: its client and its check of the structured content
     assert not out.is_error
     texts = [getattr(c, "text", "") for c in out.content]

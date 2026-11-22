@@ -11,12 +11,20 @@ import pytest
 
 from llmw2 import Wiki, WikiConfig
 from llmw2 import search as search_module
+from llmw2 import searchindex as si
 from llmw2.models.usage import UsageTracker
 from llmw2.search import exact_expressions
 from tests.wiki.fakes import FakeLLM
 
 PROCESS = "annual review of the invoice process"
 FILLER = [(f"Report {n}", f"The report covers the {PROCESS} and the review of every ticket.") for n in range(1, 6)]
+
+
+@pytest.fixture(autouse=True)
+def whole_answers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The first search waits for the index's build: on a slow machine it can take more than `BUILD_WAIT`, and the answer is then
+    partial (`test_search_background.py` covers that); these tests are about the order of a whole answer."""
+    monkeypatch.setattr(si, "BUILD_WAIT", 30.0)
 
 
 def make(tmp_path: Path, notes: list[tuple[str, str]]) -> Wiki:
