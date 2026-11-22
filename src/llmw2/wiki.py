@@ -52,7 +52,7 @@ from collections.abc import Callable, Collection, Iterable, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
-from typing import Any, ParamSpec, Self, TypeVar
+from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar
 
 from llmw2 import filer as _filer
 from llmw2.agents import echo, grouping, lexical, steps_crow
@@ -105,6 +105,9 @@ from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport, UsageTracker
 from llmw2.search import VECTORS_FILE, Embedder, Hit, Hits, NoteSearch, VectorCache
 from llmw2.search import Pending as SearchPending
+
+if TYPE_CHECKING:
+    from llmw2.searchindex import Linked
 
 PLAN_DEPTH = 3  # levels `plan` may lay out (and never below max_depth)
 PLAN_OPENING = 220  # characters of each document's opening `plan` reads
@@ -1894,11 +1897,24 @@ class Wiki:
     @by_author
     def delete_note(self, path: str, *, author: str | None = None) -> Deleted:
         """Delete a note ("finance/pricing.md"); links to it go from the other notes, and raw copies only it cites. When a raw copy
-        deleted may hold the text of an entry `remember` kept (`_mark_journal`), that text goes from the journal too."""
+        deleted may hold the text of an entry `remember` kept (`_mark_journal`), that text goes from the journal too. With the search
+        index complete the wiki is not read whole: the notes that link to it or cite its raw copies come from the index's links, the
+        wiki listed under the lock (a note edited by hand a moment ago is read as it is), and the same notes change, the same way."""
         _not_pending(path)
+        index = self._search.index
+        if self._links_indexed():
+            # the notes that link to it, or cite its raw copies, come from the index on disk (`SearchIndex.linking`, the wiki listed
+            # under the lock, the notes it has not read as they are now among them): only its folder and those notes are read
+            with self.store.session(), self.store.lock():
+                note = self.store.note_at(path.strip().lstrip("/"))
+                remembered = self._remembered_raws([note]) if note is not None else []
+                deleted = self.store.delete_note(path, linking=lambda targets: _notes_of(index.linking(self.store, targets)))
+                tomb = self._mark_journal(set(remembered) & set(deleted.sources)) if remembered else None
+            self._close_journal(tomb, deleted)
+            return deleted
         # the wiki is read before the lock, in one of the places the memory allows, kept until the session's copy of it goes: the section
         # lists again only the folders changed meanwhile; with no place, the section reads it under the lock
-        with self.store.session(), self.store.reading(self._search.index.notes()) as place:
+        with self.store.session(), self.store.reading(index.notes()) as place:
             if place:
                 self.store.load()
             with self.store.lock():
@@ -1910,6 +1926,19 @@ class Wiki:
                 tomb = self._mark_journal(set(remembered) & set(deleted.sources)) if remembered else None
         self._close_journal(tomb, deleted)
         return deleted
+
+    def _links_indexed(self) -> bool:
+        """Whether the index on disk can say which notes link to a note (`SearchIndex.linking`): its file is complete (`ready`). A file
+        that cannot be read now says no: the wiki is read whole, as before."""
+        import sqlite3  # with the index, not with the package
+
+        index = self._search.index
+        if index.path is None or not index.path.exists():
+            return False
+        try:
+            return index.ready()
+        except sqlite3.Error:
+            return False
 
     def _remembered_raws(self, notes: list[Note]) -> list[str]:
         """The raw copies these notes cite that a `remember` may have filed (an origin of `remember`, or none): their text may be in the
@@ -1952,7 +1981,7 @@ class Wiki:
         filer, when its wiki closes (`_finish_journal`); never in the call, which says "journal" in `deleted.pending`."""
         if tomb is not None:
             deleted.pending.append("journal")
-            self._hand_over()
+            self._hand_over(refresh=False)  # `_mark_journal` read the journal after its tombstone: nothing of this call came since
 
     @by_author
     def delete_folder(self, path: str, *, author: str | None = None) -> Deleted:
@@ -2052,7 +2081,9 @@ class Wiki:
         a note another program rewrote in place with the same size and its old modification time put back by hand (`cp -p`,
         `rsync -t`) is not seen by a purge in a process that had parsed it before: it may keep a citation it did not know of, or be
         written over, until its size or time changes. A process that starts afresh parses every file, and the first purge of a CLI
-        call is that.
+        call is that. With the search index complete none of this: no tree is read, the notes that cite the copies, and those that
+        link to them, come from the index's links (`SearchIndex.linking`), the wiki listed under the lock, so a citation added by hand
+        meanwhile is seen.
         """
         with self.store.session():  # what the store reads in the first step it keeps for the last
             if dry_run:
@@ -2114,11 +2145,13 @@ class Wiki:
                 self._hand_over()
                 return report
 
-    def _hand_over(self) -> None:
+    def _hand_over(self, *, refresh: bool = True) -> None:
         """A tombstone was written: the filer of this process, if one runs, looks at it now; the filer of another process that holds the
-        lease sees it at its next look; with none, this wiki completes it when it closes (`_finish_journal`)."""
+        lease sees it at its next look; with none, this wiki completes it when it closes (`_finish_journal`). `refresh` false: the caller
+        read the journal after the tombstone (`_mark_journal`), and it is not read again."""
         hub = self._journal()
-        hub.refresh()
+        if refresh:
+            hub.refresh()
         if hub.filer is not None and hub.filer.is_alive() and not hub.filer.stopping:
             hub.filer.kick()
         hub.notify()
@@ -2227,8 +2260,12 @@ class Wiki:
         self, key: str, dry_run: bool, mark: Callable[[], None] | None = None, done: Callable[[], None] | None = None
     ) -> Purged | None:
         """`mark` runs inside the section that deletes, before it does; `done` once that section committed (under the lock). Called in a
-        session: the wiki is read before the lock, and the section lists again only the folders changed meanwhile."""
-        with self.store.reading(self._search.index.notes()) as place:  # the wiki read before the lock, or with no place under it
+        session: the wiki is read before the lock, and the section lists again only the folders changed meanwhile; with the index complete
+        (`_links_indexed`) no tree is read: the notes that cite the copies, and those near them, come from it (`_citing`)."""
+        by_index = self._links_indexed()
+        # the wiki read before the lock, or with no place under it; none needed by the index
+        reading = contextlib.nullcontext(False) if by_index else self.store.reading(self._search.index.notes())
+        with reading as place:
             if place and self._raws_of(key):
                 self.store.load()
             with self.store.lock(after_commit=None if dry_run else done):
@@ -2237,11 +2274,19 @@ class Wiki:
                     return None
                 if mark is not None and not dry_run:
                     mark()
-                root = self.store.load()
-                notes = [n for n in root.all_notes() if set(raws).intersection(raw_sources(n.frontmatter))]
+                near = self._citing(raws) if by_index else None
+                if near is None:
+                    root: Folder | None = self.store.load()
+                    assert root is not None
+                    notes = [n for n in root.all_notes() if set(raws).intersection(raw_sources(n.frontmatter))]
+                    listed, kept_near, others_of = [n.rel for n in root.all_notes()], None, root.all_notes()
+                else:
+                    root = None
+                    notes, kept_near, listed = near
+                    others_of = kept_near  # the notes that cite the raw copies the purged ones cite: what `_purged` asks about
                 others = self._cited_by(notes, set(raws))  # read before anything is deleted
                 gone_rels = {n.rel for n in notes}
-                elsewhere = {r for n in root.all_notes() if n.rel not in gone_rels for r in raw_sources(n.frontmatter)}  # filing adds none
+                elsewhere = {r for n in others_of if n.rel not in gone_rels for r in raw_sources(n.frontmatter)}  # filing adds none
                 report = Purged(refiled=[_named(item) for item, _ in others])
                 if dry_run:
                     went = {n.rel for n in notes}
@@ -2250,13 +2295,13 @@ class Wiki:
                     report.archived = [f"/{p.relative_to(self.store.root).as_posix()}" for p in went_archived]
                     return report
                 kept = {r for _, olds in others for r in olds}
-                deleted = self.store.purge_notes(root, notes, raws, keep=kept)
+                deleted = self.store.purge_notes(root, notes, raws, keep=kept, kept=kept_near)
                 report.notes, report.sources = deleted.notes, deleted.sources
                 report.archived, report.unlinked = deleted.archived, deleted.unlinked
                 # a link is written "[title](path)", and a raw copy's file name holds the title: all are names of the note
                 report.log_lines = self.store.scrub_log(
                     [*deleted.notes, *(f"[{n.title}](" for n in notes), *(PurePath(r).name for r in deleted.sources)],
-                    spare={n.rel for n in root.all_notes() if n.rel not in gone_rels},  # a note that stays keeps its lines
+                    spare={rel for rel in listed if rel not in gone_rels},  # a note that stays keeps its lines
                 )
         filed: set[int] = set()
         if others:
@@ -2291,6 +2336,21 @@ class Wiki:
                 f"origin {digest}: {len(report.notes)} notes, {len(report.sources)} raw copies and {len(report.archived)} archived "
                 f"versions deleted, {len(report.refiled)} other documents filed again",
             )
+
+    def _citing(self, raws: list[str]) -> tuple[list[Note], list[Note], list[str]] | None:
+        """Under the lock, from the index (`SearchIndex.linking`): the notes that cite one of `raws`, each in its folder as `load` gives it;
+        the notes that link to those or cite their raw copies (`_delete(kept=)`); every note of the wiki as listed. None when the index
+        cannot say: the caller reads the whole wiki."""
+        linked = self._search.index.linking(self.store, raws)
+        if linked is None:
+            return None
+        folders: dict[str, Folder | None] = {}
+        notes = [n for n in self.store.notes_at(linked.notes, folders) if set(raws).intersection(raw_sources(n.frontmatter))]
+        gone = {n.rel for n in notes}
+        more = linked.more([*gone, *{r for n in notes for r in raw_sources(n.frontmatter)}]) if notes else []
+        if more is None:
+            return None
+        return notes, self.store.near(more, gone, folders), linked.listed
 
     def _cited_by(self, notes: list[Note], purged: set[str]) -> list[tuple[Item, list[str]]]:
         """The other documents the notes cite, as `rebuild` would file them (an origin from its latest raw copy, a copy with no
@@ -2405,6 +2465,10 @@ class Wiki:
     @property
     def usage(self) -> UsageReport:
         return self.tracker.snapshot()
+
+
+def _notes_of(linked: Linked | None) -> list[str] | None:
+    return None if linked is None else linked.notes
 
 
 def _not_pending(path: str) -> None:

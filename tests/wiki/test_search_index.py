@@ -732,7 +732,7 @@ def test_the_tokenizer_and_the_tables_are_tied_to_the_schema() -> None:
     import hashlib
 
     digest = hashlib.sha256(repr(si._DDL).encode()).hexdigest()[:16]
-    assert {si.SCHEMA: (lexical._WORD.pattern, digest)} == {5: (r"[^\W_]{3,}|\d+(?:[.,]\d+)*", "85cfdb268a4bf354")}
+    assert {si.SCHEMA: (lexical._WORD.pattern, digest)} == {6: (r"[^\W_]{3,}|\d+(?:[.,]\d+)*", "5ea6f0e5bfe691f0")}
 
 
 ODD = {

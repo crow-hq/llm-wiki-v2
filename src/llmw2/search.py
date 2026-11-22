@@ -389,7 +389,7 @@ class NoteSearch:
             if entry is None:
                 got[rel] = None
                 continue
-            text, title, summary, fields = entry
+            text, title, summary, fields, _ = entry
             got[rel] = ((rel, title, summary, Counter(lexical.words(text))), _hash(text), unpack_fields(fields))
         with self._recent_lock:
             if self._recent is not None:
@@ -502,17 +502,19 @@ class NoteSearch:
         doc = OKFDocument.read(path)
         return Note(path, rel, doc.frontmatter, doc.body)
 
-    def _entry(self, rel: str, path: str, stamp: tuple[int, int, int]) -> tuple[str, str, str, str] | None:
-        """What the index takes of a note's file: (text, title, summary, `fields` as JSON); None for a file that is not a note."""
+    def _entry(self, rel: str, path: str, stamp: tuple[int, int, int]) -> tuple[str, str, str, str, str] | None:
+        """What the index takes of a note's file: (text, title, summary, `fields` as JSON, what it links to and cites as JSON); None for a
+        file that is not a note."""
         try:
             doc = OKFDocument.read(Path(path))
         except OKFDocumentError as e:
             log.warning("skipping %s: %s", rel, e)
             return None
-        from llmw2.searchindex import pack_fields
+        from llmw2.searchindex import pack_fields, pack_links
 
         note = Note(Path(path), rel, doc.frontmatter, doc.body, stamp=stamp)
-        return _text_of(note), note.title, note.summary, pack_fields(note.frontmatter.get("fields"))
+        fields = pack_fields(note.frontmatter.get("fields"))
+        return _text_of(note), note.title, note.summary, fields, pack_links(note.body, rel, note.frontmatter)
 
     def _sync(self, notes: list[Note]) -> dict[str, str]:
         """Bring the index to `notes`: a note that is new or whose text changed is indexed (its old words go), a note that is no

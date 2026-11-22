@@ -641,11 +641,7 @@ class WikiStore:
                 continue
             if stat.S_ISDIR(st.st_mode):
                 if descriptions is None:
-                    descriptions = {}
-                    if (path / INDEX).exists():
-                        for _, link, text in parse_index(read_utf8_or_latin1(path / INDEX)):
-                            if listed := subfolder_of(link):
-                                descriptions[listed] = text
+                    descriptions = _descriptions(path)
                 with contextlib.suppress(FileNotFoundError):  # gone since the listing
                     folder.subfolders.append(self._load_folder(Path(entry.path), child_rel, descriptions.get(name, ""), folder, seen))
             elif name.endswith(".md") and name not in (INDEX, LOG):
@@ -674,6 +670,74 @@ class WikiStore:
             # it is listed again at the next load (its notes, which are not recent, are not read again)
             self._dirs[key] = (mtime, scanned - mtime > RACY_NS, folder)
         return folder
+
+    def folder_at(self, rel: str) -> Folder | None:
+        """The folder at `rel` ("" the root) as `load` gives it, alone: its notes (`_note_of`: what this process parsed of a file that did
+        not change since is not read again), its subfolders by name with their descriptions and nothing in them, no parent. For writing
+        its own index and its notes, not a tree to walk. None for a folder a load does not list."""
+        parts = rel.strip("/").split("/") if rel.strip("/") else []
+        if any(not p or p == CLOSED or p.startswith(".") or ":" in p or "\\" in p for p in parts) or parts[:1] == [RAW]:
+            return None
+        path = Path(os.path.join(self.root, *parts)) if parts else self.root
+        try:
+            with os.scandir(path) as listing:
+                entries = sorted(listing, key=lambda e: os.path.normcase(e.name))
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        folder = Folder(path, "/".join(parts))
+        descriptions: dict[str, str] | None = None
+        for entry in entries:  # as `_load_folder` lists a folder
+            name = entry.name
+            if name == CLOSED:
+                folder.routable = False
+                continue
+            if name.startswith(".") or (not parts and name == RAW):
+                continue
+            child_rel = f"{folder.rel}/{name}" if parts else name
+            try:
+                st = entry.stat()
+            except OSError:  # gone since the listing
+                continue
+            if stat.S_ISDIR(st.st_mode):
+                if descriptions is None:
+                    descriptions = _descriptions(path)
+                folder.subfolders.append(Folder(Path(entry.path), child_rel, descriptions.get(name, ""), parent=folder))
+            elif name.endswith(".md") and name not in (INDEX, LOG):
+                if (note := self._note_of(entry.path, child_rel, folder, st, stamp_of(st), self._parsed)) is not None:
+                    folder.notes.append(note)
+        return folder
+
+    def notes_at(self, rels: Iterable[str], folders: dict[str, Folder | None]) -> list[Note]:
+        """The notes at `rels` as `load` gives them, each in its folder (`folder_at`, kept in `folders` by path: the caller deletes them
+        and writes the folders' indexes); a path with no note is left out."""
+        found = []
+        for rel in rels:
+            if not self.is_note_path(rel):
+                continue
+            where = note_dir(rel)
+            if where not in folders:
+                folders[where] = self.folder_at(where)
+            folder = folders[where]
+            if folder is not None and (note := next((n for n in folder.notes if n.rel == rel), None)) is not None:
+                found.append(note)
+        return found
+
+    def near(self, rels: Iterable[str], gone: Collection[str], folders: dict[str, Folder | None]) -> list[Note]:
+        """The notes at `rels` but those in `gone`, for `_delete(kept=)`: from a folder of `folders` that holds one, else read alone
+        (`note_at`); a path with no note is left out."""
+        kept = []
+        for rel in rels:
+            if rel in gone:
+                continue
+            where = note_dir(rel)
+            if where in folders:
+                folder = folders[where]
+                note = next((n for n in folder.notes if n.rel == rel), None) if folder is not None else None
+            else:
+                note = self.note_at(rel)
+            if note is not None:
+                kept.append(note)
+        return kept
 
     def note_files(self, rel: str) -> int:
         """How many files of the folder at `rel` (`""` the root) a `load` would take for its notes, read from its listing alone: at least
@@ -1222,10 +1286,13 @@ class WikiStore:
         doc = OKFDocument.read(self.root / resource.lstrip("/"))
         return doc.frontmatter, doc.body
 
-    def purge_notes(self, root: Folder, notes: list[Note], raws: list[str], keep: Collection[str] = ()) -> Deleted:
+    def purge_notes(
+        self, root: Folder | None, notes: list[Note], raws: list[str], keep: Collection[str] = (), *, kept: list[Note] | None = None
+    ) -> Deleted:
         """Delete `notes` and every raw copy in `raws` (cited or not), with the archived versions of the notes and the ones
-        citing a raw copy of `raws`. The raw copies in `keep` stay even if no note cites them. Nothing is written to the log."""
-        deleted = self._delete(root, notes, [], keep=keep, drop=raws)
+        citing a raw copy of `raws`. The raw copies in `keep` stay even if no note cites them. Nothing is written to the log. `kept`: as
+        for `_delete`, the notes that may link to the notes or cite their raw copies, in place of the tree."""
+        deleted = self._delete(root, notes, [], keep=keep, drop=raws, kept=kept)
         self.remove_raws(raws, deleted)
         return deleted
 
@@ -1651,11 +1718,28 @@ class WikiStore:
 
     # -- deleting -------------------------------------------------------------
 
-    def delete_note(self, rel: str, *, root: Folder | None = None) -> Deleted:
+    def delete_note(
+        self, rel: str, *, root: Folder | None = None, linking: Callable[[list[str]], list[str] | None] | None = None
+    ) -> Deleted:
         """Delete one note; FileNotFoundError when no note of the tree is at `rel`. `root`: the tree as this section just loaded it (the
-        lock held since), not loaded again."""
+        lock held since), not loaded again. `linking`, with no `root`: given the paths of the note and of the raw copies it cites, every
+        note that may link to the one or cite one of the others, more if it likes (`SearchIndex.linking`), or None when it cannot say;
+        the store then reads the note's folder and those notes alone, and looks at each as at every note of the tree, so the same
+        notes change, the same way. None from it: the tree is loaded."""
+        wanted = rel.strip().lstrip("/")
+        if root is None and linking is not None:
+            folders: dict[str, Folder | None] = {}
+            found = self.notes_at([wanted], folders)
+            if not found:
+                raise FileNotFoundError(rel)
+            note = found[0]
+            may = linking([note.rel, *_raw_sources(note)])
+            if may is not None:
+                deleted = self._delete(None, [note], [], kept=self.near(may, {note.rel}, folders))
+                self.append_log("Deleted note", f"{note.title} ({note.rel})")
+                return deleted
         root = root if root is not None else self.load()
-        note = next((n for n in root.all_notes() if n.rel == rel.strip().lstrip("/")), None)
+        note = next((n for n in root.all_notes() if n.rel == wanted), None)
         if note is None:
             raise FileNotFoundError(rel)
         deleted = self._delete(root, [note], [])
@@ -1715,12 +1799,20 @@ class WikiStore:
         return deleted
 
     def _delete(
-        self, root: Folder, notes: list[Note], folders: list[Folder], keep: Collection[str] = (), drop: Collection[str] = ()
+        self,
+        root: Folder | None,
+        notes: list[Note],
+        folders: list[Folder],
+        keep: Collection[str] = (),
+        drop: Collection[str] = (),
+        *,
+        kept: list[Note] | None = None,
     ) -> Deleted:
         """Remove `notes` and `folders` (with all they hold), and every link to them from the notes that stay.
 
         `keep`: raw copies that stay even if no note cites them any more. `drop`: raw copies being purged, whose archived
-        versions go too, whichever note they were archived from."""
+        versions go too, whichever note they were archived from. `kept`: the notes that stay and may link to what goes or cite its raw
+        copies, in the order of the tree, in place of every note of `root` but those that go (`delete_note` with `linking`)."""
         gone_notes = {n.rel for n in notes}
         gone_dirs = [f.rel for f in folders]
         with self._session_guard:  # a `load` in another thread fills the cache under it too
@@ -1730,7 +1822,9 @@ class WikiStore:
         def gone(target: str) -> bool:
             return target in gone_notes or any(target == d or target.startswith(f"{d}/") for d in gone_dirs)
 
-        kept = [n for n in root.all_notes() if n.rel not in gone_notes]
+        if kept is None:
+            assert root is not None
+            kept = [n for n in root.all_notes() if n.rel not in gone_notes]
         deleted = Deleted(notes=[n.rel for n in notes], folders=[f.label for top in folders for f in top.walk()])
 
         def unlink(one: Note) -> bool:
@@ -1866,6 +1960,16 @@ def _in_place(folder: Folder, added: list[Note | Folder]) -> bool:
         for one in new:
             bisect.insort(items, one, key=_by_name)
     return True
+
+
+def _descriptions(path: Path) -> dict[str, str]:
+    """The descriptions of a folder's subfolders, by name, from its index.md (none without one)."""
+    found: dict[str, str] = {}
+    if (path / INDEX).exists():
+        for _, link, text in parse_index(read_utf8_or_latin1(path / INDEX)):
+            if listed := subfolder_of(link):
+                found[listed] = text
+    return found
 
 
 def _raw_sources(note: Note) -> list[str]:

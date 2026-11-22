@@ -9,6 +9,9 @@ note changed costs its own rows only: the postings whose count of a word changed
 the length of each note and the postings of the words it was asked for last, and asks the file again only when another process
 wrote (a generation number in the file says so).
 
+The file also keeps what each note links to and the raw copies it cites (`links`): a delete or a purge finds the notes that link to
+what goes with no note read (`SearchIndex.linking`).
+
 `SearchIndex.sync` brings the file to the files of the wiki (`WikiStore.scan_notes` lists them with nothing read, and only the notes
 new or changed are read); `rank` scores a query exactly as `lexical.Bm25` does, over the whole wiki or over the notes of a list.
 
@@ -43,18 +46,18 @@ import time
 import zlib
 from array import array
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
 
 from llmw2.agents import lexical
 from llmw2.bundle.filelock import FileLock
 from llmw2.bundle.journal import shared_bytes
-from llmw2.bundle.store import RACY_NS, Stamp, WikiStore, tree_key
-from llmw2.bundle.tree import fields_match
+from llmw2.bundle.store import RACY_NS, Stamp, WikiStore, raw_sources, tree_key
+from llmw2.bundle.tree import fields_match, link_targets
 
-SCHEMA = 5  # the layout of the file (and part of its name: a file of another schema is left alone, an older process may hold it)
-INDEX_FILE = f".llmw2/cache/search-v{SCHEMA}.sqlite"  # the postings of the notes' words and the fields of the notes
+SCHEMA = 6  # the layout of the file (and part of its name: a file of another schema is left alone, an older process may hold it)
+INDEX_FILE = f".llmw2/cache/search-v{SCHEMA}.sqlite"  # the postings of the notes' words, the fields of the notes and their links
 BATCH = 4096  # notes read, hashed and counted together: a build touches each page of the postings once a lot, not once 512 notes
 CHECKPOINT_PAGES = 16000  # the WAL is written into the file this often (8 MB at 512-byte pages): fewer checkpoints, fewer bytes per note
 BUILD_CACHE_KB = 65536  # page cache of the connection that builds the index from many notes (the default is 2 MB)
@@ -92,13 +95,17 @@ _DDL = (
     "CREATE TABLE meta (k TEXT PRIMARY KEY, v) WITHOUT ROWID",
     "CREATE TABLE docs (id INTEGER PRIMARY KEY, rel TEXT NOT NULL UNIQUE, mtime INTEGER NOT NULL, size INTEGER NOT NULL,"
     " ino INTEGER NOT NULL, len INTEGER NOT NULL, bad INTEGER NOT NULL, hash TEXT NOT NULL)",
-    "CREATE TABLE docbody (id INTEGER PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL, counts BLOB NOT NULL, fields TEXT NOT NULL)",
+    "CREATE TABLE docbody (id INTEGER PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL, counts BLOB NOT NULL, fields TEXT NOT NULL,"
+    " links TEXT NOT NULL)",
     "CREATE TABLE postings (word TEXT NOT NULL, doc INTEGER NOT NULL, f INTEGER NOT NULL, PRIMARY KEY (word, doc)) WITHOUT ROWID",
+    # the paths each note links to and the raw copies it cites (`docbody.links`), by the path: who links to a path, with no note read
+    "CREATE TABLE links (target TEXT NOT NULL, doc INTEGER NOT NULL, PRIMARY KEY (target, doc)) WITHOUT ROWID",
 )
 _expected: list[tuple[str, str, str | None]] = []
 
-# What a read of a note gives: (the text to index, its title, its summary, its `fields` as JSON), or None for a file that is not a note.
-Reader = Callable[[str, str, Stamp], tuple[str, str, str, str] | None]
+# What a read of a note gives: (the text to index, its title, its summary, its `fields` as JSON, the paths it links to and the raw copies it
+# cites as a JSON list, sorted: `pack_links`), or None for a file that is not a note.
+Reader = Callable[[str, str, Stamp], tuple[str, str, str, str, str] | None]
 T = TypeVar("T")
 
 
@@ -163,6 +170,16 @@ def unpack_fields(text: str) -> Any:
             key = {"bool": bool, "int": int, "float": float}[tagged[0]](tagged[1])
         out[key] = value
     return out
+
+
+def pack_links(body: str, rel: str, frontmatter: dict[str, Any]) -> str:
+    """What a note links to, as text for the index: the paths of its links (`link_targets`) and the raw copies it cites ("/raw/…md",
+    `raw_sources`: a path of the bundle never starts with "/"), sorted, once each, as a JSON list."""
+    return json.dumps(sorted({*link_targets(body, rel), *raw_sources(frontmatter)}), ensure_ascii=False)
+
+
+def _unpack_links(text: str) -> set[str]:
+    return set(json.loads(text)) if text else set()
 
 
 def _master(db: sqlite3.Connection) -> list[tuple[str, str, str | None]]:
@@ -442,7 +459,7 @@ class SearchIndex:
         try:
             if db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA:
                 return False
-            if _master(db) != _expected_master():  # a file received may hold views or triggers: only our four tables are accepted
+            if _master(db) != _expected_master():  # a file received may hold views or triggers: only our tables are accepted
                 return False
             meta = dict(db.execute("SELECT k, v FROM meta"))
         except sqlite3.OperationalError as e:
@@ -460,7 +477,7 @@ class SearchIndex:
         db.execute("BEGIN IMMEDIATE")
         try:
             if not self._current(db):
-                ours = {"meta", "docs", "docbody", "postings"}
+                ours = {"meta", "docs", "docbody", "postings", "links"}
                 if any(name not in ours and not name.startswith("sqlite_") for _, name, _ in _master(db)):
                     raise _Corrupt("the file defines what this schema does not: it is thrown away, not edited")
                 self._drop_all(db)
@@ -1054,19 +1071,27 @@ class SearchIndex:
                 if posting is not None:
                     self._hot_n -= len(posting)
 
-    def _existing(self, db: sqlite3.Connection, rels: list[str]) -> dict[str, tuple[int, str, bool, str]]:
-        out: dict[str, tuple[int, str, bool, str]] = {}
+    def _existing(self, db: sqlite3.Connection, rels: list[str]) -> dict[str, tuple[int, str, bool, str, str]]:
+        out: dict[str, tuple[int, str, bool, str, str]] = {}
         for chunk in _chunks(rels):
             marks = ",".join("?" * len(chunk))
-            for rel, id_, digest, bad, fields in db.execute(
-                f"SELECT d.rel, d.id, d.hash, d.bad, b.fields FROM docs d JOIN docbody b ON b.id = d.id WHERE d.rel IN ({marks})", chunk
+            for rel, id_, digest, bad, fields, links in db.execute(
+                f"SELECT d.rel, d.id, d.hash, d.bad, b.fields, b.links FROM docs d JOIN docbody b ON b.id = d.id WHERE d.rel IN ({marks})",
+                chunk,
             ):
-                out[rel] = (id_, digest, bool(bad), fields)
+                out[rel] = (id_, digest, bool(bad), fields, links)
         return out
+
+    @staticmethod
+    def _relink(db: sqlite3.Connection, id_: int, old: str, new: str) -> None:
+        """The rows of `links` of a note whose links were `old` and are `new` (`pack_links`): only those that changed are written."""
+        was, now = _unpack_links(old), _unpack_links(new)
+        db.executemany("DELETE FROM links WHERE target = ? AND doc = ?", sorted((t, id_) for t in was - now))
+        db.executemany("INSERT OR REPLACE INTO links VALUES (?, ?)", sorted((t, id_) for t in now - was))
 
     def _index_batch(self, db: sqlite3.Connection, read: Reader, chunk: list[tuple[str, str, Stamp]], changes: _Changes) -> None:
         """Read, hash and count the notes of a batch, a phase at a time, then write what differs from the file."""
-        got: list[tuple[str, str, Stamp, tuple[str, str, str, str] | None]] = []
+        got: list[tuple[str, str, Stamp, tuple[str, str, str, str, str] | None]] = []
         for rel, path, stamp in chunk:
             try:
                 got.append((rel, path, stamp, read(rel, path, stamp)))
@@ -1091,7 +1116,7 @@ class SearchIndex:
                     cur = db.execute(
                         "INSERT INTO docs (rel, mtime, size, ino, len, bad, hash) VALUES (?, ?, ?, ?, 0, 1, '')", (rel, mtime, size, ino)
                     )
-                    db.execute("INSERT INTO docbody VALUES (?, '', '', ?, 'null')", (cur.lastrowid, b""))
+                    db.execute("INSERT INTO docbody VALUES (?, '', '', ?, 'null', '')", (cur.lastrowid, b""))
                     changes.docs[rel] = (int(cur.lastrowid or 0), 0, True)
                     changes.dirty = True
                 else:
@@ -1100,14 +1125,18 @@ class SearchIndex:
                     changes.dirty = True  # a stamp the other processes hold too (`recent`)
                 changes.stamps[rel] = stamp
                 continue
-            text, title, summary, fields = entry
+            text, title, summary, fields, links = entry
             digest = _digest(text)
-            if row is not None and not row[2] and row[1] == digest:  # the same text: its file's time changed, or its `fields` alone
+            if row is not None and not row[2] and row[1] == digest:  # the same text: its time changed, its `fields` or its links alone
                 if self._stamps.get(rel) != stamp:
                     db.execute("UPDATE docs SET mtime = ?, size = ?, ino = ? WHERE id = ?", (mtime, size, ino, row[0]))
                     changes.dirty = True  # a stamp the other processes hold too (`recent`)
                 if row[3] != fields:  # what decides whether a note changed holds its `fields` too
                     db.execute("UPDATE docbody SET fields = ? WHERE id = ?", (fields, row[0]))
+                    changes.dirty = True
+                if row[4] != links:  # the See-also section is not in the text: a link made or dropped changes the links alone
+                    db.execute("UPDATE docbody SET links = ? WHERE id = ?", (links, row[0]))
+                    self._relink(db, row[0], row[4], links)
                     changes.dirty = True
                 changes.stamps[rel] = stamp
                 continue
@@ -1120,7 +1149,8 @@ class SearchIndex:
                     (rel, mtime, size, ino, length, digest),
                 )
                 id_ = int(cur.lastrowid or 0)
-                db.execute("INSERT INTO docbody VALUES (?, ?, ?, ?, ?)", (id_, title, summary, _encode(counts), fields))
+                db.execute("INSERT INTO docbody VALUES (?, ?, ?, ?, ?, ?)", (id_, title, summary, _encode(counts), fields, links))
+                self._relink(db, id_, "", links)
                 puts.extend((w, id_, f) for w, f in counts.items())
                 changes.words.update(counts)
             else:
@@ -1131,9 +1161,10 @@ class SearchIndex:
                     (mtime, size, ino, length, digest, id_),
                 )
                 db.execute(
-                    "UPDATE docbody SET title = ?, summary = ?, counts = ?, fields = ? WHERE id = ?",
-                    (title, summary, _encode(counts), fields, id_),
+                    "UPDATE docbody SET title = ?, summary = ?, counts = ?, fields = ?, links = ? WHERE id = ?",
+                    (title, summary, _encode(counts), fields, links, id_),
                 )
+                self._relink(db, id_, row[4], links)
                 dropped = [(w, id_) for w in old if w not in counts]  # only the rows whose count changed are written
                 changed = [(w, id_, f) for w, f in counts.items() if old.get(w) != f]
                 dels.extend(dropped)
@@ -1146,15 +1177,17 @@ class SearchIndex:
         db.executemany("INSERT OR REPLACE INTO postings VALUES (?, ?, ?)", sorted(puts))
 
     def _remove(self, db: sqlite3.Connection, rel: str, changes: _Changes) -> None:
-        """Take a note out of the file: its postings (its words are in its body row) and its rows."""
+        """Take a note out of the file: its postings (its words are in its body row), its links and its rows."""
         id_ = self._ids.get(rel)
         if id_ is None:
             return
         if rel not in self._bad:
-            blob = db.execute("SELECT counts FROM docbody WHERE id = ?", (id_,)).fetchone()
+            blob = db.execute("SELECT counts, links FROM docbody WHERE id = ?", (id_,)).fetchone()
             old = _decode(blob[0]) if blob else {}
             db.executemany("DELETE FROM postings WHERE word = ? AND doc = ?", ((w, id_) for w in old))
             changes.words.update(old)
+            if blob:
+                self._relink(db, id_, blob[1], "")
         db.execute("DELETE FROM docbody WHERE id = ?", (id_,))
         db.execute("DELETE FROM docs WHERE id = ?", (id_,))
         changes.gone.append(rel)
@@ -1320,6 +1353,78 @@ class SearchIndex:
 
         return self._guarded(run)
 
+    def linking(self, store: WikiStore, targets: Collection[str], wait: float = WRITTEN_WAIT) -> Linked | None:
+        """The notes that may link to one of `targets` (bundle paths; a raw copy as a note cites it, "/raw/…md"), for a writer that
+        holds the bundle's lock and looks at each (`WikiStore.delete_note`): those the file holds as linking to one, with their file as
+        the file holds it, and every note whose file is not (new, changed, or written within `RACY_NS`), whatever it links to. The wiki is
+        listed whole (`scan_notes`: each file's time and size, nothing read), whatever `LISTING_LOOK` says, so a note edited by hand a
+        moment ago is among them, as a `load` would see it; nothing is written to the file. `Linked.more` asks for other targets on the
+        same listing. None when the file cannot say: not complete (`ready`), not on disk, damaged or busy, or held by another thread of
+        this process for longer than `wait`; the caller then reads the whole wiki."""
+        if self._mem is not None or self.path is None or not self.path.exists():
+            return None
+        with self.held(wait) as got:
+            if not got:
+                return None
+            try:
+                return self._guarded(lambda: self._linking(store, targets, wait))
+            except sqlite3.Error:
+                return None
+
+    def _linking(self, store: WikiStore, targets: Collection[str], wait: float) -> Linked | None:
+        if self._mem is not None:
+            return None
+        db = self._open()
+        if not self._is_complete(db):
+            return None
+        db.execute("BEGIN")  # one state of the file: the rows of `links` and the stamps they are compared with
+        try:
+            if self._gen is None or self._partial or (self._disk_gen(db) != self._gen and not self._caught_up(db)):
+                self._load(db)
+            order, todo = self._scan(store)
+            hits = self._linked(db, targets)
+        finally:
+            if db.in_transaction:
+                db.execute("COMMIT")
+        return Linked(self, order, {rel for rel, _, _ in todo}, hits, wait)
+
+    def _linked(self, db: sqlite3.Connection, targets: Collection[str]) -> set[str]:
+        hits: set[str] = set()
+        for chunk in _chunks(sorted(set(targets))):
+            marks = ",".join("?" * len(chunk))
+            query = f"SELECT d.rel FROM links l JOIN docs d ON d.id = l.doc WHERE l.target IN ({marks})"
+            hits.update(rel for (rel,) in db.execute(query, chunk))
+        return hits
+
+
+class Linked:
+    """What `SearchIndex.linking` found: `listed`, every note of the wiki as listed (in the order of the tree); `notes`, those that may link
+    to one of the targets, in the same order."""
+
+    def __init__(self, index: SearchIndex, listed: list[str], unread: set[str], hits: set[str], wait: float) -> None:
+        self.listed = listed
+        self._live = set(listed)
+        self._unread = unread  # the notes whose file is not as the index holds it: each may link to anything
+        self._index = index
+        self._wait = wait
+        self.notes = self._of(hits)
+
+    def _of(self, hits: set[str]) -> list[str]:
+        return sorted((hits & self._live) | self._unread, key=tree_key)  # a note gone since its row was written links to nothing
+
+    def more(self, targets: Collection[str]) -> list[str] | None:
+        """The notes that may link to one of these other targets, on the same listing (the bundle's lock is held since: only a hand
+        edit made meanwhile is not seen, as for a `load`); None when the file cannot say any more."""
+        index = self._index
+        with index.held(self._wait) as got:
+            if not got:
+                return None
+            try:
+                hits = index._guarded(lambda: None if index._mem is not None else index._linked(index._open(), targets))
+            except sqlite3.Error:
+                return None
+        return None if hits is None else self._of(hits)  # an index that went to memory meanwhile holds no links of the wiki
+
 
 # ---- while the file is being built
 
@@ -1406,7 +1511,7 @@ class Build:
     def _run(self) -> None:
         index = self._index = _Building(self.path, self._tell)
 
-        def read(rel: str, path: str, stamp: Stamp) -> tuple[str, str, str, str] | None:
+        def read(rel: str, path: str, stamp: Stamp) -> tuple[str, str, str, str, str] | None:
             if self._stop.is_set():
                 raise _Stopped
             self._reads += 1

@@ -304,8 +304,17 @@ def link_target(from_rel: str, link: str) -> str | None:
     return posixpath.normpath(link.lstrip("/") if link.startswith("/") else posixpath.join(note_dir(from_rel), link))
 
 
+def link_targets(body: str, from_rel: str) -> list[str]:
+    """The bundle paths the links of the document at `from_rel` point to, sorted, once each: its See-also entries and the inline links of
+    the rest, the links `drop_links` looks at, so that `drop_links` changes the body only when one of these is gone."""
+    main, entries = split_see_also(body)
+    links = [m["link"] for e in entries if (m := _ENTRY.match(e.strip()))] + [m["link"] for m in _LINK.finditer(main)]
+    return sorted({t for link in links if (t := link_target(from_rel, link)) is not None})
+
+
 def drop_links(body: str, from_rel: str, gone: Callable[[str], bool]) -> str:
-    """`body` without its links to deleted paths: their See-also entries go, inline links keep only their text."""
+    """`body` without its links to deleted paths: their See-also entries go, inline links keep only their text (`link_targets` lists
+    the paths it looks at)."""
 
     def dead(link: str) -> bool:
         target = link_target(from_rel, link)

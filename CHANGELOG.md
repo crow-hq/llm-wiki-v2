@@ -258,7 +258,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a search that finds it written by another process reads those rows only, not the state of every note. A batch (`ingest_many`,
   `rebuild`) puts its notes in once, at its end.
 - An index never built whole (a wiki searched for the first time, a file deleted, damaged or of an older schema) is built in the
-  background, by one process of the machine at a time (a lease, `.llmw2/cache/search-v5.sqlite.build`), in a thread of its own; its
+  background, by one process of the machine at a time (a lease, `.llmw2/cache/search-v6.sqlite.build`), in a thread of its own; its
   first search waits for it one second at most. Until the file is built whole a search of any process answers at once, without reading
   the notes or waiting for the build, from the notes its lots committed (each lot is durable), the notes the process wrote since its
   first search (a note it changed or deleted leaves the lot's row) and the entries not filed yet; a hit whose file is gone is left out.
@@ -336,7 +336,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A folder's `index.md` gets the entry of a new note appended instead of being written whole: the cost of a note no longer grows with the folder.
   The new entries stand last until the next full write, which any other change of the index (an entry that changed, a note that left, a
   subfolder) does, in order, as before.
-- `search` and `ask` keep the BM25 index of the wiki in a file of the bundle (`.llmw2/cache/search-v5.sqlite`, a cache: delete it and
+- `search` and `ask` keep the BM25 index of the wiki in a file of the bundle (`.llmw2/cache/search-v6.sqlite`, a cache: delete it and
   the next search builds it again), shared by the processes on the wiki: a search lists the files (their time and size, nothing read)
   and reads only the notes new or changed since, by this process or another one, so a process no longer reads every note at its first
   search; `where` filters on the `fields` the index keeps, with no note read (the notes are grouped by their `fields` once, until the
@@ -359,18 +359,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   limit (an overlapped `LockFileEx`), so writers that keep waiting for the wiki do not pass over the purge. The index's lots wait for
   its lock until one deadline. The sections of a purge no longer make the index look at every file: its own look, within
   the wait, takes in what it changed. `dry_run` waits as before. A batch that made no folder no longer takes the lock at its end.
-- `delete_note`, and the section of a purge that deletes, read the wiki before they take its lock; the section lists again only the
-  folders changed meanwhile, as a batch does, and the store deletes on that copy: a delete loads the tree once and looks at it again
-  under the lock, where it loaded it three times (`delete_folder`, with no read before its lock, once instead of twice). Even so, a
-  `delete_note` in a process already started costs about twice what it cost in the release before (about 450 against 240 ms on a wiki
-  of 5,000 notes): the look at each note as the tree is read, and the writes that make the delete safe (the undo log, the tombstone of
-  the journal), are the price of the recovery after a crash and of forgetting without traces. A process that has not read the wiki
-  yet (a server started for one call) holds the lock for what changes, not for the parsing of every note (about 3 s at 5,000
-  notes). A note edited in place by hand meanwhile is read again before it is written; a link to the deleted note added that way in that moment stays, as in a batch. How many processes of the
-  machine read the wiki outside its lock at once is bounded by the memory: each takes one of N places (`.llmw2/read-<i>.lock`), N being
-  half the physical memory free when it starts (`READ_SHARE`: the other half stays to the rest of the machine, so the reads never take
-  all that is free) over the cost of a read, the notes of the search index times `READ_BYTES_PER_NOTE` (7 KiB, from the memory a read
-  took at 5,000 and at 50,000 notes); a process with no place reads under the lock, as before.
+- `delete_note`, and the section of a purge that deletes, no longer read the wiki whole once its search index is complete: the index
+  file keeps the paths each note links to and the raw copies it cites (schema 6: `search-v6.sqlite`, built once in the background as
+  any new index), so under the wiki's lock the wiki is listed (each file's time and size, nothing read) and only the note's folder,
+  the notes the index holds as linking to it or citing its raw copies, and the notes whose file the index has not read as it is now
+  (new, changed, or written in the last two seconds) are read; the same notes change, the same way, a note edited by hand a moment
+  before included. On a wiki of 5,000 notes, measured in one window with the release before on a loaded machine, a `delete_note` in a
+  process already started took about 260 ms against 630, and the first call of a new process about 440 ms against 6.8 s; a purge
+  about 360 ms against 5.9 s, and 470 ms against 5.3 s in a new process; at 50,000 notes a `delete_note` about 620 ms against 5.9 s, and 1.1 s against about 3 minutes for the first call. On a small wiki (157 notes), where the tree costs little,
+  the writes that make the delete safe show: about 140 against 100 ms (the first call about the same, 190 against 200); they are
+  some eight flushes of the disk (the records of the undo log, the files at the commit, the tombstone of the journal), the price of
+  the recovery after a crash and of forgetting without traces. A delete's process now holds the index's state of the notes, as a
+  search does (about 29 MB at 50,000 notes). While the index is not complete (its first build), or cannot answer, a delete reads the
+  wiki as before: before the lock, the section listing again only the folders changed meanwhile, and the store deleting on that copy
+  (a delete loads the tree once and looks at it again under the lock; `delete_folder` once). A note edited in place by hand meanwhile
+  is read again before it is written; a link to the deleted note added that way in that moment stays, as in a batch. How many
+  processes of the machine read the wiki outside its lock at once is bounded by the memory: each takes one of N places
+  (`.llmw2/read-<i>.lock`), N being half the physical memory free when it starts (`READ_SHARE`: the other half stays to the rest of
+  the machine, so the reads never take all that is free) over the cost of a read, the notes of the search index times
+  `READ_BYTES_PER_NOTE` (7 KiB, from the memory a read took at 5,000 and at 50,000 notes); a process with no place reads under the
+  lock, as before.
 - The restore of an interrupted filing tries again for a moment, too, the deletion of a note the filing had made, as a deletion does:
   a note another program held open (or a process of a release whose reads did not share deleting) was left there, and the entry it was
   filing went, when filed again, into a second note; the wait is under the wiki's lock, at most about 0.3 s a file.
