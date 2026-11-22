@@ -191,7 +191,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   listing, and loads the tree only when the folder may hold enough notes to split. A note edited by hand in place, leaving its folder's
   time as it was, is seen by the next lot. The first lot of a process that takes the filing over keeps what it parses of the tree,
   so that its second lot does not parse every note again (a session of the store outside the filer, such as a CLI call's, still keeps
-  nothing in its first).
+  nothing in its first). From one lot to the next the filer keeps what it read of the raw copies and of the copies
+  each note cites (`OriginIndex`), where it read them all again: the first look of a lot checks every file by modification time, size,
+  inode and change time and parses only those that changed, so a copy or a note changed by hand or by another process between two lots
+  is seen by the next one, as before. The gain is in the lots that ask which notes cite a copy: a new version of a key (states and
+  preferences kept under one key), or a text seen before; a caller that never passes a key gains little. The index stays in the memory
+  of the process that files for as long as it lives, packed as one object a note (its signature and the copies it cites, about 250
+  bytes); with 50,000 notes the working set between two lots is about 40 MB higher, the peak is the same. Any other session of the
+  store still leaves the index empty. The index, in and out of a session, no longer trusts the stamp of a file written in the last two
+  seconds (two writes in one clock tick can leave the same time and size: it is read again the next time), and compares the change
+  time too, as the parse cache of `WikiStore.load` does. Outside a session it lists every folder for the notes, as before, and keeps
+  the listing, so a note added and then deleted between two sessions is no longer taken as citing its copies.
 - A search that another process writes the index under while it reads (a fast filer at every step) reads again inside one state of
   the file, whatever is written meanwhile, instead of failing after a few attempts with "the search index cannot be rebuilt".
 - A search never waits for the write lock of the search index: a process that writes notes puts them in the index before the call

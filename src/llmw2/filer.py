@@ -869,7 +869,8 @@ class Filer(threading.Thread):
         """File the entries one after the other. Consecutive entries are filed in one session of the store (`WikiStore.session`): its
         first `load` lists the tree, the next ones only what changed; it ends when the queue is empty, after `PLAN_BATCH` entries, before
         the completion of a purge, while a failed entry waits to be tried again, and when the filer stops, so the store keeps nothing of
-        the folders between two lots, nor while nothing is filed."""
+        the folders between two lots, nor while nothing is filed. The sessions are `keep`: what the store parsed (the notes, the origin
+        index) stays from a lot to the next, and is checked against the files at the first look of each."""
         from llmw2.wiki import PLAN_BATCH  # the lot of a plan: as many documents as a batch files in one session
 
         hub = self.hub

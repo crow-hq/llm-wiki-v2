@@ -61,6 +61,7 @@ from llmw2.bundle.tree import (
     SOURCE_TYPE,
     Folder,
     Note,
+    Stamp,
     dead_links_to_text,
     drop_links,
     drop_see_also,
@@ -70,9 +71,11 @@ from llmw2.bundle.tree import (
     refresh_entries,
     rel_link,
     rewrite_links,
+    same_stamp,
     see_also_targets,
     slugify,
     split_see_also,
+    stamp_of,
     subfolder_of,
 )
 from llmw2.errors import InputError, NoteChanged, WikiError
@@ -192,16 +195,11 @@ def _entry(title: str, link: str, text: str) -> str:
 
 RACY_NS = 2_000_000_000  # a file this recent is read again: two writes in one clock tick can leave the same time and size
 
-Stamp = tuple[int, int, int]  # st_mtime_ns, st_size, st_ino
 Stamps = tuple["array[int]", "array[int]"]  # the stamps of a folder's notes (`_kept_stamps`)
 STALE = -2  # the time of a kept folder that no folder has: the next load lists it again
 _U64 = (1 << 64) - 1
 _STAMP = operator.attrgetter("st_mtime_ns", "st_size", "st_ino")
 _TIME, _SIZE, _INO = (operator.attrgetter(a) for a in ("st_mtime_ns", "st_size", "st_ino"))
-
-
-def stamp_of(st: os.stat_result) -> Stamp:
-    return (st.st_mtime_ns, st.st_size, st.st_ino)
 
 
 def _kept_stamps(stats: list[os.stat_result]) -> Stamps:
@@ -213,11 +211,6 @@ def _kept_stamps(stats: list[os.stat_result]) -> Stamps:
         return kept, array("Q", map(_INO, stats))
     except OverflowError:
         return kept, array("Q", [n & _U64 for n in map(_INO, stats)])
-
-
-def same_stamp(a: Stamp, b: Stamp) -> bool:
-    """Whether two stamps are of the same file content. A listing gives no inode on Windows (0): it then says nothing."""
-    return a[:2] == b[:2] and (a[2] == b[2] or 0 in (a[2], b[2]))
 
 
 def tree_key(rel: str) -> tuple[tuple[int, str], ...]:
@@ -528,17 +521,19 @@ class WikiStore:
         changed. The first `load` of a session lists the whole tree and parses only the notes whose file is not the one it
         parsed before (`_parsed`, by modification time, size, inode and change time, kept between sessions and outside them, for
         notes older than RACY_NS, filled from the second session of the store on: the first, all a CLI call has, parses and keeps
-        nothing; `keep`, for a caller that will open more sessions (the filer), fills it from the first); after it, a folder whose modification time is the same (and not recent) keeps the notes it
-        had, and so does `raw/`: every write of the store replaces a file, which changes its folder's time. A note edited in
-        place by another program, which leaves the folder's time as it was, is seen by the next batch, and never overwritten
-        meanwhile (see `_save`). The folders are kept only while the session lasts. Limit, as in `scan_notes`: a note edited
-        in place with the same size and the same modification time put back by hand is not seen (on Windows; elsewhere the
-        change time shows it) until its size or time changes."""
+        nothing; `keep`, for a caller that will open more sessions (the filer), fills it from the first, and keeps the origin index
+        from one session to the next, checked file by file at the first look of each); after it, a folder whose modification time
+        is the same (and not recent) keeps the notes it had, and so does `raw/`: every write of the store replaces a file, which
+        changes its folder's time. A note edited in place by another program, which leaves the folder's time as it was, is seen by
+        the next batch, and never overwritten meanwhile (see `_save`). The folders are kept only while the session lasts. Limit, as
+        in `scan_notes`: a note edited in place with the same size and the same modification time put back by hand is not seen (on
+        Windows; elsewhere the change time shows it) until its size or time changes."""
         with self._session_guard:
             self._depth += 1
             if self._depth == 1:
                 self._sessions += 1
                 self._keeps = keep
+                self._origins.distrust()  # what an earlier session trusted by the times of the folders is looked at again
             self._origins.session = True
         try:
             yield
@@ -547,17 +542,19 @@ class WikiStore:
                 self._depth -= 1
                 if not self._depth:
                     self._origins.session = False
-                    self.forget()
+                    self.forget(origins=not self._keeps)
 
-    def forget(self) -> None:
+    def forget(self, *, origins: bool = True) -> None:
         """Drop what a session kept of the folders, so the next `load` lists the wiki whole (after a failure that left it unknown).
-        The notes already parsed (`_parsed`) are checked against their files at that listing, not dropped."""
+        The notes already parsed (`_parsed`) are checked against their files at that listing, not dropped. `origins` false (the end
+        of a `keep` session): the origin index keeps what it parsed, which the next session checks file by file."""
         with self._session_guard:
             self._dirs.clear()
             self._recent.clear()
             self._held.clear()
             self._loose.clear()
-            self._origins.forget()
+            if origins:
+                self._origins.forget()
         self._log = logfile.LogTail()
 
     def load(self) -> Folder:

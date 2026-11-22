@@ -30,6 +30,17 @@ NOTE_TYPE, SOURCE_TYPE = "Note", "Source"
 SEE_ALSO = "# See also"
 OKF_VERSION = "0.2"
 
+Stamp = tuple[int, int, int]  # st_mtime_ns, st_size, st_ino
+
+
+def stamp_of(st: os.stat_result) -> Stamp:
+    return (st.st_mtime_ns, st.st_size, st.st_ino)
+
+
+def same_stamp(a: Stamp, b: Stamp) -> bool:
+    """Whether two stamps are of the same file content. A listing gives no inode on Windows (0): it then says nothing."""
+    return a[:2] == b[:2] and (a[2] == b[2] or 0 in (a[2], b[2]))
+
 _ENTRY = re.compile(r"^[*-]\s+\[(?P<title>[^\]]*)\]\((?P<link>[^)\s]+)\)\s*(?:-\s*(?P<text>.*))?$")
 _LINK = re.compile(r"\[(?P<text>[^\]]*)\]\((?P<link>[^)\s]+)\)")
 _MD_LINK = re.compile(r"\[(?P<text>[^\]]*)\]\((?P<link>[^)\s#:]+\.md(?:#[^)\s]*)?)\)")

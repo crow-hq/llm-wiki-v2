@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from llmw2 import Origin
+from llmw2.bundle import origin_index as OI
 from llmw2.bundle.document import OKFDocument, OKFDocumentError
 from llmw2.bundle.origin import OriginRecord
 from llmw2.bundle.store import WikiStore
@@ -126,7 +127,9 @@ def assert_matches_reference(store: WikiStore, keys: list[str] = KEYS) -> None:
 
 @pytest.fixture
 def parses(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """The text of every `OKFDocument.parse` call from now on."""
+    """The text of every `OKFDocument.parse` call from now on. A file is trusted by its stamp at once (RACY_NS 0), as one written more
+    than a moment ago would be: otherwise every file these tests write would be parsed again at each query."""
+    monkeypatch.setattr(OI, "RACY_NS", 0)
     seen: list[str] = []
     real = OKFDocument.parse.__func__  # type: ignore[attr-defined]
 

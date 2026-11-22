@@ -4,12 +4,16 @@
 """Which raw copies carry an origin key, and which notes cite them: an index kept in memory.
 
 It is rebuilt from the files and is never the source of truth. Every query first refreshes it by `stat`:
-only new or changed files are parsed again, and the ones that vanished are dropped. Store writes are not
+only new or changed files are parsed again (another stamp or change time, or a file written within RACY_NS of when it was
+parsed), and the ones that vanished are dropped. Store writes are not
 reported to it: the refresh sees them, because `write_atomic` replaces the file and so changes its inode.
 
 In a session (a batch, see `WikiStore.session`) a folder whose modification time is the same, and not recent, is not
 listed again: the store writes by replacing files, which changes the time of their folder. A raw copy already known is
-not looked at again in a session, whatever happens to its file: the store tells (`touch`) when it rewrites one.
+not looked at again in a session, whatever happens to its file: the store tells (`touch`) when it rewrites one. Both hold
+within one session only: at its start the index trusts no folder (`distrust`), and its first look checks every file by
+`stat`, as a query outside a session does; what it parsed before stays, so a caller that opens sessions one after another
+(the filer's lots) parses again only what changed.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ __copyright__ = (
 )
 
 import os
+import struct
 import threading
 import time
 from collections.abc import Callable, Iterable
@@ -32,7 +37,13 @@ from llmw2.bundle.origin import Origin
 from llmw2.bundle.tree import INDEX, LOG, RAW
 from llmw2.errors import InputError
 
-Signature = tuple[int, int, int]  # st_mtime_ns, st_size, st_ino
+# a file's signature, packed in 32 bytes: modification time, size, inode and change time (`st_ctime_ns`), as the parse cache of
+# `WikiStore.load` compares them; `_YOUNG` for a file written within RACY_NS of when it was parsed (two writes in one clock tick can leave
+# the same time and size): it is parsed again the next time. Packed, so that what the filer keeps from one lot to the next is one object
+# a note (with what it cites), not a dozen
+_SIG = struct.Struct("<qqQq")
+_YOUNG = b"\xff" * _SIG.size
+_NO_INODE = bytes(8)  # the inode a listing gives on Windows: it says nothing
 RACY_NS = 2_000_000_000  # a folder changed this recently may change again within the same tick: it is listed again
 
 
@@ -49,7 +60,7 @@ class Copy:
     removed: bool
 
 
-class _Raws(dict[str, tuple[Signature, Copy | None]]):
+class _Raws(dict[str, tuple[bytes, Copy | None]]):
     """The raw copies by file name, with the copies of each origin key and the unclaimed ones of each hash kept alongside, so
     a query does not walk them all. Every change of the dict goes through the methods below."""
 
@@ -66,7 +77,7 @@ class _Raws(dict[str, tuple[Signature, Copy | None]]):
                 if not same:
                     del index[at]
 
-    def __setitem__(self, name: str, value: tuple[Signature, Copy | None]) -> None:
+    def __setitem__(self, name: str, value: tuple[bytes, Copy | None]) -> None:
         self._drop(name)
         super().__setitem__(name, value)
         if (copy := value[1]) is not None:
@@ -94,7 +105,8 @@ class OriginIndex:
         self.root = root
         self._lock = threading.Lock()
         self._raws = _Raws()  # None: not a copy with a valid origin
-        self._notes: dict[str, tuple[Signature, list[str]]] = {}  # bundle path -> the raw copies it cites
+        # bundle path -> its signature followed by the raw copies it cites ("/raw/…md", utf-8, each after a NUL)
+        self._notes: dict[str, bytes] = {}
         self.session = False  # set by the store while it holds a batch
         self._trusted: dict[str, int] = {}  # folder path -> its modification time when it was last listed, if not recent
         self._synced: dict[str, int] = {}  # folder path -> its modification time when it was last listed, recent or not
@@ -120,6 +132,13 @@ class OriginIndex:
         """A raw copy was rewritten by the store: read it again at the next query (in a session, known copies are not)."""
         with self._lock:
             self._raws.pop(name, None)
+
+    def distrust(self) -> None:
+        """A session starts: no folder is trusted by its time any more, and raw/ is not taken as listed in it, so the first look
+        checks every file by `stat`; what was parsed stays, and is parsed again only for a file that changed."""
+        with self._lock:
+            self._trusted.clear()
+            self._synced.clear()
 
     def forget(self) -> None:
         """Drop everything kept: the next query looks at all the files."""
@@ -169,10 +188,16 @@ class OriginIndex:
             return {}
         with self._lock:
             self._refresh(notes=True)
+            first: dict[str, int] = {}
+            for at, raw in enumerate(raws):
+                first.setdefault(raw, at)
+            wanted = [b"\0" + raw.encode() for raw in first]
             newest: dict[str, int] = {}
-            for rel, (_, cited) in self._notes.items():
-                if positions := [raws.index(r) for r in cited if r in raws]:
-                    newest[rel] = max(positions)
+            for rel, packed in self._notes.items():
+                if any(packed.find(w, _SIG.size) >= 0 for w in wanted):  # then read exactly: a name may hold another as a prefix
+                    cited = packed[_SIG.size + 1 :].decode().split("\0")
+                    if positions := [first[r] for r in cited if r in first]:
+                        newest[rel] = max(positions)
         return newest
 
     def _refresh(self, notes: bool = False) -> None:
@@ -180,20 +205,17 @@ class OriginIndex:
         if not (self.session and self._unchanged(raw)):
             listed = _listed(raw)
             raws = {e.name: e for e in _scan(raw) if e.name.endswith(".md") and e.is_file()}
-            if self.session:  # a copy is never edited, but by `touch` (below): only the new ones are read
-                for name in self._raws.keys() - raws.keys():
+            if self.session and str(raw) in self._synced:  # listed in this session: a copy is never edited, but by `touch`, so only
+                for name in self._raws.keys() - raws.keys():  # the new ones are read
                     del self._raws[name]
                 for name, entry in raws.items():
                     if name not in self._raws:
                         _update(self._raws, name, entry, _parse_copy)
-            else:
+            else:  # outside a session, or its first look: every copy checked by `stat`
                 _sync(self._raws, raws, _parse_copy)
             self._remember(raw, listed)
         if notes:  # only `citing` reads the notes: walking the whole tree for the other queries would cost a stat per note
-            if self.session:
-                self._refresh_notes(self.root, "")
-            else:
-                _sync(self._notes, dict(_walk(self.root, "")), _parse_note)
+            self._refresh_notes(self.root, "", trust=self.session)  # outside a session every folder is listed (and `_listing` kept)
 
     def _unchanged(self, path: Path) -> bool:
         """Whether the folder is as it was when last listed (and that was long enough after its last change)."""
@@ -209,10 +231,11 @@ class OriginIndex:
         else:
             self._trusted.pop(str(path), None)
 
-    def _refresh_notes(self, path: Path, rel: str) -> None:
-        """`_sync` of the notes for a session: the folders whose time changed are listed again, the others are walked as listed."""
+    def _refresh_notes(self, path: Path, rel: str, *, trust: bool) -> None:
+        """`_sync` of the notes: with `trust` (a session) the folders whose time changed are listed again and the others are walked as
+        listed; without it every folder is listed again. The notes a folder no longer lists go, so `_notes` holds what `_listing` holds."""
         key = str(path)
-        if self._unchanged(path):
+        if trust and self._unchanged(path):
             subs, names = self._listing[key]
         else:
             listed = _listed(path)
@@ -232,12 +255,12 @@ class OriginIndex:
             for name in set(old_subs) - set(subs):
                 self._drop(path / name, f"{rel}/{name}" if rel else name)
             for name, entry in found.items():
-                _update(self._notes, name, entry, _parse_note)
+                _update_note(self._notes, name, entry)
             names = list(found)
             self._listing[key] = (subs, names)
             self._remember(path, listed)
         for sub in subs:
-            self._refresh_notes(path / sub, f"{rel}/{sub}" if rel else sub)
+            self._refresh_notes(path / sub, f"{rel}/{sub}" if rel else sub, trust=trust)
 
     def _drop(self, path: Path, rel: str) -> None:
         """Forget a folder that is gone, and every note and folder under it."""
@@ -279,20 +302,6 @@ def _scan(path: Path) -> list[os.DirEntry[str]]:
         return []
 
 
-def _walk(path: Path, rel: str) -> list[tuple[str, os.DirEntry[str]]]:
-    """The notes under `path` as `WikiStore._load_folder` sees them: (bundle path, entry)."""
-    found: list[tuple[str, os.DirEntry[str]]] = []
-    for entry in _scan(path):
-        if entry.name.startswith(".") or (not rel and entry.name == RAW):
-            continue
-        child = f"{rel}/{entry.name}" if rel else entry.name
-        if entry.is_dir():
-            found.extend(_walk(Path(entry.path), child))
-        elif entry.name.endswith(".md") and entry.name not in (INDEX, LOG):
-            found.append((child, entry))
-    return found
-
-
 def _sync(state: dict[str, Any], seen: dict[str, os.DirEntry[str]], parse: Callable[[str, os.DirEntry[str]], Any]) -> None:
     """Parse again what is new or changed in `state`, forget what is no longer in `seen`."""
     for name in state.keys() - seen.keys():
@@ -301,20 +310,58 @@ def _sync(state: dict[str, Any], seen: dict[str, os.DirEntry[str]], parse: Calla
         _update(state, name, entry, parse)
 
 
-def _update(state: dict[str, Any], name: str, entry: Any, parse: Callable[[str, Any], Any]) -> None:
-    """Parse again one entry of `state` if it is new or changed."""
+def _signature(st: os.stat_result) -> bytes:
+    return _SIG.pack(st.st_mtime_ns, st.st_size, st.st_ino, st.st_ctime_ns)
+
+
+def _kept(st: os.stat_result, sig: bytes) -> bytes:
+    """The signature to keep for a file just parsed: `_YOUNG` if it was written within RACY_NS."""
+    return sig if time.time_ns() - st.st_mtime_ns > RACY_NS else _YOUNG
+
+
+def _same(held: bytes, sig: bytes) -> bool:
+    """Whether a kept signature is the file's now: the same time, size and change time, and the same inode unless either is 0 (a listing
+    on Windows; as `same_stamp` of the store); never for `_YOUNG`."""
+    if held[: _SIG.size] == sig:
+        return sig != _YOUNG
+    return held[:16] == sig[:16] and held[24:32] == sig[24:] and _NO_INODE in (held[16:24], sig[16:24]) and held[:32] != _YOUNG
+
+
+def _stat(state: dict[str, Any], name: str, entry: Any) -> os.stat_result | None:
     try:
-        st = entry.stat()
+        return entry.stat()
     except OSError:  # vanished since the scan
         state.pop(name, None)
+        return None
+
+
+def _update(state: dict[str, Any], name: str, entry: Any, parse: Callable[[str, Any], Any]) -> None:
+    """Parse again one entry of `state` if it is new or changed: another signature (`_same`), or a file too young to be trusted when it
+    was parsed."""
+    if (st := _stat(state, name, entry)) is None:
         return
-    sig = (st.st_mtime_ns, st.st_size, st.st_ino)
-    if name in state and state[name][0] == sig:
+    sig = _signature(st)
+    if (held := state.get(name)) is not None and _same(held[0], sig):
         return
     try:
-        state[name] = (sig, parse(name, entry))
+        state[name] = (_kept(st, sig), parse(name, entry))
     except OSError:
         state.pop(name, None)
+
+
+def _update_note(notes: dict[str, bytes], name: str, entry: os.DirEntry[str]) -> None:
+    """`_update` for a note: one bytes object, its signature then the copies it cites."""
+    if (st := _stat(notes, name, entry)) is None:
+        return
+    sig = _signature(st)
+    if (held := notes.get(name)) is not None and _same(held, sig):
+        return
+    try:
+        cited = _parse_note(name, entry)
+    except OSError:
+        notes.pop(name, None)
+        return
+    notes[name] = _kept(st, sig) + b"".join(b"\0" + raw.encode() for raw in cited)
 
 
 def _parse_copy(name: str, entry: Any) -> Copy | None:
