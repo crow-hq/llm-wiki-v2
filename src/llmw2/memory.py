@@ -62,6 +62,7 @@ from pathlib import Path
 from typing import Annotated, Any, TypeVar, cast
 
 import anyio
+import pydantic_core
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
@@ -82,6 +83,7 @@ from llmw2.errors import FailedBacklog, InputError, QueueFull, WikiError
 from llmw2.filer import PENDING, Receipt, sha_key
 from llmw2.models.relay import LLM_CONFIG, Relay, RelayClassifier, RelayLLM, relayed
 from llmw2.models.usage import UsageTracker
+from llmw2.search import Hits
 from llmw2.sources import LocalFolderSource, SyncReport, sync
 from llmw2.wiki import Purged, Wiki
 
@@ -267,9 +269,10 @@ class Memory:
 
             Use it for a name, a code, a quoted phrase or keywords when you will read the notes yourself with `read_note`; to
             get an answer to a question, use `recall`. Fast: no model is called. Returns up to k notes, each with
-            its path, title, summary and rank.
+            its path, title, summary and rank. While the memory's index is being built (once, on a large memory) the notes may be
+            partial: a last line of the result says so (and `partial` beside the structured `result`).
             """
-            return [h.to_dict() for h in guarded(lambda: self.live().search(query, k=k, where=where))]
+            return cast(list[dict[str, Any]], listed(guarded(lambda: self.live().search(query, k=k, where=where))))
 
         @tool(server, READ_ONLY)
         def read_note(path: Annotated[str, Field(description="Its path as recall or search gives it, e.g. finance/pricing.md")]) -> str:
@@ -639,7 +642,23 @@ def author_of(ctx: Context | None) -> str | None:
 
 
 def answered(answer: Answer) -> dict[str, Any]:
-    return {"answer": answer.text, "notes": answer.citations, "titles": answer.titles}
+    """What `recall` returns; with `partial` (a sentence) when the notes were found while the index was being built: the answer
+    may lack sources, and its text ends saying so."""
+    out: dict[str, Any] = {"answer": answer.text, "notes": answer.citations, "titles": answer.titles}
+    return {**out, "partial": answer.partial} if answer.partial else out
+
+
+def listed(hits: Hits) -> list[dict[str, Any]] | CallToolResult:
+    """What `search` returns: the hits; while the index is being built, the same hits (as the SDK gives a list: one text each, and
+    the list as `result` of the structured content), one more text, the sentence that says the results may be partial, and `partial`
+    in the structured content beside `result` (notes indexed so far, of the notes listed, and the sentence)."""
+    out = [h.to_dict() for h in hits]
+    if hits.partial is None:
+        return out
+    texts = [TextContent(type="text", text=pydantic_core.to_json(h, fallback=str, indent=2).decode()) for h in out]
+    texts.append(TextContent(type="text", text=hits.partial.sentence()))
+    partial = {**hits.partial.to_dict(), "message": hits.partial.sentence()}
+    return CallToolResult(content=texts, structured_content={"result": out, "partial": partial})
 
 
 def filed(result: IngestResult) -> dict[str, Any]:

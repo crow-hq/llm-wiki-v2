@@ -325,8 +325,11 @@ def create_app(
 
     @app.get("/search")
     def search(q: str, k: int = 8) -> dict[str, Any]:
-        """The best notes for `q` with no model call (`Wiki.search`): what a search box shows as one types."""
-        return {"hits": [h.to_dict() for h in current().search(q, k=max(1, min(k, 50)))]}
+        """The best notes for `q` with no model call (`Wiki.search`): what a search box shows as one types; with `partial` (the notes
+        indexed so far, of those listed) while the index is being built, when the hits may be partial."""
+        hits = current().search(q, k=max(1, min(k, 50)))
+        out: dict[str, Any] = {"hits": [h.to_dict() for h in hits]}
+        return {**out, "partial": hits.partial.to_dict()} if hits.partial is not None else out
 
     @app.get("/tree")
     def tree() -> dict[str, Any]:

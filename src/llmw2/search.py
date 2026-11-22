@@ -33,11 +33,11 @@ from typing import TYPE_CHECKING, Any
 from llmw2.agents import lexical
 from llmw2.bundle.document import OKFDocument, OKFDocumentError
 from llmw2.bundle.store import RACY_NS, WikiStore
-from llmw2.bundle.tree import Note
+from llmw2.bundle.tree import Note, fields_match
 from llmw2.errors import ConfigError
 
 if TYPE_CHECKING:
-    from llmw2.searchindex import SearchIndex
+    from llmw2.searchindex import Build, SearchIndex
 
 Embedder = Callable[[list[str]], Sequence[Sequence[float]]]  # texts -> one vector each
 Pending = tuple[str, str, str, Counter[str]]  # a text that is not a note yet, for `NoteSearch.find`: path, title, summary, its words
@@ -73,6 +73,34 @@ class Hit:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class Partial:
+    """A search answered while the index of the wiki is being built: from the `indexed` notes its file holds so far, of the `notes` its
+    build listed (0 while the build does not say yet), with the notes this process wrote since and the entries not filed yet."""
+
+    indexed: int
+    notes: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def sentence(self) -> str:
+        of = f" ({self.indexed} of {self.notes} notes)" if self.notes else ""
+        return f"search index being built{of}: the results may be partial"
+
+
+class Found(list[tuple[str, str, str]]):
+    """What `NoteSearch.find` gives: (path, title, summary) of each note, and `partial` while the index is being built."""
+
+    partial: Partial | None = None
+
+
+class Hits(list[Hit]):
+    """What `Wiki.search` gives: a list of `Hit`, and `partial` (a `Partial`) while the index is being built, else None."""
+
+    partial: Partial | None = None
 
 
 def _text_of(note: Note) -> str:
@@ -179,6 +207,12 @@ class NoteSearch:
         self._kept: dict[str, str] = {}  # hash of a text -> the text in lower case, for the exact expressions; the latest used last
         self._lock = threading.Lock()
         self._root = Path()
+        self._build: Build | None = None  # the build of the file this process runs in the background, if any
+        self._background = True  # False once a build in the background failed here: the searches build the file as before
+        # while the file is being built and this process searched it: the notes its sections wrote since, as a search takes a text that is
+        # not in the index (path, title, summary, words), with the hash of the text and the `fields`; None for a note gone (`_building`)
+        self._recent: dict[str, tuple[Pending, str, Any] | None] | None = None
+        self._recent_lock = threading.Lock()
 
     def search(self, notes: list[Note], everything: list[Note], query: str, k: int) -> list[Note]:
         """The best `k` of `notes`. `everything` is every note of the wiki: the index follows all of them, and the vectors of
@@ -213,12 +247,14 @@ class NoteSearch:
 
     def find(
         self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None = None, pending: Sequence[Pending] = ()
-    ) -> list[tuple[str, str, str]]:
+    ) -> Found:
         """The best `k` notes of the wiki (those `where` keeps, if given: a filter on `fields`) as (path, title, summary), from the
-        index on disk. The wiki is listed (every file's time and size, nothing read) and only the notes new or changed since the
-        index was written are read; no note is read to answer, but the candidates of the exact expressions of the query whose text
-        no earlier search kept (`EXACT_KEPT`). It never
-        waits for a writer of the index (`SearchIndex.sync`), and the index's lock is not held while the query is embedded.
+        index on disk. While the index is being built (`_building`) they come from what its lots committed so far, with the notes this
+        process wrote since and `pending`, and `Found.partial` says how far the build got; once it is built, as before. The wiki is
+        listed (every file's time and size, nothing read) and only the notes new or changed since the index was written are read; no
+        note is read to answer, but the candidates of the exact expressions of the query whose text no earlier search kept
+        (`EXACT_KEPT`). It never waits for a writer of the index (`SearchIndex.sync`), and the index's lock is not held while the
+        query is embedded.
 
         `pending`: texts that are not notes yet, as (path, title, summary, the count of their words), already filtered by `where`.
         Each is scored by its words as one more note of the index would be (`SearchIndex.scored`: the notes' scores do not change)
@@ -228,15 +264,23 @@ class NoteSearch:
             return self._find(store, query, k, where, pending)
 
     def indexed(self, rels: Sequence[str]) -> set[str]:
-        """Which of `rels` the index file holds (none while there is no index file)."""
+        """Which of `rels` the index file holds (none while there is no index file); while the file is being built, also those this
+        process wrote since (the searches find them, `_building`)."""
+        with self._recent_lock:
+            recent = {rel for rel, entry in (self._recent or {}).items() if entry is not None}
+        have = {rel for rel in rels if rel in recent}
         path = self.index.path
         if path is None or not path.exists():
-            return set()
-        return set(self.index.hashes(rels))
+            return have
+        return have | set(self.index.hashes(rels))
 
     def written(self, store: WikiStore, written: list[str] | None) -> None:
         """A section of this process wrote `written` (None: paths not known): the index takes them now, so that a search of any process
-        finds them without writing. Nothing when the index was never built (its first search builds it). Takes only the index's lock."""
+        finds them without writing. Nothing when the index was never built whole (its build lists the wiki once more after it marks the
+        file built); then, if this process searched it meanwhile, the notes are kept for its searches until it is (`_building`). Takes
+        only the index's lock."""
+        if written is not None and self._recent is not None:
+            self._keep_recent(store, written)
         path = self.index.path
         if path is None or not path.exists():
             return
@@ -271,29 +315,120 @@ class NoteSearch:
                     if vectors and held and (done or end is None):
                         keep = {self._key(h) for h in self.index.hashes().values()}
             self._kept.clear()  # no text of a note purged stays in the process
+            if self._recent:  # nor what a note this process wrote while the file was being built held: read again as it is on disk now
+                self._keep_recent(store, list(self._recent))
         finally:
             self._lock.release()
         if self.vectors is not None and (done or end is None):
             done = self.vectors.truncate_journal(keep, left()) and done
         return done
 
+    def close(self) -> None:
+        """Stop the build this process runs in the background (what its lots committed stays: the next search goes on from there), and
+        let go of the notes kept meanwhile and of the index file."""
+        from llmw2.searchindex import BUILD_WAIT
+
+        build, self._build = self._build, None
+        if build is not None:
+            build.stop(BUILD_WAIT)
+        with self._recent_lock:
+            self._recent = None
+        self.index.close()
+
+    def _building(self, store: WikiStore) -> bool:
+        """Whether the index file is being built (not built whole yet): the search then reads what the build's lots committed (they are
+        durable), with the notes this process wrote since (`_recent`, from then on), and says it is partial. Starts the build (`Build`)
+        when no process of the machine builds it, and waits for it `BUILD_WAIT` at most: a build that ends within it answers as before.
+        Never waits for the write lock of the file."""
+        from llmw2.searchindex import BUILD_WAIT, Build
+
+        index = self.index
+        if not self._background or index.ready():
+            if self._recent is not None:
+                with self._recent_lock:
+                    self._recent = None
+            self._build = None
+            return False
+        build = self._build
+        if build is not None and build.finished:
+            self._build = None
+            if build.failed:  # the file cannot be built in the background: the searches build it as before (or keep one in memory)
+                self._background = False
+                return False
+            build = None  # it ended and another process took the file back since: build again
+        if build is None and index.path is not None:
+            build = Build(index.path, store, self._entry)
+            try:
+                started = build.start()
+            except OSError:  # no lease can be made where the file goes (a file in place of the folder): the searches build it as before
+                self._background = False
+                return False
+            if started:  # else another process builds it: this one tries again at its next search
+                self._build = build
+                if build.wait(BUILD_WAIT) and (build.failed or index.ready()):
+                    return self._building(store)
+        if self._recent is None:
+            with self._recent_lock:
+                self._recent = {}
+        return True
+
+    def _keep_recent(self, store: WikiStore, written: Sequence[str]) -> None:
+        """Keep the notes among `written` as they are on disk now (None for one gone), for the searches made until the file is built."""
+        from llmw2.searchindex import unpack_fields
+
+        got: dict[str, tuple[Pending, str, Any] | None] = {}
+        for rel in dict.fromkeys(written):
+            if not store.is_note_path(rel):
+                continue
+            path = store.root / rel
+            try:
+                st = path.stat()
+                entry = self._entry(rel, str(path), (st.st_mtime_ns, st.st_size, st.st_ino))
+            except OSError:
+                entry = None
+            if entry is None:
+                got[rel] = None
+                continue
+            text, title, summary, fields = entry
+            got[rel] = ((rel, title, summary, Counter(lexical.words(text))), _hash(text), unpack_fields(fields))
+        with self._recent_lock:
+            if self._recent is not None:
+                self._recent.update(got)
+
     def _find(
         self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None, pending: Sequence[Pending]
-    ) -> list[tuple[str, str, str]]:
+    ) -> Found:
         self._root = store.root
         exact = exact_expressions(query)
-        counts = [p[3] for p in pending]
+        index = self.index
+        building = self._building(store)
+        with self._recent_lock:
+            recent = dict(self._recent or {}) if building else {}
 
         # one run: a damaged file found by a step starts them all again
-        def words() -> tuple[list[tuple[str, float]], list[float], dict[str, str], list[str]]:
-            self.index.sync(store, self._entry, wait=False)
-            ranked, others = self.index.scored(query, max(k, EXACT_POOL), where, counts)
+        def words() -> tuple[list[tuple[str, float]], list[float], dict[str, str], list[str], list[Pending]]:
+            index.sync(store, self._entry, wait=False, build=not building)  # while it is built: what its lots committed, no listing
+            mine: list[Pending] = []
+            shadow: set[str] = set()
+            if recent:  # a note written since is taken as it is now, in place of the file's row; one the file holds as it is, from the file
+                held = index.hashes(list(recent))
+                for rel, entry in recent.items():
+                    if entry is None or held.get(rel) != entry[1]:
+                        shadow.add(rel)
+                        if entry is not None and (not where or fields_match(entry[2], where)):
+                            mine.append(entry[0])
+            extra = [*mine, *pending]
+            pool = max(k, EXACT_POOL)
+            ranked, others = index.scored(query, pool + len(shadow), where, [p[3] for p in extra])
+            ranked = [(rel, s) for rel, s in ranked if rel not in shadow][:pool]
             if self.embedder is None:
-                return ranked, others, self.index.hashes([rel for rel, _ in ranked]) if exact else {}, []
-            hashes = self.index.hashes()
-            return ranked, others, hashes, [rel for rel in self.index.rels(where) if rel in hashes]  # a note taken away meanwhile goes
+                return ranked, others, index.hashes([rel for rel, _ in ranked]) if exact else {}, [], extra
+            hashes = index.hashes()
+            for rel in shadow:
+                hashes.pop(rel, None)
+            return ranked, others, hashes, [rel for rel in index.rels(where) if rel in hashes], extra  # a note taken away meanwhile goes
 
-        ranked, others, hashes, rels = self.index.run(words, reading=True)
+        ranked, others, hashes, rels, extra = index.run(words, reading=True)
         by_words = [rel for rel, _ in ranked]
         by_meaning: list[str] = []
         if self.embedder is not None:  # out of the index's lock: a writer does not wait for the embedder
@@ -315,19 +450,26 @@ class NoteSearch:
                 hit = [rel for rel in pool if any(e.lower() in texts.get(rel, "") for e in exact)]
                 picked = hit + [rel for rel in pool if rel not in hit]
         picked = picked[:k]
-        meta = self.index.meta(picked)
+        meta = index.meta(picked)
         found = [(rel, *meta[rel]) for rel in picked if rel in meta]  # a note taken away since is left out
-        if not pending:
-            return found
-        score = dict(ranked)
-        waiting = sorted((j for j, s in enumerate(others) if s > 0), key=lambda j: -others[j])
-        out: list[tuple[str, str, str]] = []
-        for hit in found:
-            while waiting and others[waiting[0]] > score.get(hit[0], 0.0):
-                out.append(pending[waiting.pop(0)][:3])
-            out.append(hit)
-        out += [pending[j][:3] for j in waiting]
-        return out[:k]
+        if building:  # the file holds notes gone by hand since their lot: left out (a look at each hit's file)
+            found = [hit for hit in found if (store.root / hit[0]).is_file()]
+        out = Found(found)
+        if extra:
+            score = dict(ranked)
+            waiting = sorted((j for j, s in enumerate(others) if s > 0), key=lambda j: -others[j])
+            out = Found()
+            for hit in found:
+                while waiting and others[waiting[0]] > score.get(hit[0], 0.0):
+                    out.append(extra[waiting.pop(0)][:3])
+                out.append(hit)
+            out += [extra[j][:3] for j in waiting]
+            out = Found(out[:k])
+        if building:
+            from llmw2.searchindex import progress
+
+            out.partial = Partial(len(index), progress(index.path)[1] if index.path is not None else 0)
+        return out
 
     def _order_of(self, n: int, by_words: list[str], by_meaning: list[str]) -> list[str]:
         if self.embedder is None:

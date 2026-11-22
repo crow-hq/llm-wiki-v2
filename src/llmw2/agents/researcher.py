@@ -33,11 +33,13 @@ from llmw2.filer import PENDING
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport
-from llmw2.search import NoteSearch, Pending
+from llmw2.search import Found, NoteSearch, Pending
 
 log = logging.getLogger(__name__)
 
 NO_ANSWER = "The wiki has no notes relevant to this question."
+# the last line of an answer whose search was answered while the index was being built (`Answer.partial`)
+PARTIAL_HINT = "(The search index is being built: the notes read may be incomplete.)"
 _BRACKET = re.compile(r"\[([^\[\]]+)\]")
 _NOTE_PATH = re.compile(r"[^\s\[\];,]+\.md|" + re.escape(PENDING) + r"[\w-]+")  # a note, or an entry not filed yet (`Wiki.search`)
 
@@ -50,6 +52,9 @@ class Answer:
     decisions: list[Decision]
     usage: UsageReport = field(default_factory=UsageReport)
     titles: dict[str, str] = field(default_factory=dict)  # each cited path -> the note's title when the answer was written
+    # the search the notes were found by ran while the index was being built (`Partial.sentence`): the sources may be incomplete, and
+    # the text ends with `PARTIAL_HINT`; None once the index is built
+    partial: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {**asdict(self), "usage": self.usage.to_dict()}
@@ -86,12 +91,14 @@ class Researcher:
         self.steps = steps
         self.search = search
         self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="researcher/system")
+        self._partial: str | None = None  # a search of this answer ran while the index was being built (`Found.partial`)
 
     def ask(self, question: str, where: dict[str, Any] | None = None, pending: Sequence[tuple[Pending, Note]] = ()) -> Answer:
         """`where` (field -> value) keeps the notes whose `fields` have all of them: a filter, not an access control. `pending`: entries
         not filed yet (already kept by `where`), each as the search takes it and as a note with no folder (`pending:<id>`): the search
         finds them as it does in `Wiki.search`, and the answer may read and cite them; a navigation of the folders does not see them."""
         ctx = self.ctx
+        self._partial = None
         with ctx.llm.usage.span() as used:
             known = [n for _, n in pending]  # the notes not of the tree that `select` may return
             root: Folder | None
@@ -125,7 +132,10 @@ class Researcher:
         read = {n.rel for n in notes}
         citations = [c for c in dict.fromkeys(_cited(text)) if c in read]
         titles = {n.rel: n.title for n in notes if n.rel in citations}
-        return Answer(text, citations, [n.rel for n in notes], ctx.decisions, used, titles={c: titles[c] for c in citations})
+        if self._partial is not None:  # said in the answer itself, for whoever reads only its text (an MCP client's model)
+            text = f"{text}\n\n{PARTIAL_HINT}"
+        cited = {c: titles[c] for c in citations}
+        return Answer(text, citations, [n.rel for n in notes], ctx.decisions, used, titles=cited, partial=self._partial)
 
     def _finder(
         self, root: Folder, where: dict[str, Any] | None, pending: Sequence[tuple[Pending, Note]] = ()
@@ -135,7 +145,17 @@ class Researcher:
         assert search is not None
         by_rel = {n.rel: n for n in root.all_notes()} | {n.rel: n for _, n in pending}
         waiting = [hit for hit, _ in pending]
-        return lambda query, k: [by_rel[rel] for rel, _, _ in search.find(self.store, query, k, where, waiting) if rel in by_rel]
+
+        def find(query: str, k: int) -> list[Note]:
+            found = search.find(self.store, query, k, where, waiting)
+            self._saw(found)
+            return [by_rel[rel] for rel, _, _ in found if rel in by_rel]
+
+        return find
+
+    def _saw(self, found: Found) -> None:
+        if found.partial is not None:
+            self._partial = found.partial.sentence()
 
     def _reader(self, pending: Sequence[tuple[Pending, Note]], known: list[Note]) -> Callable[[str, int], list[Note]]:
         """`_finder` with no `where` and no tree: each note found is taken as a load would take it (`WikiStore.note_at`), once; one gone
@@ -147,7 +167,9 @@ class Researcher:
 
         def find(query: str, k: int) -> list[Note]:
             out = []
-            for rel, _, _ in search.find(self.store, query, k, None, waiting):
+            found = search.find(self.store, query, k, None, waiting)
+            self._saw(found)
+            for rel, _, _ in found:
                 if rel not in by_rel:
                     if (note := self.store.note_at(rel)) is None:
                         continue

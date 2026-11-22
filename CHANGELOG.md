@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file that another program holds (an antivirus, an indexer) is tried again for a moment, then its system error is raised as it is.
   The format is looked at when a `Wiki` opens: a process already open does not see a format written after it. 1.x does not read the
   file, so for it the step above stays.
+- MCP clients: while the search index is being built (once per wiki: its first search by this version, or after the index file
+  is lost), the `search` tool adds after its hits one more text that is not a hit ("search index being built (N of M notes): the
+  results may be partial") and a `partial` field beside `result` in its structured content. A client that reads every text of the
+  result as a hit in JSON skips that one, or reads the structured content.
 
 ### Added
 
@@ -199,8 +203,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by hand, not through the library, is found by the searches after that moment. A note filed by any process is found at the next
   search, by its words and, with an embedder, by meaning: the notes looked at by meaning are those of the index, not those of the last
   listing. The index file keeps which notes its last writes changed,
-  so a search that finds it written by another process reads those rows only, not the state of every note. An index never built whole
-  is still built by its first search. A batch (`ingest_many`, `rebuild`) puts its notes in once, at its end.
+  so a search that finds it written by another process reads those rows only, not the state of every note. A batch (`ingest_many`,
+  `rebuild`) puts its notes in once, at its end.
+- An index never built whole (a wiki searched for the first time, a file deleted, damaged or of an older schema) is built in the
+  background, by one process of the machine at a time (a lease, `.llmw2/cache/search-v5.sqlite.build`), in a thread of its own; its
+  first search waits for it one second at most. Until the file is built whole a search of any process answers at once, without reading
+  the notes or waiting for the build, from the notes its lots committed (each lot is durable), the notes the process wrote since its
+  first search (a note it changed or deleted leaves the lot's row) and the entries not filed yet; a hit whose file is gone is left out.
+  Such results say so: `Wiki.search` returns `Hits`, a list of `Hit` as before with `partial` (`Partial`: notes indexed so far, of the
+  notes listed; None once the file is complete); a caller that does not look at `partial` takes such a list for a whole one. The MCP
+  tool `search` adds, after the hits, one more text, "search index being built (N of M notes): the results may be partial", and
+  `partial` (`indexed`, `notes`, `message`) beside `result` in its structured content: a client that reads every text of the result
+  as a hit in JSON (release 1.0.5 gave hits only) meets a text that is not one while the index is being built. The HTTP `/search`
+  adds a `partial` key; `ask` and `recall` end the answer with a line that says the notes read may be incomplete, and `Answer.partial`
+  (and the `partial` key of `recall`) gives the sentence. Notes changed by hand during the build are seen once the build reaches them.
+  Once the file is marked built (from then on the writers put their notes in themselves) the build lists the wiki once more, waiting
+  for the writers' locks, so the notes written while the file was not built are in it; only then is the file marked complete (`meta`
+  "complete") and the answers are those of the index whole again. A file built whole by an earlier version is completed by one such
+  listing at its first search. A build cut by a crash goes on from the lots it committed at the next
+  search of any process; a file that cannot be written is built by the searches, in memory, as before. `status` says in `warnings`
+  how far the build got.
 - A search looks at the file of the search index once, at its first step (a `stat`: is it the file its connection was opened on?),
   instead of at each of its steps: a file replaced by another process (a rebuild), or a fork, is still seen before the search reads.
 - A search whose query quotes an expression or holds a code no longer reads again the notes it looks for them in: a process keeps

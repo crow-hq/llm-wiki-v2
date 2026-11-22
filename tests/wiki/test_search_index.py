@@ -627,8 +627,18 @@ START = "\n".join(
         "from llmw2 import Wiki, WikiConfig",
         "from llmw2.models.usage import UsageTracker",
         "from tests.wiki.fakes import FakeLLM",
+        "import time",
         "w = Wiki(WikiConfig(bundle=Path(sys.argv[1]), mode='classic'), llm=FakeLLM(UsageTracker()))",
-        "print(','.join(h.path for h in w.search('alpha river market', k=8)))",
+        "def ask():",
+        "    hits = w.search('alpha river market', k=8)",
+        "    return ('partial' if hits.partial is not None else 'whole') + ':' + ','.join(h.path for h in hits)",
+        "first, end = ask(), time.monotonic() + 300",
+        "last = first",
+        "while last.startswith('partial') and time.monotonic() < end:  # the process that builds waits for its own build to end",
+        "    time.sleep(0.05)",
+        "    last = ask()",
+        "print(first)",
+        "print(last)",
     ]
 )
 
@@ -643,7 +653,12 @@ def test_thirty_processes_starting_together_on_a_wiki_with_no_index_agree(tmp_pa
     procs = [subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(30)]
     results = [(*p.communicate(timeout=600), p.returncode) for p in procs]
     assert [(r[1][-800:], r[2]) for r in results if r[2] != 0] == []
-    assert len({r[0].strip() for r in results}) == 1
+    answers = [r[0].split() for r in results]
+    whole = "whole:" + ",".join(_expected(wiki, "alpha river market", 8))
+    # while one process builds the index the others may answer partial (even empty) results, marked so; every result not marked is the
+    # index whole's, the same in every process, and every process ends with it
+    assert all(len(a) == 2 and a[1] == whole for a in answers), answers
+    assert all(a[0] == whole or a[0].startswith("partial:") for a in answers), answers
     assert _rows(_index_file(tmp_path)) == _fresh_rows(wiki)
 
 

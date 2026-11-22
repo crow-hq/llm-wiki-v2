@@ -102,7 +102,7 @@ from llmw2.models.classifier import Classifier
 from llmw2.models.embedder import HttpEmbedder
 from llmw2.models.llm import LLM
 from llmw2.models.usage import UsageReport, UsageTracker
-from llmw2.search import VECTORS_FILE, Embedder, Hit, NoteSearch, VectorCache
+from llmw2.search import VECTORS_FILE, Embedder, Hit, Hits, NoteSearch, VectorCache
 from llmw2.search import Pending as SearchPending
 
 PLAN_DEPTH = 3  # levels `plan` may lay out (and never below max_depth)
@@ -313,7 +313,7 @@ class Wiki:
         if self._hub is not None:
             release(self._hub)
             self._hub = None
-        self._search.index.close()
+        self._search.close()
         self.llm.close()
         if self.classifier is not None:
             self.classifier.close()
@@ -604,11 +604,18 @@ class Wiki:
         filer of this process is on, or None), `failed` (entries given up), `oldest_s` (age of the oldest entry not done, or None),
         `filer` ("running", "idle", "error" for this process's filer; "other" when another process holds the lease; "none"),
         `last_error`, `journal_bytes`, `disk_free` and `warnings` (a list of sentences; among them, the notes of the filings this process
-        has read that the limit on top-level folders sent to an existing root). It reads what is new in the journal and nothing
-        else: it does not take the append lock, does not read the journal from its start and does not run `check()`, and its time does
-        not grow with the notes."""
+        has read that the limit on top-level folders sent to an existing root, and, while the search index is being built, how far it
+        got). It reads what is new in the journal and nothing else (of the search index, one row and the 16 bytes of its build's
+        lease): it does not take the append lock, does not read the journal from its start and does not run `check()`, and its time
+        does not grow with the notes."""
+        from llmw2.searchindex import build_state
+
         hub = self._journal()
-        return _filer.status(hub, self.cfg.bundle)
+        out = _filer.status(hub, self.cfg.bundle)
+        path = self._search.index.path
+        if path is not None and (building := build_state(path)) is not None:
+            out["warnings"].append(building)
+        return out
 
     def receipt(self, ident: str) -> Receipt | None:
         """The receipt of the entry `remember` gave this id (`Receipt.id`), as this process reads the journal; None for an id the journal
@@ -1293,7 +1300,7 @@ class Wiki:
         pending = [(self._pending_hit(p), self._pending_note(p, chars)) for p in self._pending(where)] if self.cfg.mode == "crow" else []
         return self.researcher().ask(question, where, pending)
 
-    def search(self, query: str, k: int = 8, where: dict[str, Any] | None = None) -> list[Hit]:
+    def search(self, query: str, k: int = 8, where: dict[str, Any] | None = None) -> Hits:
         """The best `k` notes for `query` (8 by default, as the command line, the HTTP API and the MCP tool), with no model call
         of the library. `where` restricts it as in `ask`.
 
@@ -1303,7 +1310,13 @@ class Wiki:
 
         The words of the notes are kept in an index file of the bundle (`.llmw2/cache/search-v<schema>.sqlite`), shared by every process on
         the wiki: a search lists the wiki's files and reads only the notes new or changed since. The file is a cache, never the
-        notes themselves: delete it, or let it be damaged, and the next search builds it again.
+        notes themselves: delete it, or let it be damaged, and the next search builds it again, in the background: one process of the
+        machine builds it, by lots each durable once written, and its first search waits for it one second at most. Until it is built
+        whole a search answers at once from the notes its lots hold, the notes this process wrote since and the entries not filed, and
+        the list it returns (`Hits`, a list of `Hit`) says so in `partial` (`Partial`: notes indexed so far, of the notes listed);
+        once it is built, `partial` is None and the answers are those of the index whole. `status` says how far the build got. A
+        caller that does not look at `partial` takes such a list for a whole one: notes may be missing from it, and its order is that of
+        the notes indexed so far.
 
         What `remember` keeps is found before it is filed, by every process: an entry of the journal whose note the index does not
         have yet is a hit of path `pending:<id>` (`read_note` reads it), titled by its title or first line, its first 200 characters
@@ -1316,7 +1329,9 @@ class Wiki:
             raise InputError("empty question")
         with self._search.index.looked():  # one look at the index's file for the queue (`_pending`) and the search
             found = self._search.find(self.store, query, k, where, [self._pending_hit(p) for p in self._pending(where)])
-        return [Hit(rel, title, summary, i) for i, (rel, title, summary) in enumerate(found, 1)]
+        hits = Hits(Hit(rel, title, summary, i) for i, (rel, title, summary) in enumerate(found, 1))
+        hits.partial = found.partial
+        return hits
 
     def _pending(self, where: dict[str, Any] | None = None) -> list[Pending]:
         """The entries of the journal a search shows (`Hub.searchable`), less those whose note the index has; none, and no file made,

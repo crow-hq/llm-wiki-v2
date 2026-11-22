@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from llmw2.agents import lexical
+from llmw2.bundle.filelock import FileLock
 from llmw2.bundle.journal import shared_bytes
 from llmw2.bundle.store import RACY_NS, Stamp, WikiStore, tree_key
 from llmw2.bundle.tree import fields_match
@@ -70,6 +71,10 @@ LISTING_LOOK = 1.0
 # sequence) p99 54, max 57; one row a filing p99 33. 88 covers those, and stays within three pages of 512 even at one row a
 # generation (some 1.5 KB at most)
 RECENT_IDS = 88
+# seconds the search that starts a build in the background waits for it: a build that ends within it is answered as before, from the file
+# whole; past it the search answers at once from what the file holds so far, marked partial (`NoteSearch.find`). A fifth of the 5 s a
+# first search may take (requirement B6 of the robots' table): a small wiki is answered whole, a large one in time
+BUILD_WAIT = 1.0
 PAGE_SIZE = 512  # a changed note touches pages at random: small pages write fewer bytes (measured at 512, 1024, 2048, 4096)
 _K1, _B = lexical._K1, lexical._B
 _MASK = (1 << 64) - 1
@@ -79,6 +84,9 @@ _BUSY = (5, 6)  # SQLITE_BUSY, SQLITE_LOCKED
 # one clock for the machine) and a check, so that a write torn by another process, or bytes never written, are no listing
 _LISTED = struct.Struct("<QQQQ")
 _LISTED_MASK = 0x9E3779B97F4A7C15
+_PROGRESS = struct.Struct("<QQ")  # in the lease of a build, from byte 64 (the lock is on byte 0): notes in the file, notes listed
+_PROGRESS_AT = 64
+_PROGRESS_EVERY = 256  # notes read between two writes of the progress
 log = logging.getLogger(__name__)
 _DDL = (
     "CREATE TABLE meta (k TEXT PRIMARY KEY, v) WITHOUT ROWID",
@@ -266,7 +274,8 @@ class SearchIndex:
 
     Who writes notes puts them in (`update`, with the paths a section wrote); who reads never waits for the file's write lock: when the
     file is behind the notes it writes them only if the lock is free, else it answers from what the file holds, without the notes gone
-    from the listing. A file never built whole is built (or waited for) as a reader finds it, as before."""
+    from the listing. A file never built whole is built (or waited for) by a `sync` that may build; the searches of a wiki (`NoteSearch`)
+    leave it to a `Build` in the background and read meanwhile what its lots committed (`sync` with `build=False`)."""
 
     def __init__(self, path: Path | None) -> None:
         self.path = Path(path) if path is not None else None
@@ -302,6 +311,9 @@ class SearchIndex:
         self._listed_at = None
         self._partial = False  # a writer's section took from the file only its own notes: the rest is to read again before a search
         self._built = False  # the file was built whole once (`meta` "built"): from then on a reader never waits for its write lock
+        # and its build listed the wiki once more after that mark, waiting for the writers (`meta` "complete", `Build`): from then on
+        # a search reads it whole (`ready`)
+        self._complete = False
         self._hidden: set[int] = set()  # notes the file holds that are gone from the listing, left out while a writer holds the lock
         self._order: tuple[Any, list[str]] | None = None  # (generation, notes left out) -> the notes in the order of the tree (`rels`)
         self._raw = []
@@ -321,6 +333,16 @@ class SearchIndex:
                 return int(db.execute("SELECT count(*) FROM docs WHERE bad = 0").fetchone()[0])
         except sqlite3.Error:
             return 0
+
+    def ready(self) -> bool:
+        """Whether a search reads this index whole now: its file is complete (`meta` "complete": built whole, then the notes its writers
+        left to the build put in, `Build`); an index in memory is built by its sync, as before. One row read, no lock waited for; a file
+        not there yet is not made."""
+        if self._complete or self._mem is not None or self.path is None:
+            return True
+        if not self.path.exists():
+            return False
+        return self._guarded(lambda: self._is_complete(self._open()))
 
     # ---- the file
 
@@ -626,6 +648,7 @@ class SearchIndex:
             raise _Corrupt("the lengths of the notes do not add up")
         self._gen, self._ids, self._rels, self._len, self._stamps, self._bad, self._total = gen, ids, rels, lens, stamps, bad, total
         self._built = db.execute("SELECT 1 FROM meta WHERE k = 'built'").fetchone() is not None
+        self._complete = db.execute("SELECT 1 FROM meta WHERE k = 'complete'").fetchone() is not None
         self._read_again()
 
     def _read_again(self) -> None:
@@ -773,6 +796,7 @@ class SearchIndex:
                 return False
             self._gen = gen
             self._built = db.execute("SELECT 1 FROM meta WHERE k = 'built'").fetchone() is not None
+            self._complete = db.execute("SELECT 1 FROM meta WHERE k = 'complete'").fetchone() is not None
         finally:
             if own and db.in_transaction:
                 db.execute("COMMIT")
@@ -796,6 +820,11 @@ class SearchIndex:
         if not self._built:
             self._built = db.execute("SELECT 1 FROM meta WHERE k = 'built'").fetchone() is not None
         return self._built
+
+    def _is_complete(self, db: sqlite3.Connection) -> bool:
+        if not self._complete:
+            self._complete = db.execute("SELECT 1 FROM meta WHERE k = 'complete'").fetchone() is not None
+        return self._complete
 
     def _sync(self, store: WikiStore, read: Reader, wait: bool, build: bool, until: float | None = None) -> bool:
         """`until`: the write lock is waited for until then (`time.monotonic`), all the lots together, whatever `wait` says. Whether the
@@ -909,15 +938,18 @@ class SearchIndex:
             recent.pop(0)
         db.execute("INSERT OR REPLACE INTO meta VALUES ('recent', ?)", (json.dumps(recent, separators=(",", ":")),))
 
-    def _mark_built(self, db: sqlite3.Connection) -> None:
+    def _mark_built(self, db: sqlite3.Connection, key: str = "built") -> None:
         self._begin(db)
         try:
-            db.execute("INSERT OR REPLACE INTO meta VALUES ('built', 1)")
+            db.execute("INSERT OR REPLACE INTO meta VALUES (?, 1)", (key,))
             db.execute("COMMIT")
         except BaseException:
             self._rollback(db)
             raise
-        self._built = True
+        if key == "built":
+            self._built = True
+        else:
+            self._complete = True
 
     def _write(
         self,
@@ -1287,3 +1319,153 @@ class SearchIndex:
             return out
 
         return self._guarded(run)
+
+
+# ---- while the file is being built
+
+
+class _Unusable(Exception):
+    """The file of a build in the background cannot be used (read-only, no space, held): the build stops."""
+
+
+class _Stopped(Exception):
+    """The wiki was closed: the build stops, and what its lots committed stays."""
+
+
+class _Building(SearchIndex):
+    """The index a `Build` writes, with a connection, a lock and a state of its own: it tells how many notes it listed."""
+
+    def __init__(self, path: Path, tell: Callable[[], None]) -> None:
+        super().__init__(path)
+        self.listed = 0
+        self._tell = tell
+
+    def _scan(self, store: WikiStore) -> tuple[list[str], list[tuple[str, str, Stamp]]]:
+        order, todo = super()._scan(store)
+        self.listed = len(order)
+        self._tell()
+        return order, todo
+
+    def _to_memory(self) -> None:  # an index in memory would be built for nobody: the build stops, the searches go on as before
+        raise _Unusable(f"search index {self.path} cannot be used")
+
+
+def lease_of(path: Path) -> Path:
+    """The lease of the build of the index file at `path`: who holds it builds; from byte 64, how far it got (`_PROGRESS`)."""
+    return Path(f"{path}.build")
+
+
+class Build:
+    """The build of an index file in a thread of its own, on an index of its own (`_Building`: the searches and the writers of the process
+    do not wait for it), by one process of the machine at a time, the one that holds the lease (`lease_of`). It is the build of
+    `SearchIndex.sync`, in lots, each durable once committed: the searches made meanwhile read the notes those lots hold (`sync` with
+    `build=False`). Once the file is marked built the wiki is listed once more, waiting for the writers' locks, so that a note written
+    before its writer saw the mark (a writer leaves its notes to the build until then, `update`) is in the file; only then is it marked
+    complete, and the searches read it whole (`ready`). A process that dies leaves the lots it committed and lets
+    go of the lease: the next search of any process goes on from there."""
+
+    def __init__(self, path: Path, store: WikiStore, read: Reader) -> None:
+        self.path = path
+        self.lease = FileLock(lease_of(path))
+        self.failed = False  # the file could not be built in the background: the searches of the process build it as before
+        self._store = store
+        self._read = read
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._index: _Building | None = None
+        self._done = 0  # notes in the file when the build began
+        self._reads = 0
+
+    def start(self) -> bool:
+        """Start the build if no process builds this file now (the lease is never waited for); whether it started."""
+        if not self.lease.try_acquire():
+            return False
+        self._thread = threading.Thread(target=self._run, name="llmw2-index-build", daemon=True)
+        try:
+            self._thread.start()
+        except BaseException:
+            self.lease.release()
+            raise
+        return True
+
+    @property
+    def finished(self) -> bool:
+        return self._thread is not None and not self._thread.is_alive()
+
+    def wait(self, timeout: float) -> bool:
+        """Wait at most `timeout` seconds for the build to end; whether it ended."""
+        if self._thread is not None:
+            self._thread.join(timeout)
+        return self.finished
+
+    def stop(self, wait: float) -> None:
+        """Stop the build at its next read (its lot is rolled back, the lots before stay) and wait at most `wait` seconds for it."""
+        self._stop.set()
+        self.wait(wait)
+
+    def _run(self) -> None:
+        index = self._index = _Building(self.path, self._tell)
+
+        def read(rel: str, path: str, stamp: Stamp) -> tuple[str, str, str, str] | None:
+            if self._stop.is_set():
+                raise _Stopped
+            self._reads += 1
+            if self._reads % _PROGRESS_EVERY == 0:
+                self._tell()
+            return self._read(rel, path, stamp)
+
+        try:
+            self._done = index.notes()
+            index.sync(self._store, read)
+            # once more now that the file is marked built, the writers' locks waited for (this is no reader): the notes its writers
+            # left to the build until they saw the mark; then the file is complete, and the searches read it whole
+            index.sync(self._store, read)
+            index.run(lambda: index._mark_built(index._open(), "complete"))
+        except _Stopped:
+            pass
+        except Exception as e:
+            self.failed = True
+            log.warning("search index %s was not built in the background (%s): the searches of this process build it", self.path, e)
+        finally:
+            index.close()
+            self._index = None
+            self.lease.release()
+
+    def _tell(self) -> None:
+        """Write how far the build got in its lease, for `status` and the searches (`progress`)."""
+        index = self._index
+        listed = index.listed if index is not None else 0
+        with contextlib.suppress(OSError), open(self.lease.path, "r+b") as f:
+            f.seek(_PROGRESS_AT)
+            f.write(_PROGRESS.pack(min(self._done + self._reads, listed), listed))
+
+
+def progress(path: Path) -> tuple[int, int]:
+    """How far the last build of the index file at `path` got, as its lease says: (notes in the file, notes it listed); (0, 0) when it
+    does not say (no build yet, or before its first listing). 16 bytes read, nothing waited for."""
+    with contextlib.suppress(OSError, struct.error), open(lease_of(path), "rb") as f:
+        f.seek(_PROGRESS_AT)
+        done, listed = _PROGRESS.unpack(f.read(_PROGRESS.size))
+        return int(done), int(listed)
+    return 0, 0
+
+
+def build_state(path: Path) -> str | None:
+    """What `status` says of the index file at `path` while it is not built whole, in a sentence; None once it is, or before it is made
+    (the first search makes it). One row and 16 bytes read, nothing waited for."""
+    there = path.exists()
+    if there:
+        try:
+            with contextlib.closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True, timeout=0)) as db:
+                if db.execute("SELECT 1 FROM meta WHERE k = 'complete'").fetchone() is not None:
+                    return None
+        except sqlite3.Error:
+            return None
+    lease = FileLock(lease_of(path))
+    if not lease.path.exists() or lease.try_acquire():  # no build now (and no lease file made for asking)
+        if lease.held:
+            lease.release()
+        return "the search index is not complete: the next search goes on building it, and its results may be partial" if there else None
+    done, listed = progress(path)
+    count = f" ({done} of {listed} notes)" if listed else ""
+    return f"the search index is being built in the background{count}: until it is done the results of a search may be partial"
