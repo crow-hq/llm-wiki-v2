@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The filer files the entries of a lot in one session of the store: the tree is listed once a lot, then only what changed; the session
-ends when the queue is empty and before a purge is completed; the split of a folder looks at the folder's own listing before the tree."""
+ends when the queue is empty and before a purge is completed; the split of a folder looks at the folder's own listing before the tree;
+what the first lot of a filer parses is kept for the next ones."""
 
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import pytest
 
 from llmw2 import IngestResult, Wiki, WikiConfig
 from llmw2 import filer as F
+from llmw2.bundle import document as D
 from llmw2.bundle import store as S
 from llmw2.models.usage import UsageTracker
 from llmw2.wiki import SPLIT_AT
@@ -162,3 +164,55 @@ def test_the_session_ends_while_a_failed_entry_waits_to_be_tried_again(bundle: P
     assert failed == [1] and w.store._depth == 0  # filed in a session, which ended for the wait
     w.drain(60)
     w.close()
+
+
+def test_the_second_lot_of_a_new_filer_reads_no_old_note_again(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A process that takes the lease starts with nothing parsed: its first lot reads the tree, and keeps it (`session(keep=True)`), so
+    that the second lot does not read it whole again, as the second session of a store that keeps nothing in its first would."""
+    w, _ = make(bundle)
+    for g in GROUPS:  # notes filed by another process, before
+        for i in range(3):
+            w.remember(f"topic: {g}-{i}\nAn old {g} memory number {i}.", key=f"{g}-{i}")
+    w.drain(60)
+    w.close()
+    aged(bundle)
+    old = {p.name for p in bundle.rglob("*.md") if p.parent.name in GROUPS and p.name != "index.md"}
+    assert len(old) == 12
+    reads: list[str] = []
+    real = D.OKFDocument.read.__func__
+
+    def counted(cls: Any, path: Any) -> Any:
+        reads.append(Path(path).name)
+        return real(cls, path)
+
+    monkeypatch.setattr(D.OKFDocument, "read", classmethod(counted))
+    w, _ = make(bundle)  # the process that takes the lease now
+    w.remember("topic: alpha-10\nThe first new memory.", key="new-1")
+    w.drain(60)  # the first lot, which the empty queue ends
+    deadline = time.monotonic() + 10
+    while w.store._depth and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert w.store._depth == 0 and old <= set(reads)  # the first lot read the tree
+    reads.clear()
+    w.remember("topic: bravo-10\nThe second new memory.", key="new-2")
+    w.drain(60)  # the second lot
+    untouched = {n for n in old if "charlie" in n or "delta" in n}  # the lots wrote in alpha and bravo (links, the notes they read)
+    assert untouched and not untouched & set(reads), sorted(untouched & set(reads))
+    w.close()
+
+
+def test_a_session_of_a_store_not_opened_with_keep_still_keeps_nothing_first(bundle: Path) -> None:
+    """Only the filer asks to keep from the first session: a batch (the CLI's one session) parses and keeps nothing."""
+    w, _ = make(bundle)
+    w.remember("topic: alpha-1\nA memory.", key="a1")
+    w.drain(60)
+    w.close()
+    aged(bundle)
+    store = S.WikiStore(bundle, actor="cli")
+    with store.session():
+        store.load()
+        assert store._parsed == {}
+    store = S.WikiStore(bundle, actor="filer")
+    with store.session(keep=True):
+        store.load()
+        assert store._parsed

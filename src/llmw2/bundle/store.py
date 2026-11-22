@@ -281,6 +281,7 @@ class WikiStore:
         self._recent: set[str] = set()
         self._relisted = False  # whether the last session `load` listed a folder again
         self._sessions = 0  # the sessions this store has had: the first fills no cache (a process of one session, the CLI, never reads it)
+        self._keeps = False  # the session going on was opened by a caller that will open more (`session(keep=True)`): it fills the cache
         # told the paths a section wrote, once it committed and before its `after_commit` (None: a section with no undo log, which does not
         # know them, after the lock is let go). The search index of the `Wiki` takes them, so that a reader never has to write them.
         # It must not raise: what it fails to do is done by the next look of the index at the files.
@@ -522,12 +523,12 @@ class WikiStore:
             lock.release()
 
     @contextlib.contextmanager
-    def session(self) -> Iterator[None]:
+    def session(self, *, keep: bool = False) -> Iterator[None]:
         """A batch of writes by this store (see `Wiki.ingest_many`): `load` and the origin index only look again at what
         changed. The first `load` of a session lists the whole tree and parses only the notes whose file is not the one it
         parsed before (`_parsed`, by modification time, size, inode and change time, kept between sessions and outside them, for
         notes older than RACY_NS, filled from the second session of the store on: the first, all a CLI call has, parses and keeps
-        nothing); after it, a folder whose modification time is the same (and not recent) keeps the notes it
+        nothing; `keep`, for a caller that will open more sessions (the filer), fills it from the first); after it, a folder whose modification time is the same (and not recent) keeps the notes it
         had, and so does `raw/`: every write of the store replaces a file, which changes its folder's time. A note edited in
         place by another program, which leaves the folder's time as it was, is seen by the next batch, and never overwritten
         meanwhile (see `_save`). The folders are kept only while the session lasts. Limit, as in `scan_notes`: a note edited
@@ -535,7 +536,9 @@ class WikiStore:
         change time shows it) until its size or time changes."""
         with self._session_guard:
             self._depth += 1
-            self._sessions += self._depth == 1
+            if self._depth == 1:
+                self._sessions += 1
+                self._keeps = keep
             self._origins.session = True
         try:
             yield
@@ -575,7 +578,7 @@ class WikiStore:
 
     @property
     def _fills(self) -> bool:
-        return not self._depth or self._sessions > 1
+        return not self._depth or self._sessions > 1 or self._keeps
 
     def _note_of(
         self, where: str, rel: str, folder: Folder | None, st: os.stat_result, stamp: Stamp, seen: dict[str, _Parsed]

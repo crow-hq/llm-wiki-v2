@@ -189,7 +189,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   listed whole once for the lot, then only the folders that changed, instead of twice an entry; the session ends when the queue is
   empty, while a failed entry waits to be tried again, and before a purge is completed. After a document filed alone, the split of its folder looks first at the folder's own
   listing, and loads the tree only when the folder may hold enough notes to split. A note edited by hand in place, leaving its folder's
-  time as it was, is seen by the next lot.
+  time as it was, is seen by the next lot. The first lot of a process that takes the filing over keeps what it parses of the tree,
+  so that its second lot does not parse every note again (a session of the store outside the filer, such as a CLI call's, still keeps
+  nothing in its first).
 - A search that another process writes the index under while it reads (a fast filer at every step) reads again inside one state of
   the file, whatever is written meanwhile, instead of failing after a few attempts with "the search index cannot be rebuilt".
 - A search never waits for the write lock of the search index: a process that writes notes puts them in the index before the call

@@ -913,7 +913,7 @@ class Filer(threading.Thread):
                             hub.cond.wait(IDLE_POLL)
                     continue
                 if not self._in_lot:
-                    self._lot.enter_context(self.wiki.store.session())
+                    self._lot.enter_context(self.wiki.store.session(keep=True))  # lots follow lots: the first keeps what it parses
                 self._in_lot += 1
                 self._file(entry)
                 if self.stopping:
