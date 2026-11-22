@@ -328,7 +328,7 @@ class WikiConfig(BaseModel):
     # Who does the memory's model work: this wiki's own models, or the MCP client's, on its own plan (models.relay), or
     # "hybrid": the client's model writes and this wiki's classifier decides.
     mcp_models: Literal["wiki", "client", "hybrid"] = "wiki"
-    concurrency: int = Field(4, ge=1, le=16)  # documents prepared (extracted, summarized) at once by a batch or the server
+    concurrency: int = Field(8, ge=1, le=16)  # documents prepared (extracted, summarized) at once by a batch, the server, the filer
     actor: str = f"llmw2/{__version__}"  # OKF `generated.by`
     usage_log: Path | None = None  # optional JSONL audit of every model call
     prompts_dir: Path | None = None  # optional folder overriding packaged prompts

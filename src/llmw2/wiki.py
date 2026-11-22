@@ -665,19 +665,31 @@ class Wiki:
     def _file_entry(self, entry: _filer.Entry, hub: Hub) -> IngestResult:
         origin = Origin.from_dict(entry.origin) if entry.origin else None
         filing = Filing(entry, hub)
+        filer = hub.filer if hub.filer is threading.current_thread() else None
+        ahead = filer.prepared(entry) if filer is not None else None  # its model calls, made while the entries before it were filed
         if origin is None and (seen := self.store.seen_text(entry.text)) is not None:  # before a model is called
+            if ahead is not None:
+                ahead.cancel()
             return self._settle(self._known(seen[0]), filing, seen[1])
+        with filer.preparing_phase() if filer is not None else contextlib.nullcontext():
+            # a close meanwhile does not wait for it (`Stopped`: nothing of the entry is written)
+            ready = ahead.result() if ahead is not None else self._prepare_entry(entry)
+        if isinstance(ready, IngestResult):
+            return self._settle(ready, filing, self._raw_of(origin))
+        return self._file(ready, filing=filing)
+
+    def _prepare_entry(self, entry: _filer.Entry) -> Prepared | IngestResult:
+        """The model calls of an entry before the wiki's lock (`_prepare`), under its author, at most `cfg.concurrency` at once in the
+        process: by the filer for the entry it files, or ahead, in a thread of its own, for the ones that follow (`Filer._prefetch`).
+        Writes nothing."""
+        origin = Origin.from_dict(entry.origin) if entry.origin else None
         text, title, fields, event_at = entry.text, entry.title or None, dict(entry.fields), entry.event_at
 
         def source(ctx: StepContext) -> Source:
             return Source(text, title, None, origin, fields, event_at=event_at)
 
-        filer = hub.filer if hub.filer is threading.current_thread() else None
-        with self._preparing, (filer.preparing_phase() if filer is not None else contextlib.nullcontext()):
-            ready = self._prepare(source)  # a close meanwhile does not wait for it (`Stopped`: nothing of the entry is written)
-        if isinstance(ready, IngestResult):
-            return self._settle(ready, filing, self._raw_of(origin))
-        return self._file(ready, filing=filing)
+        with authored(entry.author or self.author), self._preparing:
+            return self._prepare(source)
 
     def _known(self, note_rel: str) -> IngestResult:
         title = self.store.read(note_rel).title if note_rel else ""

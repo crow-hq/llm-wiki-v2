@@ -33,6 +33,7 @@ __copyright__ = (
 )
 
 import atexit
+import concurrent.futures
 import contextlib
 import contextvars
 import hashlib
@@ -789,7 +790,9 @@ class Receipt:
 
 
 class Filer(threading.Thread):
-    """Files the entries of the journal, in order, one at a time, while this process holds the lease."""
+    """Files the entries of the journal, in order, one at a time, while this process holds the lease. The model calls of an entry before
+    the wiki's lock (`Wiki._prepare`: the extraction, the summary) are made ahead for the next entries of the queue, up to
+    `cfg.concurrency` at once with the one being filed (`_prefetch`); the sections stay one at a time, in the journal's order."""
 
     def __init__(self, hub: Hub, wiki: Wiki) -> None:
         super().__init__(name="llmw2-filer", daemon=True)
@@ -807,14 +810,60 @@ class Filer(threading.Thread):
         self.forget_for: str | None = None  # the tombstone those looks were at: a new one starts again from no delay
         self._lot = contextlib.ExitStack()  # the session of the store the entries of a lot are filed in (`_serve`)
         self._in_lot = 0
+        # the preparations made ahead (`_prefetch`), by the id of their entry: what each gives, or the error it raised
+        self._ahead: dict[str, concurrent.futures.Future[Any]] = {}
 
     def stop(self) -> None:
         self.stopping = True
+        for done in list(self._ahead.values()):  # what has not started will not; what runs ends with its call, and is dropped
+            done.cancel()
         self.kicked.set()
         self.hub.notify()
 
     def kick(self) -> None:
         self.kicked.set()
+
+    def _prefetch(self, current: Entry) -> None:
+        """Before `current` is filed, the entries that follow it in the queue are prepared ahead, so that their model calls run while it is
+        filed: as many as `cfg.concurrency` leaves beside it (1: none, as before), the ones not tried yet (an entry that failed waits for
+        its delay), each in a daemon thread of its own (a close does not wait for it, nor does the end of the process). A preparation
+        writes nothing; what it gives is taken by `Wiki._file_entry` when the entry's turn comes, and an entry that is not open any more
+        (forgotten, filed by another process) has its preparation dropped. At most `cfg.concurrency - 1` are kept: their texts and
+        summaries."""
+        room = max(0, int(self.wiki.cfg.concurrency) - 1)
+        upcoming: list[Entry] = []
+        if room:
+            for e in self.hub.open_entries():
+                if e.id == current.id or e.forget is not None or e.filed is not None or e.attempts:
+                    continue
+                upcoming.append(e)
+                if len(upcoming) >= room:
+                    break
+        wanted = {e.id for e in upcoming} | {current.id}
+        for ident in [i for i in self._ahead if i not in wanted]:  # forgotten, filed elsewhere, or no longer next: dropped
+            self._ahead.pop(ident).cancel()
+        for e in upcoming:
+            if e.id not in self._ahead and not self.stopping:
+                self._ahead[e.id] = self._ahead_of(e)
+
+    def _ahead_of(self, entry: Entry) -> concurrent.futures.Future[Any]:
+        done: concurrent.futures.Future[Any] = concurrent.futures.Future()
+        wiki = self.wiki
+
+        def run() -> None:
+            if not done.set_running_or_notify_cancel():
+                return
+            try:
+                done.set_result(contextvars.Context().run(wiki._prepare_entry, entry))
+            except BaseException as e:  # given to the filer when the entry's turn comes, as if it had prepared it itself
+                done.set_exception(e)
+
+        threading.Thread(target=run, name="llmw2-filer-ahead", daemon=True).start()
+        return done
+
+    def prepared(self, entry: Entry) -> concurrent.futures.Future[Any] | None:
+        """The preparation made ahead for `entry`, taken (None: it is prepared now)."""
+        return self._ahead.pop(entry.id, None)
 
     @contextlib.contextmanager
     def preparing_phase(self) -> Iterator[None]:
@@ -857,6 +906,9 @@ class Filer(threading.Thread):
         finally:
             lease.close()
             self.state = "none"
+            for done in self._ahead.values():
+                done.cancel()
+            self._ahead.clear()
             if self.hub.filer is self:  # a thread left behind by a close ends after another took its place: that one's filing stays
                 self.hub.filing = None
             self.hub.notify()
@@ -916,6 +968,7 @@ class Filer(threading.Thread):
                 if not self._in_lot:
                     self._lot.enter_context(self.wiki.store.session(keep=True))  # lots follow lots: the first keeps what it parses
                 self._in_lot += 1
+                self._prefetch(entry)
                 self._file(entry)
                 if self.stopping:
                     return  # a wiki closed meanwhile: nothing more is done with its journal

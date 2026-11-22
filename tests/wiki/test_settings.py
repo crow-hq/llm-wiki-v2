@@ -467,7 +467,7 @@ def test_save_when_concurrency_is_emptied_then_it_goes_back_to_the_default_and_i
 
     cfg = settings.save({"concurrency": "", "mode": "classic"})
 
-    assert cfg.concurrency == 4
+    assert cfg.concurrency == 8
     assert "concurrency" not in written(settings)
 
 
