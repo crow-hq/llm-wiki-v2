@@ -1306,8 +1306,9 @@ class Wiki:
         In CROW mode, what `remember` keeps is read before it is filed, as `search` finds it: an entry of the journal whose note the
         index does not have yet may be read and cited as `pending:<id>` (`Answer.citations`, `read_note`), until the index has its
         note or a purge forgets it. With no `where`, CROW reads only the notes the search finds, from their files: the tree of the wiki is
-        loaded only when the search finds none and the answer navigates the folders. In classic mode the answer navigates the folders,
-        and does not see what `remember` keeps."""
+        loaded only when the search finds none and the answer navigates the folders, which it does not while the search index is being
+        built (`Answer.partial`: none found, the answer says so). In classic mode the answer navigates the folders, and does not see
+        what `remember` keeps."""
         if not question.strip():
             raise InputError("empty question")
         self._require_classifier()

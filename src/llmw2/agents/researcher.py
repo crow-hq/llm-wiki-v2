@@ -99,6 +99,7 @@ class Researcher:
         finds them as it does in `Wiki.search`, and the answer may read and cite them; a navigation of the folders does not see them."""
         ctx = self.ctx
         self._partial = None
+        ctx.partial = False
         with ctx.llm.usage.span() as used:
             known = [n for _, n in pending]  # the notes not of the tree that `select` may return
             root: Folder | None
@@ -156,6 +157,7 @@ class Researcher:
     def _saw(self, found: Found) -> None:
         if found.partial is not None:
             self._partial = found.partial.sentence()
+            self.ctx.partial = True
 
     def _reader(self, pending: Sequence[tuple[Pending, Note]], known: list[Note]) -> Callable[[str, int], list[Note]]:
         """`_finder` with no `where` and no tree: each note found is taken as a load would take it (`WikiStore.note_at`), once; one gone

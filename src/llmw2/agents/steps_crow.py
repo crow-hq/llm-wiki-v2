@@ -589,6 +589,11 @@ def select(ctx: StepContext, root: Folder, question: str) -> list[Note]:
     if crow.rerank:
         ctx.need_classifier("select")
     found = _found(ctx, root, question)
+    if not found and ctx.partial:
+        # while the index is being built a note the search did not find may be there, and a walk of the folders would load the whole
+        # tree (on a large wiki, the notes the build is reading) to answer what a search answers whole once the index is built
+        ctx.decide("select", "code", "the search found no note while its index is being built: no navigation", fallback=True)
+        return []
     if not found:  # the search matched nothing (no embedder, and no word in common): the LLM walks the folders, as in classic
         ctx.decide("select", "llm", "the search found no note: the LLM navigates the folders", fallback=True)
         return classic.select(ctx, root, question)[: crow.k]

@@ -260,7 +260,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `partial` (`indexed`, `notes`, `message`) beside `result` in its structured content: a client that reads every text of the result
   as a hit in JSON (release 1.0.5 gave hits only) meets a text that is not one while the index is being built. The HTTP `/search`
   adds a `partial` key; `ask` and `recall` end the answer with a line that says the notes read may be incomplete, and `Answer.partial`
-  (and the `partial` key of `recall`) gives the sentence. Notes changed by hand during the build are seen once the build reaches them.
+  (and the `partial` key of `recall`) gives the sentence. A CROW `ask` or `recall` whose search finds no note during the build does
+  not walk the folders, as it does once the index is whole: the walk loads the whole tree, the notes the build is reading (on a fresh
+  copy of a 50,000-note wiki with a local model, 128 s before the first model call), so the answer says at once that no note was found
+  and that the index is being built. Notes changed by hand during the build are seen once the build reaches them.
   Once the file is marked built (from then on the writers put their notes in themselves) the build lists the wiki once more, waiting
   for the writers' locks, so the notes written while the file was not built are in it; only then is the file marked complete (`meta`
   "complete") and the answers are those of the index whole again. A file built whole by an earlier version is completed by one such

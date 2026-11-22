@@ -82,6 +82,7 @@ class StepContext:
     fixed: bool = False  # a rebuild: the folders are the ones there are, so no step opens one or asks the LLM where to file
     home: str | None = None  # the folder (its rel) the document was routed to: `match` looks at its notes first (None while asking)
     search: Callable[[str, int], list[Note]] | None = None  # while asking: the best k notes for a query, as `Wiki.search` finds them
+    partial: bool = False  # while asking: a `search` ran while the index was being built, so a note it did not find may be there
 
     def ask_json(
         self, prompt: str, schema: type[T], *, reply_chars: int | None = None, language_of: str | None = None, **values: object

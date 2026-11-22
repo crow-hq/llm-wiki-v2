@@ -24,7 +24,7 @@ import pytest
 import llmw2
 from llmw2 import Wiki
 from llmw2 import searchindex as si
-from llmw2.agents.researcher import PARTIAL_HINT
+from llmw2.agents.researcher import NO_ANSWER, PARTIAL_HINT
 from llmw2.bundle.filelock import FileLock
 from llmw2.memory import answered, listed
 from llmw2.search import Hit, Hits, NoteSearch, Partial
@@ -364,6 +364,36 @@ def test_an_answer_found_while_the_file_is_built_says_its_notes_may_be_incomplet
     assert build is not None and build.wait(30)
     after = wiki.ask(QUESTION)
     assert after.partial is None and after.text == reply and "partial" not in answered(after)
+    wiki.close()
+
+
+def test_an_answer_whose_search_finds_nothing_while_the_file_is_built_does_not_walk_the_folders(
+    bundle: Path, llm: FakeLLM, classifier: FakeClassifier, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(si, "BUILD_WAIT", 0.05)
+    monkeypatch.setattr(si, "BATCH", 1)
+    wiki = make_wiki(bundle, llm, classifier)
+    gate = Gate(monkeypatch)
+    loads = []
+    real = wiki.store.load
+    monkeypatch.setattr(wiki.store, "load", lambda *a, **k: loads.append(1) or real(*a, **k))
+    _at_gate(wiki, gate)
+
+    during = wiki.ask("zebra giraffe")  # no note has these words: with the index whole, the LLM walks the folders
+    researcher = wiki.researcher()
+    assert researcher.ask("zebra giraffe").partial is not None
+
+    assert during.notes == [] and during.text == f"{NO_ANSWER}\n\n{PARTIAL_HINT}" and during.partial is not None
+    assert llm.ops == [] and loads == []  # no walk, and no load of the tree for one
+    assert [(d.step, d.decider, d.fallback) for d in during.decisions] == [("select", "code", True)]
+    gate.open.set()
+    build = wiki._search._build
+    assert build is not None and build.wait(30)
+    llm.add("researcher/navigate", {"reasoning": "Nothing here is about zebras."}, {"reasoning": "Nothing about zebras."})
+    after = wiki.ask("zebra giraffe")
+    assert after.partial is None and after.text == NO_ANSWER and llm.ops == ["researcher/navigate"]
+    again = researcher.ask("zebra giraffe")  # a researcher asked again: the build it saw is over
+    assert again.partial is None and again.text == NO_ANSWER and llm.ops == ["researcher/navigate"] * 2
     wiki.close()
 
 
