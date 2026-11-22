@@ -382,8 +382,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ADMIT_MARGIN`): a caller behind a long line of others is refused then, nothing written, with the true reason: `QueueFull.reason`
   "busy" and "the queue is not full: the journal's admission was held ... by other writers (other entries being saved, or the journal
   being sealed after a delete or a purge)"; over MCP, "the memory was busy saving other memories", never "still filing N", which reads
-  as a full queue. `reason` is "full", "share", "busy" or "stall". The flush of the acknowledgement is not bounded (it is the durability), so on a slow disk a call can still last a
-  little longer than `timeout` and 100 ms. A purge does not go through the queue's limits: a full queue never refuses or holds it.
+  as a full queue. `reason` is "full", "share", "busy" or "stall". The flush of the acknowledgement is not bounded (it is the
+  durability), so a call can still last a little longer than `timeout`: under overload (30 to 50 sessions writing with no pause),
+  6 to 34 calls in about 600 took over 1.1 s, 2.5 s at most, where the release before made a caller wait up to 3 minutes in the same
+  case. A purge does not go through the queue's limits: a full queue never refuses or holds it.
 - The last places of `remember`'s queue are kept for the writers that keep few entries waiting: a writer that keeps `QUEUE_LIMIT // 8`
   entries of its own not yet filed (32 of 256) does not get the last `QUEUE_LIMIT // 8` places (it stops at 224 of 256); one that keeps
   fewer may fill the queue to the limit. A writer is a process and, in it, the author a call declares: `author=`, else the one in force
