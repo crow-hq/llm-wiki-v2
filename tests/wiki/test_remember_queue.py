@@ -161,6 +161,76 @@ def test_the_age_of_the_oldest_entry_does_not_follow_the_wall_clock_once_read(bu
         w.close()
 
 
+def _later(seconds: float) -> type:
+    from datetime import datetime as real_datetime
+    from datetime import timedelta
+
+    class Later(real_datetime):  # the wall clock `seconds` ahead from now on
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[no-untyped-def,override]
+            return real_datetime.now(tz) + timedelta(seconds=seconds)
+
+    return Later
+
+
+def test_a_process_that_reads_an_entry_after_the_wall_clock_jumped_ages_it_by_the_boot_clock(
+    bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wall clock is set six hours ahead after the entry was acknowledged, and a process that starts only then reads it: in the same
+    boot of the machine its age comes from the boot clock, which the wall clock does not move, not from `at`."""
+    if J.boot_clock() is None:
+        pytest.skip("this system says no boot clock")
+    w = make(bundle)
+    try:
+        w._stop_filer()
+        w.remember("topic: a-1\none")
+    finally:
+        w.close()
+    assert any(r.meta.get("boot") for r in open_entries(bundle))  # the entry says its boot and its time in it
+    monkeypatch.setattr(F, "datetime", _later(21_700))
+    fresh = F.Hub(bundle)  # another process, started after the jump
+    try:
+        fresh.refresh()
+        [entry] = fresh.open_entries()
+        assert fresh.age(entry) < 60
+        assert not any("has waited" in x for x in F.status(fresh, bundle)["warnings"])
+    finally:
+        fresh.journal.close()
+
+
+def test_an_entry_of_another_boot_is_aged_by_the_wall_clock_as_before(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    w = make(bundle)
+    try:
+        w._stop_filer()
+        w.remember("topic: a-1\none")
+    finally:
+        w.close()
+    monkeypatch.setattr(J, "boot_clock", lambda: ("another-boot", 5.0))  # the machine was started again since
+    monkeypatch.setattr(F, "datetime", _later(3_600))
+    fresh = F.Hub(bundle)
+    try:
+        fresh.refresh()
+        [entry] = fresh.open_entries()
+        assert 3_500 < fresh.age(entry) < 3_700  # by `at` and the wall clock, the only common clock left
+    finally:
+        fresh.journal.close()
+
+
+def test_a_copy_the_compaction_makes_keeps_the_boot_time_of_its_entry(bundle: Path) -> None:
+    hub = F.Hub(bundle)
+    try:
+        hub.journal.append_entry("topic: a-1\none", boot=["win:7", 120.5])
+        hub.refresh()
+        [entry] = hub.open_entries()
+        assert entry.boot == ("win:7", 120.5)
+        F.carry(hub, entry)
+        hub.refresh()
+        copies = [r for r in hub.journal.read().entries() if r.meta["id"] == entry.id]
+        assert len(copies) == 2 and all(r.meta.get("boot") == ["win:7", 120.5] for r in copies)
+    finally:
+        hub.journal.close()
+
+
 def test_a_pace_seen_from_one_or_two_closures_is_not_believed(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A process that saw one entry close in a long while would tell an hour; the time the last filings took tells better."""
     monkeypatch.setattr(F, "QUEUE_LIMIT", 2)

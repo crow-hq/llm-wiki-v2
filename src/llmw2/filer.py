@@ -170,6 +170,7 @@ class Entry:
     seg: int
     seen: float = field(default_factory=time.monotonic)  # when this process first read it
     age0: float = 0.0  # how old it was then, by the wall clock (`at`): the one time its age trusts that clock (`Hub.age`)
+    boot: tuple[str, float] | None = None  # when it was acknowledged by the boot clock (`journal.boot_clock`); None: written without
     filed: dict[str, Any] | None = None  # the `F` record: what the filing did
     done: bool = False
     failed: str | None = None  # the `X` record
@@ -327,6 +328,9 @@ class Hub:
             )
             e.cost = Hub.entry_cost(rec.size)
             e.age0 = wall_age(e.at)
+            boot = meta.get("boot")
+            if isinstance(boot, list) and len(boot) == 2 and isinstance(boot[0], str) and isinstance(boot[1], (int, float)):
+                e.boot = (boot[0], float(boot[1]))
             self._state_of(e, meta)  # a copy carried forward is the first record of the entry that this process reads
             self.entries[ident] = e
             self.by_sig[e.sig] = ident
@@ -477,9 +481,12 @@ class Hub:
 
     @staticmethod
     def age(e: Entry) -> float:
-        """How long the entry has waited, in seconds: its age by the wall clock when this process first read it, then the monotonic time
-        since. A wall clock set back or forward later (a robot that finds the time again, a laptop's clock corrected) does not change it;
-        one that was wrong when the process first read the entry (written under a clock set back, read after it was set right) does."""
+        """How long the entry has waited, in seconds. Read in the boot of the machine it was acknowledged in: the difference of the boot
+        clock (`journal.boot_clock`), which the wall clock does not move, in any process. Else (another boot, a system that has no such
+        clock, an entry written without it): its age by the wall clock when this process first read it, then the monotonic time since,
+        so a wall clock set back or forward later does not change it, one that was wrong when the process first read the entry does."""
+        if e.boot is not None and (now := J.boot_clock()) is not None and now[0] == e.boot[0]:
+            return max(0.0, now[1] - e.boot[1])
         return e.age0 + max(0.0, time.monotonic() - e.seen)
 
     def open_entries(self) -> list[Entry]:
@@ -1085,7 +1092,7 @@ def carry(hub: Hub, e: Entry, *, notes_gone: bool = False) -> J.Ref:
         state["failed"] = e.failed
     return hub.journal.append_entry(
         e.text, key=e.key, hash=e.hash, title=e.title or None, origin=e.origin, fields=e.fields, author=e.author, at=e.at,
-        event_at=e.event_at, id=e.id, state=state or None, sync=False,
+        event_at=e.event_at, id=e.id, state=state or None, sync=False, boot=list(e.boot) if e.boot is not None else None,
     )
 
 

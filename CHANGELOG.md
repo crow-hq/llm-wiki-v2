@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is lost), the `search` tool adds after its hits one more text that is not a hit ("search index being built (N of M notes): the
   results may be partial") and a `partial` field beside `result` in its structured content. A client that reads every text of the
   result as a hit in JSON skips that one, or reads the structured content.
+- The entries of the journal carry one more field, `boot` (the machine's boot and the seconds since it began, see `oldest_s` below):
+  an addition, which this version reads when it is there and does without when it is not (an entry written before it); the format
+  of the folder stays `2`.
 
 ### Added
 
@@ -369,10 +372,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over it hears so at once instead of hanging (a dialogue turn, a node's callback, a tool call). `QueueFull` begins with "NOT saved" and
   carries `queue`, `queue_limit`, `oldest_s` and `retry_after_s`: the queue over the rate this process saw entries filed at in the last
   minute once it saw 5 filed or, in a process that saw fewer (a new MCP session), over the rate the last 20 filings in the journal took
-  (their `ms`); None with neither. `oldest_s`, there and in `status`, trusts the wall clock once: the entry's age when this process
-  first read it, then the monotonic time since, so a clock set back or forward later (a robot that finds the time again) no longer
-  gives an age of hours nor the warning "the oldest entry has waited"; a process that first reads an entry written under a wrong clock
-  still sees that error. The journal keeps `at` as the wall clock gave it. A caller waiting for room looks at the journal's shared
+  (their `ms`); None with neither. `oldest_s`, there and in `status`, does not follow the wall clock: each entry records the boot of
+  the machine it was acknowledged in and the seconds since that boot, by a clock the wall clock does not move (Windows: the boot
+  counter and `GetTickCount64`; Linux: `boot_id` and `CLOCK_BOOTTIME`, sleep counted), and its age in the same boot is that clock's
+  difference, in any process. So a clock set back or forward (a robot that finds the time again, a laptop's clock corrected) no longer
+  gives an age of hours nor the warning "the oldest entry has waited". In another boot, on a system with neither clock, or for an
+  entry written without it, the age trusts the wall clock once (its age when the process first read it, then the monotonic time
+  since). The journal keeps `at` as the wall clock gave it. A caller waiting for room looks at the journal's shared
   tail hint every 50 ms, with no system call, and reads the journal only when it moved (and once a second for a writer the hint does not
   show), where it read it every 50 ms whatever happened, scanning the segments' headers each time. The room is checked again under a
   lock of the journal that only these entries take (`admit.lock`; the filer's records never wait for it), against the tail: with no

@@ -285,6 +285,48 @@ class View:
         return [r for r in self.records if r.type == T_ENTRY]
 
 
+_BOOT_ID: list[str | None] = []  # the id of this boot of the machine, read once a process (it cannot change while the process lives)
+
+
+def _boot_id() -> str | None:
+    if not _BOOT_ID:
+        found = None
+        with contextlib.suppress(Exception):
+            if sys.platform == "win32":
+                import winreg
+
+                with winreg.OpenKey(
+                    winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters"
+                ) as k:
+                    found = f"win:{winreg.QueryValueEx(k, 'BootId')[0]}"
+            elif sys.platform.startswith("linux"):
+                found = "linux:" + Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip()
+        _BOOT_ID.append(found)
+    return _BOOT_ID[0]
+
+
+def boot_clock() -> tuple[str, float] | None:
+    """(an id of this boot of the machine, the seconds since it began) from a clock the wall clock does not move (Windows: the boot
+    counter and `GetTickCount64`; Linux: `boot_id` and `CLOCK_BOOTTIME`, which count a sleep too); None where the system says neither,
+    and then the age of an entry falls back on the wall clock (`filer.Hub.age`)."""
+    ident = _boot_id()
+    if ident is None:
+        return None
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            tick = ctypes.windll.kernel32.GetTickCount64  # type: ignore[attr-defined,unused-ignore]
+            tick.restype = ctypes.c_uint64
+            return ident, tick() / 1000.0
+        return ident, time.clock_gettime(time.CLOCK_BOOTTIME)  # type: ignore[attr-defined,unused-ignore]
+    except Exception:
+        return None
+
+
+_NOW: Any = object()  # `entry_meta(boot=...)` not given: the boot clock as it is now
+
+
 def entry_meta(
     ident: str,
     key: str,
@@ -296,8 +338,11 @@ def entry_meta(
     at: str | None,
     event_at: str | None,
     state: dict[str, Any] | None,
+    boot: Any = _NOW,
 ) -> dict[str, Any]:
-    """The metadata of the record of an entry: the one place that makes it, so that the size an admission counts is the size written."""
+    """The metadata of the record of an entry: the one place that makes it, so that the size an admission counts is the size written.
+    `boot` ([the boot's id, seconds since it began], `boot_clock`): when it was acknowledged by a clock the wall clock does not move;
+    a copy keeps its entry's (None: an entry written without one)."""
     meta: dict[str, Any] = {
         "id": ident,
         "key": key,
@@ -310,6 +355,11 @@ def entry_meta(
     }
     if event_at:
         meta["event_at"] = event_at
+    if boot is _NOW:
+        now = boot_clock()
+        boot = [now[0], round(now[1], 3)] if now is not None else None
+    if boot:
+        meta["boot"] = list(boot)
     if state:
         meta["state"] = state
     return meta
@@ -1151,13 +1201,14 @@ class Journal:
         sync: bool = True,
         admit: Callable[[], None] | None = None,
         admit_wait: float | None = None,
+        boot: Any = _NOW,
     ) -> Ref:
         """An entry (`E`): what `remember` is asked to keep. The id is 16 hex characters, new each time. `at` is when it was acknowledged
         and `event_at` (only when given) when the thing it tells of happened; both are written by `format_at`, as the raw copy writes
         `event_at`. `state` (only when the compaction copies an entry forward) is what the filer had written about it (`F`, the attempts,
         `X`): the copy is one record, so that a cut in the middle of it cannot leave an entry without its state."""
         ident = id or secrets.token_hex(8)
-        meta = entry_meta(ident, key, hash, title, origin, fields, author, at, event_at, state)
+        meta = entry_meta(ident, key, hash, title, origin, fields, author, at, event_at, state, boot)
         return self.append(T_ENTRY, meta, text.encode("utf-8"), sync=sync, admit=admit, admit_wait=admit_wait)
 
     # -- the flush (group commit) ------------------------------------------------------------------------------------------
