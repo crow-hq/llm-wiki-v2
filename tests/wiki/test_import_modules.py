@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 LOADED = {
-    "llmw2", "llmw2.agents", "llmw2.agents.base", "llmw2.agents.conflicts", "llmw2.agents.data", "llmw2.agents.echo",
+    "llmw2", "llmw2.agents", "llmw2.agents.ahead", "llmw2.agents.base", "llmw2.agents.conflicts", "llmw2.agents.data", "llmw2.agents.echo",
     "llmw2.agents.grouping", "llmw2.agents.lexical", "llmw2.agents.librarian", "llmw2.agents.linking", "llmw2.agents.note_checks",
     "llmw2.agents.prompts", "llmw2.agents.researcher", "llmw2.agents.revisions", "llmw2.agents.state", "llmw2.agents.steps",
     "llmw2.agents.steps_classic", "llmw2.agents.steps_crow", "llmw2.audit", "llmw2.batch", "llmw2.bundle", "llmw2.bundle.check",

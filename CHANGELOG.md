@@ -203,16 +203,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   extraction, the summary) run, up to `concurrency` at once with it (1: one at a time, as before), each in a thread of its own; the
   sections stay one at a time, in the journal's order, whoever wrote the entries. A close does not wait for those calls and nothing of
   them is written (the entries stay first for the next holder of the lease); an entry forgotten while it is prepared is not filed; an
-  entry that failed is not prepared ahead. What is kept meanwhile: the text and the summary of up to `concurrency - 1` entries.
+  entry that failed is not prepared ahead. What is kept meanwhile: the text and the summary of up to `2 × concurrency` entries.
   Measured with real models (a GLM writer, the Jev classifier), 8 MCP sessions that remember 40 entries together: the release before,
   which filed in each session's process, filed them all in 96 to 121 s (19.9 to 25.0 entries a minute); this version with one filer
   and no preparation ahead in 425 to 459 s (5.2 to 5.6); with it and `concurrency` 4 in 181 to 195 s (12.3 to 13.3); with 8 in 113 s
   (21.2), with no error and no refusal of the provider. Hence the default of `concurrency` is now 8, where it was 4: a batch and the
   server prepare 8 documents at once too. With local models, which take the calls one at a time anyway, it can stay at 4 in the
   settings. What still bounds the filing is its sections, one at a time: the classifier's calls inside them (routing, `match`,
-  `relate`, the fallback of routing, a merge, a split) took 65 to 106 s of the 40 entries in that measure. The next step there is to
-  take those decisions while the entry is prepared, on the tree as it is then, and to look again under the lock only at what changed
-  since (not done yet).
+  `relate`, the fallback of routing, a merge, a split) took 65 to 106 s of the 40 entries in that measure.
+- The filer keeps its slots busy and asks the route of the next entry while it files one. A preparation starts as soon as a slot frees,
+  in the journal's order, the entry being filed first, also while the filer waits for a slow summary at the head of the queue; up to
+  `2 × concurrency` entries are kept prepared. While an entry's section runs, the route of the entry after it (the classifier's
+  routing, its LLM fallback, `match`, the consolidation) is asked in a thread of its own on the tree that section read; the next
+  section takes an answer only for a request it makes the same, byte for byte, each answer once, and asks again what differs (the
+  section before opened a folder, or added a note the match reads). So every decision is the one the filer makes without it; what it
+  costs is the requests that turn out different. In CROW only, with `concurrency` above 1. Measured with real models (a GLM writer,
+  the Jev classifier, 8 MCP sessions, 40 entries), three times each, alternated with the release before in the same window: all
+  filed in a median of 89 s against 108 s for the release before (0.82 times) and 110 s without this step, 1.21 times the entries
+  per minute of the release before; a slow merge inside a section still holds the filing up.
 - The filer of `remember` files consecutive entries in one session of the store, up to the 50 documents of a plan's batch: the tree is
   listed whole once for the lot, then only the folders that changed, instead of twice an entry; the session ends when the queue is
   empty, while a failed entry waits to be tried again, and before a purge is completed. After a document filed alone, the split of its folder looks first at the folder's own

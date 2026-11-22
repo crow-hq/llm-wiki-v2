@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from llmw2.agents import lexical
+from llmw2.agents.ahead import Answers
 from llmw2.bundle import journal as J
 from llmw2.bundle import txn
 from llmw2.bundle.filelock import FileLock
@@ -57,6 +58,7 @@ from llmw2.errors import FilerError, InputError, NoteChanged, QueueFull, ReplyIn
 
 if TYPE_CHECKING:
     from llmw2.agents.librarian import IngestResult
+    from llmw2.bundle.tree import Folder
     from llmw2.wiki import Wiki
 
 log = logging.getLogger(__name__)
@@ -81,6 +83,8 @@ RETRY_FIRST = 2.0  # seconds before an entry that failed for a reason that may p
 RETRY_LAST = 300.0
 ATTEMPTS = 3  # failed attempts for a reason that will not pass (the entry is the problem) before the entry is given up (`X`)
 ENTRY_OVERHEAD = 1024  # bytes an entry costs in the journal besides its text (its record, and the records of its state)
+AHEAD = 2  # entries the filer keeps prepared or being prepared, as a multiple of `cfg.concurrency`: a slow summary at the head does not
+# leave the slots empty while the filer waits for it (`Filer._prefetch`)
 CLOSED_KEPT = 4096  # entries done that a process remembers, for the duplicates and the receipts
 DISK_LOOK = 1.0  # seconds a look at the free space of the disk is believed
 FORGET_GROUP = 1.0  # seconds the filer lets a delete's tombstone (`journal`) wait, so that the deletes of a run share one seal
@@ -802,8 +806,8 @@ class Receipt:
 
 class Filer(threading.Thread):
     """Files the entries of the journal, in order, one at a time, while this process holds the lease. The model calls of an entry before
-    the wiki's lock (`Wiki._prepare`: the extraction, the summary) are made ahead for the next entries of the queue, up to
-    `cfg.concurrency` at once with the one being filed (`_prefetch`); the sections stay one at a time, in the journal's order."""
+    the wiki's lock (`Wiki._prepare`: the extraction, the summary) are made ahead for the entries of the queue, up to `cfg.concurrency`
+    at once (`_prefetch`); the sections stay one at a time, in the journal's order."""
 
     def __init__(self, hub: Hub, wiki: Wiki) -> None:
         super().__init__(name="llmw2-filer", daemon=True)
@@ -823,11 +827,19 @@ class Filer(threading.Thread):
         self._in_lot = 0
         # the preparations made ahead (`_prefetch`), by the id of their entry: what each gives, or the error it raised
         self._ahead: dict[str, concurrent.futures.Future[Any]] = {}
+        # the ones waiting for a slot, in the journal's order, and how many run: a slot that frees starts the next (`_start_ahead`)
+        self._waiting: deque[tuple[Entry, concurrent.futures.Future[Any]]] = deque()
+        self._running = 0
+        self._slots = threading.Lock()
+        # the answers asked ahead for the route of the entry after the one being filed (`rehearse_next`), by the id of their entry
+        self._answers: dict[str, Answers] = {}
 
     def stop(self) -> None:
         self.stopping = True
         for done in list(self._ahead.values()):  # what has not started will not; what runs ends with its call, and is dropped
             done.cancel()
+        with self._slots:
+            self._waiting.clear()
         self.kicked.set()
         self.hub.notify()
 
@@ -835,42 +847,102 @@ class Filer(threading.Thread):
         self.kicked.set()
 
     def _prefetch(self, current: Entry) -> None:
-        """Before `current` is filed, the entries that follow it in the queue are prepared ahead, so that their model calls run while it is
-        filed: as many as `cfg.concurrency` leaves beside it (1: none, as before), the ones not tried yet (an entry that failed waits for
-        its delay), each in a daemon thread of its own (a close does not wait for it, nor does the end of the process). A preparation
-        writes nothing; what it gives is taken by `Wiki._file_entry` when the entry's turn comes, and an entry that is not open any more
-        (forgotten, filed by another process) has its preparation dropped. At most `cfg.concurrency - 1` are kept: their texts and
-        summaries."""
-        room = max(0, int(self.wiki.cfg.concurrency) - 1)
-        upcoming: list[Entry] = []
-        if room:
+        """Before `current` is filed, it and the entries that follow it in the queue are prepared ahead, so that their model calls run while
+        the entries before them are filed: `AHEAD * cfg.concurrency` entries in all, `current` first, then the ones not tried yet (an entry
+        that failed waits for its delay), at most `cfg.concurrency` at once. Each starts, in a daemon thread of its own (a close does not
+        wait for it, nor does the end of the process), as soon as a slot frees, in the journal's order: also while the filer waits for a
+        slow summary at the head of the queue. With `cfg.concurrency` 1 nothing is prepared ahead, as before. A preparation writes nothing;
+        what it gives is taken by `Wiki._file_entry` when the entry's turn comes, and an entry that is not open any more (forgotten, filed
+        by another process) has its preparation dropped: one that has not started never will. At most `AHEAD * cfg.concurrency` are kept:
+        their texts and summaries."""
+        slots = int(self.wiki.cfg.concurrency)
+        wanted_list: list[Entry] = []
+        if slots > 1:
+            # the one being filed, unless its text is in the wiki already (`Wiki._file_entry` settles it with no model call)
+            known = current.origin is None and self.wiki.store.seen_text(current.text) is not None
+            if current.filed is None and not current.closed and not known:
+                wanted_list.append(current)
             for e in self.hub.open_entries():
+                if len(wanted_list) >= AHEAD * slots:
+                    break
                 if e.id == current.id or e.forget is not None or e.filed is not None or e.attempts:
                     continue
-                upcoming.append(e)
-                if len(upcoming) >= room:
-                    break
-        wanted = {e.id for e in upcoming} | {current.id}
+                wanted_list.append(e)
+        wanted = {e.id for e in wanted_list} | {current.id}
         for ident in [i for i in self._ahead if i not in wanted]:  # forgotten, filed elsewhere, or no longer next: dropped
             self._ahead.pop(ident).cancel()
-        for e in upcoming:
+        for ident in [i for i in self._answers if i not in wanted]:
+            self._answers.pop(ident).claim()
+        added = False
+        for e in wanted_list:
             if e.id not in self._ahead and not self.stopping:
-                self._ahead[e.id] = self._ahead_of(e)
+                done: concurrent.futures.Future[Any] = concurrent.futures.Future()
+                self._ahead[e.id] = done
+                with self._slots:
+                    if e.id == current.id:
+                        self._waiting.appendleft((e, done))  # the one being filed goes before the ones that follow it
+                    else:
+                        self._waiting.append((e, done))
+                added = True
+        if added:
+            self._start_ahead()
 
-    def _ahead_of(self, entry: Entry) -> concurrent.futures.Future[Any]:
-        done: concurrent.futures.Future[Any] = concurrent.futures.Future()
-        wiki = self.wiki
+    def _start_ahead(self) -> None:
+        """Start the preparations waiting, first come first, while fewer than `cfg.concurrency` run. A preparation dropped meanwhile
+        (cancelled) is skipped."""
+        slots = int(self.wiki.cfg.concurrency)
+        with self._slots:
+            while self._waiting and self._running < slots and not self.stopping:
+                entry, done = self._waiting.popleft()
+                if not done.set_running_or_notify_cancel():
+                    continue
+                self._running += 1
+                threading.Thread(target=self._run_ahead, args=(entry, done), name="llmw2-filer-ahead", daemon=True).start()
+            if self.stopping:
+                self._waiting.clear()
 
-        def run() -> None:
-            if not done.set_running_or_notify_cancel():
+    def _run_ahead(self, entry: Entry, done: concurrent.futures.Future[Any]) -> None:
+        try:
+            done.set_result(contextvars.Context().run(self.wiki._prepare_entry, entry))
+        except BaseException as e:  # given to the filer when the entry's turn comes, as if it had prepared it itself
+            done.set_exception(e)
+        finally:
+            with self._slots:
+                self._running -= 1
+            self._start_ahead()
+
+    def rehearse_next(self, root: Folder) -> None:
+        """Told by the section of the entry being filed the tree it read (`Librarian.on_tree`): the route of the entry after it, if its
+        preparation is done, is worked out on that tree in a daemon thread (`Wiki._rehearse`), while the section goes on, and the answers of
+        the models are kept for that entry's section (`answers`), which takes them only for the requests it makes the same. A rehearsal
+        writes nothing and decides nothing: an entry whose section starts first, or that is dropped, only costs the requests made."""
+        from llmw2.agents.librarian import Prepared
+
+        current = self.hub.filing
+        after = False
+        for e in self.hub.open_entries():
+            if e.id == current:
+                after = True
+                continue
+            if not after:
+                continue
+            done = self._ahead.get(e.id)
+            if done is None or e.id in self._answers or not done.done() or done.cancelled() or done.exception() is not None:
                 return
-            try:
-                done.set_result(contextvars.Context().run(wiki._prepare_entry, entry))
-            except BaseException as e:  # given to the filer when the entry's turn comes, as if it had prepared it itself
-                done.set_exception(e)
+            ready = done.result()
+            if not isinstance(ready, Prepared) or self.stopping:
+                return
+            answers = self._answers[e.id] = Answers()
+            args = (self.wiki._rehearse, e, ready, root, answers)
+            threading.Thread(target=contextvars.Context().run, args=args, name="llmw2-filer-rehearse", daemon=True).start()
+            return
 
-        threading.Thread(target=run, name="llmw2-filer-ahead", daemon=True).start()
-        return done
+    def answers(self, entry: Entry) -> Answers | None:
+        """The answers asked ahead for `entry` (`rehearse_next`), taken: what was not asked yet will not be."""
+        answers = self._answers.pop(entry.id, None)
+        if answers is not None:
+            answers.claim()
+        return answers
 
     def prepared(self, entry: Entry) -> concurrent.futures.Future[Any] | None:
         """The preparation made ahead for `entry`, taken (None: it is prepared now)."""
@@ -920,6 +992,11 @@ class Filer(threading.Thread):
             for done in self._ahead.values():
                 done.cancel()
             self._ahead.clear()
+            for answers in self._answers.values():
+                answers.claim()
+            self._answers.clear()
+            with self._slots:
+                self._waiting.clear()
             if self.hub.filer is self:  # a thread left behind by a close ends after another took its place: that one's filing stays
                 self.hub.filing = None
             self.hub.notify()

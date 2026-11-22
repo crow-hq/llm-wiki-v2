@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 """The filer prepares ahead (`Filer._prefetch`): the model calls before the wiki's lock of up to `cfg.concurrency` entries run at once,
-the sections stay one at a time in the journal's order; a close does not wait for the preparations and nothing of them is written; an
-entry forgotten while it is prepared is never filed."""
+the sections stay one at a time in the journal's order; a slot that frees starts the next preparation, also while the filer waits for a
+slow one at the head; a close does not wait for the preparations and nothing of them is written; an entry forgotten while it is prepared
+is never filed."""
 
 from __future__ import annotations
 
@@ -158,13 +159,13 @@ def test_an_entry_forgotten_while_it_is_prepared_ahead_is_never_filed(bundle: Pa
 
 def test_with_one_at_a_time_nothing_is_prepared_ahead(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     started: list[str] = []
-    real = F.Filer._ahead_of
+    real = F.Filer._run_ahead
 
-    def ahead_of(self: F.Filer, entry: F.Entry) -> Any:
+    def run_ahead(self: F.Filer, entry: F.Entry, done: Any) -> None:
         started.append(entry.id)
-        return real(self, entry)
+        real(self, entry, done)
 
-    monkeypatch.setattr(F.Filer, "_ahead_of", ahead_of)
+    monkeypatch.setattr(F.Filer, "_run_ahead", run_ahead)
     w = make(bundle, 1)
     try:
         for i in range(3):
@@ -173,3 +174,69 @@ def test_with_one_at_a_time_nothing_is_prepared_ahead(bundle: Path, monkeypatch:
     finally:
         w.close()
     assert started == []
+
+
+def test_a_slow_preparation_at_the_head_does_not_leave_the_slots_empty(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """While the filer waits for the summary of the entry at the head, the slots that free start the entries after it, up to
+    `AHEAD * concurrency` in all: the queue is not held up by one slow model call."""
+    head = threading.Event()
+    lock = threading.Lock()
+    finished: list[str] = []
+    real = Wiki._prepare
+
+    def prepare(wiki: Wiki, source: Any) -> Any:
+        text = source(None).text
+        if "number 0 " in text:
+            head.wait(10)
+        else:
+            time.sleep(0.05)
+        out = real(wiki, source)
+        with lock:
+            finished.append(text)
+        return out
+
+    monkeypatch.setattr(Wiki, "_prepare", prepare)
+    w = make(bundle, 2)
+    try:
+        w._stop_filer()
+        for i in range(10):
+            w.remember(f"topic: t{i}-1\nThe text number {i} of the queue.")
+        w._filer_stopped = False
+        w._start_filer()
+        end = time.monotonic() + 5
+        while len(finished) < 3 and time.monotonic() < end:
+            time.sleep(0.02)
+        time.sleep(0.3)
+        assert len(finished) == 3  # all the window (`AHEAD` 2 times 2) but the head, one slot at a time, and no more
+        assert filed_order(bundle) == []  # the sections wait for the head, in the journal's order
+        head.set()
+        w.drain(30)
+        assert len(filed_order(bundle)) == 10
+    finally:
+        head.set()
+        w.close()
+
+
+def test_the_entry_being_filed_is_prepared_before_the_ones_ahead(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The entry the filer files goes first to a free slot: the ones it prepares ahead never make it wait for its own summary."""
+    order: list[str] = []
+    lock = threading.Lock()
+    real = Wiki._prepare
+
+    def prepare(wiki: Wiki, source: Any) -> Any:
+        with lock:
+            order.append(source(None).text.split(" of ")[0].rsplit(" ", 1)[-1])
+        time.sleep(0.05)
+        return real(wiki, source)
+
+    monkeypatch.setattr(Wiki, "_prepare", prepare)
+    w = make(bundle, 2)
+    try:
+        w._stop_filer()
+        for i in range(6):
+            w.remember(f"topic: t{i}-1\nThe text number {i} of the queue.")
+        w._filer_stopped = False
+        w.drain(30)
+    finally:
+        w.close()
+    assert order == [str(i) for i in range(6)]  # in the journal's order, the head first

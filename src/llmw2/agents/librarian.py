@@ -23,6 +23,7 @@ from functools import cached_property
 from typing import Any, Literal
 
 from llmw2.agents import echo, linking, note_checks, revisions, steps_classic, steps_crow
+from llmw2.agents.ahead import AheadClassifier, AheadLLM, Answers
 from llmw2.agents.base import Decision, clean_tags, fields_conflict, omitted_headings, unique_objects
 from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.prompts import Prompts
@@ -142,6 +143,16 @@ class Librarian:
         self.cfg = cfg
         self.steps = steps
         self.ctx = StepContext(llm, classifier, prompts, cfg, system_prompt="librarian/system", fixed=fixed)
+        # told the tree a section reads, once it has loaded it (the filer: `Filer.rehearse_next`); None: nobody
+        self.on_tree: Callable[[Folder], None] | None = None
+
+    def through(self, answers: Answers, *, ahead: bool) -> Librarian:
+        """The models of this librarian's steps go through `answers` (see `agents.ahead`): `ahead`, they ask and keep each answer (a
+        rehearsal); else they take the answer kept for the very request they make, and ask what was not kept (a section)."""
+        self.ctx.llm = AheadLLM(self.ctx.llm, answers, ahead=ahead)  # type: ignore[assignment]
+        if self.ctx.classifier is not None:
+            self.ctx.classifier = AheadClassifier(self.ctx.classifier, answers, ahead=ahead)  # type: ignore[assignment]
+        return self
 
     @property
     def local_writer(self) -> bool:
@@ -228,23 +239,9 @@ class Librarian:
         ctx.decisions = list(prepared.decisions)
         with ctx.llm.usage.span() as used:
             root = self.store.load()
-            placed = root.find(planned.strip("/")) if planned else None
-            if placed is not None:
-                ctx.decide("route", "code", placed.label)
-                route = Route(placed, False, [placed])
-            else:
-                route = check_route(steps.route(ctx, root, cand), root, self.cfg)
-                if self.cfg.mode == "crow":  # at most `cfg.max_top_folders` top-level folders, whoever opened one
-                    route = steps_crow.keep_folders(ctx, root, cand, route)  # a rebuild opens none at all
-                    route = steps_crow.cap_roots(ctx, root, cand, route)
-            ctx.home = route.folder.rel
-            pool = unique_objects(n for f in [*route.candidates, route.folder] for n in f.notes)
-            pool = [n for n in pool if n.folder is None or n.folder.is_routable]  # nothing is merged into a closed folder
-            theirs = {**read.fields, **cand.fields}  # the document's fields: its own, and what the summary made of them
-            mergeable = [n for n in pool if not fields_conflict(n.frontmatter.get("fields"), theirs)]
-            if len(mergeable) < len(pool):  # a note whose fields differ from the document's on a shared key is not merged into
-                ctx.decide("match", "code", f"{len(pool) - len(mergeable)} excluded by fields")
-            match = check_match(steps.match(ctx, mergeable, cand), mergeable)
+            if self.on_tree is not None:
+                self.on_tree(root)
+            route, pool, theirs, match = self._route_and_match(root, cand, read, planned)
             created: list[str] = []
             merging = match is not None and check_consolidate(steps.consolidate(ctx, match, cand))
             revised, archived = False, ""
@@ -375,6 +372,43 @@ class Librarian:
             total,
             overflow=deviated,
         )
+
+    def _route_and_match(
+        self, root: Folder, cand: Candidate, read: Source, planned: str | None
+    ) -> tuple[Route, list[Note], dict[str, Any], Note | None]:
+        """The first steps of `file`, which read the tree and write nothing: the route, the notes the match looks at, the document's
+        fields, the note it matches (None: a new note)."""
+        steps, ctx = self.steps, self.ctx
+        placed = root.find(planned.strip("/")) if planned else None
+        if placed is not None:
+            ctx.decide("route", "code", placed.label)
+            route = Route(placed, False, [placed])
+        else:
+            route = check_route(steps.route(ctx, root, cand), root, self.cfg)
+            if self.cfg.mode == "crow":  # at most `cfg.max_top_folders` top-level folders, whoever opened one
+                route = steps_crow.keep_folders(ctx, root, cand, route)  # a rebuild opens none at all
+                route = steps_crow.cap_roots(ctx, root, cand, route)
+        ctx.home = route.folder.rel
+        pool = unique_objects(n for f in [*route.candidates, route.folder] for n in f.notes)
+        pool = [n for n in pool if n.folder is None or n.folder.is_routable]  # nothing is merged into a closed folder
+        theirs = {**read.fields, **cand.fields}  # the document's fields: its own, and what the summary made of them
+        mergeable = [n for n in pool if not fields_conflict(n.frontmatter.get("fields"), theirs)]
+        if len(mergeable) < len(pool):  # a note whose fields differ from the document's on a shared key is not merged into
+            ctx.decide("match", "code", f"{len(pool) - len(mergeable)} excluded by fields")
+        return route, pool, theirs, check_match(steps.match(ctx, mergeable, cand), mergeable)
+
+    def rehearse(self, prepared: Prepared, root: Folder) -> None:
+        """What `file` would ask the models first for `prepared` on `root` (the route, its LLM fallback, the match, the consolidation),
+        with nothing written and nothing decided: the models of this librarian go through the answers kept ahead (`through`, `ahead`),
+        which the entry's section takes for the requests it makes the same (see `agents.ahead`). Raises what a step raises, and `Late`
+        once the section has started."""
+        source, cand = prepared.source, prepared.candidate
+        read = _read(source)
+        ctx = self.ctx
+        ctx.source, ctx.candidate, ctx.decisions = read, cand, list(prepared.decisions)
+        _, _, _, match = self._route_and_match(root, cand, read, None)
+        if match is not None:
+            check_consolidate(self.steps.consolidate(ctx, match, cand))
 
     def raw_title(self, source: Source, cand: Candidate) -> str:
         """The title of the raw copy: the document's own; the note's, when it has none, as it is written."""

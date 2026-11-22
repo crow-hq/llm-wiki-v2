@@ -56,6 +56,7 @@ from typing import Any, ParamSpec, Self, TypeVar
 
 from llmw2 import filer as _filer
 from llmw2.agents import echo, grouping, lexical, steps_crow
+from llmw2.agents.ahead import Answers, Late
 from llmw2.agents.base import Decision
 from llmw2.agents.data import Candidate, FolderPlan, Source, SplitPlan
 from llmw2.agents.librarian import IngestResult, Librarian, Prepared
@@ -1240,7 +1241,7 @@ class Wiki:
                     told.append(self._seen_again(known, filing, self._raw_of(origin)))
                 return known
             try:
-                result = self.librarian(fixed=fixed).file(prepared, planned=folder)
+                result = self._librarian_for(filing, fixed).file(prepared, planned=folder)
             except BaseException:
                 self.store.forget()  # what a batch kept of the tree may not be what is on disk now
                 raise
@@ -1250,6 +1251,34 @@ class Wiki:
                 if (section := txn.current()) is not None:
                     section.set_result(told[0])
             return result
+
+    def _librarian_for(self, filing: Filing | None, fixed: bool) -> Librarian:
+        """The librarian of a section. For an entry the filer files in CROW, it takes the answers asked ahead for the entry's requests
+        (`Filer.answers`), and it tells the filer the tree it read, so that the route of the next entry is asked meanwhile
+        (`Filer.rehearse_next`)."""
+        librarian = self.librarian(fixed=fixed)
+        filer = filing.hub.filer if filing is not None else None
+        if filer is None or filer is not threading.current_thread() or not self._rehearses():
+            return librarian
+        if (answers := filer.answers(filing.entry)) is not None:
+            librarian.through(answers, ahead=False)
+        librarian.on_tree = filer.rehearse_next
+        return librarian
+
+    def _rehearses(self) -> bool:
+        """Whether the filer asks the route of the next entry ahead: in CROW, while it prepares entries ahead (`cfg.concurrency` > 1)."""
+        return self.cfg.mode == "crow" and self.classifier is not None and int(self.cfg.concurrency) > 1
+
+    def _rehearse(self, entry: _filer.Entry, prepared: Prepared, root: Folder, answers: Answers) -> None:
+        """`Librarian.rehearse` of `entry` on `root`, in a thread of the filer (`Filer.rehearse_next`): its answers kept in `answers`,
+        whatever it raises dropped (the section asks again)."""
+        try:
+            with authored(entry.author or self.author):
+                self.librarian().through(answers, ahead=True).rehearse(prepared, root)
+        except Late:
+            pass
+        except Exception as e:  # the section asks for itself what was not kept
+            log.debug("rehearsing the route of entry %s failed: %s", entry.id, e)
 
     def _note_id(self, rel: str) -> str | None:
         """The stable id of a note (None for a note written before ids, or one that cannot be read)."""
