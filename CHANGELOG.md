@@ -377,7 +377,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over it hears so at once instead of hanging (a dialogue turn, a node's callback, a tool call). `QueueFull` begins with "NOT saved" and
   carries `queue`, `queue_limit`, `oldest_s` and `retry_after_s`: the queue over the rate this process saw entries filed at in the last
   minute once it saw 5 filed or, in a process that saw fewer (a new MCP session), over the rate the last 20 filings in the journal took
-  (their `ms`); None with neither. `oldest_s`, there and in `status`, does not follow the wall clock: each entry records the boot of
+  (their `ms`); with neither (the first refusals of a flood), one entry each as long as the oldest open one has waited, since the
+  sections file one at a time; None only when nobody files (`reason` "stall") or no entry is open. `oldest_s`, there and in `status`,
+  does not follow the wall clock: each entry records the boot of
   the machine it was acknowledged in and the seconds since that boot, by a clock the wall clock does not move (Windows: the boot
   counter and `GetTickCount64`; Linux: `boot_id` and `CLOCK_BOOTTIME`, sleep counted), and its age in the same boot is that clock's
   difference, in any process. So a clock set back or forward (a robot that finds the time again, a laptop's clock corrected) no longer

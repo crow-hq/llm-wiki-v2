@@ -93,11 +93,14 @@ def test_the_refusal_says_not_saved_with_the_queue_and_when_to_try_again(bundle:
     try:
         w._stop_filer()
         kept = [w.remember(f"topic: a-{i}\nentry {i}") for i in range(6)]
+        time.sleep(0.5)
         with pytest.raises(QueueFull) as e:
             w.remember("topic: b-0\nmore", timeout=0.1)
         assert str(e.value).startswith("NOT saved")
         assert (e.value.queue, e.value.queue_limit) == (6, 6) and e.value.oldest_s is not None and e.value.oldest_s >= 0
-        assert e.value.retry_after_s is None  # no entry was seen filed: no pace to tell a time by
+        # no entry was seen filed: each takes at least as long as the oldest has waited, so the queue takes that many times as long
+        assert e.value.retry_after_s is not None and abs(e.value.retry_after_s - 6 * e.value.oldest_s) <= 0.4  # both rounded
+        assert f"try again in about {e.value.retry_after_s:g} s" in str(e.value)
         time.sleep(0.6)
         for r in kept[:5]:  # five entries filed: the process sees the filer's pace
             close_in_another_journal(bundle, r.id)

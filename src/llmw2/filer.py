@@ -583,12 +583,16 @@ class Hub:
     def queue_full(self, why: str, *, limit: int, writer: str = "") -> QueueFull:
         """The `QueueFull` that `remember` raises: NOT saved, with the queue as this process read it and when to try again."""
         oldest: float | None = None
+        waited = 0.0
         first = self.next_open()
         if first is not None:
             with contextlib.suppress(ValueError):
-                oldest = round(self.age(first), 1)
+                waited = self.age(first)
+                oldest = round(waited, 1)
         queue = self.open_n + self.failed_n
-        pace = self.pace()
+        # with no pace yet (no entry seen filed, none in the journal), the oldest entry is not filed after waiting so long: the
+        # sections file one entry at a time, so each takes about that long at least
+        pace = self.pace() or (1.0 / waited if waited > 0 else None)
         retry = round(max(1.0, queue / pace), 1) if pace and why != "stall" else None
         if why == "share" and pace:
             # the writer gets a place again as soon as the queue is under the places it may fill (k1 entries of anyone closed), or as soon

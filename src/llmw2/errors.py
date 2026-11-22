@@ -76,7 +76,8 @@ class QueueFull(WikiError):
     """`remember` found the queue of entries not yet filed full, and no room came before the caller's `timeout` (or the stall limit):
     NOT saved, nothing was written, and the caller tries again later. It says where the queue is: `queue` (entries waiting to be filed),
     `queue_limit`, `oldest_s` (how long the oldest has waited, or None) and `retry_after_s` (about when to try again: the queue over the
-    rate this process saw entries filed at, or, before it saw one, the rate the last filings in the journal took; None with neither).
+    rate this process saw entries filed at, or, before it saw one, the rate the last filings in the journal took, or, with neither, one
+    entry each as long as the oldest open one has waited; None when nobody files, or no entry is open).
     `reason`: "full" (the queue, in entries or bytes), "share" (the last places, kept for writers that keep few), "busy" (the queue had
     room, but other writers, or a seal of the journal, held its admission for the whole wait) or "stall" (nobody files)."""
 
