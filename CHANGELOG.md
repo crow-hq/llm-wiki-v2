@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   paths a filing declares in one record (a new file, a file appended to, such as `log.md`): there the undo removes the file or cuts to the
   length it had, so lines an older version of the library appended after the crash, before this one's first lock, are lost with the
   section's own. In every other path it is listed by `check`. `.llmw2/journal/` has its own `.gitignore`. A section that moves or deletes whole folders (`rename_root`, `merge_roots`,
-  `delete_folder`, `clear`, a batch's tidy) is not covered and writes as it did. Each document filed now costs a few more flushes of the
+  `delete_folder`, `clear`, a batch's tidy) is not covered and writes as it did: a process that dies in one leaves it half done, as in
+  the release before, and `check` lists what it finds. Each document filed now costs a few more flushes of the
   disk (about +45 ms on NTFS in the library's own timing).
 - `Wiki.remember(text, *, title, key, fields, author, at, timeout) -> Receipt`: the text is kept in the journal the moment it is asked, and a
   thread of the process (the filer, started by the first `remember`, `drain` or `_start_filer`; `Wiki()` starts none) files it with the
@@ -126,7 +127,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   delete may hold one (an origin of `remember`, or none, as a text given with no origin) and the journal has entries done: the journal is
   sealed and the segments before are reused, as a purge completes (what is not filed yet is carried forward), so no file of the wiki's
   folder keeps the text, as with the release before, where the memory's `remember` did not go through the journal. Raw copies never
-  move, so a note moved or split since its filing is found all the same. The tombstone that asks for it is durable at once; the call
+  move, so a note moved or split since its filing is found all the same. The tombstone that asks for it is made durable inside the
+  section that deletes, before it deletes, as a purge's: a process that dies once that section committed leaves it to the next one,
+  which seals and reuses the journal (one that dies before costs a seal, never a text kept). It costs a flush of the journal inside
+  the wiki's lock at each delete of a note filed from the journal: milliseconds on an SSD, more on a slow disk; the call
   waits for no lease: when another process holds the journal's lease, its filer seals and reuses at its next look, and the result says
   so in a new key, `pending: ["journal"]`, as `Purged.pending` does (the memory's `delete_note` returns it too). Effects: after such a
   delete the ids of the entries already filed are gone with their segments, so `read_note("pending:<id>")` and `forget(id)` no longer

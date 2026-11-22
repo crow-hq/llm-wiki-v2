@@ -13,6 +13,7 @@ __copyright__ = (
 )
 
 import asyncio
+import contextlib
 import json
 import os
 import subprocess
@@ -35,6 +36,7 @@ from llmw2 import filer as F
 from llmw2.bundle import journal as J
 from llmw2.bundle.filelock import FileLock
 from llmw2.bundle.origin import Origin
+from llmw2.bundle.store import WikiStore
 from llmw2.memory import CLOSE_DRAIN, Memory
 from llmw2.server import create_app
 from tests.wiki.fakes import FakeClassifier, FakeLLM
@@ -352,6 +354,48 @@ def test_the_filer_completes_a_deletes_tombstone_with_the_journal_alone(wiki: Wi
     assert deleted.pending == ["journal"]  # the filer of this process holds the lease
     assert gone_from_disk(wiki, SECRET)
     assert asked == []
+
+
+class Died(BaseException):
+    """The process dies: raised once the section that deleted has committed, before anything after it runs."""
+
+
+@pytest.mark.parametrize("how", ["delete_note", "delete_folder", "clear"])
+def test_a_process_that_dies_once_its_delete_committed_leaves_the_journal_to_the_next(
+    wiki: Wiki, monkeypatch: pytest.MonkeyPatch, how: str
+) -> None:
+    """A delete of a memory whose process dies right after its section commits: the tombstone that asks for the journal is durable
+    already (written inside the section, as a purge writes its own), so the next process seals and reuses the journal, and no byte
+    of the text is left; written after the commit, it would be lost with the process and the text would stay in the journal."""
+    memory = Memory(lambda: wiki)
+    path = remembered_secret(wiki, memory)
+    wiki._stop_filer()
+    real = WikiStore.lock
+
+    @contextlib.contextmanager
+    def lock(self: WikiStore, *a: Any, **k: Any) -> Iterator[None]:
+        with real(self, *a, **k):
+            yield
+        raise Died  # the section committed; the process goes before the next line
+
+    monkeypatch.setattr(WikiStore, "lock", lock)
+    with pytest.raises(Died):
+        if how == "delete_note":
+            wiki.delete_note(path)
+        elif how == "delete_folder":
+            wiki.delete_folder("/" + path.rpartition("/")[0])
+        else:
+            wiki.clear()
+    monkeypatch.setattr(WikiStore, "lock", real)
+    assert not (wiki.cfg.bundle / path).exists() and leftovers(wiki.cfg.bundle, SECRET)  # deleted; the journal still holds it
+    wiki.close()
+
+    after, _ = make(wiki.cfg.bundle)  # the next process, whose filer takes the lease
+    try:
+        after._start_filer()
+        assert gone_from_disk(after, SECRET)
+    finally:
+        after.close()
 
 
 def test_delete_folder_and_clear_take_the_journals_copies_out_too(wiki: Wiki) -> None:
