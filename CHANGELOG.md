@@ -17,7 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   back), and its `delete_note` leaves their text in the journal's segments. A note a 1.x deletes stays in this version's search index
   until its next sync (a look at the files that changed, at the next search). Locks are shared, so a 1.x and this version on one wiki
   at the same time still exclude each other; the rest of what 1.x does not know (the undo log, the trash) it leaves alone, and the
-  restore of an interrupted section here compares the files with what it saved and leaves alone what a 1.x changed meanwhile.
+  restore of an interrupted section here compares the files with what it saved and leaves alone what a 1.x changed meanwhile. Going
+  back also leaves one error in the `check` of the 1.x, on the form of the log alone: this version writes `log.md` oldest first, and
+  a 1.x adds its new day at the top, so its rule "log days are not newest first" fails (nothing is lost; this version reads that log
+  with warnings: days out of order, one day under two headings).
 - `.llmw2/format` holds the format of the wiki's folder, one integer, written when the journal is born. A version opens a folder whose
   format is at most its own (no file: format 1, a 1.x folder) and refuses one that says a newer format, or whose file holds no format
   number (`BundleFormatError`, nothing changed): from this version on, an older release never writes over a newer wiki. A read of the
