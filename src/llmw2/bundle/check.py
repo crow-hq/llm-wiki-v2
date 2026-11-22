@@ -25,6 +25,7 @@ from llmw2.bundle.tree import CODE, INDEX, LOG, RAW, SEE_ALSO, parse_index, see_
 
 _LINK = re.compile(r"\]\(([^)\s#]+\.md)(?:#[^)]*)?\)")
 _DAY = re.compile(r"^## (\d{4}-\d{2}-\d{2})$")
+SEE_ALSO_SHOWN = 10  # one-sided See-also entries said one by one; the others in one warning that counts them
 _SEE_ALSO_HEADING = re.compile(r"^#{2,6}[ \t]+see also[ \t]*$", re.IGNORECASE | re.MULTILINE)
 _LOG_LINK = re.compile(r"\]\(([^)\s]+)\)")
 
@@ -145,14 +146,20 @@ def _check_raws(root: Path, raws: list[str], notes: dict[str, OKFDocument]) -> l
 def _check_see_also(notes: dict[str, OKFDocument]) -> list[Problem]:
     """A See-also entry that the note it points to does not have back. The code writes both sides, so a wiki that has one-sided
     entries was written another way (an older version, by hand): a warning. A section a person wrote under a heading of another
-    level ("## See also") counts as the section the code writes ("# See also")."""
+    level ("## See also") counts as the section the code writes ("# See also"). The first `SEE_ALSO_SHOWN` are said one by one, the
+    others in one more warning that counts them: a wiki of an older version can have tens of thousands, each harmless."""
     targets = {rel: set(see_also_targets(_SEE_ALSO_HEADING.sub(SEE_ALSO, doc.body), rel)) for rel, doc in notes.items()}
-    return [
+    found = [
         Problem(rel, f"See also lists {other}, which does not list it back", WARNING)
-        for rel, found in targets.items()
-        for other in sorted(found)
+        for rel, listed in targets.items()
+        for other in sorted(listed)
         if other in notes and other != rel and rel not in targets[other]
     ]
+    if len(found) <= SEE_ALSO_SHOWN:
+        return found
+    more = len(found) - SEE_ALSO_SHOWN
+    return [*found[:SEE_ALSO_SHOWN], Problem("(wiki)", f"{more} more See-also entries are on one side only, as the {SEE_ALSO_SHOWN} above "
+                                         "(written by an older version, or by hand): harmless, links that go one way", WARNING)]
 
 
 def _check_logged(root: Path, notes: dict[str, OKFDocument]) -> list[Problem]:

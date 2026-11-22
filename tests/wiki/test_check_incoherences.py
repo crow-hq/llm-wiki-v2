@@ -85,6 +85,23 @@ def test_a_see_also_entry_on_one_side_only_is_a_warning(store: WikiStore) -> Non
     assert "# See also" in both
 
 
+def test_many_one_sided_see_also_entries_are_said_up_to_a_few_then_counted(store: WikiStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A wiki written by an older version, whose See-also entries go one way: a few of them one by one, then one warning with the count
+    (an upgraded wiki of 50,000 notes would otherwise give tens of thousands)."""
+    from llmw2.bundle import check as C
+
+    monkeypatch.setattr(C, "SEE_ALSO_SHOWN", 2)
+    folder, _ = store.create_folder(store.load(), "sales", "Sales.")
+    hub = filed(store, folder, "Hub")
+    others = [filed(store, folder, name) for name in ("Alpha", "Bravo", "Charlie", "Delta", "Echo")]
+    for other in others:
+        store.link(hub, other)
+        other.path.write_text(other.path.read_text(encoding="utf-8").split("# See also")[0].rstrip() + "\n", encoding="utf-8")
+    warnings = found(store)[WARNING]
+    assert len([w for w in warnings if "which does not list it back" in w]) == 2
+    assert "(wiki): 3 more See-also entries are on one side only" in " ".join(warnings)
+
+
 def test_a_file_left_by_a_cut_write_is_an_error_wherever_it_is(store: WikiStore) -> None:
     folder, _ = store.create_folder(store.load(), "sales", "Sales.")
     filed(store, folder, "Alpha")

@@ -111,7 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Problem.severity` (`"error"` or `"warning"`). `check` now also reports, as errors, a raw copy that no note (nor archived version of one) cites and a
   temporary file an interrupted write left anywhere in the bundle, and, as warnings, a See-also entry the note it points to does not have back and a
   note that no line of `log.md` names. A wiki written before may have such warnings (a wiki made by hand or by an older version): `llmwiki2 check`
-  reports them and exits 0.
+  reports them and exits 0. The one-sided See-also entries are said one by one up to 10, then in one warning that counts the others
+  (`check.SEE_ALSO_SHOWN`): a 1.x wiki of 50,000 notes, upgraded, has tens of thousands of them, harmless links that go one way.
 
 - `search` finds what `remember` keeps before it is filed, in every process on the wiki: an entry of the journal whose note the index
   does not have yet is a hit of path `pending:<id>`, titled by its title or its first line, with the start of its text for summary,
