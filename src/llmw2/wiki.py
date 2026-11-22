@@ -399,9 +399,11 @@ class Wiki:
 
         `timeout` bounds the wait for room when the queue is full: `REMEMBER_WAIT` (0.2 s) by default, None to wait as long as entries are
         being filed. Then `QueueFull`: NOT saved, nothing written, with `queue`, `queue_limit`, `oldest_s` and `retry_after_s`. The room
-        is checked and the entry written under the journal's admission lock, so the limits hold against every process. A process that keeps
+        is checked and the entry written under the journal's admission lock, so the limits hold against every process. A writer that keeps
         `QUEUE_LIMIT // 8` entries of its own waiting does not get the last `QUEUE_LIMIT // 8` places (`filer.places`): they are kept for
-        writers that keep few, so that a busy job, or several, never leaves a person with a full queue. A purge is never
+        writers that keep few, so that a busy job, or several, never leaves a person with a full queue. A writer is a process, and in it
+        its declared author (`author`, else the one in force for the call, as `X-Author` or the MCP client's name set it, else the
+        Wiki's); the calls of a process that name none are one writer. A purge is never
         held by a full queue. `DiskFull` when the disk has less than the reserve filing needs. `InputError` for an empty text, a `fields`
         that is not JSON, an `at` with no zone."""
         if self._closed:
@@ -453,14 +455,14 @@ class Wiki:
                     queue=hub.open_n + failed,
                     queue_limit=_filer.QUEUE_LIMIT,
                 )
-            return hub.open_n + failed < _filer.places(hub.own_open()) and opened_bytes + given_bytes + cost <= limit
+            return hub.open_n + failed < _filer.places(hub.own_open(name)) and opened_bytes + given_bytes + cost <= limit
 
         ident = secrets.token_hex(8)  # the entry's id: counted among this process's own entries as it is admitted
         busy = False  # the last attempt found the journal's admission held for the whole of its wait
 
         def admit() -> None:
             check()
-            hub.mine.add(ident)
+            hub.mine[ident] = name
 
         def check() -> None:
             # Under the journal's admission lock, which only the entries of `remember` take, the room is checked again against the tail,
@@ -478,7 +480,7 @@ class Wiki:
                 failed = hub.failed_count()
                 opened_bytes, given_bytes = hub.backlog_bytes()
                 if (
-                    hub.open_n + failed + records < _filer.places(hub.own_open())
+                    hub.open_n + failed + records < _filer.places(hub.own_open(name))
                     and opened_bytes + given_bytes + size + records * _filer.ENTRY_OVERHEAD + cost <= limit
                 ):
                     return
@@ -520,7 +522,7 @@ class Wiki:
                 except _NoRoom:
                     pass  # another process took the last place since: waited for as a full queue
                 except OSError as e:
-                    hub.mine.discard(ident)
+                    hub.mine.pop(ident, None)
                     if isinstance(e, DiskFull) or e.errno == errno.ENOSPC:
                         raise DiskFull(f"the disk of the wiki is full: nothing was kept ({e})") from e
                     raise
@@ -539,9 +541,9 @@ class Wiki:
             left = None if deadline is None else deadline - time.monotonic()
             if left is not None and left <= 0:
                 taken = hub.open_n + hub.failed_count()
-                share = _filer.places(hub.own_open()) <= taken < _filer.QUEUE_LIMIT  # room there is, not for a process keeping this many
-                why = "busy" if busy and taken < _filer.places(hub.own_open()) else ("share" if share else "full")
-                raise hub.queue_full(why, limit=_filer.QUEUE_LIMIT)
+                share = _filer.places(hub.own_open(name)) <= taken < _filer.QUEUE_LIMIT  # room there is, not for a writer keeping this many
+                why = "busy" if busy and taken < _filer.places(hub.own_open(name)) else ("share" if share else "full")
+                raise hub.queue_full(why, limit=_filer.QUEUE_LIMIT, writer=name)
             hub.wait_moved(_filer.HINT_LOOK if left is None else min(left, _filer.HINT_LOOK), word)
 
     def drain(self, timeout: float | None = None) -> None:

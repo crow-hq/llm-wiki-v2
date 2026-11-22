@@ -313,16 +313,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   being sealed after a delete or a purge)"; over MCP, "the memory was busy saving other memories", never "still filing N", which reads
   as a full queue. `reason` is "full", "share", "busy" or "stall". The flush of the acknowledgement is not bounded (it is the durability), so on a slow disk a call can still last a
   little longer than `timeout` and 100 ms. A purge does not go through the queue's limits: a full queue never refuses or holds it.
-- The last places of `remember`'s queue are kept for the writers that keep few entries waiting: a process that keeps `QUEUE_LIMIT // 8`
+- The last places of `remember`'s queue are kept for the writers that keep few entries waiting: a writer that keeps `QUEUE_LIMIT // 8`
   entries of its own not yet filed (32 of 256) does not get the last `QUEUE_LIMIT // 8` places (it stops at 224 of 256); one that keeps
-  fewer may fill the queue to the limit. So a job that writes faster than the filer (an agent, a script, another MCP client), or several
-  already busy, leave 32 places to a person in another process, who needs a few; a process that writes alone (a robot) still has 224.
-  A process counts the entries it wrote itself that are open in what it read of the journal, in memory: nothing new is written in the
-  journal. A job alone now stops at 224: with the default wait it gets `QueueFull`, whose message says that the process keeps that many;
-  `timeout=None` waits for its place. Limits: the share tells processes apart, not clients nor authors, so with `llmwiki2 serve` every
-  client is in one process (once the server keeps 32 entries waiting it does not get the last 32 places), and a person and a job in the
-  same process are not told apart; after a restart a process counts from zero, so a job gains up to 31 places more; a new job's first
-  31 entries count as few, and may take places of the 32 kept until it keeps more. Under a limit of 8 there is no share.
+  fewer may fill the queue to the limit. A writer is a process and, in it, the author a call declares: `author=`, else the one in force
+  (`X-Author` of `llmwiki2 serve`; over MCP `X-Author`, else the client's name from the handshake, else its `User-Agent`), else the
+  `Wiki`'s; the calls of a process that name none are one writer. So a job that writes faster than the filer (an agent, a script,
+  another MCP client, an import), or several already busy, leave 32 places to a person, who needs a few, in another process or in the
+  same one (a server, an app) when the two name different authors; a writer alone (a robot) still has 224. A process counts the entries
+  each of its writers wrote that are open in what it read of the journal, in memory: nothing new is written in the journal. A job alone
+  now stops at 224: with the default wait it gets `QueueFull`, whose message names the writer that keeps that many; `timeout=None`
+  waits for its place. Limits: the author is declared, not verified, so the share guards against a writer that fills the queue by
+  mistake, not against one that means to: a job that names another author for each entry stays a writer that keeps few and fills the
+  queue to the limit. A person and a job of one process that name none, or the same one, are not told apart, and so are HTTP clients
+  that name none and send the same `User-Agent` (over MCP the name falls back to it when the session kept no client name, the usual
+  case with `llmwiki2 serve`); the same author in two processes is two writers; after a restart a process counts from zero, so a job gains
+  up to 31 places more; a new job's first 31 entries count as few, and may take places of the 32 kept until it keeps more. Under a
+  limit of 8 there is no share.
 - What a process keeps of the folders between two looks at the files of the wiki (the listing a search does at most once a moment)
   holds no object per note but its name, its path and three numbers: about half the memory it took, in every process that searches.
 

@@ -464,13 +464,49 @@ def test_busy_processes_leave_the_last_places_to_a_writer_that_keeps_few(bundle:
         assert fill(job2, "job2", 8) == (8, None)  # busy from now on
         kept, refusal = fill(job, "job", 100)
         assert kept == 48 and refusal is not None  # 8 while it kept few, then up to 56 in all
-        assert "This process keeps 48 entries" in str(refusal) and "does not get the last 8 places" in str(refusal)
+        assert "keeps 48 entries" in str(refusal) and "does not get the last 8 places" in str(refusal)
         assert fill(job2, "job2-more", 10)[0] == 0
         assert fill(person, "person", 7) == (7, None)
         assert len(open_entries(bundle)) == 56 + 7
     finally:
         for w in (job, job2, person):
             w.close()
+
+
+def fill_as(w: Wiki, author: str | None, tag: str, at_most: int) -> tuple[int, QueueFull | None]:
+    """`fill`, each entry written by `author` (None: no author named)."""
+    for i in range(at_most):
+        try:
+            w.remember(f"topic: {tag}-{i}\n{tag} entry {i}", author=author, timeout=0.05)
+        except QueueFull as e:
+            return i, e
+    return at_most, None
+
+
+def test_a_job_and_a_person_in_one_process_are_two_writers(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """One process (a server) with a job and a person, each naming its author: the job that keeps 8 does not get the last 8 places,
+    the person, in the same process, does; the refusal names the writer."""
+    monkeypatch.setattr(F, "QUEUE_LIMIT", 64)
+    server = another_process(bundle)
+    try:
+        kept, refusal = fill_as(server, "import-job", "job", 100)
+        assert kept == 56 and refusal is not None and "'import-job'" in str(refusal) and "keeps 56 entries" in str(refusal)
+        assert fill_as(server, "marco", "person", 7) == (7, None)
+        assert len(open_entries(bundle)) == 63
+    finally:
+        server.close()
+
+
+def test_the_calls_of_a_process_that_name_no_author_are_one_writer(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(F, "QUEUE_LIMIT", 64)
+    server = another_process(bundle)
+    try:
+        assert fill_as(server, None, "a", 40)[0] == 40
+        kept, refusal = fill_as(server, None, "b", 40)  # another call naming none: the same writer, already busy
+        assert kept == 16 and refusal is not None and "name no author" in str(refusal)
+        assert fill_as(server, "marco", "person", 3) == (3, None)  # a writer that names itself still has the last places
+    finally:
+        server.close()
 
 
 def test_a_process_whose_entries_are_filed_gets_places_again(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -493,7 +529,7 @@ def test_the_share_counts_only_the_entries_of_the_process_open_in_the_journal(bu
     other_writer(bundle, 60)
     person = another_process(bundle)
     try:
-        person._journal().mine.update(f"gone{i:02d}" for i in range(40))
+        person._journal().mine.update({f"gone{i:02d}": "" for i in range(40)})
         assert fill(person, "person", 1) == (1, None)
     finally:
         person.close()

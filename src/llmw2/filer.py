@@ -88,10 +88,11 @@ ENTRY_KEYS = ("queue", "queue_limit", "filing", "failed", "oldest_s", "filer", "
 
 
 def places(own: int) -> int:
-    """The places of the queue that a process keeping `own` entries of its own open may fill: all of them while it keeps fewer than
+    """The places of the queue that a writer keeping `own` entries of its own open may fill: all of them while it keeps fewer than
     `QUEUE_LIMIT // 8`; once it keeps that many, all but the last `QUEUE_LIMIT // 8` (224 of 256). Those are kept for the writers that
-    keep few (a person's few memories), so that no busy process, nor several together, takes the whole queue, and one that writes alone
-    (a robot) still has most of it. Under a limit of 8 (a share of no entry) every process may fill all of it."""
+    keep few (a person's few memories), so that no busy writer, nor several together, takes the whole queue, and one that writes alone
+    (a robot) still has most of it. A writer is a process and, in it, a declared author (`Hub.own_open`): a job and a person in one
+    process (a server) are two. Under a limit of 8 (a share of no entry) every writer may fill all of it."""
     share = QUEUE_LIMIT // 8
     return QUEUE_LIMIT if share == 0 or own < share else QUEUE_LIMIT - share
 
@@ -209,7 +210,9 @@ class Hub:
         self._shown_list: tuple[int, list[Pending]] | None = None  # what `searchable` gave, and after which read
         self._rate: deque[tuple[float, int]] = deque()  # (when, closed_total) after the reads that folded records: the filer's pace
         self.refreshes = 0  # reads of the journal (`refresh`): a caller that waits for room makes few
-        self.mine: set[str] = set()  # entries this process wrote (`remember`) that are not closed: its share of the queue (`places`)
+        # entries this process wrote (`remember`) that are not closed, with who wrote each (its declared author, "" for none): the share
+        # of the queue of each writer of the process (`places`)
+        self.mine: dict[str, str] = {}
 
     # -- reading the journal ------------------------------------------------------------------------------------
 
@@ -400,7 +403,7 @@ class Hub:
 
     def _closed(self, e: Entry) -> None:
         self._recount(e)
-        self.mine.discard(e.id)
+        self.mine.pop(e.id, None)
         self.closed_total += 1
         if e.failed is not None and not e.forgotten:
             return  # an entry given up is kept, text included: the compaction carries it forward, and it counts in the queue limit
@@ -511,10 +514,13 @@ class Hub:
             if self.journal.tail_word() != word:
                 return
 
-    def own_open(self) -> int:
-        """The entries this process wrote that are open in what it read of the journal: its share of the queue. Counted from the entries,
-        so that an id whose closure this process could not see (a journal read again from its start) never counts."""
-        return sum(1 for ident in list(self.mine) if (e := self.entries.get(ident)) is not None and not e.closed)
+    def own_open(self, writer: str = "") -> int:
+        """The entries `writer` (a declared author; "" for the calls of this process that declared none, one group) wrote in this process
+        that are not closed: what `places` judges it by. Counted from the entries the process read, so that an id whose closure this
+        process could not see (a journal read again from its start) never counts."""
+        return sum(
+            1 for ident, who in list(self.mine.items()) if who == writer and (e := self.entries.get(ident)) is not None and not e.closed
+        )
 
     def pace(self) -> float | None:
         """Entries closed a second, as this process saw them in the last `RATE_WINDOW` seconds, once it saw `PACE_SEEN` close; before, as
@@ -543,7 +549,7 @@ class Hub:
         took.sort()
         return 1000.0 / took[len(took) // 2]
 
-    def queue_full(self, why: str, *, limit: int) -> QueueFull:
+    def queue_full(self, why: str, *, limit: int, writer: str = "") -> QueueFull:
         """The `QueueFull` that `remember` raises: NOT saved, with the queue as this process read it and when to try again."""
         oldest: float | None = None
         first = self.next_open()
@@ -564,8 +570,9 @@ class Hub:
                 f"a purge); {what}."
             )
         elif why == "share":
+            who = f"The writer {writer!r} in this process" if writer else "This process, for the calls that name no author,"
             message = (
-                f"NOT saved: nothing was written. This process keeps {self.own_open()} entries waiting to be filed, so it does not get the "
+                f"NOT saved: nothing was written. {who} keeps {self.own_open(writer)} entries waiting to be filed, so it does not get the "
                 f"last {limit // 8} places of the queue ({queue} of {limit} taken): they are kept for writers that keep few; {what}."
             )
         else:
