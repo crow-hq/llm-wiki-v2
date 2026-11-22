@@ -1643,9 +1643,10 @@ class WikiStore:
 
     # -- deleting -------------------------------------------------------------
 
-    def delete_note(self, rel: str) -> Deleted:
-        """Delete one note; FileNotFoundError when no note of the tree is at `rel`."""
-        root = self.load()
+    def delete_note(self, rel: str, *, root: Folder | None = None) -> Deleted:
+        """Delete one note; FileNotFoundError when no note of the tree is at `rel`. `root`: the tree as this section just loaded it (the
+        lock held since), not loaded again."""
+        root = root if root is not None else self.load()
         note = next((n for n in root.all_notes() if n.rel == rel.strip().lstrip("/")), None)
         if note is None:
             raise FileNotFoundError(rel)
@@ -1653,9 +1654,10 @@ class WikiStore:
         self.append_log("Deleted note", f"{note.title} ({note.rel})")
         return deleted
 
-    def delete_folder(self, rel: str) -> Deleted:
-        """Delete a folder with its notes and subfolders; the root is the wiki itself (see `clear`)."""
-        root = self.load()
+    def delete_folder(self, rel: str, *, root: Folder | None = None) -> Deleted:
+        """Delete a folder with its notes and subfolders; the root is the wiki itself (see `clear`). `root`: the tree as this section
+        just loaded it (the lock held since), not loaded again."""
+        root = root if root is not None else self.load()
         folder = root.find(rel)
         if folder is None:
             raise FileNotFoundError(rel)

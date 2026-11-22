@@ -90,6 +90,28 @@ def test_delete_note_when_other_notes_link_to_it_then_their_links_go_and_the_wik
     assert errors(classic_wiki.check()) == []
 
 
+def test_a_delete_reads_the_tree_once_and_the_store_deletes_on_that_copy(
+    classic_wiki: Wiki, filed: Filed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`delete_note` reads the tree before the wiki's lock and looks at that copy again under it for what changed (a load of the
+    session that lists only the folders changed), and the store deletes on it; `delete_folder` loads it once."""
+    from llmw2.bundle.store import WikiStore
+
+    loads: list[int] = []
+    real = WikiStore.load
+
+    def load(self: WikiStore) -> object:
+        loads.append(1)
+        return real(self)
+
+    monkeypatch.setattr(WikiStore, "load", load)
+    classic_wiki.delete_note(filed.budget)
+    assert len(loads) <= 2  # the read before the lock and its look again under it: the store does not load a third time
+    loads.clear()
+    classic_wiki.delete_folder("/finance")
+    assert len(loads) == 1
+
+
 def test_delete_folder_when_it_has_subfolders_then_everything_in_it_goes(classic_wiki: Wiki, filed: Filed) -> None:
     # ACT
     deleted = classic_wiki.delete_folder("/finance")

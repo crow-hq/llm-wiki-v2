@@ -159,7 +159,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sealed and the segments before are reused, as a purge completes (what is not filed yet is carried forward), so no file of the wiki's
   folder keeps the text, as with the release before, where the memory's `remember` did not go through the journal. Raw copies never
   move, so a note moved or split since its filing is found all the same. The tombstone that asks for it is made durable inside the
-  section that deletes, before it deletes, as a purge's: a process that dies once that section committed leaves it to the next one,
+  section that deletes: at its end, from what it deleted, for `delete_note` (a process that dies before the commit has it undone with
+  the section), before it deletes for `delete_folder` and `clear`, which have no undo log; a process that dies once that section
+  committed leaves it to the next one,
   which seals and reuses the journal (one that dies before costs a seal, never a text kept). It costs a flush of the journal inside
   the wiki's lock at each delete of a note filed from the journal: milliseconds on an SSD, more on a slow disk. The seal and the
   reuse are never done in the call: the result says so in a new key, `pending: ["journal"]`, as `Purged.pending` does (the
@@ -325,9 +327,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its lock until one deadline. The sections of a purge no longer make the index look at every file: its own look, within
   the wait, takes in what it changed. `dry_run` waits as before. A batch that made no folder no longer takes the lock at its end.
 - `delete_note`, and the section of a purge that deletes, read the wiki before they take its lock; the section lists again only the
-  folders changed meanwhile, as a batch does. A process that has not read the wiki yet (a server started for one call) holds the lock
-  for what changes, not for the parsing of every note (about 3 s at 5,000 notes). A note edited in place by hand meanwhile is read again
-  before it is written; a link to the deleted note added that way in that moment stays, as in a batch. How many processes of the
+  folders changed meanwhile, as a batch does, and the store deletes on that copy: a delete loads the tree once and looks at it again
+  under the lock, where it loaded it three times (`delete_folder`, with no read before its lock, once instead of twice). Even so, a
+  `delete_note` in a process already started costs about twice what it cost in the release before (about 450 against 240 ms on a wiki
+  of 5,000 notes): the look at each note as the tree is read, and the writes that make the delete safe (the undo log, the tombstone of
+  the journal), are the price of the recovery after a crash and of forgetting without traces. A process that has not read the wiki
+  yet (a server started for one call) holds the lock for what changes, not for the parsing of every note (about 3 s at 5,000
+  notes). A note edited in place by hand meanwhile is read again before it is written; a link to the deleted note added that way in that moment stays, as in a batch. How many processes of the
   machine read the wiki outside its lock at once is bounded by the memory: each takes one of N places (`.llmw2/read-<i>.lock`), N being
   half the physical memory free when it starts (`READ_SHARE`: the other half stays to the rest of the machine, so the reads never take
   all that is free) over the cost of a read, the notes of the search index times `READ_BYTES_PER_NOTE` (7 KiB, from the memory a read

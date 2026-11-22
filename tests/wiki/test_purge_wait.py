@@ -394,13 +394,13 @@ def test_a_place_is_kept_until_the_section_that_deletes_is_done(bundle: Path, mo
     held: list[bool] = []
     real = S.WikiStore.delete_note
 
-    def delete(self: Any, rel: str) -> Any:  # under the wiki's lock: the memory of the read is still the process's, and so is the place
+    def delete(self: Any, rel: str, **kw: Any) -> Any:  # under the wiki's lock: the read's memory is still the process's, and its place
         probe = FileLock(bundle / S.READ_PLACE.format(0))
         free = probe.try_acquire()
         if free:
             probe.release()
         held.append(not free)
-        return real(self, rel)
+        return real(self, rel, **kw)
 
     monkeypatch.setattr(S.WikiStore, "delete_note", delete)
     try:
