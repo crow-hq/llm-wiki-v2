@@ -41,7 +41,7 @@ from llmw2.memory import CLOSE_DRAIN, Memory
 from llmw2.server import create_app
 from tests.wiki.fakes import FakeClassifier, FakeLLM
 from tests.wiki.test_memory import INITIALIZE, client, client_wiki, text, through
-from tests.wiki.test_purge_journal import leftovers, tombstones
+from tests.wiki.test_purge_journal import complete, leftovers, tombstones
 from tests.wiki.test_remember import make, notes
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -201,10 +201,10 @@ def test_forget_takes_a_memory_out_by_its_key_or_its_id_and_no_byte_of_it_is_lef
 
     # ASSERT
     report = gone.structured_content
-    assert not gone.is_error and report["entries"] == 1 and report["pending"] == []
+    assert not gone.is_error and report["entries"] == 1 and report["pending"] == ["journal"]  # the journal is the filer's
     assert len(report["notes"]) == (1 if filed else 0)
     assert found.structured_content["result"] == []
-    assert leftovers(wiki.cfg.bundle, SECRET) == []  # B11: in no file of the wiki's folder
+    assert complete(wiki) and leftovers(wiki.cfg.bundle, SECRET) == []  # B11: in no file of the wiki's folder
 
 
 def gone_from_disk(wiki: Wiki, text: str, within: float = 15.0) -> bool:
@@ -256,10 +256,10 @@ def test_delete_note_of_a_memory_still_queued_forgets_it_as_forget_does(wiki: Wi
 
     body = deleted.structured_content
     assert hit.startswith("pending:") and not deleted.is_error
-    assert body["forgot"] == hit and body["entries"] == 1 and body["pending"] == []
+    assert body["forgot"] == hit and body["entries"] == 1 and body["pending"] == ["journal"]
     assert {"notes", "folders", "sources", "archived", "unlinked"} <= set(body) and body["notes"] == []
     assert one(memory, "search", {"query": "purple falcon"}).structured_content["result"] == []
-    assert leftovers(wiki.cfg.bundle, SECRET) == []
+    assert complete(wiki) and leftovers(wiki.cfg.bundle, SECRET) == []
 
 
 def test_delete_note_finds_the_memory_by_its_raw_copy_after_the_note_moved(wiki: Wiki) -> None:

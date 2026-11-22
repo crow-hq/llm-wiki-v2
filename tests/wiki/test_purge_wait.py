@@ -30,7 +30,7 @@ from llmw2 import searchindex as si
 from llmw2 import wiki as W
 from llmw2.bundle import store as S
 from llmw2.bundle.filelock import FileLock
-from tests.wiki.test_purge_journal import KEY, SECRET, TEXT, TITLE, child, leftovers, pending, tombstones, wait_for
+from tests.wiki.test_purge_journal import KEY, SECRET, TEXT, TITLE, child, complete, leftovers, pending, tombstones, wait_for
 from tests.wiki.test_remember import make, notes, raws
 
 HOLDER = """
@@ -157,9 +157,9 @@ def test_a_new_process_purges_without_reading_the_wiki_while_it_holds_the_lock(b
     fresh, _ = make(bundle)
     try:
         report = fresh.purge(KEY)
-        assert report is not None and len(report.notes) == 1 and report.pending == []
+        assert report is not None and len(report.notes) == 1 and report.pending == ["journal"]
         assert seen["parsed"] == 0
-        assert leftovers(bundle, SECRET, TITLE, KEY) == [] and len(notes(bundle)) == 6
+        assert complete(fresh) and leftovers(bundle, SECRET, TITLE, KEY) == [] and len(notes(bundle)) == 6
     finally:
         fresh.close()
 
@@ -218,7 +218,7 @@ def test_the_waits_of_a_purge_share_one_budget(bundle: Path, monkeypatch: pytest
     threading.Timer(0.6, lambda: p.communicate("", timeout=30)).start()  # the wiki is let go after 0.6 s of the purge's wait
     try:
         report = w.purge(KEY)
-        assert report is not None and report.pending == [] and notes(bundle) == []
+        assert report is not None and report.pending == ["journal"] and notes(bundle) == []
         assert given and 0 <= given[0] <= F.FORGET_WAIT - 0.5  # what the lock took is not given to the index again
     finally:
         p.wait(30)
@@ -244,7 +244,7 @@ def test_a_purge_with_the_index_written_by_another_process_says_index_within_its
         took = time.monotonic() - t0
         assert out, "the purge waited for the index's write lock beyond its wait"
         report = out[0]
-        assert report is not None and report.pending == ["index"] and len(report.notes) == 1
+        assert report is not None and report.pending == ["journal", "index"] and len(report.notes) == 1
         assert took < F.FORGET_WAIT + 5  # the section's own look at the index waits WRITTEN_WAIT at most, as any section does
     finally:
         writer.execute("ROLLBACK")
@@ -252,7 +252,7 @@ def test_a_purge_with_the_index_written_by_another_process_says_index_within_its
         t.join(60)
     try:
         assert w._search.forget(w.store, 2.0)  # the next look empties it
-        assert leftovers(bundle, SECRET, TITLE, KEY) == []
+        assert complete(w) and leftovers(bundle, SECRET, TITLE, KEY) == []
     finally:
         w.close()
 
@@ -312,7 +312,7 @@ def test_a_purge_gets_the_wiki_from_writers_that_keep_waiting_for_it_in_the_kern
     takers = [child(TAKER, bundle) for _ in range(2)]
     try:
         report = w.purge(KEY)
-        assert report is not None and report.pending == [] and notes(bundle) == []  # in the same queue, it had each of its sections
+        assert report is not None and report.pending == ["journal"] and notes(bundle) == []  # in the queue, it had each of its sections
     finally:
         for p in takers:
             p.communicate("", timeout=30)
@@ -375,7 +375,7 @@ def test_with_every_place_taken_a_new_process_reads_under_the_lock_and_the_purge
     fresh, _ = make(bundle)
     try:
         report = fresh.purge(KEY)
-        assert report is not None and len(report.notes) == 1 and report.pending == []
+        assert report is not None and len(report.notes) == 1 and report.pending == ["journal"]
         assert seen["parsed"] == 7  # no place: the 7 notes were read under the lock, as a section always did
         victim = notes(bundle)[0]
         fresh.delete_note(victim.relative_to(bundle).as_posix())
@@ -466,7 +466,7 @@ def test_a_note_the_library_reads_in_another_process_is_purged_and_deleted_all_t
     readers = [reader(bundle, "library", secret_note, 60)]  # the note being deleted, held for longer than any try again
     try:
         report = w.purge(KEY)
-        assert report is not None and report.pending == [] and len(report.notes) == 1 and not secret_note.exists()
+        assert report is not None and report.pending == ["journal"] and len(report.notes) == 1 and not secret_note.exists()
         readers.append(reader(bundle, "library", other, 60))
         w.delete_note(other.relative_to(bundle).as_posix())
         assert not other.exists()
@@ -488,7 +488,7 @@ def test_a_note_another_program_holds_open_for_a_moment_is_purged_once_it_lets_g
     p = reader(bundle, "plain", secret_note, 0.15)  # an editor, an antivirus: an ordinary open, let go a moment later
     try:
         report = w.purge(KEY)
-        assert report is not None and report.pending == [] and notes(bundle) == []
+        assert report is not None and report.pending == ["journal"] and notes(bundle) == []
     finally:
         p.communicate("", timeout=30)
         w.close()

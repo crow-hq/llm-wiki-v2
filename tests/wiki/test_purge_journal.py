@@ -60,6 +60,17 @@ def leftovers(bundle: Path, *texts: str) -> list[str]:
     return [t for t in texts if t.encode("utf-8") in data or t.encode("utf-16-le") in data]
 
 
+def complete(w: Any, within: float = 15.0) -> bool:
+    """What a purge or a delete leaves to the filer (the journal: seal, reuse, `O`), done as the filer or the wiki's close does it: here
+    when the lease is free, else waited for from the filer that holds it. True once no tombstone is left open."""
+    end = time.monotonic() + within
+    while not w._finish_journal():
+        if time.monotonic() > end:
+            return False
+        time.sleep(0.05)
+    return True
+
+
 def tombstones(bundle: Path) -> list[J.Record]:
     return [r for r in J.Journal(bundle, writable=False).read().records if r.type == J.T_ENTRY and "forget" in (r.meta.get("state") or {})]
 
@@ -87,7 +98,8 @@ def test_a_queued_entry_is_forgotten_and_nothing_of_it_is_left_in_the_wiki(bundl
         r = w.remember(TEXT, key=KEY, title=TITLE)
         assert SECRET.encode() in disk(bundle)
         report = w.purge(KEY)
-        assert report is not None and report.entries == 1 and report.pending == [] and report.notes == []
+        assert report is not None and report.entries == 1 and report.pending == ["journal"] and report.notes == []
+        assert complete(w)
         assert r.state == "forgotten" and r.note is None
         with pytest.raises(FilerError, match="forgotten"):
             r.wait(1)
@@ -104,7 +116,8 @@ def test_a_filed_entry_goes_with_its_note_and_raw_copy_and_the_records_of_its_fi
         w.drain(60)
         assert r.state == "filed" and len(notes(bundle)) == 1
         report = w.purge(KEY)
-        assert report is not None and report.entries == 1 and report.pending == [] and len(report.notes) == 1
+        assert report is not None and report.entries == 1 and report.pending == ["journal"] and len(report.notes) == 1
+        assert complete(w)
         assert notes(bundle) == [] and raws(bundle) == [] and r.state == "forgotten"
         assert leftovers(bundle, SECRET, TITLE, KEY) == []
         assert [t.meta["state"]["forget"]["kh"] for t in tombstones(bundle)] == [F.key_hash(KEY)]  # the hash, never the key
@@ -119,7 +132,8 @@ def test_a_memory_kept_without_a_key_is_purged_by_the_key_of_its_receipt(bundle:
         w.drain(60)
         assert r.key.startswith(F.TEXT_KEY) and len(raws(bundle)) == 1
         report = w.purge(r.key)
-        assert report is not None and report.pending == [] and len(report.notes) == 1 and len(report.sources) == 1
+        assert report is not None and report.pending == ["journal"] and len(report.notes) == 1 and len(report.sources) == 1
+        assert complete(w)
         assert notes(bundle) == [] and raws(bundle) == [] and leftovers(bundle, SECRET) == []
     finally:
         w.close()
@@ -175,6 +189,7 @@ def test_an_entry_given_up_is_cleared_by_the_purge_and_frees_its_place(bundle: P
         assert hub.failed_count() == 1 and hub.backlog_bytes()[1] > 0
         w.purge(KEY)
         assert hub.failed_count() == 0 and hub.backlog_bytes() == (0, 0) and r.state == "forgotten"
+        assert complete(w)
         assert leftovers(bundle, SECRET) == []
     finally:
         w.close()
@@ -371,7 +386,8 @@ def test_a_merged_note_always_cites_the_raw_copy_of_what_was_merged_into_it(bund
         cited = set(raw_sources(note.frontmatter))
         assert cited == {f"/raw/{p.name}" for p in raws(bundle)} and len(cited) == 2
         report = w.purge("k:2")
-        assert report is not None and report.refiled == ["remember::k:1"] and "dawn" not in disk(bundle).decode("utf-8", "replace")
+        assert report is not None and report.refiled == ["remember::k:1"] and report.pending == ["journal"]
+        assert complete(w) and "dawn" not in disk(bundle).decode("utf-8", "replace")  # the journal, once the filer sealed it
     finally:
         w.close()
 
@@ -473,8 +489,8 @@ def test_a_purge_while_the_filer_of_another_process_holds_the_lease_is_completed
     try:
         wait_for(lambda: not lease_free(bundle))
         report = w.purge(KEY)
-        assert report is not None and report.pending == []
-        assert leftovers(bundle, SECRET, TITLE, KEY) == []
+        assert report is not None and report.pending == ["journal"]  # the filer of the other process seals it
+        assert complete(w) and leftovers(bundle, SECRET, TITLE, KEY) == []
     finally:
         p.communicate("", timeout=60)
         w.close()
@@ -488,7 +504,8 @@ def test_a_purge_of_the_same_key_takes_up_a_tombstone_left_open(bundle: Path) ->
         w._stop_filer()
         w._journal().journal.append_entry("", state={"forget": {"kh": F.key_hash(KEY)}})  # a purge cut right after its tombstone
         report = w.purge(KEY)
-        assert report is not None and report.pending == [] and len(report.notes) == 1 and len(tombstones(bundle)) == 1
+        assert report is not None and report.pending == ["journal"] and len(report.notes) == 1 and len(tombstones(bundle)) == 1
+        assert complete(w)
         assert not pending(w) and leftovers(bundle, SECRET, TITLE, KEY) == []
     finally:
         w.close()
@@ -524,7 +541,8 @@ def test_a_purge_of_another_key_completes_a_tombstone_left_open_when_nobody_file
         w._stop_filer()  # a wiki with no filer: the command line, `ingest` only
         w._journal().journal.append_entry("", state={"forget": {"kh": F.key_hash(KEY)}})  # the purge of KEY was cut after its tombstone
         report = w.purge("k:other")
-        assert report is not None and report.pending == [] and not pending(w)
+        assert report is not None and report.pending == ["journal"]
+        assert complete(w) and not pending(w)  # the wiki's close, or the first filer, completes both
         assert leftovers(bundle, SECRET, TITLE, KEY) == [] and notes(bundle) == []
     finally:
         w.close()
@@ -615,7 +633,7 @@ def test_the_vector_of_the_note_purged_goes_at_the_purge_without_a_search_after(
         with closing(sqlite3.connect(path)) as db:
             before = {k for (k,) in db.execute("SELECT key FROM vectors")}
         report = w.purge(KEY)
-        assert report is not None and report.pending == []
+        assert report is not None and report.pending == ["journal"]
         with closing(sqlite3.connect(path)) as db:
             after = {k for (k,) in db.execute("SELECT key FROM vectors")}
         assert len(before) == 2 and len(after) == 1 and after < before
@@ -627,33 +645,34 @@ def test_the_vector_of_the_note_purged_goes_at_the_purge_without_a_search_after(
         w.close()
 
 
-def test_the_wait_for_o_starts_once_the_files_are_done(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from llmw2 import wiki as W
+def test_neither_a_purge_nor_a_delete_seals_the_journal_in_the_call_and_the_close_does_it(
+    bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A process with no filer (a script, the command line): the purge and the delete answer with their tombstone durable and
+    `pending: ["journal"]`, the text still in the journal and no seal made in the call; the wiki's close seals once, and nothing of either
+    text is left."""
+    seals: list[int] = []
+    real = J.Journal.seal
 
-    monkeypatch.setattr(F, "FORGET_WAIT", 1.0)
-    real_purge, real_close = W.Wiki._purge, W.Wiki._close_forget
-    left: list[float] = []
+    def seal(self: J.Journal) -> int:
+        seals.append(1)
+        return real(self)
 
-    def slow(self: Any, *a: Any, **k: Any) -> Any:  # files and merged notes filed again that take longer than the whole wait
-        got = real_purge(self, *a, **k)
-        time.sleep(1.5)
-        return got
-
-    def close(self: Any, tomb_id: str, complete: bool, wait: float) -> bool:
-        left.append(wait)
-        return real_close(self, tomb_id, complete, wait)
-
-    monkeypatch.setattr(W.Wiki, "_purge", slow)
-    monkeypatch.setattr(W.Wiki, "_close_forget", close)
+    monkeypatch.setattr(J.Journal, "seal", seal)
     w, _ = make(bundle)
     try:
-        w.remember(TEXT, key=KEY)
+        w.remember(TEXT, key=KEY, title=TITLE)
+        w.remember("topic: birds-2\nThe owl hunts at night by the barn.", key="k:owl", title="Owl")
         w.drain(60)
         w._stop_filer()
+        owl = next(p for p in notes(bundle) if "owl" in p.read_text(encoding="utf-8"))
         report = w.purge(KEY)
-        assert report is not None and report.pending == [] and left and left[0] > 0.5  # the wait was not used up by the files
+        deleted = w.delete_note(owl.relative_to(bundle).as_posix())
+        assert report is not None and report.pending == ["journal"] and deleted.pending == ["journal"]
+        assert seals == [] and leftovers(bundle, SECRET) and len(pending(w)) == 2
     finally:
         w.close()
+    assert len(seals) <= 2 and leftovers(bundle, SECRET, "owl hunts") == []
 
 
 def test_an_ordinary_purge_says_its_files_are_done_and_nobody_scans_for_the_key(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -672,14 +691,14 @@ def test_an_ordinary_purge_says_its_files_are_done_and_nobody_scans_for_the_key(
         w.remember(TEXT, key=KEY, title=TITLE)
         w.drain(60)
         report = w.purge(KEY)  # the filer of this process holds the lease: it writes `O`
-        assert report is not None and report.pending == [] and scans["n"] == 0
+        assert report is not None and report.pending == ["journal"] and complete(w) and scans["n"] == 0
         fresh = F.Hub(bundle)  # what another process reads: the mark is in the journal, carried with the tombstone
         fresh.refresh()
         assert next(t.forget for t in fresh.entries.values() if t.forget is not None).get("files") is True
         fresh.journal.close()
         w._stop_filer()
         w._journal().journal.append_entry("", state={"forget": {"kh": F.key_hash("k:gone")}})  # cut before its files: no mark
-        w._finish_others("")  # what the next purge does with the tombstones of other keys
+        w._finish_journal()  # what the wiki's close, or the next filer, does with the tombstones left open
         assert scans["n"] == 1 and not pending(w)  # only the purge that was cut is scanned for
     finally:
         w.close()

@@ -304,13 +304,16 @@ class Wiki:
     def close(self) -> None:
         """Stop the filer of this wiki (the section it is in is let to end; an entry it is still preparing, before the wiki's lock, is
         not waited for and nothing of it is written: the queue is not emptied, what is queued is filed by the next wiki or process that
-        drains), refuse new entries, and release the models' connections (a model passed in is closed only if it made its own client).
-        Can be called again."""
+        drains), complete the tombstones left open in the journal when this process can take the lease (what a delete or a purge of a
+        process with no filer leaves to it: the seal and the reuse of the segments), refuse new entries, and release the models'
+        connections (a model passed in is closed only if it made its own client). Can be called again."""
         if self._closed:
             return
         self._closed = True
         self._stop_filer()
         if self._hub is not None:
+            with contextlib.suppress(Exception):  # what is left is completed by the next holder of the lease
+                self._finish_journal()
             release(self._hub)
             self._hub = None
         self._search.close()
@@ -1901,11 +1904,12 @@ class Wiki:
         return tomb
 
     def _close_journal(self, tomb: str | None, deleted: Deleted) -> None:
-        """Once the section that deleted committed: the journal sealed and reused for the tombstone of `_mark_journal`, now if this
-        process can take the lease; else the filer of the process that holds it does it at its next look, and `deleted.pending` says
-        "journal". Nothing waits for a lease."""
-        if tomb is not None and not self._close_forget(tomb, True, 0.0):
+        """Once the section that deleted committed: the journal is sealed and reused for the tombstone of `_mark_journal` by the filer of
+        the process that holds the lease (within `filer.FORGET_GROUP`, with the other deletes of the run), or, in a process with no
+        filer, when its wiki closes (`_finish_journal`); never in the call, which says "journal" in `deleted.pending`."""
+        if tomb is not None:
             deleted.pending.append("journal")
+            self._hand_over()
 
     @by_author
     def delete_folder(self, path: str, *, author: str | None = None) -> Deleted:
@@ -1979,17 +1983,18 @@ class Wiki:
         filed into: the key a `remember` was given (its origin is "remember::<key>", which purge takes as well), or, without one,
         "text:<sha256 of the text>", which takes out the raw copies of that text saved with no origin.
         A tombstone, durable before anything is deleted, holds the hash of the key, never the key; the segments of the journal that
-        held the entries, and the records of the filings, are zeroed, and the undo log is zeroed whole. When the report says
-        `journal: "done"` the text of the document is in no file of the wiki's folder (what the disk's own firmware keeps of blocks
-        written before is not in reach of a file). The purge waits `FORGET_WAIT` seconds in all, whatever it waits for (the wiki's lock
-        in each of its sections and in the filing again, the index, the vectors, the filer of another process); the work of its sections
-        does not count, the look at the index and the closing of the journal count whole (they are short). Not in it, rare: an index file
-        never built whole or of another schema, which the purge builds or makes again as a search would.
-        What it could not do in that time is in `pending`, and the process that holds the journal's lease finishes it at its next look (a
-        process that dies before is taken up by the next one, and a purge of any key takes it up when nobody files): `"files"` another
-        writer held the wiki all along, only the tombstone is written and nothing else is done yet; `"undo"` the undo log is not zeroed;
-        `"journal"` the filer of another process has not finished; `"index"` a reader or a writer of another process held the index or
-        the vectors.
+        held the entries, and the records of the filings, are zeroed, and the undo log is zeroed whole. The journal's part (the seal, the
+        reuse of its segments, `O`) is never done in the call: `pending` always says `"journal"`, and the filer of the process that holds
+        the journal's lease does it at its next look, or, in a process with no filer, this wiki when it closes (`close`). Once it is done
+        the text of the document is in no file of the wiki's folder (what the disk's own firmware keeps of blocks written before is not
+        in reach of a file). The purge waits `FORGET_WAIT` seconds in all, whatever it waits for (the wiki's lock in each of its
+        sections and in the filing again, the index, the vectors); the work of its sections does not count, the look at the index counts
+        whole (it is short). Not in it, rare: an index file never built whole or of another schema, which the purge builds or makes
+        again as a search would.
+        What it could not do in that time is in `pending` too, and whoever completes the journal finishes it (a process that dies before
+        is taken up by the next one): `"files"` another writer held the wiki all along, only the tombstone is written and nothing else
+        is done yet; `"undo"` the undo log is not zeroed; `"index"` a reader or a writer of another process held the index or the
+        vectors.
 
         With `dry_run` nothing is changed: the report says what would go and what would be filed again. If filing the others
         again stops (a model failing, or the wiki's lock not coming in the wait) the report has `stopped` and `errors`: their old raw
@@ -2017,7 +2022,8 @@ class Wiki:
             hub = self._journal()
             kh = _filer.key_hash(_entry_key(key))
             left = next((t for t in hub.forgets() if t.forget is not None and t.forget.get("kh") == kh), None)  # a purge cut before
-            if not queued and not self._raws_of(key) and left is None:
+            # a purge of the key whose files are done already leaves nothing to do here: its journal is the filer's (or the close's)
+            if not queued and not self._raws_of(key) and (left is None or left.forget.get("files")):
                 return None
             tomb: list[str] = []
 
@@ -2059,30 +2065,43 @@ class Wiki:
                     hub.files_done.add(tomb[0])
                 with waits.wait() as wait:
                     index_done = self._search.forget(self.store, wait)  # and the vectors' journal is cut
-                with waits.wait() as wait:
-                    closed = self._close_forget(tomb[0], index_done and wiped, wait)
-                report.pending = [*([] if wiped else ["undo"]), *([] if closed else ["journal"]), *([] if index_done else ["index"])]
-                self._finish_others(tomb[0], waits)  # the tombstone stays open while anything is pending: the filer finishes it
+                # the journal (seal, reuse, `O`) is the filer's, as for a delete: the tombstone is durable, the call does not pay the seal
+                report.pending = [*([] if wiped else ["undo"]), "journal", *([] if index_done else ["index"])]
+                self._hand_over()
                 return report
 
-    def _finish_others(self, done_id: str, waits: WaitBudget | None = None) -> None:
-        """The tombstones of other keys left open (a purge cut, a reader that held the index), completed here when the lease is free: a
-        wiki with no filer (the command line, `ingest` only) completes them at its next purge, within what is left of its wait."""
+    def _hand_over(self) -> None:
+        """A tombstone was written: the filer of this process, if one runs, looks at it now; the filer of another process that holds the
+        lease sees it at its next look; with none, this wiki completes it when it closes (`_finish_journal`)."""
         hub = self._journal()
         hub.refresh()
-        others = [t for t in hub.forgets() if t.id != done_id]
-        if not others:
-            return
+        if hub.filer is not None and hub.filer.is_alive() and not hub.filer.stopping:
+            hub.filer.kick()
+        hub.notify()
+
+    def _finish_journal(self) -> bool:
+        """The tombstones left open in the journal (deletes and purges whose closing is the filer's, a purge cut, a reader that held the
+        index), completed here when the lease is free, as the filer would: what a process with no filer (the command line, a script)
+        wrote is sealed before it goes. Whether none is left open."""
+        hub = self._journal()
+        hub.refresh()
+        if not hub.forgets():
+            return True
         lease = FileLock(self.store.root / J.JOURNAL_DIR / "filer.lock")
         if not lease.try_acquire():
-            return  # the filer that holds it completes them
+            return False  # the filer that holds it completes them
         try:
-            for t in others:
-                self._finish_forget(t, waits)
-        except LockBusy:  # the wait is over: the rest at the next look
+            for t in list(hub.forgets()):
+                hub.refresh()
+                now = hub.entries.get(t.id)
+                if now is not None and not now.done:
+                    self._finish_forget(now)
+        except LockBusy:  # the rest at the next look of a filer
             pass
         finally:
             lease.release()
+        hub.refresh()
+        return not hub.forgets()
 
     def _queued(self, key: str) -> list[_filer.Entry]:
         hub = self._journal()
@@ -2119,30 +2138,6 @@ class Wiki:
         except LockBusy:
             return False
         return True
-
-    def _close_forget(self, tomb_id: str, complete: bool, wait: float) -> bool:
-        """Seal and reuse the journal for a tombstone, with the lease: now if it is free, else the filer that holds it does it, and this
-        waits for its `O` at most `wait` seconds. `complete` false (the index or the undo log is not empty yet): the journal is reused if
-        the lease is free now, nobody is waited for, and `O` is the filer's. Whether the journal holds nothing of it any more."""
-        hub = self._journal()
-        lease = FileLock(self.store.root / J.JOURNAL_DIR / "filer.lock")
-        deadline = time.monotonic() + (wait if complete else 0.0)
-        while True:
-            hub.refresh()
-            tomb = hub.entries.get(tomb_id)
-            if tomb is None or tomb.done:
-                return True
-            if lease.try_acquire():
-                try:
-                    return _filer.close_forget(hub, tomb, complete=complete)
-                finally:
-                    lease.release()
-            if hub.filer is not None:
-                hub.filer.kick()
-            if time.monotonic() >= deadline:
-                return False
-            with hub.cond:
-                hub.cond.wait(_filer.IDLE_POLL)
 
     def _finish_forget(self, tomb: _filer.Entry, waits: WaitBudget | None = None) -> bool:
         """The filer holds the lease and found a tombstone with no `O` (a purge that another process left pending, or that died): what the

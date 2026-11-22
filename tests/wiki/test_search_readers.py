@@ -578,7 +578,7 @@ def test_the_state_a_reader_takes_from_recent_is_the_one_a_new_read_of_the_file_
 
 def test_a_purge_leaves_no_name_of_the_note_in_any_file_with_an_index(tmp_path: Path) -> None:
     """B11: `recent` names rows by id, never by path: the path of a purged note (its title) is in no file of the wiki after the purge."""
-    from tests.wiki.test_purge_journal import KEY, TEXT, TITLE, disk
+    from tests.wiki.test_purge_journal import KEY, TEXT, TITLE, complete, disk
     from tests.wiki.test_remember import make, notes
 
     bundle = tmp_path / "wiki"
@@ -589,7 +589,7 @@ def test_a_purge_leaves_no_name_of_the_note_in_any_file_with_an_index(tmp_path: 
         w.search("falcon", k=5)  # the index is built
         name = Path(str(notes(bundle)[0])).stem
         report = w.purge(KEY)
-        assert report is not None and report.pending == []
+        assert report is not None and report.pending == ["journal"] and complete(w)
         assert name.encode() not in disk(bundle)
     finally:
         w.close()

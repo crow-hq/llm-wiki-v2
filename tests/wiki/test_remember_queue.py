@@ -488,7 +488,7 @@ def test_a_purge_is_never_held_by_a_full_queue(bundle: Path, monkeypatch: pytest
         t = time.monotonic()
         report = w.purge("secret-1")
         assert time.monotonic() - t < 5.0
-        assert report is not None and report.entries == 1 and not report.pending
+        assert report is not None and report.entries == 1 and report.pending == ["journal"]  # sealed by the close below
         assert not [h for h in w.search("zq77secret", 8)]
         w.remember("topic: a-3\nthree", timeout=0.5)  # its place is free again
     finally:

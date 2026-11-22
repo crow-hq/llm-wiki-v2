@@ -69,16 +69,20 @@ def _wiki_of_this_code(root: Path) -> None:
         w.remember("topic: birds-3\nThe swan sleeps on the lake.", key="k:3")
         w.drain(60)
         w.search("heron")
-        w.purge("k:3")  # a log line purged in place, a tombstone completed
+        w.purge("k:3")  # a log line purged in place, a tombstone completed (by the filer, or at the close)
         w._stop_filer()
-        hub = w._journal()
+        w.remember("topic: birds-4\nThe crow keeps a queued entry.", key="k:4")  # queued: no filer
+    finally:
+        w.close()  # completes the tombstones open: the one left open is written after it, as a process that died would leave it
+    hub = F.Hub(root)
+    try:
+        hub.refresh()
         tomb = hub.journal.append_entry("", state={"forget": {"kh": F.key_hash("k:none")}})  # a tombstone left open
         hub.journal.append(J.T_FILED, {"id": tomb.id, "forgot": ["0123456789abcdef"]})  # a copy let through, named on it
         hub.refresh()
         F.carry(hub, hub.entries[tomb.id])  # its copy by an ordinary reuse, with the segment of the original (`seg`)
-        w.remember("topic: birds-4\nThe crow keeps a queued entry.", key="k:4")  # queued: no filer
     finally:
-        w.close()
+        hub.journal.close()
     assert any((root / ".llmw2" / "cache").glob("search-v*.sqlite")) and any((root / ".llmw2" / "journal").glob("*.wal"))
 
 

@@ -536,6 +536,8 @@ def _purge(wiki: Wiki, args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if "journal" in done.pending and wiki._finish_journal():  # a one-off call: the journal is sealed now, before it says what is left
+        done.pending.remove("journal")
     if args.json:
         print(json.dumps(done.to_dict(), indent=2))
     else:

@@ -83,17 +83,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a `remember` is `Receipt.key`: the key it was given (its raw copy's origin, "remember::<key>", is taken as well) or, without one,
   "text:<sha256 of the text>", which now also takes out the raw copies of that text saved with no origin. Before anything is deleted
   a tombstone is made durable in the journal, with the hash of the key and never the key; after the files, the undo log is zeroed
-  whole (`txn.wipe`), the segment of the journal in use is sealed and every segment before the next one is reused (zeroed, what is
-  not done in it copied forward first), and an `O` record completes the tombstone. The vectors of texts no longer in the wiki go
-  in the same purge (their pages zeroed). `Purged.entries` counts the entries forgotten and `Purged.pending` is empty, or names
-  what still holds some of it: `journal` when another process holds the journal's lease and has not reused its segments within
-  `FORGET_WAIT` (30 s, one wait in all), `index` when a reader of another process holds the WAL of the search index as long. The
-  filer completes either at a later look (its delay doubles, as for an entry that failed), a purge cut by a crash is taken up the
-  same way, from the hash (the raw copies still there say which key it was; only when the tombstone does not say its files were
-  done, so an ordinary purge pays no scan of the raw copies), and any later purge completes the tombstones of every
-  key left open when the lease is free, so a wiki with no filer completes them too. `llmwiki2 purge` prints the entries forgotten
-  and exits with 3 when something is pending. After a purge that is done, the text of the document is in no file of the wiki's
-  folder; what a disk keeps of blocks written before is out of reach of a file and is not promised. The first purge of a wiki that
+  whole (`txn.wipe`), and the vectors of texts no longer in the wiki go in the same purge (their pages zeroed). The journal's part,
+  the seal of the segment in use, the reuse of every segment before the next one (zeroed, what is not done in it copied forward
+  first) and the `O` record that completes the tombstone, is never done in the call: the filer of the process that holds the
+  journal's lease does it at its next look, and a process with no filer (a script, the command line) does it when its `Wiki`
+  closes, if the lease is free. So the call does not pay the seal, nor the segment made in its place (16 MiB of zeros on Windows,
+  the first time), and the text stays in the journal until then (a moment with a filer running; until the close without one; with a
+  process that dies first, until the next filer). `Purged.entries` counts the entries forgotten and `Purged.pending` names what
+  still holds some of it: always `journal`, and `index` when a reader of another process holds the WAL of the search index for
+  the whole `FORGET_WAIT` (30 s, one wait in all). The filer completes at a later look what it could not (its delay doubles, as
+  for an entry that failed), a purge cut by a crash is taken up the same way, from the hash (the raw copies still there say which
+  key it was; only when the tombstone does not say its files were done, so an ordinary purge pays no scan of the raw copies), and
+  a purge of a key whose files are done already does nothing more and returns None. `llmwiki2 purge` completes the journal
+  before it prints (a one-off call), prints the entries forgotten and exits with 3 when something is still pending. After a purge
+  whose journal is completed, the text of the document is in no file of the wiki's folder; what a disk keeps of blocks written before is out of reach of a file and is not promised. The first purge of a wiki that
   never used `remember` makes its journal (three segments, 48 MiB of disk, once: space, not wear that comes again). The release
   before this one does not know the journal: it leaves `.llmw2/journal/` alone, and its `purge` does not forget the entries queued
   there, which this version files later (see "Upgrading from 1.x"); a tombstone left open is completed by the next purge or filer of
@@ -158,9 +161,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   move, so a note moved or split since its filing is found all the same. The tombstone that asks for it is made durable inside the
   section that deletes, before it deletes, as a purge's: a process that dies once that section committed leaves it to the next one,
   which seals and reuses the journal (one that dies before costs a seal, never a text kept). It costs a flush of the journal inside
-  the wiki's lock at each delete of a note filed from the journal: milliseconds on an SSD, more on a slow disk; the call
-  waits for no lease: when another process holds the journal's lease, its filer seals and reuses at its next look, and the result says
-  so in a new key, `pending: ["journal"]`, as `Purged.pending` does (the memory's `delete_note` returns it too). Effects: after such a
+  the wiki's lock at each delete of a note filed from the journal: milliseconds on an SSD, more on a slow disk. The seal and the
+  reuse are never done in the call: the result says so in a new key, `pending: ["journal"]`, as `Purged.pending` does (the
+  memory's `delete_note` returns it too); the filer of the process that holds the lease does them, and a process with no filer when
+  its `Wiki` closes. The text stays in the journal up to about a second after the answer with a filer running (`FORGET_GROUP`
+  below), until the close without one. Effects: after such a
   delete the ids of the entries already filed are gone with their segments, so `read_note("pending:<id>")` and `forget(id)` no longer
   find them (`forget` by key always does); each seal takes a new segment (16 MiB of zeros written on Windows, `fallocate` on Linux),
   and a reuse zeroes the old ones: count it with the purges in the wear of the disk. The deletes of a run share a seal: the filer lets
@@ -311,8 +316,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   someone) is not trusted and built again. The release before ignores the file. `where` is a filter, not an access control.
   On Windows the folder of a wiki cannot be deleted while a `Wiki` that searched it is open: `close()` it first.
 - A purge waits `FORGET_WAIT` (30 s) in all, whatever it waits for: the wiki's lock in each of its sections and in the filing again of
-  the documents of a fused note, the locks of the search index and of the vectors, the readers of the index's WAL, the filer of another
-  process; the work does not count. What is not done in that time is said, not waited for: `Purged.pending` also names `files` (another
+  the documents of a fused note, the locks of the search index and of the vectors, the readers of the index's WAL (the journal is not
+  waited for: the filer completes it); the work does not count. What is not done in that time is said, not waited for: `Purged.pending` also names `files` (another
   writer held the wiki all along: only the tombstone is written, and the filer or the next purge does the rest from its hash, as for a
   purge cut right after it) and `undo` (the undo log is not zeroed yet); the documents not filed again in time are in `stopped` and keep
   their raw copies, as when a model fails. On Windows a `FileLock` wait with a limit is in the kernel's queue with the waits with no

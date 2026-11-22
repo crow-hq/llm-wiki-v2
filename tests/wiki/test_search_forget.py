@@ -52,7 +52,7 @@ def test_after_a_purge_no_file_of_the_cache_holds_a_word_or_the_title_of_the_not
         assert w.search(WORD) and WORD.encode() in cache_bytes(bundle)
         text_key = F.TEXT_KEY + hashlib.sha256(f"topic: odd-1\nThe {WORD} sleeps under the stone.".encode()).hexdigest()
         report = w.purge(text_key)
-        assert report is not None and report.pending == [] and len(report.notes) == 1
+        assert report is not None and report.pending == ["journal"] and len(report.notes) == 1
         data = cache_bytes(bundle)
         assert WORD.encode() not in data and b"Odd stone note" not in data
         assert w.search("rivers") and all("odd" not in h.path for h in w.search(WORD))
@@ -76,7 +76,7 @@ def test_a_reader_that_holds_the_wal_makes_the_purge_say_the_index_is_pending(bu
         t0 = time.monotonic()
         report = w.purge(F.TEXT_KEY + hashlib.sha256(text.encode()).hexdigest())
         took = time.monotonic() - t0
-        assert report is not None and report.pending == ["index"] and took < F.FORGET_WAIT + 5
+        assert report is not None and report.pending == ["journal", "index"] and took < F.FORGET_WAIT + 5
         reader.execute("COMMIT")
         reader.close()
         assert w._search.forget(w.store, 1.0)  # the next checkpoint empties it
