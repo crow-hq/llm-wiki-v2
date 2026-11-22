@@ -41,7 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thread of the process (the filer, started by the first `remember`, `drain` or `_start_filer`; `Wiki()` starts none) files it with the
   same steps as `ingest`. The `Receipt` (`id`, `key`, `at`, `state`, `note`, `wait(timeout)`) is read from the journal at each access;
   `status()` is a dict with a fixed set of keys and no `check()`; `drain(timeout)` returns when what was written before the call is done
-  (`TimeoutError`, `FilerError`); `close()` stops the filer. `QueueFull` and `DiskFull` refuse an entry before anything is written. The key
+  (`TimeoutError`, `FilerError`); `close()` stops the filer: it waits for the section the filer is in (with real models, the routing
+  and the writing of a note happen there), not for an entry it is still preparing (the summary, before the wiki's lock): nothing of
+  that one is written, not even when its model call ends after the close, and it stays first for the next holder of the lease, which
+  files it once; the filer's thread ends with that call, holding the lease until then. So in a process that lives on after the close
+  (a wiki opened again, a server that swaps its wiki) the queue does not move until that call ends or times out, and a summary that
+  comes back after the close is thrown away: its cost is spent for nothing. `QueueFull` and `DiskFull` refuse an entry before anything is written. The key
   is the one given, or `text:<sha256 of the text>` (so a retry of the same text is the same memory, and a retry after a crash finds the text
   already filed: this is the one difference from `ingest`, which does not deduplicate a text with no origin). `at` (a datetime with a
   time zone) is kept as `event_at`, a top-level key of the raw copy's front matter, in UTC with microseconds; it is outside the hash, a

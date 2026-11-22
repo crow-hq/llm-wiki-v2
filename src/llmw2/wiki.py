@@ -302,9 +302,10 @@ class Wiki:
             self.classifier = Classifier(cfg.classifier, self.tracker, cache=cache)
 
     def close(self) -> None:
-        """Stop the filer of this wiki (the section it is in is let to end: the queue is not emptied, what is queued is filed by the next
-        wiki or process that drains), refuse new entries, and release the models' connections (a model passed in is closed only if it
-        made its own client). Can be called again."""
+        """Stop the filer of this wiki (the section it is in is let to end; an entry it is still preparing, before the wiki's lock, is
+        not waited for and nothing of it is written: the queue is not emptied, what is queued is filed by the next wiki or process that
+        drains), refuse new entries, and release the models' connections (a model passed in is closed only if it made its own client).
+        Can be called again."""
         if self._closed:
             return
         self._closed = True
@@ -661,8 +662,9 @@ class Wiki:
         def source(ctx: StepContext) -> Source:
             return Source(text, title, None, origin, fields, event_at=event_at)
 
-        with self._preparing:
-            ready = self._prepare(source)
+        filer = hub.filer if hub.filer is threading.current_thread() else None
+        with self._preparing, (filer.preparing_phase() if filer is not None else contextlib.nullcontext()):
+            ready = self._prepare(source)  # a close meanwhile does not wait for it (`Stopped`: nothing of the entry is written)
         if isinstance(ready, IngestResult):
             return self._settle(ready, filing, self._raw_of(origin))
         return self._file(ready, filing=filing)

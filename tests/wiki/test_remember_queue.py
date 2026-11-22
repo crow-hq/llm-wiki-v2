@@ -314,6 +314,57 @@ def test_a_caller_never_waits_past_its_timeout_for_the_admission_another_writer_
         w.close()
 
 
+def test_close_does_not_wait_for_an_entry_the_filer_is_still_preparing(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The filer is in the model calls of an entry, before the wiki's lock (10 s with real models): `close` returns at once, nothing of
+    the entry is written, not even when those calls end after it, and the next process files it once."""
+    real = Wiki._prepare
+    started, let_go = threading.Event(), threading.Event()
+
+    def slow(self: Wiki, source: Any) -> Any:
+        started.set()
+        let_go.wait(10)
+        return real(self, source)
+
+    monkeypatch.setattr(Wiki, "_prepare", slow)
+    w = make(bundle)
+    try:
+        w.remember("topic: a-1\nthe entry being prepared")
+        assert started.wait(10)
+        t = time.monotonic()
+        w.close()
+        took = time.monotonic() - t
+    finally:
+        let_go.set()
+    time.sleep(0.5)  # the preparation ends after the close: it must write nothing
+    assert took < 1.0, took
+    assert len(open_entries(bundle)) == 1 and not list(bundle.glob("a/about-*.md"))
+    monkeypatch.setattr(Wiki, "_prepare", real)
+    again = make(bundle)
+    try:
+        again.drain(30)
+        assert open_entries(bundle) == [] and len(list(bundle.glob("a/about-*.md"))) == 1
+    finally:
+        again.close()
+
+
+def test_a_filer_left_behind_that_ends_leaves_the_filing_of_the_one_in_its_place(bundle: Path) -> None:
+    """A filer thread a close did not wait for ends after another filer of the process took its place: what that one is filing
+    (`status`'s `filing`) stays."""
+    w = make(bundle)
+    hub = w._journal()
+    try:
+        w._stop_filer()
+        old = F.Filer(hub, w)  # left behind: not the hub's filer any more
+        old.stopping = True
+        hub.filing = "the-entry-of-the-filer-in-place"
+        old.start()
+        old.join(10)
+        assert hub.filing == "the-entry-of-the-filer-in-place"
+    finally:
+        hub.filing = None
+        w.close()
+
+
 # -- the limits hold when callers pass the check together -----------------------------------------------------------------------
 
 

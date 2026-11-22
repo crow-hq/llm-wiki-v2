@@ -42,6 +42,7 @@ import shutil
 import threading
 import time
 from collections import Counter, OrderedDict, deque
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -145,6 +146,10 @@ class Pending:
 
 class Forgotten(FilerError):
     """The entry being filed was forgotten by a purge meanwhile: nothing of it is written."""
+
+
+class Stopped(FilerError):
+    """The filer was stopped (`Wiki.close`) while it prepared an entry: nothing of it is written, and it stays first in the journal."""
 
 
 @dataclass
@@ -633,14 +638,19 @@ class Hub:
             self.filer.start()
 
     def stop_filer(self, wiki: Wiki | None = None, timeout: float = 120.0) -> None:
-        """Stop the thread (the one of `wiki`, when given) and wait for the section it is in: the queue is not emptied."""
+        """Stop the thread (the one of `wiki`, when given) and wait for the section it is in: the queue is not emptied. An entry it is
+        still preparing (the model calls before the wiki's lock) is not waited for: it writes nothing of it (`Filer.preparing_phase`),
+        and the entry stays first in the journal, filed by the next holder of the lease."""
         with self.cond:
             f = self.filer
         if f is None or (wiki is not None and f.wiki is not wiki):
             return
         f.stop()
         if f is not threading.current_thread():
-            f.join(timeout)
+            with f.phase:
+                preparing = f.preparing
+            if not preparing:
+                f.join(timeout)
 
     def nobody_files(self) -> bool:
         """No filer of this process is running, and nobody else holds the lease: what is queued will not be filed by itself."""
@@ -787,6 +797,9 @@ class Filer(threading.Thread):
         self.wiki = wiki
         self.stopping = False
         self.state = "idle"
+        # while it prepares an entry (the model calls before the wiki's lock) a stop does not wait for it: it writes nothing of it
+        self.phase = threading.Lock()
+        self.preparing = False
         self.kicked = threading.Event()  # drain: do not wait out the delay of a retry
         self.dirty = False  # entries were closed since the segments were last looked at for reuse
         self.forget_at = 0.0  # a tombstone left pending is looked at again after this time (`time.monotonic`)
@@ -802,6 +815,27 @@ class Filer(threading.Thread):
 
     def kick(self) -> None:
         self.kicked.set()
+
+    @contextlib.contextmanager
+    def preparing_phase(self) -> Iterator[None]:
+        """Around the preparation of an entry, which writes nothing: a stop meanwhile (`Hub.stop_filer`) does not wait for it, and when it
+        ends, or fails (a model the closed wiki let go), `Stopped`: nothing of the entry is written."""
+        with self.phase:
+            if self.stopping:
+                raise Stopped("the filer was stopped before it prepared the entry")
+            self.preparing = True
+        try:
+            yield
+        except Exception as e:
+            with self.phase:
+                self.preparing = False
+                if self.stopping:
+                    raise Stopped("the filer was stopped while it prepared the entry") from e
+            raise
+        with self.phase:
+            self.preparing = False
+            if self.stopping:
+                raise Stopped("the filer was stopped while it prepared the entry")
 
     def run(self) -> None:
         """In a context of its own, empty: a thread that inherits its starter's context (a copy, or Python 3.14) would inherit
@@ -823,7 +857,8 @@ class Filer(threading.Thread):
         finally:
             lease.close()
             self.state = "none"
-            self.hub.filing = None
+            if self.hub.filer is self:  # a thread left behind by a close ends after another took its place: that one's filing stays
+                self.hub.filing = None
             self.hub.notify()
 
     def _sleep(self, seconds: float) -> None:
@@ -881,6 +916,8 @@ class Filer(threading.Thread):
                     self._lot.enter_context(self.wiki.store.session())
                 self._in_lot += 1
                 self._file(entry)
+                if self.stopping:
+                    return  # a wiki closed meanwhile: nothing more is done with its journal
                 if self._in_lot >= PLAN_BATCH:
                     self._end_lot()
                 if self.dirty:
@@ -918,6 +955,8 @@ class Filer(threading.Thread):
         self.state = "filing"
         try:
             self.wiki._work_on(entry, self)
+        except Stopped:
+            return  # closed while it prepared: nothing written, the entry stays first for the next holder of the lease
         except (InputError, StepError, ReplyInvalid) as e:
             if isinstance(e, NoteChanged):
                 self._retry(entry, e, quick=True)
@@ -926,7 +965,8 @@ class Filer(threading.Thread):
         except Exception as e:  # a model that is down, a spending cap, a disk that is full: the entry stays first
             self._retry(entry, e)
         finally:
-            hub.filing = None
+            if hub.filer is self:
+                hub.filing = None
             hub.notify()
 
     def done(self, entry: Entry) -> None:
