@@ -534,6 +534,36 @@ def test_the_calls_of_a_process_that_name_no_author_are_one_writer(bundle: Path,
         server.close()
 
 
+def test_a_share_refusal_gives_the_time_until_the_writer_gets_a_place_not_the_time_to_empty_the_queue(
+    bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With a limit of 64 and a filer of 0.5 entries/s: a job alone that keeps 56 gets a place again when one entry goes (2 s), and one
+    that keeps 8 at the head of a queue of 60 when its first one goes (2 s), not when the whole queue does (112 s, 120 s)."""
+    monkeypatch.setattr(F, "QUEUE_LIMIT", 64)
+    job = another_process(bundle)
+    try:
+        monkeypatch.setattr(job._journal(), "pace", lambda: 0.5)
+        kept, refusal = fill(job, "job", 100)
+        assert kept == 56 and refusal is not None and refusal.reason == "share"
+        assert refusal.retry_after_s == 2.0
+    finally:
+        job.close()
+
+
+def test_a_share_refusal_of_a_writer_whose_entries_lead_the_queue_counts_its_own(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(F, "QUEUE_LIMIT", 64)
+    job = another_process(bundle)
+    try:
+        monkeypatch.setattr(job._journal(), "pace", lambda: 0.5)
+        assert fill(job, "job", 8) == (8, None)  # at the head of the queue, and busy from now on
+        other_writer(bundle, 52)  # 60 in all: under the limit, over the 56 places the job may fill
+        kept, refusal = fill(job, "job-more", 1)
+        assert kept == 0 and refusal is not None and refusal.reason == "share"
+        assert refusal.retry_after_s == 2.0  # its first entry goes first; 5 of anyone would be 10 s
+    finally:
+        job.close()
+
+
 def test_a_process_whose_entries_are_filed_gets_places_again(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(F, "QUEUE_LIMIT", 64)
     job = another_process(bundle)

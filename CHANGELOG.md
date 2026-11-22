@@ -324,8 +324,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   another MCP client, an import), or several already busy, leave 32 places to a person, who needs a few, in another process or in the
   same one (a server, an app) when the two name different authors; a writer alone (a robot) still has 224. A process counts the entries
   each of its writers wrote that are open in what it read of the journal, in memory: nothing new is written in the journal. A job alone
-  now stops at 224: with the default wait it gets `QueueFull`, whose message names the writer that keeps that many; `timeout=None`
-  waits for its place. Limits: the author is declared, not verified, so the share guards against a writer that fills the queue by
+  now stops at 224: with the default wait it gets `QueueFull`, whose message names the writer that keeps that many, and whose
+  `retry_after_s` is the time until that writer gets a place again (the queue under its 224, or its own entries filed down under 32,
+  whichever comes first, at the filer's pace), not the time to empty the whole queue; `timeout=None` waits for its place. Limits: the author is declared, not verified, so the share guards against a writer that fills the queue by
   mistake, not against one that means to: a job that names another author for each entry stays a writer that keeps few and fills the
   queue to the limit. A person and a job of one process that name none, or the same one, are not told apart, and so are HTTP clients
   that name none and send the same `User-Agent` (over MCP the name falls back to it when the session kept no client name, the usual

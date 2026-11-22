@@ -577,6 +577,17 @@ class Hub:
         queue = self.open_n + self.failed_n
         pace = self.pace()
         retry = round(max(1.0, queue / pace), 1) if pace and why != "stall" else None
+        if why == "share" and pace:
+            # the writer gets a place again as soon as the queue is under the places it may fill (k1 entries of anyone closed), or as soon
+            # as it keeps fewer than its share (the first of its own entries to go that far is own_k entries into the queue, which is
+            # filed in order): whichever comes first, not the whole queue
+            share = limit // 8
+            k1 = max(1, queue - (limit - share) + 1)
+            own = [i for i, e in enumerate(self.open_entries()) if self.mine.get(e.id) == writer]
+            k = len(own) - share + 1
+            own_k = own[k - 1] + 1 if 0 < k <= len(own) else None
+            need = k1 if own_k is None else min(k1, own_k)
+            retry = round(max(1.0, need / pace), 1)
         what = {
             "stall": f"no entry was filed for {STALL:g} s and nobody files: try again once the wiki is opened with models",
             "full": f"try again in about {retry:g} s" if retry is not None else "try again later",
