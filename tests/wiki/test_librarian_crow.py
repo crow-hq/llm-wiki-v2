@@ -20,7 +20,7 @@ from llmw2.agents.steps import CROW
 from llmw2.bundle.document import OKFDocument
 from llmw2.bundle.tree import Note
 from llmw2.errors import ModelError
-from tests.wiki.fakes import FakeClassifier, FakeLLM
+from tests.wiki.fakes import FakeClassifier, FakeLLM, step_of
 
 HERE, NEW, NONE = "Here", "New subfolder", "None of these"
 MODIFY, NEW_NOTE = "Modify", "New note"
@@ -83,7 +83,7 @@ def criteria(classifier: FakeClassifier, call: int) -> dict[str, str]:
 
 
 def noul_questions(classifier: FakeClassifier, op: str) -> list[str]:
-    return [q["instructions"] for o, _, qs in classifier.calls if o == op for q in qs.values()]
+    return [q["instructions"] for o, _, qs in classifier.calls for k, q in qs.items() if step_of(o, k) == op]
 
 
 def final_route(result: IngestResult) -> Decision:
@@ -438,7 +438,7 @@ def test_match_asks_one_noul_per_pool_note_and_the_best_wins(
 
     result = crow_wiki.ingest("Fruit got dearer.")
 
-    assert classifier.ops == ["route", "route", "match", "consolidate", "relate"]
+    assert classifier.ops == ["route", "route", steps_crow.JOINT_OP, "consolidate"]  # a new note: relate asked with the match
     assert len(noul_questions(classifier, "match")) == 3
     scores = {"fruit/apple.md": 0.7, "fruit/banana.md": 0.9, "fruit/cherry.md": 0.2}
     assert Decision("match", "classifier", "fruit/banana.md", 0.9, scores=scores) in result.decisions
@@ -451,7 +451,7 @@ def test_no_note_above_tau_ing_creates_a_new_note(crow_wiki: Wiki, llm: FakeLLM,
 
     result = crow_wiki.ingest("Fruit got dearer.")
 
-    assert classifier.ops == ["route", "route", "match", "relate"]
+    assert classifier.ops == ["route", "route", steps_crow.JOINT_OP]
     assert (result.action, result.note) == ("created", "fruit/fruit-prices.md")
     match = next(d for d in result.decisions if d.step == "match")
     assert (match.choice, match.confidence, match.scores["fruit/apple.md"]) == ("none", 0.45, 0.45)

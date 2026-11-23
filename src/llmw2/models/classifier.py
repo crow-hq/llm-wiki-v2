@@ -153,9 +153,12 @@ class Classifier(HttpModel):
 
 
 def _too_many_questions(e: ModelError) -> bool:
-    """Whether a server refused a request for holding more questions than it takes: "questions must contain 1-64 fields"."""
+    """Whether a server refused a request for holding more questions than it takes: "questions must contain 1-64 fields" (the
+    local server), "questions must be an object of 1..16 questions" (a hosted one)."""
     text = str(e).lower()
-    return "must contain 1" in text and "fields" in text  # the dash between the numbers varies: en dash, hyphen, escaped in JSON
+    if "must contain 1" in text and "fields" in text:  # the dash between the numbers varies: en dash, hyphen, escaped in JSON
+        return True
+    return "questions must be an object of 1.." in text
 
 
 # Seconds a test of the classifier waits: a local model loads on its first request, which takes longer than the timeout of

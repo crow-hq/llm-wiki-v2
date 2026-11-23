@@ -328,12 +328,13 @@ def crow_variant(name: str) -> CrowConfig:
     return CrowConfig(**{name: default + 1 if isinstance(default, int) else round(default / 2, 4)})
 
 
-@pytest.mark.parametrize("name", list(CrowConfig.model_fields))
+@pytest.mark.parametrize("name", [n for n in CrowConfig.model_fields if n != "joint_match_relate"])  # that one is in IRRELEVANT
 def test_decision_hash_changes_with_each_crow_threshold_beam_and_k(tmp_path: Path, name: str) -> None:
     assert digest(tmp_path, crow=crow_variant(name)) != digest(tmp_path)
 
 
 IRRELEVANT = {
+    "crow-joint-match-relate": {"crow": CrowConfig(joint_match_relate=False)},  # one request or two: the same questions, the same decisions
     "llm-api-key": {"llm": LLMConfig(api_key="another-secret")},
     "llm-base-url": {"llm": LLMConfig(base_url="https://gateway.test/v1")},
     "llm-timeout": {"llm": LLMConfig(timeout=7)},

@@ -459,6 +459,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed in between) or one that failed is asked again. The answers are kept for the document being filed only (for the note
   being looked at, in a routing audit). In the `remember` path of a wiki at the limit this is one call less for each note the
   limit sends elsewhere (3 to 4% of the classifier's calls on a corpus that fills the limit).
+- CROW asks the match and the See-also questions of a new note in one classifier request (`crow.joint_match_relate`, env
+  `OKF_JOINT_MATCH_RELATE`, on by default): `match` sends, with its own questions, the relate questions of the note the document
+  becomes if nothing is merged (the notes `relate` will be given, found as it finds them: the notes of the match and of the folder,
+  cut as it cuts them, and the notes sharing rare values with it, counted as they will be once it is written), and `relate` takes
+  those answers when it reads the same state (a new note's title, summary and body are the document's). A note the request did
+  not cover is asked in a request of its own, as is the whole `relate` of a merged note. One classifier call less for a new note;
+  with a hosted classifier its cost per document falls to about 0.85 of what it was (the state is sent once instead of twice). With
+  a small local classifier it saves calls but not time, so it can be turned off: `false` asks match and relate apart, as before,
+  with the same decisions. A request of the two kinds has op `match+relate` in the usage log, with the match questions under keys
+  `m*` and the relate questions under `r*`. A classifier that answers a question the same in any request takes the same decisions;
+  custom steps whose `match` or `relate` is not CROW's own ask as before. The setting is not part of the decision hash.
+- A hosted classifier that takes few questions per request ("questions must be an object of 1..16 questions") gets a longer
+  batch of Noul questions in halves until each part is taken, as the local server's "1-64 fields" refusal already did; before,
+  such a refusal sent the step to the LLM.
 
 ## [1.0.5] - 2026-11-17
 

@@ -245,6 +245,8 @@ class Librarian:
             route, pool, theirs, match = self._route_and_match(root, cand, read, planned)
             created: list[str] = []
             merging = match is not None and check_consolidate(steps.consolidate(ctx, match, cand))
+            if merging:
+                ctx.relate_ahead = None  # the merged note reads otherwise: its relate asks its own questions
             revised, archived = False, ""
             deviated: dict[str, float] | None = None
             if match is not None and merging:
@@ -346,6 +348,7 @@ class Librarian:
                 log.warning("relate failed for %s, no See-also links added: %s", note.rel, e)
                 ctx.decide("relate", "llm", "error")
                 related = []
+            ctx.relate_ahead = None  # the answers were for this note only
             related = related[: self.cfg.max_links]
             for other in related:
                 self.store.link(note, other)
@@ -396,7 +399,35 @@ class Librarian:
         mergeable = [n for n in pool if not fields_conflict(n.frontmatter.get("fields"), theirs)]
         if len(mergeable) < len(pool):  # a note whose fields differ from the document's on a shared key is not merged into
             ctx.decide("match", "code", f"{len(pool) - len(mergeable)} excluded by fields")
+        ctx.relate_ahead = self._relate_ahead(root, route, pool, cand)
         return route, pool, theirs, check_match(steps.match(ctx, mergeable, cand), mergeable)
+
+    def _relate_ahead(self, root: Folder, route: Route, pool: list[Note], cand: Candidate) -> steps_crow.RelateAhead | None:
+        """The notes `file` gives `relate` for the note the document becomes if nothing is merged, found as `file` finds them
+        but before the note is written: CROW's `match` asks their relate questions in its own request. None unless both steps
+        are CROW's own and `crow.joint_match_relate` is on."""
+        steps, ctx, cfg = self.steps, self.ctx, self.cfg
+        if not cfg.crow.joint_match_relate or steps.match is not steps_crow.match or steps.relate is not steps_crow.relate:
+            return None
+        folder = route.folder
+        opened = bool(route.create) or (route.new and ctx.can_create(folder))  # a folder opened for the note, with no note in it yet
+        rel = f"{folder.rel}/.to-be/.to-be.md" if opened else f"{folder.rel}/.to-be.md"  # a path no note has, in the note's folder
+        front = {"title": self.shown(cand.title).strip() or "Untitled", "description": self.shown(cand.summary)}
+        to_be = Note(folder.path / ".to-be.md", rel.lstrip("/"), front, cand.body, folder)
+        alone = opened and (cfg.link_scope == "folder" or folder.parent is None)  # in a folder, or an area, opened for it
+        test = within_area if cfg.link_scope == "root" else within_folder
+
+        def near(other: Note) -> bool:  # what `file` tests on the note once written
+            return not alone and test(to_be, other)
+
+        others = pool if opened else unique_objects([*pool, *folder.notes])
+        rare: list[Note] = []
+        if cfg.relate_rare_values:
+            allow = None if cfg.link_scope == "wiki" else near
+            rare = [n for n, _ in linking.rare_scores(root, to_be, {n.rel for n in others}, allow, ahead=True)]
+        if cfg.link_scope != "wiki":
+            others = [n for n in others if near(n)]
+        return steps_crow.RelateAhead(list(others), None if opened else folder.rel, rare=rare)
 
     def rehearse(self, prepared: Prepared, root: Folder) -> None:
         """What `file` would ask the models first for `prepared` on `root` (the route, its LLM fallback, the match, the consolidation),

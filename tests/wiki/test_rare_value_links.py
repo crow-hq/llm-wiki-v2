@@ -14,7 +14,7 @@ from llmw2.agents import steps_crow
 from llmw2.agents.linking import RARE_TOP, note_values, rare_scores
 from llmw2.agents.steps_classic import incoming_values
 from llmw2.bundle.tree import Folder, Note
-from tests.wiki.fakes import FakeClassifier, FakeLLM
+from tests.wiki.fakes import FakeClassifier, FakeLLM, step_of
 
 HERE = "Here"
 SUMMARIZE, ROUTE = "librarian/summarize", "librarian/route"
@@ -244,7 +244,7 @@ def seed(wiki: Wiki) -> None:
 
 
 def relate_questions(classifier: FakeClassifier) -> list[str]:
-    return [q["instructions"] for op, _, qs in classifier.calls if op == "relate" for q in qs.values()]
+    return [q["instructions"] for op, _, qs in classifier.calls for k, q in qs.items() if step_of(op, k) == "relate"]
 
 
 # These tests exercise the per-level routing, which handles "None of these": the flat Choice is left out.

@@ -106,6 +106,9 @@ class StepContext:
     # the classifier's answers to the flat routing Choice of the document being filed, by request (state, instructions, options):
     # `cap_roots` and `keep_folders` take the one `route` got for the same request instead of asking it again
     flat_answers: dict[tuple[str, str, tuple[tuple[str, str], ...]], ChoiceAnswer] = field(default_factory=dict, repr=False)
+    # the notes `relate` will be given if the document becomes a new note: CROW's `match` asks about them in its own request,
+    # and `relate` takes those answers for the same state and question (None: each step asks its own)
+    relate_ahead: crow.RelateAhead | None = field(default=None, repr=False)
 
     def ask_json(
         self, prompt: str, schema: type[T], *, reply_chars: int | None = None, language_of: str | None = None, **values: object
@@ -341,7 +344,7 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
     `summarize`, the size of the state routing reads (`state_chars`, `STATE_VERSION`), how much one
     call reads and how long a note may be (`effective_read_chars`, `effective_note_chars`, and `note_length` unless fixed),
     `SUMMARY_VERSION`, and `relate_rare_values`, `answer_conflicts` and `strict_new_folders` when switched off, `link_scope` and
-    `overflow_folder` when set. Keys, addresses, timeouts,
+    `overflow_folder` when set. Keys, addresses, timeouts, `crow.joint_match_relate`,
     attempts, other sizes, concurrency and logs do not change the decisions: not in it.
     """
     decisive = {
@@ -352,7 +355,7 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
         "temperature": cfg.llm.temperature,
         "seed": cfg.llm.seed,
         "pin_provider": cfg.llm.pin_provider,
-        "crow": cfg.crow.model_dump(),
+        "crow": cfg.crow.model_dump(exclude={"joint_match_relate"}),  # how many requests ask the questions decides nothing
         "fallback_menu_chars": crow.FALLBACK_MENU_CHARS,  # the menu limit is a constant outside the hashed step functions
         "match_top": crow.MATCH_TOP,  # so are the caps on the candidates of match and relate
         "relate_top": crow.RELATE_TOP,

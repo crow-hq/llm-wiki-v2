@@ -101,6 +101,7 @@ The **retrieval** steps (`Researcher.ask` = `select` then `answer`):
 | `beam` | `OKF_BEAM` | 2 | 2 | Ingestion: paths kept per uncertain routing step |
 | `k` | `OKF_K` | 8 | 5 | CROW retrieval: notes passed to the answer |
 | `rerank` | `OKF_RERANK` | true | true | CROW retrieval: the classifier reorders the search's notes after the first; `false` keeps the search's order, with no classifier call. For a small local classifier, on a wiki where the reordering does not help |
+| `joint_match_relate` | `OKF_JOINT_MATCH_RELATE` | true | true | Ingestion: for a new note, `match` asks the See-also questions of `relate` in its own request (one classifier call less per new note, the same decisions); `false` asks them apart, two requests. With a local classifier it saves calls but not time |
 | `max_notes` | `OKF_MAX_NOTES` | 8 | Classic retrieval: notes read per question (CROW reads `k`) |
 
 The batch window (`PLAN_BATCH`, 50), the split limit (`SPLIT_AT`, 12) and the plan's

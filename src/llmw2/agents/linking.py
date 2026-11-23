@@ -13,6 +13,7 @@ __copyright__ = (
 
 import math
 import re
+import threading
 import time
 from collections.abc import Callable
 
@@ -59,6 +60,8 @@ class _Index:
 
 
 _indexes: dict[str, _Index] = {}
+# one call of `rare_scores` at a time: the filer's section and the rehearsal of its next entry (another thread) both update the index
+_lock = threading.Lock()
 
 
 def _index_of(root: Folder) -> _Index:
@@ -82,15 +85,23 @@ def note_values(note: Note) -> frozenset[str]:
 
 
 def rare_scores(
-    root: Folder, note: Note, exclude: set[str], allow: Callable[[Note], bool] | None = None
+    root: Folder, note: Note, exclude: set[str], allow: Callable[[Note], bool] | None = None, *, ahead: bool = False
 ) -> list[tuple[Note, float]]:
     """The notes that share rare values with `note`, with their score: best first, at most `RARE_TOP`.
 
     `allow`, when given, keeps only the notes it accepts (so the best ones the caller may use fill the list).
+    `ahead`: `note` is not in the tree yet; the scores are the ones it gets once it is (its values counted, one note more).
 
     The values of the wiki are an inverted index kept between calls, so a call reads again only the notes that changed
     and looks only at the notes that hold a rare value of `note`.
     """
+    with _lock:
+        return _rare_scores(root, note, exclude, allow, ahead)
+
+
+def _rare_scores(
+    root: Folder, note: Note, exclude: set[str], allow: Callable[[Note], bool] | None, ahead: bool
+) -> list[tuple[Note, float]]:
     notes = root.all_notes()
     total = len(notes)
     index = _index_of(root)
@@ -105,12 +116,14 @@ def rare_scores(
     if len(index.held) != total:  # notes that are gone
         for rel in [r for r in index.held if r not in by_rel]:
             index.drop(rel)
+    extra = 1 if ahead else 0
+    total += extra
     cap = max(RARE_MIN_CAP, RARE_MAX_SHARE * total)
     own = index.held[note.rel][1] if note.rel in index.held else note_values(note)
-    mine = sorted(v for v in own if 0 < len(index.posting.get(v, ())) <= cap and not _YEAR.match(v))
+    mine = sorted(v for v in own if 0 < len(index.posting.get(v, ())) <= cap - extra and not _YEAR.match(v))
     hits: dict[str, list[float]] = {}
     for v in mine:
-        weight = math.log(total / len(index.posting[v]))
+        weight = math.log(total / (len(index.posting[v]) + extra))
         for rel in index.posting[v]:
             hits.setdefault(rel, []).append(weight)
     scored: list[tuple[Note, float]] = []

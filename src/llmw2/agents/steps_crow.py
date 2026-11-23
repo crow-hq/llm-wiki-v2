@@ -18,7 +18,7 @@ __copyright__ = (
 import logging
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from llmw2.agents import lexical
@@ -42,6 +42,7 @@ PASSAGE_CHARS = 600  # the passage of a note's body that the retrieval Noul read
 PASSAGE_STEP = 300  # passages start every this many characters
 MATCH_TOP = 24  # most notes `match` asks about: the folder's own first, then the ones closest to the document by BM25
 RELATE_TOP = 24  # the same for `relate`; the notes that share rare values (linking.RARE_TOP) come on top of them
+JOINT_OP = "match+relate"  # a request with the match questions (keys m*) and the relate questions of the note to be (keys r*)
 FALLBACK_MENU_CHARS = 8000  # most characters of the folder menu the routing fallback shows the LLM
 ROUTE_PROMPT = "classifier/route"  # the routing Choice; with `strict_new_folders` off, 0.3.0's text:
 ROUTE_PROMPT_OPEN = "classifier/route_open"
@@ -476,12 +477,20 @@ def _deepest(ctx: StepContext, root: Folder, path: str) -> tuple[Folder, bool]:
 
 
 def _closest(
-    ctx: StepContext, notes: list[Note], text: str, top: int, home: str | None, step: str, given: dict[str, float] | None = None
+    ctx: StepContext,
+    notes: list[Note],
+    text: str,
+    top: int,
+    home: str | None,
+    step: str,
+    given: dict[str, float] | None = None,
+    *,
+    quiet: bool = False,
 ) -> list[Note]:
     """At most `top` of `notes`, chosen by code: first the notes with a probability in `given`, the highest first; then
     the notes of the folder `home`, then the others, each group in the order BM25 over a note's text ranks it against
     `text`. The notes kept stay in their order. All of them when they fit: the request is then what it always was.
-    A cut is the decision `<step>_cut`."""
+    A cut is the decision `<step>_cut` (none when `quiet`: a cut made ahead, which the step makes again)."""
     if len(notes) <= top:
         return notes
     given = given or {}
@@ -495,29 +504,67 @@ def _closest(
         taken = set(own)
         order += (own + [r for r in ranked if r not in taken])[: top - len(order)]
     kept = set(order)
-    how = "by match probability, then BM25" if first else "by BM25"
-    ctx.decide(f"{step}_cut", "code", f"{len(kept)} of {len(notes)} notes, {how}")
+    if not quiet:
+        how = "by match probability, then BM25" if first else "by BM25"
+        ctx.decide(f"{step}_cut", "code", f"{len(kept)} of {len(notes)} notes, {how}")
     return [n for n in notes if n.rel in kept]
 
 
+@dataclass
+class RelateAhead:
+    """The relate questions `match` asks in its own request (one request, op `JOINT_OP`), for the note the document becomes
+    if nothing is merged: the librarian sets `notes` and `home` before `match`; `match` fills `state` and `answers`."""
+
+    notes: list[Note]  # the notes `relate` will be given for that note, but those found by rare values
+    home: str | None  # the folder that note goes in (None: a folder opened for it, with no note yet)
+    rare: list[Note] = field(default_factory=list)  # the notes found by rare values, as they will be once the note is written
+    state: str = ""  # what the questions were asked against
+    answers: dict[tuple[str, str], float] = field(default_factory=dict)  # (note rel, question) -> probability
+
+
 def match(ctx: StepContext, pool: list[Note], cand: Candidate) -> Note | None:
-    """Step 2: one batched Noul per note; the best one above tau_ing is the candidate. A pool over `MATCH_TOP` notes is cut first."""
+    """Step 2: one batched Noul per note; the best one above tau_ing is the candidate. A pool over `MATCH_TOP` notes is cut first.
+    With `ctx.relate_ahead`, the same request also asks the relate questions of the note the document would become (keys `m*`
+    for match, `r*` for relate): for a new note `relate` reads the same state, so it takes those answers instead of asking again."""
     classifier = ctx.need_classifier("match")
     if not pool:
         return None
-    pool = _closest(ctx, pool, ctx.state(cand), MATCH_TOP, ctx.home, "match")
-    questions = {f"n{i}": ctx.prompts.render("classifier/note_relevance", title=n.title, summary=n.summary) for i, n in enumerate(pool)}
+    state = ctx.state(cand)
+    pool = _closest(ctx, pool, state, MATCH_TOP, ctx.home, "match")
+    ahead = ctx.relate_ahead
+    asked = _relate_questions(ctx, ahead, state, pool) if ahead is not None else {}
+    mark = "m" if asked else "n"
+    render = ctx.prompts.render
+    questions = {f"{mark}{i}": render("classifier/note_relevance", title=n.title, summary=n.summary) for i, n in enumerate(pool)}
+    joint = {f"r{j}": question for j, question in enumerate(asked.values())}
     try:
-        probs = classifier.nouls(ctx.state(cand), questions, op="match")
+        probs = classifier.nouls(state, {**questions, **joint}, op=JOINT_OP if joint else "match")
     except ModelError as e:
         log.warning("classifier failed on note relevance, the LLM decides: %s", e)
         ctx.decide("match", "classifier", "error", fallback=True)
         return classic.match(ctx, pool, cand)
-    p, best = max(((probs[f"n{i}"], n) for i, n in enumerate(pool)), key=lambda x: x[0])
+    if ahead is not None and joint:
+        ahead.state = state
+        ahead.answers = {key: probs[f"r{j}"] for j, key in enumerate(asked)}
+    p, best = max(((probs[f"{mark}{i}"], n) for i, n in enumerate(pool)), key=lambda x: x[0])
     found = best if p > ctx.cfg.crow.tau_ing else None
-    scores = {n.rel: probs[f"n{i}"] for i, n in enumerate(pool)}
+    scores = {n.rel: probs[f"{mark}{i}"] for i, n in enumerate(pool)}
     ctx.decide("match", "classifier", found.rel if found else "none", p, scores=scores)
     return found
+
+
+def _relate_questions(ctx: StepContext, ahead: RelateAhead, state: str, pool: list[Note]) -> dict[tuple[str, str], str]:
+    """The relate questions of `ahead.notes`, by (note rel, question), cut to `RELATE_TOP` as `relate` cuts them (the notes of
+    `pool` first: all of them have a match probability, and they fit, MATCH_TOP <= RELATE_TOP; then BM25 against `state`),
+    and of `ahead.rare`, all of them."""
+    notes = ahead.notes
+    if len(notes) > RELATE_TOP:
+        notes = _closest(ctx, notes, state, RELATE_TOP, ahead.home, "relate", {n.rel: 1.0 for n in pool}, quiet=True)
+    out: dict[tuple[str, str], str] = {}
+    for n in [*notes, *ahead.rare]:
+        question = ctx.prompts.render("classifier/relate", title=n.title, summary=n.summary)
+        out[(n.rel, question)] = question
+    return out
 
 
 def consolidate_state(ctx: StepContext, cand: Candidate) -> str:
@@ -572,8 +619,15 @@ def relate(ctx: StepContext, note: Note, others: list[Note]) -> list[Note]:
         common = _closest(ctx, common, note.compact(ctx.cfg.classifier.state_chars), RELATE_TOP, home, "relate", matched)
         others = [*common, *(n for n in others if n.rel in rare)]
     questions = {f"n{i}": ctx.prompts.render("classifier/relate", title=n.title, summary=n.summary) for i, n in enumerate(others)}
+    state = note.compact(ctx.cfg.classifier.state_chars)
+    ahead = ctx.relate_ahead
+    probs: dict[str, float] = {}
+    if ahead is not None and ahead.state == state:  # asked with match: same state, same question, same answer
+        probs = {k: ahead.answers[key] for k, n in zip(questions, others, strict=True) if (key := (n.rel, questions[k])) in ahead.answers}
+    rest = {k: q for k, q in questions.items() if k not in probs}  # any note the request of match did not cover
     try:
-        probs = classifier.nouls(note.compact(ctx.cfg.classifier.state_chars), questions, op="relate")
+        if rest:
+            probs.update(classifier.nouls(state, rest, op="relate"))
     except ModelError as e:
         log.warning("classifier failed on relatedness, the LLM decides: %s", e)
         ctx.decide("relate", "classifier", "error", fallback=True)

@@ -16,6 +16,7 @@ import zlib
 from collections.abc import Callable
 from typing import Any
 
+from llmw2.agents.steps_crow import JOINT_OP
 from llmw2.config import ClassifierConfig, LLMConfig
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM
@@ -53,6 +54,12 @@ class FakeLLM(LLM):
 
 
 Noul = dict[str, float] | Callable[[str], float]
+
+
+def step_of(op: str, key: str) -> str:
+    """The step a question of a request is for: a request of CROW's match that also asks the relate questions of the note to be
+    (op JOINT_OP) has match questions under keys m* and relate questions under keys r*; any other request is for its op."""
+    return ("match" if key.startswith("m") else "relate") if op == JOINT_OP else op
 
 
 class FakeClassifier(Classifier):
@@ -96,7 +103,7 @@ class FakeClassifier(Classifier):
                     raise AssertionError(f"FakeClassifier: {unknown} not among options {list(question['criteria'])}")
                 answers[key] = {"type": "choice", "choice": choice, "probabilities": probabilities, "confidence": confidence}
             else:
-                answers[key] = {"type": "noul", "noul": self._noul(op, question["instructions"])}
+                answers[key] = {"type": "noul", "noul": self._noul(step_of(op, key), question["instructions"])}
         return answers
 
     def _noul(self, op: str, text: str) -> float:

@@ -30,6 +30,7 @@ def env_for(bundle: Path, **variables: str) -> dict[str, str]:
         ("OKF_TAU_ROUTE", "0.8", "crow.tau_route", 0.8),
         ("OKF_BEAM", "3", "crow.beam", 3),
         ("OKF_RERANK", "false", "crow.rerank", False),
+        ("OKF_JOINT_MATCH_RELATE", "false", "crow.joint_match_relate", False),
         ("OKF_CLASSIFIER_ATTEMPTS", "3", "classifier.attempts", 3),
         ("OKF_UPLOAD_MB", "5", "upload_mb", 5),
         ("OKF_CONCURRENCY", "4", "concurrency", 4),

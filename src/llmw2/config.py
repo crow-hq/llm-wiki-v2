@@ -251,6 +251,8 @@ class CrowConfig(BaseModel):
     beam: int = Field(2, gt=0)  # b at ingestion: paths kept per uncertain routing step
     k: int = Field(8, gt=0)  # CROW retrieval: notes passed to the answer (paper default 5)
     rerank: bool = True  # CROW retrieval: the classifier reorders the search's notes after the first (False: the search's order)
+    # ingestion: for a note the document may become, match asks relate's questions in its own request (False: two requests)
+    joint_match_relate: bool = True
 
     @model_validator(mode="before")
     @classmethod

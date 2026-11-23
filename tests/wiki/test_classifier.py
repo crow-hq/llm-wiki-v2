@@ -229,6 +229,23 @@ def test_nouls_a_server_that_takes_64_questions_gets_a_longer_batch_in_halves(tr
     assert sorted(asked) == sorted(questions)  # the questions that were refused are answered in smaller requests, each once
 
 
+def test_nouls_a_hosted_server_that_takes_16_questions_gets_a_longer_batch_in_halves(tracker: UsageTracker) -> None:
+    refusal = '{"error":{"message":"HTTP 422: {\\"detail\\":\\"questions must be an object of 1..16 questions\\"}","code":422}}'
+
+    def reply(request: httpx.Request) -> httpx.Response:
+        questions = sent(request)["questions"]
+        if len(questions) > 16:
+            return httpx.Response(422, text=refusal)
+        return answered({key: {"type": "noul", "noul": int(key[1:]) / 1000} for key in questions})
+
+    questions = {f"n{i}": f"Statement number {i}." for i in range(58)}
+    clf, requests = make_classifier(tracker, reply)
+
+    assert clf.nouls("state", questions, op="match") == {key: int(key[1:]) / 1000 for key in questions}
+    asked = [key for r in requests if len(sent(r)["questions"]) <= 16 for key in sent(r)["questions"]]
+    assert sorted(asked) == sorted(questions)  # answered in requests the server takes, each question once
+
+
 def test_nouls_a_server_that_takes_more_than_64_questions_gets_them_in_one_request(tracker: UsageTracker) -> None:
     clf, requests = make_classifier(tracker, noul(0.5))
 

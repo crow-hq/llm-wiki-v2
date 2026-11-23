@@ -18,7 +18,7 @@ from llmw2.agents.prompts import Prompts
 from llmw2.agents.state import source_state
 from llmw2.agents.steps import check_summarize, decision_hash
 from llmw2.config import ClassifierConfig
-from tests.wiki.fakes import FakeClassifier, FakeLLM
+from tests.wiki.fakes import FakeClassifier, FakeLLM, step_of
 
 HERE, NEW, NONE = "Here", "New subfolder", "None of these"
 NEW_NOTE = "New note"
@@ -308,7 +308,7 @@ def to_fruit(classifier: FakeClassifier) -> None:
 
 
 def states(classifier: FakeClassifier, op: str) -> list[str]:
-    return [state for o, state, _ in classifier.calls if o == op]
+    return [state for o, state, qs in classifier.calls if any(step_of(o, k) == op for k in qs)]
 
 
 def test_crow_route_reads_the_source_extract_at_every_level(bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> None:

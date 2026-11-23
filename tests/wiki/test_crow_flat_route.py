@@ -20,7 +20,7 @@ from llmw2.agents.base import Decision
 from llmw2.agents.prompts import Prompts
 from llmw2.bundle.tree import Note
 from llmw2.errors import ModelError
-from tests.wiki.fakes import FakeClassifier, FakeLLM
+from tests.wiki.fakes import FakeClassifier, FakeLLM, step_of
 
 HERE, NEW, NONE = "Here", "New subfolder", "None of these"
 SUMMARIZE, NAME_FOLDER, ROUTE_FALLBACK = "librarian/summarize", "librarian/name_folder", "librarian/route_fallback"
@@ -92,7 +92,7 @@ def criteria(classifier: FakeClassifier, call: int) -> dict[str, str]:
 
 
 def match_questions(classifier: FakeClassifier) -> str:
-    return " ".join(q["instructions"] for op, _, qs in classifier.calls if op == "match" for q in qs.values())
+    return " ".join(q["instructions"] for op, _, qs in classifier.calls for k, q in qs.items() if step_of(op, k) == "match")
 
 
 def steps_of(result: Any, step: str) -> list[Decision]:
@@ -195,7 +195,7 @@ def test_candidates_add_the_ancestors_of_the_second_folder_when_the_best_is_not_
     # ASSERT
     pool = match_questions(classifier)
     assert all(f'"{t}"' in pool for t in ("Company overview", "Alpha note", "Sub note", "Beta note"))
-    assert len([q for op, _, qs in classifier.calls if op == "match" for q in qs]) == 4  # the root once, not twice
+    assert len([k for op, _, qs in classifier.calls for k in qs if step_of(op, k) == "match"]) == 4  # the root once, not twice
     assert result.folder == "/alpha/sub"  # the best one takes the note, the second only widens the pool
 
 
