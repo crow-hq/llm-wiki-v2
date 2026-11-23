@@ -303,6 +303,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   listing at its first search. A build cut by a crash goes on from the lots it committed at the next
   search of any process; a file that cannot be written is built by the searches, in memory, as before. `status` says in `warnings`
   how far the build got.
+- `close` waits for the thread of the build also once the file is marked complete, while the build still closes its connection: a
+  search that read the file complete in that moment no longer lets the build go without it, so no connection of the build stays
+  open after `close` (on Windows the folder of the wiki could not be deleted then, `WinError 32`). The searches answer as before.
 - A search looks at the file of the search index once, at its first step (a `stat`: is it the file its connection was opened on?),
   instead of at each of its steps: a file replaced by another process (a rebuild), or a fork, is still seen before the search reads.
 - A search whose query quotes an expression or holds a code no longer reads again the notes it looks for them in: a process keeps

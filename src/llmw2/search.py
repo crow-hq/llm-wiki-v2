@@ -324,8 +324,9 @@ class NoteSearch:
         return done
 
     def close(self) -> None:
-        """Stop the build this process runs in the background (what its lots committed stays: the next search goes on from there), and
-        let go of the notes kept meanwhile and of the index file."""
+        """Stop the build this process runs in the background (what its lots committed stays: the next search goes on from there), also
+        one that marked the file complete and still closes it, and wait for its thread, so that no connection of its stays open; then let
+        go of the notes kept meanwhile and of the index file."""
         from llmw2.searchindex import BUILD_WINDOW
 
         build, self._build = self._build, None
@@ -350,7 +351,8 @@ class NoteSearch:
             if self._recent is not None:
                 with self._recent_lock:
                     self._recent = None
-            self._build = None
+            if self._build is not None and self._build.finished:  # one that marked the file complete and still closes it stays, for `close`
+                self._build = None
             return False
         build = self._build
         if build is not None and build.finished:

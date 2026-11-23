@@ -775,3 +775,41 @@ def test_a_lease_that_does_not_say_when_its_build_began_is_not_waited_for(
     finally:
         other.kill()
         other.wait(30)
+
+
+def test_close_waits_for_a_build_that_marked_the_file_complete_and_still_closes_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A search that reads the file complete while the build's thread still closes its connection keeps the build, and `close` waits
+    for that thread: no connection of the build stays open after it (on Windows the file could not be deleted)."""
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.05)
+    wiki = _random_wiki(tmp_path, 20)
+    _no_index(tmp_path)
+    closing_, release, closed = threading.Event(), threading.Event(), threading.Event()
+    real_close, real_stop = si._Building.close, si.Build.stop
+
+    def close(index: si._Building) -> None:
+        if threading.current_thread().name == BUILDER:  # the file is marked complete: the build holds before it closes its connection
+            closing_.set()
+            assert release.wait(60)
+        real_close(index)
+        if threading.current_thread().name == BUILDER:
+            closed.set()
+
+    def stop(build: si.Build, wait: float) -> None:
+        release.set()  # only a stop lets the build close: one never stopped would leave its connection open
+        real_stop(build, wait)
+
+    monkeypatch.setattr(si._Building, "close", close)
+    monkeypatch.setattr(si.Build, "stop", stop)
+    w = Wiki(wiki.cfg, llm=wiki.llm)
+    try:
+        w._search._building(w.store)  # starts the build, and waits for it the window only
+        assert closing_.wait(60)
+        build = w._search._build
+        hits = w.search("alpha river", 8)
+        assert hits.partial is None and _paths(hits) == _expected(w, "alpha river", 8)  # the file is complete: as before
+        assert w._search._build is build and not build.finished  # its thread is alive: the build is kept
+        w.close()
+        assert closed.is_set() and build.finished  # close waited for the build's connection to close
+        _index_file(tmp_path).unlink()  # nothing holds the file
+    finally:
+        release.set()
