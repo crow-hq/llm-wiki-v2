@@ -52,7 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folders durable before the commit. What somebody else wrote after a crash is still left alone and listed by `check`.
 - `Wiki.remember(text, *, title, key, fields, author, at, timeout) -> Receipt`: the text is kept in the journal the moment it is asked, and a
   thread of the process (the filer, started by the first `remember`, `drain` or `_start_filer`; `Wiki()` starts none) files it with the
-  same steps as `ingest`. The `Receipt` (`id`, `key`, `at`, `state`, `note`, `wait(timeout)`) is read from the journal at each access;
+  same steps as `ingest`, with the models of the `Wiki` of the process that asked last (each `remember` tells the filer before its
+  entry is written, so an idle filer started by another `Wiki` on the same folder does not file that entry with the other one's models). The `Receipt` (`id`, `key`, `at`, `state`, `note`, `wait(timeout)`) is read from the journal at each access;
   `status()` is a dict with a fixed set of keys and no `check()`; `drain(timeout)` returns when what was written before the call is done
   (`TimeoutError`, `FilerError`); `close()` stops the filer: it waits for the section the filer is in (with real models, the routing
   and the writing of a note happen there), not for an entry it is still preparing (the summary, before the wiki's lock): nothing of

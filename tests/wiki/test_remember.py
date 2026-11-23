@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -542,6 +543,40 @@ def test_the_filer_uses_the_models_of_the_wiki_that_asked_last(bundle: Path) -> 
         r = b.remember("topic: robots-9" + chr(10) + "A text asked of the second wiki.")
         r.wait(30)
         assert llm_b.calls and len(llm_a.calls) == used_by_a  # the filer files what b asked with b's models
+    finally:
+        b.close()
+        a.close()
+
+
+def test_the_filer_that_reads_the_entry_before_the_call_returns_files_it_with_the_models_of_the_wiki_that_asked(
+    bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The idle filer of `a` reads the journal while `b` writes its entry, and files it before `b.remember` returns (as when the
+    caller's thread is paused right after the write): with `b`'s models all the same."""
+    a, llm_a = make(bundle)
+    b, llm_b = make(bundle)
+    real = J.Journal.append_entry
+    asked = "topic: robots-9" + chr(10) + "A text asked of the second wiki."
+
+    def append_entry(self: J.Journal, text: str, **kw: Any) -> Any:
+        ref = real(self, text, **kw)
+        if text == asked:  # the caller pauses after the write until the filer has filed the entry
+            hub = b._journal()
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                hub.refresh()
+                if (e := hub.entries.get(ref.id)) is None or e.filed is not None:
+                    break
+                with hub.cond:
+                    hub.cond.wait(0.01)
+        return ref
+
+    monkeypatch.setattr(J.Journal, "append_entry", append_entry)
+    try:
+        a.remember(TEXT).wait(30)
+        used_by_a = len(llm_a.calls)
+        b.remember(asked).wait(30)
+        assert llm_b.calls and len(llm_a.calls) == used_by_a
     finally:
         b.close()
         a.close()

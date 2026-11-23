@@ -496,6 +496,9 @@ class Wiki:
             if not room():
                 raise _NoRoom
 
+        # the filer is told whose models to use before the entry is written: a filer of another wiki of this process, idle, that reads
+        # the journal meanwhile would otherwise file it with that wiki's models
+        self._start_filer()
         while True:
             word = hub.journal.tail_word()  # before the read: a move after it wakes the wait below
             hub.refresh()
