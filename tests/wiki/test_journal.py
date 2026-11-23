@@ -755,3 +755,57 @@ def test_shared_bytes_another_user_made_under_the_name_are_not_used(tmp_path: Pa
     mine.close()
     owner[0] += 1  # the file is another user's
     assert J.shared_bytes("llmw2-test", 64) is None
+
+
+class _FakeFcntl:
+    F_FULLFSYNC = 51
+
+    def __init__(self, fail: bool = False) -> None:
+        self.calls: list[tuple[int, int]] = []
+        self.fail = fail
+
+    def fcntl(self, fd: int, cmd: int) -> int:
+        if self.fail:
+            raise OSError("not supported")
+        self.calls.append((fd, cmd))
+        return 0
+
+
+def _on_macos(monkeypatch: pytest.MonkeyPatch, fake: _FakeFcntl) -> list[int]:
+    plain: list[int] = []
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setitem(sys.modules, "fcntl", fake)
+    monkeypatch.setattr(os, "fsync", plain.append)
+    return plain
+
+
+def test_on_macos_the_acknowledgement_is_a_full_fsync(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeFcntl()
+    with monkeypatch.context() as m:  # the platform is macOS only while the flush is chosen: the rest of the journal runs here
+        _on_macos(m, fake)
+        flush, sync = J._pick_flush(data_only=True), J._pick_flush(data_only=False)
+    monkeypatch.setattr(J, "_FLUSH", flush)
+    monkeypatch.setattr(J, "_SYNC", sync)
+    monkeypatch.setitem(sys.modules, "fcntl", fake)
+    j = new(tmp_path)
+    j.append_entry("first text")  # the segment exists now
+    before = len(fake.calls)
+    monkeypatch.setattr(os, "fsync", lambda fd: pytest.fail("the acknowledgement went to os.fsync"))
+    j.append_entry("second text")  # nothing but the acknowledgement flushes here
+    j.close()
+    assert len(fake.calls) > before and all(cmd == fake.F_FULLFSYNC for _, cmd in fake.calls)
+
+
+def test_on_macos_a_file_system_without_full_fsync_falls_back_to_fsync(monkeypatch: pytest.MonkeyPatch) -> None:
+    plain = _on_macos(monkeypatch, _FakeFcntl(fail=True))
+    J._pick_flush(data_only=True)(7)
+    assert plain == [7]
+
+
+def test_off_macos_the_flush_is_what_it_was(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert J._pick_flush(data_only=True) is getattr(os, "fdatasync", os.fsync)
+    calls: list[int] = []
+    monkeypatch.setattr(os, "fsync", calls.append)  # resolved at each call, not bound at import
+    J._pick_flush(data_only=False)(5)
+    assert calls == [5]

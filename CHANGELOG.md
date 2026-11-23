@@ -87,6 +87,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one leaves both alone with the rest of the journal. An entry and the records of its state are admitted only while the entries not
   done fit in half a segment (`QueueFull`, `FailedBacklog` for entries given up; `InputError` for one entry larger than that, which
   goes in as a file). A journal of a newer format is read and written by no older version of the library (`JournalVersionError`).
+- On macOS the journal's acknowledgement is `F_FULLFSYNC` (plain `fsync` there hands the data to the drive, which may keep it in
+  its cache), so an acknowledged entry survives a power loss there too; the same for a segment that is made, zeroed or numbered,
+  and falling back to `fsync` on a file system that does not know it. The records of the undo log go through the same flush, so on
+  macOS they are `F_FULLFSYNC` too. Linux and Windows flush as before. The latency of the acknowledgement on macOS is not measured.
 - `Wiki.log(limit)`: the last lines of `log.md`, newest first.
 - `Wiki.purge` forgets what `remember` kept under the key too: the entries of the journal with that key (queued, filed or given up:
   a purge is also the call that frees the place of an entry given up) close for good, and the receipt says `forgotten`. The key of

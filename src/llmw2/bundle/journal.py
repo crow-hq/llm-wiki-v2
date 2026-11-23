@@ -29,12 +29,12 @@ exception to make: the first record that is not valid is where it stops.
 
 Appends are made under `append.lock`, at an offset that a process keeps in memory, moves only after the write, and checks against
 the segment each time it takes the lock (a record of somebody else at the tail is followed). Nothing is written for the offset.
-The ack is `fdatasync` (`os.fsync` on Windows) of the segment and nothing else; processes that wait for the same flush share it
-(group commit): a process that is not covered tries the lock of the flush, and the one that gets it flushes for every record
-written so far. Where the processes can share a few bytes that never reach the disk (`/dev/shm`, a named mapping on Windows),
-the end of the last flush is published there as a hint, together with the salt of the segment, and a process the hint covers
-does not flush; where they cannot, each flushes in its turn and a flush with nothing dirty costs next to nothing. The hint is
-only ever a hint: without a valid answer a process does its own flush.
+The ack is `fdatasync` (`os.fsync` on Windows, `F_FULLFSYNC` on macOS) of the segment and nothing else; processes that wait for
+the same flush share it (group commit): a process that is not covered tries the lock of the flush, and the one that gets it
+flushes for every record written so far. Where the processes can share a few bytes that never reach the disk (`/dev/shm`, a named
+mapping on Windows), the end of the last flush is published there as a hint, together with the salt of the segment, and a
+process the hint covers does not flush; where they cannot, each flushes in its turn and a flush with nothing dirty costs next to
+nothing. The hint is only ever a hint: without a valid answer a process does its own flush.
 
 A segment is reused (`recycle`) only from the oldest one, after the entries it holds that are not done (open, or given up) were
 copied forward, with their state, to the tail. The rule keeps one invariant: a closure (`D`, `X`) is never in an older segment than the
@@ -111,7 +111,35 @@ _HINT = struct.Struct("<QQQ")
 _HINT_MASK = 0x9E3779B97F4A7C15
 _TAIL = struct.Struct("<QQQQQ")  # salt, tail offset, tail seq, offset of the last record, check: a second hint, at byte 24
 _BINARY = getattr(os, "O_BINARY", 0)
-_FLUSH = getattr(os, "fdatasync", os.fsync)  # Windows: FlushFileBuffers on a handle open for writing
+
+
+def _full_fsync(fd: int) -> None:
+    """On macOS `fsync` hands the data to the drive, which may keep it in its cache, so an acknowledged entry could be lost on a
+    power loss: `F_FULLFSYNC` asks the drive to write it out. The undo log's `sync_tree` does the same through `llmw2.bundle.txn._fsync_fd`,
+    which this repeats (`txn` imports this module, and a few lines are cheaper than a third module for both); the records of the
+    undo log go through `_FLUSH`, so on macOS they are `F_FULLFSYNC` too."""
+    try:
+        import fcntl
+
+        fcntl.fcntl(fd, fcntl.F_FULLFSYNC)  # type: ignore[attr-defined]
+    except (ImportError, AttributeError, OSError):
+        os.fsync(fd)  # a file system that does not know it: plain fsync
+
+
+def _plain_fsync(fd: int) -> None:
+    os.fsync(fd)  # looked up at each call, as before: a test that replaces `os.fsync` to count or to kill at a call still sees it
+
+
+def _pick_flush(*, data_only: bool) -> Callable[[int], None]:
+    """The flush of the platform: `F_FULLFSYNC` on macOS; elsewhere what it always was (Windows: `FlushFileBuffers` on a handle
+    open for writing), `fdatasync` for the acknowledgement of an entry (`data_only`) and `fsync` for the rest."""
+    if sys.platform == "darwin":
+        return _full_fsync
+    return getattr(os, "fdatasync", os.fsync) if data_only else _plain_fsync
+
+
+_FLUSH = _pick_flush(data_only=True)  # the acknowledgement of an entry
+_SYNC = _pick_flush(data_only=False)  # a segment that is made, zeroed or numbered
 
 T_ENTRY, T_SEAL = ord("E"), ord("Z")
 T_FILED, T_DONE, T_ATTEMPT, T_ABANDON = ord("F"), ord("D"), ord("A"), ord("X")
@@ -653,7 +681,7 @@ def _zero_used(path: Path) -> None:
         if used > HEADER_SIZE:
             for start in range(HEADER_SIZE, used, ZERO_CHUNK):
                 _pwrite(fd, bytes(min(ZERO_CHUNK, used - start)), start)
-            os.fsync(fd)
+            _SYNC(fd)
     finally:
         os.close(fd)
 
@@ -662,7 +690,7 @@ def _set_header(path: Path, header: Header) -> None:
     fd = os.open(path, os.O_RDWR | _BINARY)
     try:
         _pwrite(fd, header.pack(), 0)
-        os.fsync(fd)
+        _SYNC(fd)
     finally:
         os.close(fd)
 
@@ -781,9 +809,9 @@ class Journal:
                 n = min(len(zeros), size - written)
                 os.write(fd, zeros if n == len(zeros) else zeros[:n])
                 written += n
-            os.fsync(fd)
+            _SYNC(fd)
             _pwrite(fd, Header(VERSION, number, secrets.randbits(64), self.node_id()).pack(), 0)
-            os.fsync(fd)
+            _SYNC(fd)
         finally:
             os.close(fd)
         _fsync_dir(self.dir)
@@ -821,7 +849,7 @@ class Journal:
                 fd = os.open(path, os.O_RDWR | _BINARY)
                 try:
                     _pwrite(fd, Header(VERSION, number, h.salt, self.node_id()).pack(), 0)
-                    os.fsync(fd)
+                    _SYNC(fd)
                 finally:
                     os.close(fd)
                 return
