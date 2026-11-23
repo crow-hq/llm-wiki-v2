@@ -186,7 +186,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its `Wiki` closes. The text stays in the journal up to about a second after the answer with a filer running (`FORGET_GROUP`
   below), until the close without one. Effects: after such a
   delete the ids of the entries already filed are gone with their segments, so `read_note("pending:<id>")` and `forget(id)` no longer
-  find them (`forget` by key always does); each seal takes a new segment (16 MiB of zeros written on Windows, `fallocate` on Linux),
+  find them (`forget` by key always does); each seal takes a new segment (16 MiB of zeros really written, on every system),
   and a reuse zeroes the old ones: count it with the purges in the wear of the disk. The deletes of a run share a seal: the filer lets
   a delete's tombstone wait `filer.FORGET_GROUP` (1 s) and completes with it every other delete's tombstone then open, and it
   completes them with the journal alone (their section is done: no zeroing of the undo log, no look at the index), so the deletes of
