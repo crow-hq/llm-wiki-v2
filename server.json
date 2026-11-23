@@ -8,12 +8,12 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/crow-hq/llm-wiki-v2#claudes-memory-mcp",
-  "version": "1.0.5",
+  "version": "2.0.0rc1",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "llmwiki2",
-      "version": "1.0.5",
+      "version": "2.0.0rc1",
       "runtimeHint": "uvx",
       "runtimeArguments": [
         {

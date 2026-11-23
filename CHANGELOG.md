@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0rc1] - 2026-11-23
+
 ### Upgrading from 1.x
 
 - From 1.x there is nothing to do: this version opens a 1.x wiki as it is, and makes its journal the first time `remember` (or a purge)
@@ -944,6 +946,7 @@ The first release of the `llm-wiki-v2` repository, built on Google's Open Knowle
 - The package and module are named `llmw2` and the command `llmwiki2`.
 - Dropped the OKF fork (own document parser, no viewer, no reference agent) and the Bifrost gateway.
 
+[2.0.0rc1]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v2.0.0rc1
 [1.0.5]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.5
 [1.0.4]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.4
 [1.0.3]: https://github.com/crow-hq/llm-wiki-v2/releases/tag/v1.0.3
