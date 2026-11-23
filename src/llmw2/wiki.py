@@ -62,7 +62,7 @@ from llmw2.agents.data import Candidate, FolderPlan, Source, SplitPlan
 from llmw2.agents.librarian import IngestResult, Librarian, Prepared
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.researcher import Answer, Researcher
-from llmw2.agents.steps import CLASSIC, CROW, StepContext, Steps, check_extract
+from llmw2.agents.steps import CLASSIC, CROW, StepContext, Steps, check_extract, holding
 from llmw2.audit import (
     AUDIT_MIN,
     HEALTH_MAX_SHARE,
@@ -692,7 +692,7 @@ class Wiki:
         def source(ctx: StepContext) -> Source:
             return Source(text, title, None, origin, fields, event_at=event_at)
 
-        with authored(entry.author or self.author), self._preparing:
+        with authored(entry.author or self.author), holding(self._preparing):
             return self._prepare(source)
 
     def _known(self, note_rel: str) -> IngestResult:
@@ -1065,17 +1065,19 @@ class Wiki:
         halt = [len(window)]  # the first item that failed for a reason that is not its own: none after it starts
         halting = threading.Lock()
         reads, single, placed, fixed = planned.reads, planned.single, planned.placed, planned.fixed
+        slots = threading.BoundedSemaphore(workers)  # one per document being prepared; a summary's parts borrow the free ones
 
         def prepare(i: int) -> Prepared | IngestResult | None:
             if i > halt[0]:  # items before the failed one still run: they are filed
                 return None
             try:
-                if not reads:
-                    return self._prepare(self._source_of(window[i]))
-                got = reads[i]
-                if isinstance(got, Exception):
-                    raise got
-                return self._summarize(got)
+                with holding(slots):
+                    if not reads:
+                        return self._prepare(self._source_of(window[i]))
+                    got = reads[i]
+                    if isinstance(got, Exception):
+                        raise got
+                    return self._summarize(got)
             except (InputError, ReplyInvalid):  # the item's own: `settle` gives it as its result
                 raise
             except Exception:
@@ -1182,7 +1184,7 @@ class Wiki:
                     self.store.mark_origin_removed(key)
 
     def _ingest(self, source: Callable[[StepContext], Source]) -> IngestResult:
-        with self._preparing:  # at most `cfg.concurrency` calls prepare at once; they wait here, not for the lock
+        with holding(self._preparing):  # at most `cfg.concurrency` calls prepare at once; they wait here, not for the lock
             ready = self._prepare(source)
         if isinstance(ready, IngestResult):
             return ready

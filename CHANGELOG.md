@@ -221,6 +221,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Jev classifier, 8 MCP sessions, 40 entries), three times each, alternated with the release before in the same window: all
   filed in a median of 89 s against 108 s for the release before (0.82 times) and 110 s without this step, 1.21 times the entries
   per minute of the release before; a slow merge inside a section still holds the filing up.
+- With a hosted writer at its own address (OpenRouter, OpenAI, Gemini) the parts of a source too long for one call are summarized
+  at once instead of one after the other (same prompts; the notes reach the call that writes the note in the order of the parts).
+  They take no place of their own: each document being prepared holds one place of `concurrency` (a set shared by `ingest`, the
+  server and the filer with what it prepares ahead; a batch has a set of its own), and a part beside the document's own call
+  borrows a free place of the same set, without waiting, for that call only; with none free the parts go in turn. So the parts
+  never add a call beyond the places of that set; what stays outside it is as before: the calls of a section, and a batch running
+  beside the filer. A writer on Ollama, a custom server or a provider's name at another address, which may run one call at a time
+  and queue the others without a byte, asks the parts in turn as before: queued behind its siblings, a part could wait past the
+  client's `timeout` and be sent again. A `Librarian` used on its own asks the parts in turn. A failed part stops the parts not
+  started, and the error raised is the one of the first failed part in the order of the parts (not the first to fail in time): the
+  error asking them in turn would raise.
 - The filer of `remember` files consecutive entries in one session of the store, up to the 50 documents of a plan's batch: the tree is
   listed whole once for the lot, then only the folders that changed, instead of twice an entry; the session ends when the queue is
   empty, while a failed entry waits to be tried again, and before a purge is completed. After a document filed alone, the split of its folder looks first at the folder's own

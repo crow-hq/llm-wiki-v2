@@ -279,9 +279,11 @@ def _in_two_calls(
 
 
 def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraft:
-    """A source longer than one call: notes on each block in turn (map), then one call writes the note from them (reduce).
+    """A source longer than one call: notes on each block (map), then one call writes the note from them (reduce).
 
-    A failed part fails the step and the calls already made are lost.
+    The blocks do not depend on each other: their calls are made at once as far as the wiki's `concurrency` and the writer's
+    server allow (`StepContext.parallel`), and the notes come to the reduce in the order of the blocks. A failed part fails the step and
+    the calls already made are lost.
     """
     cfg = ctx.cfg
     blocks = split_blocks(source.text, room)
@@ -291,9 +293,9 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
             f"the source is too long to summarize with read_chars {cfg.effective_read_chars}: "
             f"it takes {n} parts and the notes of all of them must fit in one call; raise read_chars"
         )
-    parts, written = [], []
-    for k, block in enumerate(blocks, 1):
-        heading = block.heading or "(no heading)"
+
+    def part(i: int) -> str:
+        k, block = i + 1, blocks[i]
         cap = min(room // n, len(block.text) // 2)  # proportional: the notes of all parts still fit in the combine call
         if cfg.note_length == "fixed":
             cap = min(cap, cfg.effective_note_chars // 2)
@@ -303,7 +305,7 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
                 "source_title": source.label,
                 "part": k,
                 "parts": n,
-                "heading": heading,
+                "heading": block.heading or "(no heading)",
                 "block_text": block.text,
                 "cap": cap,
                 "keep_cut": True,  # only the first `cap` characters are kept anyway: a cut reply holds them
@@ -321,8 +323,11 @@ def _summarize_in_parts(ctx: StepContext, source: Source, room: int) -> NoteDraf
             kept = cut_notes(notes, cap)
             log.warning("summarize: part %d of %d: notes cut from %d to %d characters", k, n, len(notes), len(kept))
             notes = kept
-        written.append(notes)
-        parts.append(f"Part {k} of {n} — {heading}\n{notes}")
+        return notes
+
+    written = ctx.parallel(part, n)
+    headings = [block.heading or "(no heading)" for block in blocks]
+    parts = [f"Part {k} of {n} — {heading}\n{notes}" for k, (heading, notes) in enumerate(zip(headings, written, strict=True), 1)]
     target = cfg.target_note_chars(len(source.text))
     part_notes = "\n\n".join(parts)
     combine_cap = {} if cfg.note_length == "fixed" else {"reply_chars": math.ceil(1.2 * target)}  # fixed: the default cap of a note

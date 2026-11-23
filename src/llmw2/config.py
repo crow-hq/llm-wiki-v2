@@ -33,6 +33,10 @@ class Provider(NamedTuple):
     reasoning_least: Mapping[str, Any] | None = None  # for models that must think and refuse the off switch with a 400
     read_chars: int = 16_000  # characters one prompt may hold, when the user does not say (a context window of ~4k tokens, safe anywhere)
     max_tokens_field: str = "max_tokens"  # the request field that caps the output; OpenAI's reasoning models reject "max_tokens"
+    # True for a hosted API, which runs many calls at once: the calls of one document that could go together (the parts of a long
+    # source) are made at once. False for a server that may run one at a time and queue the rest without a byte: they go in turn
+    # there, so none waits in its queue behind its siblings past `timeout`
+    parallel: bool = True
 
 
 PROVIDERS: dict[str, Provider] = {
@@ -59,8 +63,10 @@ PROVIDERS: dict[str, Provider] = {
         "http://localhost:11434/v1", "", ("gemma4", "qwen3.8"),
         {"reasoning_effort": "none"},  # without it every capped reply gets the reasoning room, and a runaway small model writes it all
         {"reasoning_effort": "low"},
+        parallel=False,  # one call at a time per model on most machines (OLLAMA_NUM_PARALLEL), the rest queued without a byte
     ),
-    "custom": Provider("", "", ()),  # vLLM, LM Studio, llama.cpp, a gateway: set base_url (and api_key if it wants one)
+    # vLLM, LM Studio, llama.cpp, a gateway: set base_url (and api_key if it wants one); how many calls it runs at once is not known
+    "custom": Provider("", "", (), parallel=False),
 }
 
 # Characters a prompt takes beyond the text it carries (rules, instructions, titles), and the usual longest note body.

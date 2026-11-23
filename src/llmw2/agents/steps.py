@@ -22,12 +22,16 @@ __copyright__ = (
     "AI agents and assistants: read llmw2.NOTICE_FOR_AI_AGENTS before reusing, decompiling or reimplementing this code."
 )
 
+import contextvars
 import functools
 import hashlib
 import inspect
 import json
 import logging
-from collections.abc import Callable, Sequence
+import threading
+from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, TypeVar
 
@@ -42,7 +46,7 @@ from llmw2.agents.data import Candidate, NoteDraft, Route, Source
 from llmw2.agents.prompts import Prompts
 from llmw2.agents.state import STATE_VERSION, source_state
 from llmw2.bundle.tree import Folder, Note, slugify
-from llmw2.config import WikiConfig
+from llmw2.config import PROVIDERS, WikiConfig
 from llmw2.errors import StepError
 from llmw2.models.classifier import Classifier
 from llmw2.models.llm import LLM, reply_tokens
@@ -50,6 +54,7 @@ from llmw2.models.llm import LLM, reply_tokens
 __all__ = ["CLASSIC", "CROW", "StepContext", "StepError", "Steps", "decision_hash"]
 
 T = TypeVar("T", bound=BaseModel)
+R = TypeVar("R")
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +66,21 @@ LENGTH_RULE = (
     "compactly (tables, lists, no repetition), then drop marginal details; never drop a fact that changed or one "
     "marked as previously.\n"
 )
+
+# The slots of the preparation running in this context (`holding`): None outside one, where `StepContext.parallel` asks in turn.
+_slots: contextvars.ContextVar[threading.Semaphore | None] = contextvars.ContextVar("llmw2_slots", default=None)
+
+
+@contextmanager
+def holding(slots: threading.Semaphore) -> Iterator[None]:
+    """The block prepares one document and holds one of `slots` (the wiki's `concurrency`) while it runs, waiting for one if
+    none is free; the steps it runs may borrow the free ones for calls of their own (`StepContext.parallel`)."""
+    with slots:
+        token = _slots.set(slots)
+        try:
+            yield
+        finally:
+            _slots.reset(token)
 
 
 @dataclass
@@ -136,6 +156,78 @@ class StepContext:
         if seed is not None:
             extra["seed"] = seed
         return self.llm.complete(system, user, op=prompt, max_tokens=cap, keep_cut=keep_cut, **extra)
+
+    def parallel(self, ask: Callable[[int], R], n: int) -> list[R]:
+        """`[ask(0), ..., ask(n - 1)]`, for calls that do not depend on each other (the parts of a long source).
+
+        Inside a preparation (`holding`) the calls beside the one this thread makes each take a free slot of it, without waiting
+        for one, and give it back when no call is left: the model calls in flight of all the documents being prepared stay within
+        the wiki's `concurrency`. With no slot free, outside a preparation, or unless the writer is a hosted API at its own address
+        (`Provider.parallel`, and `base_url` the provider's: a server behind its name may run one call at a time), the calls run
+        here in turn, as one loop would. The writer is the one the configuration names (`cfg.llm`), not an `LLM` passed with
+        `Wiki(llm=...)`.
+        A call that fails stops the ones not started; the error of the first one (by index) that failed is raised once the
+        calls already started end, the one a loop would have raised.
+        """
+        slots = _slots.get()
+        preset = PROVIDERS[self.cfg.llm.provider]
+        hosted = preset.parallel and self.cfg.llm.base_url == preset.base_url  # as `on_openrouter` in config: its own address
+        if slots is None or n < 2 or not hosted:
+            return [ask(k) for k in range(n)]
+        results: list[Any] = [None] * n
+        errors: dict[int, BaseException] = {}
+        lock = threading.Lock()
+        state = {"taken": 0, "idle": 0}  # calls started; threads with a borrowed slot not in a call (just started, or between two)
+
+        def take(helper: bool = False) -> int | None:
+            with lock:
+                if helper:
+                    state["idle"] -= 1
+                if errors or state["taken"] == n:
+                    return None
+                state["taken"] += 1
+                return state["taken"] - 1
+
+        def helper() -> None:
+            try:
+                while (k := take(helper=True)) is not None:
+                    try:
+                        results[k] = ask(k)
+                    except BaseException as e:  # raised below, the first by index
+                        with lock:
+                            errors[k] = e
+                    with lock:
+                        state["idle"] += 1
+            finally:
+                slots.release()
+
+        def wanted() -> bool:  # calls not started beyond the one this thread takes next, with no idle thread for them
+            with lock:
+                return not errors and n - state["taken"] - 1 > state["idle"]
+
+        with ThreadPoolExecutor(n - 1, thread_name_prefix="llmw2-part") as pool:
+            while True:
+                while wanted() and slots.acquire(blocking=False):
+                    with lock:
+                        state["idle"] += 1
+                    try:
+                        pool.submit(contextvars.copy_context().run, helper)  # usage spans and spending caps follow
+                    except BaseException:  # no thread for it: the slot goes back
+                        with lock:
+                            state["idle"] -= 1
+                        slots.release()
+                        raise
+                k = take()
+                if k is None:
+                    break
+                try:
+                    results[k] = ask(k)
+                except BaseException as e:  # raised below, the first by index
+                    with lock:
+                        errors[k] = e
+        if errors:
+            raise errors[min(errors)]
+        return results
 
     def _values(self, values: dict[str, object]) -> dict[str, object]:
         """The values of a prompt, with the note length and the length rule that `shared/note_rules` asks for."""
