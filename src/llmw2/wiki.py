@@ -2426,6 +2426,7 @@ class Wiki:
             if note.folder is not None and not note.folder.is_routable:  # nothing leaves a closed folder by itself
                 continue
             ctx.decisions = []
+            ctx.flat_answers = {}  # the flat Choice is kept for one note at a time, not for the whole audit
             cand = Candidate(note.title, note.summary, note.tags, note.main_body())
             routed = steps_crow.audit_route(ctx, root, cand)
             current = note.folder.label if note.folder else "/"

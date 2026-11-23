@@ -175,10 +175,12 @@ class _Flat:
 
 
 def _flat_choice(ctx: StepContext, root: Folder, cand: Candidate) -> _Flat | None:
-    """The flat Choice shared by `route` and `audit_route`: every folder but the root, and None of these always offered.
+    """The flat Choice shared by `route`, `audit_route` and `_likeliest_root`: every folder but the root, and None of these always
+    offered.
 
     None for a tree without folders. Raises ModelError when the classifier fails. A level wider than one request is cut
-    by `_fitting` (the folders BM25 ranks first against the note), and None of these stays after them.
+    by `_fitting` (the folders BM25 ranks first against the note), and None of these stays after them. Asked once per document:
+    a request the same byte for byte as one already answered for it (`ctx.flat_answers`) takes that answer.
     """
     folders = [f for f in root.walk() if not f.is_root and f.is_routable]  # a closed folder is no option
     if not folders:
@@ -188,7 +190,11 @@ def _flat_choice(ctx: StepContext, root: Folder, cand: Candidate) -> _Flat | Non
     state = routing_state(ctx, cand)
     options = {f.label: f.description or f.name for f in folders}
     options = _fitting(ctx, root, state, text["instructions"], options, placement) | placement
-    answer = ctx.need_classifier("route").choice(state, text["instructions"], options, op="route")
+    classifier = ctx.need_classifier("route")
+    key = (state, text["instructions"], tuple(options.items()))
+    answer = ctx.flat_answers.get(key)
+    if answer is None:  # an error is not kept: asked again
+        answer = ctx.flat_answers[key] = classifier.choice(state, text["instructions"], options, op="route")
     probs = sorted(((o, p) for o, p in answer.probabilities.items() if o in options), key=lambda kv: kv[1], reverse=True)
     none = bool(probs) and probs[0][0] == NONE
     ranked = [] if none else [(f, p) for o, p in probs if o != NONE and (f := root.find(o.strip("/"))) is not None]

@@ -450,6 +450,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   limit of 8 there is no share.
 - What a process keeps of the folders between two looks at the files of the wiki (the listing a search does at most once a moment)
   holds no object per note but its name, its path and three numbers: about half the memory it took, in every process that searches.
+- The flat routing Choice is asked once per document: when the limit of top-level folders (`max_top_folders`), or a rebuild, sends a
+  note to the likeliest top-level folder, that folder comes from the answer `route` already got for the same request (the same
+  note, instructions and folders) instead of a second classifier call. No decision changes; a request that differs (the tree
+  changed in between) or one that failed is asked again. The answers are kept for the document being filed only (for the note
+  being looked at, in a routing audit). In the `remember` path of a wiki at the limit this is one call less for each note the
+  limit sends elsewhere (3 to 4% of the classifier's calls on a corpus that fills the limit).
 
 ## [1.0.5] - 2026-11-17
 

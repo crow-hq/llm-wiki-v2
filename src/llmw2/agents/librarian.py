@@ -237,6 +237,7 @@ class Librarian:
         ctx.source = read
         ctx.candidate = cand
         ctx.decisions = list(prepared.decisions)
+        ctx.flat_answers = {}  # the flat Choice is asked once per document
         with ctx.llm.usage.span() as used:
             root = self.store.load()
             if self.on_tree is not None:
@@ -406,6 +407,7 @@ class Librarian:
         read = _read(source)
         ctx = self.ctx
         ctx.source, ctx.candidate, ctx.decisions = read, cand, list(prepared.decisions)
+        ctx.flat_answers = {}  # once per document here too: the section then asks, and takes, the same requests
         _, _, _, match = self._route_and_match(root, cand, read, None)
         if match is not None:
             check_consolidate(self.steps.consolidate(ctx, match, cand))

@@ -48,7 +48,7 @@ from llmw2.agents.state import STATE_VERSION, source_state
 from llmw2.bundle.tree import Folder, Note, slugify
 from llmw2.config import PROVIDERS, WikiConfig
 from llmw2.errors import StepError
-from llmw2.models.classifier import Classifier
+from llmw2.models.classifier import ChoiceAnswer, Classifier
 from llmw2.models.llm import LLM, reply_tokens
 
 __all__ = ["CLASSIC", "CROW", "StepContext", "StepError", "Steps", "decision_hash"]
@@ -103,6 +103,9 @@ class StepContext:
     home: str | None = None  # the folder (its rel) the document was routed to: `match` looks at its notes first (None while asking)
     search: Callable[[str, int], list[Note]] | None = None  # while asking: the best k notes for a query, as `Wiki.search` finds them
     partial: bool = False  # while asking: a `search` ran while the index was being built, so a note it did not find may be there
+    # the classifier's answers to the flat routing Choice of the document being filed, by request (state, instructions, options):
+    # `cap_roots` and `keep_folders` take the one `route` got for the same request instead of asking it again
+    flat_answers: dict[tuple[str, str, tuple[tuple[str, str], ...]], ChoiceAnswer] = field(default_factory=dict, repr=False)
 
     def ask_json(
         self, prompt: str, schema: type[T], *, reply_chars: int | None = None, language_of: str | None = None, **values: object
