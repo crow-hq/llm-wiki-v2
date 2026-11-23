@@ -24,8 +24,9 @@ the bundle):
   dir   the folder did not exist
   rmdir the folder existed and goes
   decl  one record for what the section is about to do to several paths: `new` (paths that do not exist yet), `len` (the
-        length each path has now, which it will be appended to). The caller knows them before the first write, and the
-        section then pays one flush for all of them instead of one each
+        length each path has now, which it will be appended to), `copy` (paths it will rewrite or delete: for each, the file of
+        the trash that holds its image and the image's hash). The caller knows them before the first write, and the section
+        then pays one flush for all of them instead of one each
   commit  everything is durable; `id` is the caller's own identifier of what the section did, if it gave one
 
 The log holds no text of a note, a log line or a raw copy, only hashes and lengths, and, in the commit record of a section that filed
@@ -42,8 +43,10 @@ Undoing does not overwrite what somebody else wrote after the crash (an older ve
 what a declaration (`decl`) covers: a path is put back only when it is as the log expects (the image before, or one of the states
 the section was going to write, or a file a crash left empty); any other content is left alone and written in
 `.llmw2/journal/conflicts`, which `check` reports. A path in a `decl` record has no hash of what it was going to hold, so the
-undo removes a declared new file and cuts a declared length whatever follows: lines that a process which does not recover (a
-library of an older version) appended to `log.md` after the crash, before the first lock of this one, are cut with the section's own.
+undo removes a declared new file and cuts a declared length whatever follows: lines that a process which does not recover (a library
+of an older version) appended to `log.md` after the crash, before the first lock of this one, are cut with the section's own. A declared
+image (`decl` `copy`) has its hash, and the first write of its path a `post` record: it is put back as the image of a `copy` record is,
+never over content somebody else wrote.
 The recovery runs at the first lock, before any other write of this library.
 
 Not covered, as ever: a folder moved by `os.replace` (`replace_dir` refuses inside a transaction: a section that does it opens
@@ -312,6 +315,7 @@ class Txn:
         self._guard = threading.RLock()
         self._state: dict[str, str] = {}  # rel -> the kind of its first record
         self._lens: dict[str, int] = {}  # rel -> the length a path had before this section appended to it (kinds `dlen`, `len`)
+        self._images: dict[str, tuple[str, str]] = {}  # rel -> (trash file, hash) of a declared image not written yet (kind `dcopy`)
         self._patches: dict[str, list[tuple[int, bytes, bytes]]] = {}  # rel -> (offset, was, is) of what this section overwrote in place
         self._written: dict[str, bytes | None] = {}  # rel -> what it holds now, for a file this section wrote whole
         self._flush: dict[str, Path] = {}  # files to flush at commit
@@ -358,19 +362,21 @@ class Txn:
     def opened(self) -> bool:
         return self._fd is not None or self._seg is not None
 
-    def _put(self, record: dict[str, Any]) -> None:
-        """Append a record and make it durable: the caller changes the bundle only after this returns."""
+    def _put(self, record: dict[str, Any], *, flush: bool = True) -> None:
+        """Append a record and make it durable: the caller changes the bundle only after this returns. Without `flush`, written and
+        not flushed: it outlives the process, not a loss of power (a `post` record of a declared image, see `_declared`)."""
         fd = self._open()
         if self._seg is not None:
-            self._seg.put(record)
+            self._seg.put(record, flush=flush)
             return
         assert fd is not None
         view = memoryview(_encode(record))
         while view:
             view = view[os.write(fd, view) :]
-        os.fsync(fd)
+        if flush:
+            os.fsync(fd)
 
-    def _stash(self, path: Path, image: bytes | None = None) -> str:
+    def _stash(self, path: Path, image: bytes | None = None, *, flush: bool = True) -> str:
         """Keep the image `path` has now, as a file in the trash that is not a copy of it where the file system allows: a hard
         link (the file is replaced, so its old content lives on under the link's name). Durable before the record that names it."""
         trash = self.root / TRASH_DIR
@@ -391,20 +397,41 @@ class Txn:
         if made:
             _fsync_path(trash.parent, directory=True)
         self._trash_dir = trash
-        _fsync_path(trash, directory=True)  # the name must be there after a crash for the record to be of use
+        if flush:
+            _fsync_path(trash, directory=True)  # the name must be there after a crash for the record to be of use
         return name
 
     @property
     def salt_name(self) -> str:
         return f"{os.getpid():x}"
 
-    def declare(self, *, new: Sequence[str | os.PathLike[str]] = (), extend: Sequence[str | os.PathLike[str]] = ()) -> None:
-        """One record for the paths this section is about to make (`new`) or append to (`extend`): what a path of each kind needs to
-        be undone is known before the first write, so the section pays one flush for them all. A path that is not made after all, or
-        that is rewritten instead of appended to, costs nothing here (a rewrite gets its own `copy` record then)."""
+    def declare(
+        self,
+        *,
+        new: Sequence[str | os.PathLike[str]] = (),
+        extend: Sequence[str | os.PathLike[str]] = (),
+        images: Sequence[str | os.PathLike[str]] = (),
+    ) -> None:
+        """One record for the paths this section is about to make (`new`), append to (`extend`), or rewrite or delete (`images`: their
+        image goes to the trash first, all of them, and the trash is flushed once): what a path of each kind needs to be undone is known
+        before the first write, so the section pays one flush for them all. A path that is not made after all, or that is rewritten
+        instead of appended to, costs nothing here (a rewrite gets its own `copy` record then); an image of a path left as it is costs
+        a hard link, and its undo finds the path as it was."""
         with self._guard:
             fresh_new: list[str] = []
             lengths: dict[str, int] = {}
+            copies: dict[str, list[str | None]] = {}
+            for path in images:
+                rel = self.rel(path)
+                if rel is None or rel in self._state or rel in copies:
+                    continue
+                now = _read(Path(path))
+                if now is None:
+                    continue
+                copies[rel] = [self._stash(Path(path), flush=False), digest(now)]
+            if copies:
+                assert self._trash_dir is not None
+                _fsync_path(self._trash_dir, directory=True)  # the names are there after a crash, before the record that names them
             for path in new:
                 rel = self.rel(path)
                 if rel is None or rel in self._state or Path(path).exists():
@@ -418,14 +445,19 @@ class Txn:
                     lengths[rel] = os.stat(path).st_size
                 except FileNotFoundError:
                     fresh_new.append(rel)
-            if not fresh_new and not lengths:
+            if not fresh_new and not lengths and not copies:
                 return
             record: dict[str, Any] = {"t": "decl"}
             if fresh_new:
                 record["new"] = fresh_new
             if lengths:
                 record["len"] = lengths
+            if copies:
+                record["copy"] = copies
             self._put(record)
+            for rel, (name, pre) in copies.items():
+                self._state[rel] = "dcopy"
+                self._images[rel] = (str(name), str(pre))
             for rel in fresh_new:
                 self._state[rel] = "dnew"
                 self._flush[rel] = self.root / rel
@@ -437,6 +469,29 @@ class Txn:
 
     def _folder_of(self, path: Path) -> None:
         self._folders[str(path.parent)] = path.parent
+
+    def _declared(self, rel: str, full: Path, post: Callable[[bytes | None], str | None], *, in_place: bool) -> bool:
+        """The first write of a path whose image a declaration holds (`post`: the hash it goes to, from what it holds now). If it still
+        holds the declared image: a `post` record, not flushed (it outlives a killed process; after a loss of power without it the undo
+        finds content it does not know and leaves it, as a conflict, never a loss), and, before a write in place, the hard link that is
+        the image is replaced by a copy of it, flushed (the write would change the image too); True, and the path goes on as `copy`.
+        If it changed since the declaration (a hand edit): False, and the write takes the record it would have had without the
+        declaration, which the undo follows instead."""
+        name, pre = self._images.pop(rel)
+        now = _read(full)
+        if now is not None and digest(now) != pre:
+            del self._state[rel]
+            return False
+        if in_place and now is not None:
+            target = self.root / TRASH_DIR / name
+            tmp = target.with_name(f"{name}.tmp")
+            shutil.copyfile(full, tmp)
+            _fsync_path(tmp)
+            os.replace(tmp, target)
+            _fsync_path(target.parent, directory=True)
+        self._put({"t": "post", "p": rel, "post": post(now)}, flush=False)
+        self._state[rel] = "copy"
+        return True
 
     def before_write(self, path: str | os.PathLike[str], data: bytes) -> None:
         """A file is about to be replaced (or made) with `data`."""
@@ -453,7 +508,12 @@ class Txn:
         full = Path(path)
         with self._guard:
             kind = self._state.get(rel)
-            if kind in ("dlen", "len"):
+            declared = kind == "dcopy" and self._declared(rel, full, lambda _: post, in_place=False)
+            if kind == "dcopy" and not declared:
+                kind = None
+            if declared:
+                pass
+            elif kind in ("dlen", "len"):
                 # appended to (declared or not) and rewritten or deleted instead: the image to put back is the first `size` bytes,
                 # not the file as it is now (which holds the appended text); the state it has now is one the undo may meet
                 now = _read(full)
@@ -522,6 +582,18 @@ class Txn:
         full = Path(path)
         with self._guard:
             kind = self._state.get(rel)
+
+            def patched(data: bytes | None) -> str | None:
+                whole = bytearray(data or b"")
+                for off, _, new in edits:
+                    whole[off : off + len(new)] = new
+                return digest(bytes(whole))
+
+            if kind == "dcopy":
+                if self._declared(rel, full, patched, in_place=True):
+                    self._flush[rel] = full
+                    return
+                kind = None
             if kind in ("new", "copy", "dnew"):  # made or rewritten whole in this section: it is undone as a whole
                 if kind != "dnew":
                     whole = bytearray(_read(full) or b"")
@@ -549,7 +621,12 @@ class Txn:
         full = Path(path)
         with self._guard:
             kind = self._state.get(rel)
-            if kind in ("new", "copy"):  # written whole in this section: the state it goes to is the whole file plus `add`
+            declared = kind == "dcopy" and self._declared(rel, full, lambda now: digest((now or b"") + add), in_place=True)
+            if kind == "dcopy" and not declared:
+                kind = None
+            if declared:
+                pass
+            elif kind in ("new", "copy"):  # written whole in this section: the state it goes to is the whole file plus `add`
                 self._put({"t": "post", "p": rel, "post": digest((_read(full) or b"") + add)})
             elif kind == "len":
                 self._put({"t": "app", "p": rel, "addn": len(add), "addh": digest(add)})
@@ -931,11 +1008,17 @@ def recover(
                 paths.setdefault(name, _Path("new", i, declared=True))
             for name, n in (rec.get("len") or {}).items():
                 paths.setdefault(name, _Path("len", i, size=int(n), declared=True))
+            for name, (trash_name, pre) in (rec.get("copy") or {}).items():
+                paths.setdefault(name, _Path("copy", i, trash=trash_name, pre=pre, declared=True))
             continue
         rel = rec.get("p")
         if not isinstance(rel, str):
             continue
         one = paths.get(rel)
+        if one is not None and one.declared and one.kind == "copy" and kind in ("copy", "len", "patch", "new"):
+            # a declared image whose path changed by hand before its first write: the record that write took says how to undo it
+            del paths[rel]
+            one = None
         if kind == "patch":
             if one is None:
                 one = paths[rel] = _Path("patch", i)

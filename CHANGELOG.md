@@ -47,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `delete_folder`, `clear`, a batch's tidy) is not covered and writes as it did: a process that dies in one leaves it half done, as in
   the release before, and `check` lists what it finds. Each document filed now costs a few more flushes of the
   disk (about +45 ms on NTFS in the library's own timing).
+- A note's delete declares, before its first write, the images of every file it rewrites or deletes and the length of `log.md` in one
+  record of the undo log (as a filing declares what it makes): one flush for them all instead of one for each, the same files and
+  folders durable before the commit. What somebody else wrote after a crash is still left alone and listed by `check`.
 - `Wiki.remember(text, *, title, key, fields, author, at, timeout) -> Receipt`: the text is kept in the journal the moment it is asked, and a
   thread of the process (the filer, started by the first `remember`, `drain` or `_start_filer`; `Wiki()` starts none) files it with the
   same steps as `ingest`. The `Receipt` (`id`, `key`, `at`, `state`, `note`, `wait(timeout)`) is read from the journal at each access;

@@ -12,7 +12,9 @@ __copyright__ = (
 )
 
 import base64
+import builtins
 import contextvars
+import io
 import multiprocessing
 import os
 import shutil
@@ -21,6 +23,7 @@ import threading
 import time
 import types
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -640,3 +643,344 @@ def test_a_pending_answer_remembered_for_a_salt_is_not_given_for_another_file_wi
     shutil.copyfile(backup, restored)
     os.replace(restored, undo)  # the backup comes back: the same salt in another file
     assert txn.pending(base)
+
+
+class Durable:
+    """What a section makes durable, in order, on a model of the files: a name is bound to a file; a write through a handle makes the
+    file dirty, a flush through a handle open on it makes it clean, a rename moves it to the other name, a link gives it one more.
+    `at_commit` is what stood when the `commit` record was about to be written: the files of the bundle that were written in the section
+    and are still dirty (a flush the section owes), and the folders flushed so far. `images` are the files of the trash that were dirty
+    when a record (the one naming them) was about to be written."""
+
+    def __init__(self, root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.root = os.path.abspath(root)
+        self.names: dict[str, int] = {}  # absolute path -> file
+        self.fds: dict[int, int] = {}  # handle -> file
+        self.dirty: set[int] = set()
+        self.written: set[str] = set()  # names of the bundle written in the section
+        self.entries: set[str] = set()  # folders whose entries changed
+        self.dirs: list[str] = []  # folders flushed, in order
+        self.at_commit: tuple[set[str], set[str]] | None = None
+        self.images: list[str] = []
+        self._next = 0
+        real_open, real_close, real_write, real_fsync = os.open, os.close, os.write, os.fsync
+        real_pwrite, real_flush, real_replace, real_unlink, real_link = journal._pwrite, journal._FLUSH, os.replace, os.unlink, os.link
+        real_path, real_put, real_io_open = txn._fsync_path, txn.Txn._put, io.open
+
+        def bind(path: str) -> int:
+            self._next += 1
+            self.names[path] = self._next
+            return self._next
+
+        def opened(path: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+            full = os.path.abspath(path)
+            existed = os.path.exists(full)
+            fd = real_open(path, flags, *args, **kwargs)
+            if not existed or full not in self.names:
+                bind(full)
+                if not existed:
+                    self.entries.add(os.path.dirname(full))
+            self.fds[fd] = self.names[full]
+            if flags & os.O_TRUNC:
+                self._wrote(fd, full)
+            return fd
+
+        def io_opened(file: Any, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
+            full = os.path.abspath(file) if isinstance(file, (str, os.PathLike)) else None
+            existed = full is not None and os.path.exists(full)
+            f = real_io_open(file, mode, *args, **kwargs)
+            if full is not None and any(c in mode for c in "wax+"):
+                if not existed or "w" in mode or full not in self.names:
+                    bind(full)
+                    if not existed:
+                        self.entries.add(os.path.dirname(full))
+                self.fds[f.fileno()] = self.names[full]
+                self._wrote(f.fileno())  # written through a buffer: dirty from the start
+            return f
+
+        def wrote(fd: int, data: Any, *args: Any) -> int:
+            self._wrote(fd)
+            return real_write(fd, data, *args) if not args else real_pwrite(fd, data, *args)
+
+        def flushed(fd: int) -> None:
+            real_fsync(fd)
+            self.dirty.discard(self.fds.get(fd, -1))
+
+        def flushed_seg(fd: int) -> None:
+            real_flush(fd)
+            self.dirty.discard(self.fds.get(fd, -1))
+
+        def closed(fd: int) -> None:
+            real_close(fd)
+            self.fds.pop(fd, None)
+
+        def replaced(src: Any, dst: Any) -> None:
+            real_replace(src, dst)
+            s, d = os.path.abspath(src), os.path.abspath(dst)
+            if s in self.names:
+                self.names[d] = self.names.pop(s)
+            else:  # a file written by means this record does not see: taken as not flushed
+                self.dirty.add(bind(d))
+            self.entries.update({os.path.dirname(s), os.path.dirname(d)})
+            self._mark(d)
+
+        def unlinked(path: Any, *args: Any, **kwargs: Any) -> None:
+            real_unlink(path, *args, **kwargs)
+            full = os.path.abspath(path)
+            self.names.pop(full, None)
+            self.entries.add(os.path.dirname(full))
+
+        def linked(src: Any, dst: Any, *args: Any, **kwargs: Any) -> None:
+            real_link(src, dst, *args, **kwargs)
+            s, d = os.path.abspath(src), os.path.abspath(dst)
+            self.names[d] = self.names[s] if s in self.names else bind(d)
+            self.entries.add(os.path.dirname(d))
+
+        def fsync_path(path: Path, *, directory: bool = False, full: bool = False) -> None:
+            if directory:
+                self.dirs.append(os.path.abspath(path))  # the call is the durable point: on Windows it does nothing, as ever
+            real_path(path, directory=directory, full=full)
+
+        def put(section: txn.Txn, record: dict[str, Any], **kwargs: Any) -> None:
+            trash = os.path.join(self.root, *txn.TRASH_DIR.split("/")) + os.sep
+            self.images += [p for p, f in self.names.items() if p.startswith(trash) and f in self.dirty]
+            if record.get("t") == "commit":
+                self.at_commit = ({self._rel(p) for p in self.written if self.names.get(p) in self.dirty}, set(self.dirs))
+            real_put(section, record, **kwargs)
+
+        monkeypatch.setattr(os, "open", opened)
+        monkeypatch.setattr(io, "open", io_opened)
+        monkeypatch.setattr(builtins, "open", io_opened)
+        monkeypatch.setattr(os, "write", wrote)
+        monkeypatch.setattr(os, "fsync", flushed)
+        monkeypatch.setattr(os, "close", closed)
+        monkeypatch.setattr(os, "replace", replaced)
+        monkeypatch.setattr(os, "unlink", unlinked)
+        monkeypatch.setattr(os, "link", linked)
+        monkeypatch.setattr(journal, "_pwrite", lambda fd, data, off: wrote(fd, data, off))
+        monkeypatch.setattr(journal, "_FLUSH", flushed_seg)
+        monkeypatch.setattr(txn, "_fsync_path", fsync_path)
+        monkeypatch.setattr(txn.Txn, "_put", put)
+
+    def _rel(self, path: str) -> str:
+        return os.path.relpath(path, self.root).replace(os.sep, "/")
+
+    def _wrote(self, fd: int, full: str | None = None) -> None:
+        f = self.fds.get(fd)
+        if f is None:
+            return
+        self.dirty.add(f)
+        for name, g in self.names.items():
+            if g == f:
+                self._mark(name)
+
+    def _mark(self, name: str) -> None:
+        if not self._rel(name).startswith(f"{txn.JOURNAL_DIR}/") and not os.path.basename(name).endswith(".tmp"):
+            self.written.add(name)
+
+    def owed(self) -> tuple[set[str], set[str]]:
+        """(files written in the section and not durable when the commit record was written, folders whose entries changed and that
+        were not flushed before it), leaving out the journal's own folder and its temporary files."""
+        assert self.at_commit is not None, "no commit record"
+        dirty, dirs = self.at_commit
+        journal_dir = os.path.join(self.root, *txn.JOURNAL_DIR.split("/"))
+        folders = {d for d in self.entries if d.startswith(self.root) and not d.startswith(journal_dir)}
+        return dirty, folders - dirs
+
+
+def _scenario_run(tmp_path: Path, scenario: str, monkeypatch: pytest.MonkeyPatch) -> Durable:
+    root = tmp_path / scenario
+    (txn_child.setup_linked if scenario in txn_child.SCRUBS else txn_child.setup)(root)
+    store = WikiStore(root, actor="test")
+    record = Durable(root, monkeypatch)
+    with store.lock(id="the-id"):
+        {**txn_child.SCENARIOS, **txn_child.SCRUBS}[scenario](store)
+    monkeypatch.undo()
+    return record
+
+
+@pytest.mark.parametrize("scenario", sorted({**txn_child.SCENARIOS, **txn_child.SCRUBS}))
+def test_every_file_a_section_wrote_is_durable_before_its_commit_and_every_folder_is_flushed(
+    tmp_path: Path, form: str, scenario: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same durable points as a flush of every file at the commit: each file the section wrote is flushed after its last write and
+    before the commit record (on the handle that wrote it, or by the commit), each folder whose entries changed is flushed before it
+    (POSIX), and each image of the trash is flushed before the record that names it."""
+    record = _scenario_run(tmp_path, scenario, monkeypatch)
+    assert record.written, "the section wrote nothing the record saw"
+    dirty, folders = record.owed()
+    assert not dirty, f"written and not durable at the commit: {sorted(dirty)}"
+    assert not folders, f"entries changed and folder not flushed: {sorted(folders)}"
+    assert not record.images, f"an image not durable before its record: {record.images}"
+
+
+@pytest.mark.parametrize("skip", ["log.md", "index.md", "trash"])
+def test_a_flush_left_out_is_caught(tmp_path: Path, form: str, skip: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The check above fails when one flush is skipped: of `log.md`, of an `index.md`, of an image of the trash."""
+    names: dict[int, str] = {}
+    real_open, real_fd, real_path = os.open, txn._fsync_fd, txn._fsync_path
+
+    def opened(path: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+        fd = real_open(path, flags, *args, **kwargs)
+        names[fd] = str(path)
+        return fd
+
+    def skipped_fd(fd: int, *, full: bool = False) -> None:
+        name = names.get(fd, "")
+        if not ((skip == "trash" and "trash" in name) or os.path.basename(name) == skip):
+            real_fd(fd, full=full)
+
+    def skipped_path(path: Path, *, directory: bool = False, full: bool = False) -> None:
+        if directory or path.name != skip:
+            real_path(path, directory=directory, full=full)
+
+    scenario = {"log.md": "new0", "index.md": "delete", "trash": "scrubrewrite"}[skip]
+    root = tmp_path / scenario
+    (txn_child.setup_linked if scenario in txn_child.SCRUBS else txn_child.setup)(root)
+    store = WikiStore(root, actor="test")
+    monkeypatch.setattr(os, "open", opened)
+    monkeypatch.setattr(txn, "_fsync_fd", skipped_fd)
+    monkeypatch.setattr(txn, "_fsync_path", skipped_path)
+    record = Durable(root, monkeypatch)  # on top of the skipping
+    with store.lock(id="the-id"):
+        {**txn_child.SCENARIOS, **txn_child.SCRUBS}[scenario](store)
+    monkeypatch.undo()
+    dirty, _ = record.owed()
+    if skip == "trash":
+        assert record.images, "a skipped flush of an image went unseen"
+    else:
+        assert skip in {Path(p).name for p in dirty}, (skip, dirty)
+
+
+
+def test_a_log_of_the_form_with_a_record_for_each_image_is_still_undone(base: Path, form: str) -> None:
+    """A log written before the images of a delete were declared in one record: a `copy` record, with its image in the trash, for each
+    path; it is undone as ever."""
+    note, index, log_md = base / "a" / "note-3.md", base / "a" / "index.md", base / "log.md"
+    before = {p: p.read_bytes() for p in (note, index, log_md)}
+    section = txn.Txn(base, id=None)
+    with txn.active(section):
+        for path in (note, index):
+            image = {"trash": section._stash(path), "pre": txn.digest(path.read_bytes())}
+            post = None if path == note else txn.digest(b"rewritten\n")
+            section._put({"t": "copy", "p": section.rel(path), **image, "post": post})
+            section._state[section.rel(path)] = "copy"
+        section._put({"t": "len", "p": "log.md", "n": log_md.stat().st_size, "adds": [[6, txn.digest(b"* x y\n")]]})
+        section._state["log.md"] = "len"
+        section._lens["log.md"] = log_md.stat().st_size
+        note.unlink()
+        (base / "a" / ".index.tmp").write_bytes(b"rewritten\n")
+        os.replace(base / "a" / ".index.tmp", index)  # replaced, as the store does: the image is the old file
+        with open(log_md, "ab") as f:
+            f.write(b"* x y\n")
+    section.abandon()  # a process that died before its commit
+    kinds = [r["t"] for r in txn.read_records(base / txn.UNDO_FILE)]
+    assert kinds == ["copy", "copy", "len"]
+    done = txn.recover(base)
+    assert done.rolled_back and not done.conflicts
+    assert {p: p.read_bytes() for p in (note, index, log_md)} == before
+
+
+def test_a_delete_declares_its_images_in_one_record_and_is_undone_from_them(base: Path, form: str) -> None:
+    """A delete: one `decl` record for the images of what it rewrites or deletes and for the length of `log.md`, then the commit; a
+    process that dies before the commit has the wiki put back from that record."""
+    files = {p: p.read_bytes() for p in base.rglob("*.md") if ".llmw2" not in p.parts}
+    store = WikiStore(base, actor="test")
+    section = txn.Txn(base, id=None)
+    with txn.active(section):
+        store.delete_note(f"{txn_child.GROUP}/note-3.md")
+    kinds = [r["t"] for r in txn.read_records(base / txn.UNDO_FILE)]
+    assert kinds[0] == "decl" and set(kinds[1:]) == {"post"}, kinds  # the `post` records of the first writes are not flushed
+    rec = txn.read_records(base / txn.UNDO_FILE)[0]
+    assert set(rec["copy"]) >= {f"{txn_child.GROUP}/note-3.md", f"{txn_child.GROUP}/index.md"} and set(rec["len"]) == {"log.md"}
+    section.abandon()
+    done = txn.recover(base)
+    assert done.rolled_back and not done.conflicts
+    assert {p: p.read_bytes() for p in base.rglob("*.md") if ".llmw2" not in p.parts} == files
+
+
+def _bundle(root: Path) -> dict[Path, bytes]:
+    return {p: p.read_bytes() for p in root.rglob("*.md") if ".llmw2" not in p.parts}
+
+
+def _crashed_delete(root: Path, rel: str) -> None:
+    """A delete of `rel` whose process dies before its commit."""
+    section = txn.Txn(root, id=None)
+    with txn.active(section):
+        WikiStore(root, actor="test").delete_note(rel)
+    section.abandon()
+
+
+def test_an_index_appended_to_in_place_by_a_delete_is_put_back(base: Path, form: str) -> None:
+    """An index that lacks entries is appended to in place by the delete: the declared image is a hard link to that file, so it is made
+    a copy before the write, and the undo puts the index back as it was, with no conflict."""
+    index = base / txn_child.GROUP / "index.md"
+    lines = index.read_bytes().splitlines(keepends=True)
+    index.write_bytes(b"".join(line for line in lines if b"note-3.md" not in line and b"note-5.md" not in line))
+    before = _bundle(base)
+    appended: list[str] = []
+    real = txn.append
+    try:
+        txn.append = lambda path, text: (appended.append(Path(path).name), real(path, text))[1]  # type: ignore[assignment]
+        _crashed_delete(base, f"{txn_child.GROUP}/note-3.md")
+    finally:
+        txn.append = real  # type: ignore[assignment]
+    assert "index.md" in appended  # the case: the index was written in place
+    done = txn.recover(base)
+    assert done.rolled_back and not done.conflicts, done.conflicts
+    assert _bundle(base) == before
+
+
+@pytest.mark.parametrize("edited", ["index", "linked"])
+def test_what_somebody_saved_after_a_crashed_delete_is_kept_and_listed(base: Path, form: str, edited: str) -> None:
+    """A delete dies before its commit; an editor then saves a file the delete had rewritten (atomically, as editors do): the undo
+    leaves it as it was saved and lists it in the conflicts, as for an image recorded on its own."""
+    store = WikiStore(base, actor="test")
+    with store.lock():
+        folder = store.load().find(txn_child.GROUP)
+        assert folder is not None
+        one = next(n for n in folder.notes if n.rel.endswith("note-1.md"))
+        three = next(n for n in folder.notes if n.rel.endswith("note-3.md"))
+        store.link(one, three)
+    target = base / txn_child.GROUP / ("index.md" if edited == "index" else "note-1.md")
+    was = target.read_bytes()
+    _crashed_delete(base, f"{txn_child.GROUP}/note-3.md")
+    if edited == "linked":
+        assert target.read_bytes() != was  # the delete took the link out
+    saved = target.read_bytes() + b"\nA line the user wrote.\n"
+    tmp = target.with_name(".editor.tmp")
+    tmp.write_bytes(saved)
+    os.replace(tmp, target)
+    done = txn.recover(base)
+    assert done.rolled_back
+    assert target.read_bytes() == saved
+    assert any(c.startswith(f"{txn_child.GROUP}/{target.name}:") for c in done.conflicts), done.conflicts
+    assert (base / txn_child.GROUP / "note-3.md").exists()  # the rest is put back
+
+
+def test_a_file_changed_by_hand_after_the_declaration_is_undone_to_what_it_held_then(base: Path, form: str) -> None:
+    """A file a delete declared, changed by hand before the delete writes it: its write takes the record it would have had without the
+    declaration (the image as it is at that moment), and the undo puts that back, the hand edit included."""
+    index = base / txn_child.GROUP / "index.md"
+    store = WikiStore(base, actor="test")
+    section = txn.Txn(base, id=None)
+    real = txn.Txn.declare
+
+    def declare_then_edit(self: txn.Txn, **kwargs: Any) -> None:
+        real(self, **kwargs)
+        tmp = index.with_name(".hand.tmp")
+        tmp.write_bytes(index.read_bytes() + b"\nhand\n")
+        os.replace(tmp, index)
+
+    txn.Txn.declare = declare_then_edit  # type: ignore[method-assign]
+    try:
+        with txn.active(section):
+            store.delete_note(f"{txn_child.GROUP}/note-3.md")
+    finally:
+        txn.Txn.declare = real  # type: ignore[method-assign]
+    section.abandon()
+    kinds = [r["t"] for r in txn.read_records(base / txn.UNDO_FILE)]
+    assert "copy" in kinds  # the ordinary record of the index
+    done = txn.recover(base)
+    assert done.rolled_back and not done.conflicts, done.conflicts
+    assert index.read_bytes().endswith(b"\nhand\n")

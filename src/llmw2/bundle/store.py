@@ -1836,10 +1836,28 @@ class WikiStore:
 
         # a few notes gone: only the notes that name one of their files can link to them
         names = [n.path.name for n in notes] if not folders and len(notes) <= LINK_PREFILTER else []
-        for note in kept:
-            if names and not any(name in note.body for name in names):
-                continue
-            if drop_links(note.body, note.rel, gone) != note.body and self._edit(note, unlink):
+        linked = [
+            n for n in kept if not (names and not any(name in n.body for name in names)) and drop_links(n.body, n.rel, gone) != n.body
+        ]
+        cited = {r for n in kept for r in _raw_sources(n)} | set(keep)
+        raws = [
+            (resource, path)
+            for resource in dict.fromkeys(r for n in notes for r in _raw_sources(n))
+            if resource not in cited
+            and (path := (self.root / resource.lstrip("/")).resolve()).parent == (self.root / RAW).resolve()
+            and path.is_file()
+        ]
+        archived = self.archived_of(gone, drop)
+        if (section := txn.current()) is not None and not folders:
+            # what a delete rewrites or deletes is known before its first write: one record, one flush, for all the images (and for
+            # `log.md`, which `delete_note` appends to next), instead of a record and a flush for each
+            indexes = [n.folder.path / INDEX for n in notes if n.folder is not None]
+            section.declare(
+                extend=[self.root / LOG] if (self.root / LOG).exists() else [],
+                images=[*(n.path for n in linked), *(n.path for n in notes), *indexes, *archived, *(path for _, path in raws)],
+            )
+        for note in linked:
+            if self._edit(note, unlink):
                 deleted.unlinked.append(note.rel)
         touched: list[Folder] = []
         self._stale()  # whatever goes, the kept folders are listed again
@@ -1856,15 +1874,12 @@ class WikiStore:
         for folder in dict.fromkeys(touched):
             if folder.path.is_dir():
                 self.write_index(folder)
-        for path in self.archived_of(gone, drop):  # the archived versions of what went
+        for path in archived:  # the archived versions of what went
             txn.unlink(path)
             deleted.archived.append(f"/{path.relative_to(self.root).as_posix()}")
-        cited = {r for n in kept for r in _raw_sources(n)} | set(keep)
-        for resource in dict.fromkeys(r for n in notes for r in _raw_sources(n)):
-            path = (self.root / resource.lstrip("/")).resolve()
-            if resource not in cited and path.parent == (self.root / RAW).resolve() and path.is_file():
-                txn.unlink(path)
-                deleted.sources.append(resource)
+        for resource, path in raws:
+            txn.unlink(path)
+            deleted.sources.append(resource)
         return deleted
 
     def unique_slug(self, folder: Folder, slug: str, reserved: Iterable[str] = ()) -> str:
