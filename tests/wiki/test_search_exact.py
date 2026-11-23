@@ -22,9 +22,9 @@ FILLER = [(f"Report {n}", f"The report covers the {PROCESS} and the review of ev
 
 @pytest.fixture(autouse=True)
 def whole_answers(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The first search waits for the index's build: on a slow machine it can take more than `BUILD_WAIT`, and the answer is then
+    """The first search waits for the index's build: on a slow machine it can take more than `BUILD_WINDOW`, and the answer is then
     partial (`test_search_background.py` covers that); these tests are about the order of a whole answer."""
-    monkeypatch.setattr(si, "BUILD_WAIT", 30.0)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 30.0)
 
 
 def make(tmp_path: Path, notes: list[tuple[str, str]]) -> Wiki:

@@ -44,7 +44,7 @@ def cache_bytes(bundle: Path) -> bytes:
 
 
 def test_after_a_purge_no_file_of_the_cache_holds_a_word_or_the_title_of_the_note(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(si, "BUILD_WAIT", 30.0)  # the first search answers whole, however slow the machine (else partial)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 30.0)  # the first search answers whole, however slow the machine (else partial)
     w = make(bundle)
     try:
         for i in range(6):

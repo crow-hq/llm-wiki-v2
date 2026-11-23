@@ -326,21 +326,24 @@ class NoteSearch:
     def close(self) -> None:
         """Stop the build this process runs in the background (what its lots committed stays: the next search goes on from there), and
         let go of the notes kept meanwhile and of the index file."""
-        from llmw2.searchindex import BUILD_WAIT
+        from llmw2.searchindex import BUILD_WINDOW
 
         build, self._build = self._build, None
         if build is not None:
-            build.stop(BUILD_WAIT)
+            build.stop(BUILD_WINDOW)  # it stops at its next read: no longer than a search would wait for it
         with self._recent_lock:
             self._recent = None
         self.index.close()
 
-    def _building(self, store: WikiStore) -> bool:
+    def _building(self, store: WikiStore, until: int | None = None) -> bool:
         """Whether the index file is being built (not built whole yet): the search then reads what the build's lots committed (they are
         durable), with the notes this process wrote since (`_recent`, from then on), and says it is partial. Starts the build (`Build`)
-        when no process of the machine builds it, and waits for it `BUILD_WAIT` at most: a build that ends within it answers as before.
-        Never waits for the write lock of the file."""
-        from llmw2.searchindex import BUILD_WAIT, Build
+        when no process of the machine builds it. Every search waits for the build until `BUILD_WINDOW` after it began, whichever process
+        runs it (the time is in its lease), so a small wiki is answered whole, as before; past that, or when the lease does not say when
+        the build began, it answers at once. `until` (`time.monotonic_ns`): the end of the wait of this search, once it waited for a build
+        that ended without the file whole (one cut short: the next one is not waited for longer). Never waits for the write lock of the
+        file."""
+        from llmw2.searchindex import BUILD_WINDOW, Build, build_began, wait_build
 
         index = self.index
         if not self._background or index.ready():
@@ -356,6 +359,7 @@ class NoteSearch:
                 self._background = False
                 return False
             build = None  # it ended and another process took the file back since: build again
+        window = int(BUILD_WINDOW * 1e9)
         if build is None and index.path is not None:
             build = Build(index.path, store, self._entry)
             try:
@@ -363,10 +367,19 @@ class NoteSearch:
             except OSError:  # no lease can be made where the file goes (a file in place of the folder): the searches build it as before
                 self._background = False
                 return False
-            if started:  # else another process builds it: this one tries again at its next search
+            if started:
                 self._build = build
-                if build.wait(BUILD_WAIT) and (build.failed or index.ready()):
-                    return self._building(store)
+            else:  # another process builds it: this one waits for it within the same window, and tries again at its next search
+                build = None
+                began = build_began(index.path)
+                if began is not None:
+                    end = began + window if until is None else min(began + window, until)
+                    if wait_build(index.path, end):
+                        return self._building(store, end)
+        if build is not None:  # this process builds it
+            end = build.began + window if until is None else min(build.began + window, until)
+            if build.wait(max(0.0, (end - time.monotonic_ns()) / 1e9)) and (build.failed or index.ready()):
+                return self._building(store, end)
         if self._recent is None:
             with self._recent_lock:
                 self._recent = {}

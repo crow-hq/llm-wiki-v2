@@ -274,9 +274,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `rebuild`) puts its notes in once, at its end.
 - An index never built whole (a wiki searched for the first time, a file deleted, damaged or of an older schema) is built in the
   background, by one process of the machine at a time (a lease, `.llmw2/cache/search-v6.sqlite.build`), in a thread of its own; its
-  first search waits for it one second at most. Until the file is built whole a search of any process answers at once, without reading
-  the notes or waiting for the build, from the notes its lots committed (each lot is durable), the notes the process wrote since its
-  first search (a note it changed or deleted leaves the lot's row) and the entries not filed yet; a hit whose file is gone is left out.
+  lease also says when it began. Every search made meanwhile, in any process of the machine, waits for the build until five seconds
+  after it began (the five seconds a first search may take), so a small wiki is answered whole, as by release 1.0.5; it waits on the
+  lease, never on the write lock of the file, and one whose lease does not say when it began is not waited for. `close` waits for the
+  build it stops five seconds at most. Past those five seconds, until the file is built whole, a search answers at once, without
+  reading the notes or waiting for the build, from the notes its lots committed (each lot is durable), the notes the process wrote
+  since its first search (a note it changed or deleted leaves the lot's row) and the entries not filed yet; a hit whose file is gone is
+  left out.
   Such results say so: `Wiki.search` returns `Hits`, a list of `Hit` as before with `partial` (`Partial`: notes indexed so far, of the
   notes listed; None once the file is complete); a caller that does not look at `partial` takes such a list for a whole one. The MCP
   tool `search` adds, after the hits, one more text, "search index being built (N of M notes): the results may be partial", and

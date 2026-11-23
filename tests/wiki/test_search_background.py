@@ -3,7 +3,8 @@
 
 """The first build of the search index in the background (`searchindex.Build`): the searches made meanwhile answer at once from what its
 lots committed, the notes the process wrote since and the entries not filed, and say they are partial (`Hits.partial`, `Answer.partial`,
-the line of the MCP tools); once the file is built the answers are those of the index whole. One process builds, a writer's notes are in
+the line of the MCP tools); once the file is built the answers are those of the index whole. Within `BUILD_WINDOW` from the start of the
+build every search waits for it, in any process: a build that ends by then is answered whole. One process builds, a writer's notes are in
 the file when it is done, a build cut by a crash goes on from its lots, and no search reads the notes or waits for the write lock."""
 
 from __future__ import annotations
@@ -88,7 +89,7 @@ def _committed(tmp_path: Path) -> list[str]:
 
 
 def test_searches_while_the_file_is_built_are_partial_and_whole_once_it_is(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(si, "BUILD_WAIT", 0.05)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.05)
     monkeypatch.setattr(si, "BATCH", 10)
     wiki = _random_wiki(tmp_path, 60)
     _no_index(tmp_path)
@@ -143,7 +144,7 @@ def test_searches_while_the_file_is_built_are_partial_and_whole_once_it_is(tmp_p
 
 
 def test_a_note_written_while_the_build_runs_is_in_the_file_when_it_is_done(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(si, "BUILD_WAIT", 0.05)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.05)
     wiki = _random_wiki(tmp_path, 30)
     _no_index(tmp_path)
     gate = Gate(monkeypatch)  # the build listed the wiki and holds at its first read
@@ -205,7 +206,8 @@ def test_one_process_builds_the_others_answer_partial_then_whole(tmp_path: Path,
         monkeypatch.setattr(si._Building, "__init__", counted)
         w = Wiki(wiki.cfg, llm=wiki.llm)
         during = w.search("alpha river", 8)
-        assert made == [] and w._search._build is None  # another process builds: this one does not, and does not wait
+        # another process builds, and its lease does not say when it began: this one does not build, and does not wait
+        assert made == [] and w._search._build is None
         assert during.partial is not None and list(during) == []  # its lots hold nothing yet
         assert any("being built" in s for s in w.status()["warnings"])
     finally:
@@ -217,7 +219,7 @@ def test_one_process_builds_the_others_answer_partial_then_whole(tmp_path: Path,
         assert time.monotonic() < end
         time.sleep(0.05)
     probe.release()
-    monkeypatch.setattr(si, "BUILD_WAIT", 30.0)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 30.0)
     after = w.search("alpha river", 8)  # the next search takes the lease and builds, and waits for so small a build
     assert len(made) == 1 and after.partial is None and w._search.index.ready()
     assert _paths(after) == _expected(w, "alpha river", 8)
@@ -234,7 +236,7 @@ CRASHER = textwrap.dedent(
     from llmw2.search import NoteSearch
     from tests.wiki.fakes import FakeLLM
     si.BATCH = 10
-    si.BUILD_WAIT = 60.0
+    si.BUILD_WINDOW = 60.0
     real, reads = NoteSearch._entry, []
     def entry(ns, rel, path, stamp):
         if threading.current_thread().name == "llmw2-index-build":
@@ -260,7 +262,7 @@ def test_a_build_cut_by_a_crash_goes_on_from_its_lots_at_the_next_search(tmp_pat
         assert db.execute("SELECT 1 FROM meta WHERE k = 'built'").fetchone() is None
     assert "not complete" in (si.build_state(_index_file(tmp_path)) or "")
 
-    monkeypatch.setattr(si, "BUILD_WAIT", 30.0)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 30.0)
     reads: list[str] = []
     real = NoteSearch._entry
 
@@ -279,7 +281,7 @@ def test_a_build_cut_by_a_crash_goes_on_from_its_lots_at_the_next_search(tmp_pat
 
 
 def test_a_purge_reads_again_the_notes_kept_while_the_file_is_built(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(si, "BUILD_WAIT", 0.05)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.05)
     wiki = _random_wiki(tmp_path, 20)
     _no_index(tmp_path)
     gate = Gate(monkeypatch)
@@ -300,7 +302,7 @@ def test_a_purge_reads_again_the_notes_kept_while_the_file_is_built(tmp_path: Pa
 def test_a_note_purged_from_a_lot_not_marked_yet_leaves_the_file_when_the_build_goes_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(si, "BUILD_WAIT", 0.05)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.05)
     monkeypatch.setattr(si, "BATCH", 10)
     wiki = _random_wiki(tmp_path, 30)
     _no_index(tmp_path)
@@ -347,7 +349,7 @@ def test_a_build_that_fails_in_the_background_is_made_by_the_searches_as_before(
 def test_an_answer_found_while_the_file_is_built_says_its_notes_may_be_incomplete(
     bundle: Path, llm: FakeLLM, classifier: FakeClassifier, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(si, "BUILD_WAIT", 0.05)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.05)
     monkeypatch.setattr(si, "BATCH", 1)
     wiki = make_wiki(bundle, llm, classifier)
     gate = Gate(monkeypatch, after=3)  # three of the four notes committed
@@ -370,7 +372,7 @@ def test_an_answer_found_while_the_file_is_built_says_its_notes_may_be_incomplet
 def test_an_answer_whose_search_finds_nothing_while_the_file_is_built_does_not_walk_the_folders(
     bundle: Path, llm: FakeLLM, classifier: FakeClassifier, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(si, "BUILD_WAIT", 0.05)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.05)
     monkeypatch.setattr(si, "BATCH", 1)
     wiki = make_wiki(bundle, llm, classifier)
     gate = Gate(monkeypatch)
@@ -401,7 +403,7 @@ def test_the_mcp_search_says_partial_in_a_line_and_in_its_structured_content(tmp
     hits = Hits([Hit("a.md", "A", "about a", 1)])
     assert listed(hits) == [{"path": "a.md", "title": "A", "summary": "about a", "rank": 1}]  # not partial: as before
 
-    monkeypatch.setattr(si, "BUILD_WAIT", 0.05)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.05)
     monkeypatch.setattr(si, "BATCH", 10)
     wiki = _random_wiki(tmp_path, 30)
     _no_index(tmp_path)
@@ -425,7 +427,7 @@ def test_the_mcp_search_says_partial_in_a_line_and_in_its_structured_content(tmp
 def test_the_file_is_read_whole_only_once_the_notes_left_to_the_build_are_in(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The window after the mark "built": a note another process wrote while it saw no file built whole (it left the note to the build)
     is put in by the build's last listing, which waits for a writer that holds the lock; until then a search is still partial."""
-    monkeypatch.setattr(si, "BUILD_WAIT", 0.05)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.05)
     wiki = _random_wiki(tmp_path, 20)
     _no_index(tmp_path)
     window, searched = threading.Event(), threading.Event()
@@ -467,7 +469,7 @@ def test_the_file_is_read_whole_only_once_the_notes_left_to_the_build_are_in(tmp
 def test_a_search_that_read_no_tables_yet_does_not_wait_for_the_first_lot_of_the_build(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(si, "BUILD_WAIT", 0.05)
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.05)
     wiki = _random_wiki(tmp_path, 30)
     _no_index(tmp_path)
     gate = Gate(monkeypatch)
@@ -495,3 +497,281 @@ def test_a_search_that_read_no_tables_yet_does_not_wait_for_the_first_lot_of_the
     assert out and out[0].partial == Partial(0, 30)
     other.close()
     w.close()
+
+
+class Waits:
+    """Records the waits of the searches of this process for a build: for their own (`Build.wait`, the most it could wait) and on the
+    lease of another's (`wait_build`, the time left to the end of the window, nothing to wait for when not above 0). `ends`: the end of
+    each wait on a lease, as given (no clock read); `builds`: the build of each wait for its own, with the most it could wait."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.left: list[float] = []
+        self.ends: list[int] = []
+        self.builds: list[tuple[si.Build, float]] = []
+        self._changed = threading.Condition()
+        real_wait, real_lease = si.Build.wait, si.wait_build
+
+        def wait(build: si.Build, timeout: float) -> bool:
+            if threading.current_thread() is not threading.main_thread():  # a search's, not the test's
+                self.builds.append((build, timeout))
+                self._add(timeout)
+            return real_wait(build, timeout)
+
+        def lease(path: Path, until: int) -> bool:
+            self.ends.append(until)
+            self._add((until - time.monotonic_ns()) / 1e9)
+            return real_lease(path, until)
+
+        monkeypatch.setattr(si.Build, "wait", wait)
+        monkeypatch.setattr(si, "wait_build", lease)
+
+    def _add(self, left: float) -> None:
+        with self._changed:
+            self.left.append(left)
+            self._changed.notify_all()
+
+    @property
+    def waiting(self) -> list[float]:
+        return [left for left in self.left if left > 0]
+
+    def reach(self, n: int) -> None:
+        """Wait until `n` searches wait for a build (they wait for it: the test does not wait for a time)."""
+        with self._changed:
+            assert self._changed.wait_for(lambda: len(self.waiting) >= n, 60)
+
+
+def _searching(w: Wiki, out: list[Hits], query: str = "alpha river") -> threading.Thread:
+    t = threading.Thread(target=lambda: out.append(w.search(query, 8)), daemon=True)
+    t.start()
+    return t
+
+
+def _write_began(lease: Path, began: int, check: int) -> None:
+    with open(lease, "r+b") as f:
+        f.seek(si._BEGAN_AT)
+        f.write(si._BEGAN.pack(began, check))
+
+
+def test_the_searches_made_while_the_build_runs_wait_for_it_within_the_window_and_answer_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(si, "BUILD_WINDOW", 60.0)
+    monkeypatch.setattr(si, "BATCH", 10)
+    wiki = _random_wiki(tmp_path, 40)
+    _no_index(tmp_path)
+    gate = Gate(monkeypatch, after=15)  # one lot committed; the build holds the write lock in the second
+    waits = Waits(monkeypatch)
+    w = Wiki(wiki.cfg, llm=wiki.llm)
+    first: list[Hits] = []
+    later: list[Hits] = []
+    t1 = _searching(w, first)  # it starts the build and waits for it
+    assert gate.reached.wait(60)
+    waits.reach(1)
+    t2 = _searching(w, later)  # a later search of the same process: it waits behind the first, which holds the index's look
+    build = w._search._build
+    assert build is not None and not build.finished and first == later == []
+    assert len(waits.waiting) == 1 and waits.waiting[0] <= 60.0
+    gate.open.set()
+    t1.join(60)
+    t2.join(60)
+    assert not t1.is_alive() and not t2.is_alive()
+    expected = _expected(w, "alpha river", 8)
+    for hits in (first[0], later[0]):
+        assert hits.partial is None and _paths(hits) == expected
+    assert w._search.index.ready()
+    w.close()
+
+
+def test_past_the_window_a_search_answers_at_once_partial(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.0)
+    monkeypatch.setattr(si, "BATCH", 10)
+    wiki = _random_wiki(tmp_path, 40)
+    _no_index(tmp_path)
+    gate = Gate(monkeypatch, after=25)  # two lots committed
+    w = Wiki(wiki.cfg, llm=wiki.llm)
+    other = Wiki(wiki.cfg, llm=wiki.llm)  # another reader, which does not hold the lease
+    _at_gate(w, gate)
+    build = w._search._build
+    assert build is not None
+    monkeypatch.setattr(si, "BUILD_WINDOW", 60.0)
+    build.began -= 61 * 10**9  # as a build that began longer ago than the window: so it says in its lease too
+    _write_began(si.lease_of(_index_file(tmp_path)), build.began, build.began ^ si._LISTED_MASK)
+    waits = Waits(monkeypatch)
+    committed = _committed(tmp_path)
+    for reader in (w, other):
+        hits = reader.search("alpha river", 8)  # the gate is closed: an answer at all is an answer that did not wait for the build
+        assert hits.partial == Partial(20, 40) and _paths(hits) == _expected(w, "alpha river", 8, within=committed)
+    assert waits.left and waits.waiting == []  # each looked at the window, and found it over
+    gate.open.set()
+    assert build.wait(60) and not build.failed
+    _age(tmp_path / "wiki")
+    assert other.search("alpha river", 8).partial is None
+    other.close()
+    w.close()
+
+
+WAITER = textwrap.dedent(
+    """
+    import sys
+    from pathlib import Path
+    from llmw2 import Wiki, WikiConfig
+    from llmw2 import searchindex as si
+    from llmw2.models.usage import UsageTracker
+    from tests.wiki.fakes import FakeLLM
+    si.BUILD_WINDOW = 60.0
+    real = si.wait_build
+    def wait_build(path, until):
+        print("waiting", flush=True)
+        return real(path, until)
+    si.wait_build = wait_build
+    hits = Wiki(WikiConfig(bundle=Path(sys.argv[1]), mode="classic"), llm=FakeLLM(UsageTracker())).search("alpha river", 8)
+    print(hits.partial, flush=True)
+    print(",".join(h.path for h in hits), flush=True)
+    """
+)
+
+
+def test_a_search_of_a_process_that_does_not_build_waits_within_the_same_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(si, "BUILD_WINDOW", 60.0)
+    monkeypatch.setattr(si, "BATCH", 10)
+    wiki = _random_wiki(tmp_path, 40)
+    _no_index(tmp_path)
+    gate = Gate(monkeypatch, after=15)
+    waits = Waits(monkeypatch)
+    w = Wiki(wiki.cfg, llm=wiki.llm)
+    builder: list[Hits] = []
+    t1 = _searching(w, builder)
+    assert gate.reached.wait(60)
+    waits.reach(1)
+    other = Wiki(wiki.cfg, llm=wiki.llm)  # another index of this process: the lease is not its own
+    reader: list[Hits] = []
+    t2 = _searching(other, reader)
+    waits.reach(2)
+    build = w._search._build
+    assert build is not None and si.build_began(_index_file(tmp_path)) == build.began
+    # the window runs from the start of the build, not from each search: the reader waits on the lease to the end the builder's has
+    # (exact, from the lease's bytes), and not longer than the builder (the clock may give both the same tick)
+    assert waits.ends == [build.began + int(60.0 * 1e9)]
+    assert waits.waiting[1] <= waits.waiting[0] <= 60.0
+    script = tmp_path / "waiter.py"
+    script.write_text(WAITER, encoding="utf-8")
+    proc = subprocess.Popen([sys.executable, str(script), str(tmp_path / "wiki")], env=_env(), stdout=subprocess.PIPE, text=True)
+    try:
+        assert proc.stdout is not None and proc.stdout.readline().strip() == "waiting"  # on the lease, in the window its bytes give
+        assert not build.finished and builder == reader == []
+        gate.open.set()
+        out, _ = proc.communicate(timeout=120)
+    finally:
+        gate.open.set()
+        if proc.poll() is None:
+            proc.kill()
+    assert proc.returncode == 0
+    t1.join(60)
+    t2.join(60)
+    expected = _expected(w, "alpha river", 8)
+    assert out.splitlines() == ["None", ",".join(expected)]
+    for hits in (builder[0], reader[0]):
+        assert hits.partial is None and _paths(hits) == expected
+    assert other._search._build is None  # it waited, and did not build
+    other.close()
+    w.close()
+
+
+DYING = textwrap.dedent(
+    """
+    import os, sys, threading
+    from pathlib import Path
+    from llmw2 import Wiki, WikiConfig
+    from llmw2 import searchindex as si
+    from llmw2.models.usage import UsageTracker
+    from llmw2.search import NoteSearch
+    from tests.wiki.fakes import FakeLLM
+    si.BATCH = 10
+    si.BUILD_WINDOW = 0.0
+    real, reads = NoteSearch._entry, []
+    def entry(ns, rel, path, stamp):
+        if threading.current_thread().name == "llmw2-index-build":
+            reads.append(rel)
+            if len(reads) == 15:  # one lot committed; it holds the write lock in the second
+                print("building", flush=True)
+                sys.stdin.readline()
+                os._exit(9)
+        return real(ns, rel, path, stamp)
+    NoteSearch._entry = entry
+    w = Wiki(WikiConfig(bundle=Path(sys.argv[1]), mode="classic"), llm=FakeLLM(UsageTracker()))
+    w.search("alpha")
+    threading.Event().wait()
+    """
+)
+
+
+def test_a_search_that_takes_the_build_over_from_a_dead_process_waits_no_longer_than_its_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guarantee against waits one after the other in a search: one that waited on the lease of a builder that died, and so builds
+    the file itself, waits for its own build only to the end of the window it waited in, not for a window of its own."""
+    monkeypatch.setattr(si, "BUILD_WINDOW", 60.0)
+    wiki = _random_wiki(tmp_path, 40)
+    _no_index(tmp_path)
+    script = tmp_path / "dying.py"
+    script.write_text(DYING, encoding="utf-8")
+    proc = subprocess.Popen(
+        [sys.executable, str(script), str(tmp_path / "wiki")], env=_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    )
+    try:
+        assert proc.stdout is not None and proc.stdout.readline().strip() == "building"
+        lease = si.lease_of(_index_file(tmp_path))
+        began = time.monotonic_ns() - 30 * 10**9  # its build began 30 s ago: 30 s of the window are left
+        _write_began(lease, began, began ^ si._LISTED_MASK)
+        waits = Waits(monkeypatch)
+        w = Wiki(wiki.cfg, llm=wiki.llm)
+        out: list[Hits] = []
+        t = _searching(w, out)
+        waits.reach(1)  # it waits on the lease of the other process
+        assert waits.ends == [began + int(60.0 * 1e9)]
+        assert proc.stdin is not None
+        proc.stdin.write("die\n")
+        proc.stdin.flush()
+        assert proc.wait(60) == 9
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(30)
+    t.join(60)
+    assert not t.is_alive()
+    ((build, most),) = waits.builds  # the lease let go of, it took the build over
+    assert most <= (waits.ends[0] - build.began) / 1e9 + 1e-6 < 31.0  # within what was left of the first window, not 60 s more
+    assert out and out[0].partial is None and _paths(out[0]) == _expected(w, "alpha river", 8)
+    w.close()
+
+
+@pytest.mark.parametrize("began", ["never written", "torn", "to come"])
+def test_a_lease_that_does_not_say_when_its_build_began_is_not_waited_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, began: str
+) -> None:
+    monkeypatch.setattr(si, "BUILD_WINDOW", 60.0)
+    wiki = _random_wiki(tmp_path, 20)
+    _no_index(tmp_path)
+    lease = si.lease_of(_index_file(tmp_path))
+    lease.parent.mkdir(parents=True, exist_ok=True)
+    script = tmp_path / "holder.py"
+    script.write_text(HOLDER, encoding="utf-8")
+    other = subprocess.Popen(
+        [sys.executable, str(script), str(lease)], env=_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    )
+    try:
+        assert other.stdout is not None and other.stdout.readline().strip() == "held"
+        now = time.monotonic_ns()
+        if began == "torn":
+            _write_began(lease, now, now ^ si._LISTED_MASK ^ 1)
+        elif began == "to come":  # a lease written before the machine started again
+            _write_began(lease, now + 3600 * 10**9, (now + 3600 * 10**9) ^ si._LISTED_MASK)
+        assert si.build_began(_index_file(tmp_path)) is None
+        waits = Waits(monkeypatch)
+        w = Wiki(wiki.cfg, llm=wiki.llm)
+        hits = w.search("alpha river", 8)  # the lease is held to the end of the test: an answer at all is one that did not wait
+        assert hits.partial is not None and list(hits) == [] and waits.left == []
+        w.close()
+    finally:
+        other.kill()
+        other.wait(30)

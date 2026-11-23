@@ -74,10 +74,11 @@ LISTING_LOOK = 1.0
 # sequence) p99 54, max 57; one row a filing p99 33. 88 covers those, and stays within three pages of 512 even at one row a
 # generation (some 1.5 KB at most)
 RECENT_IDS = 88
-# seconds the search that starts a build in the background waits for it: a build that ends within it is answered as before, from the file
-# whole; past it the search answers at once from what the file holds so far, marked partial (`NoteSearch.find`). A fifth of the 5 s a
-# first search may take (requirement B6 of the robots' table): a small wiki is answered whole, a large one in time
-BUILD_WAIT = 1.0
+# seconds from the start of a build in the background in which every search waits for it, in whatever process of the machine: a build
+# that ends within them is answered as before, from the file whole; past them a search answers at once from what the file holds so far,
+# marked partial (`NoteSearch.find`). The 5 s a first search may take (requirement B6 of the robots' table): a small wiki is answered
+# whole, a large one in time
+BUILD_WINDOW = 5.0
 PAGE_SIZE = 512  # a changed note touches pages at random: small pages write fewer bytes (measured at 512, 1024, 2048, 4096)
 _K1, _B = lexical._K1, lexical._B
 _MASK = (1 << 64) - 1
@@ -89,6 +90,10 @@ _LISTED = struct.Struct("<QQQQ")
 _LISTED_MASK = 0x9E3779B97F4A7C15
 _PROGRESS = struct.Struct("<QQ")  # in the lease of a build, from byte 64 (the lock is on byte 0): notes in the file, notes listed
 _PROGRESS_AT = 64
+# after the progress: when the build began (`time.monotonic_ns`, one clock for the machine) and a check, so that the searches of the other
+# processes wait for it within the same window (`BUILD_WINDOW`); bytes never written or torn are no time
+_BEGAN = struct.Struct("<QQ")
+_BEGAN_AT = _PROGRESS_AT + _PROGRESS.size
 _PROGRESS_EVERY = 256  # notes read between two writes of the progress
 log = logging.getLogger(__name__)
 _DDL = (
@@ -1503,11 +1508,16 @@ class Build:
         self._index: _Building | None = None
         self._done = 0  # notes in the file when the build began
         self._reads = 0
+        self.began = 0  # when it started (`time.monotonic_ns`), also in its lease for the other processes (`build_began`)
 
     def start(self) -> bool:
         """Start the build if no process builds this file now (the lease is never waited for); whether it started."""
         if not self.lease.try_acquire():
             return False
+        self.began = time.monotonic_ns()
+        with contextlib.suppress(OSError), open(self.lease.path, "r+b") as f:
+            f.seek(_BEGAN_AT)
+            f.write(_BEGAN.pack(self.began, self.began ^ _LISTED_MASK))
         self._thread = threading.Thread(target=self._run, name="llmw2-index-build", daemon=True)
         try:
             self._thread.start()
@@ -1576,6 +1586,31 @@ def progress(path: Path) -> tuple[int, int]:
         done, listed = _PROGRESS.unpack(f.read(_PROGRESS.size))
         return int(done), int(listed)
     return 0, 0
+
+
+def build_began(path: Path) -> int | None:
+    """When the build of the index file at `path` began (`time.monotonic_ns`), as its lease says; None when it does not say (bytes never
+    written or torn, or a time to come: a lease left before the machine started again). 16 bytes read, nothing waited for."""
+    with contextlib.suppress(OSError, struct.error), open(lease_of(path), "rb") as f:
+        f.seek(_BEGAN_AT)
+        at, check = _BEGAN.unpack(f.read(_BEGAN.size))
+        if at and check == at ^ _LISTED_MASK and at <= time.monotonic_ns():
+            return int(at)
+    return None
+
+
+def wait_build(path: Path, until: int) -> bool:
+    """Wait until `until` (`time.monotonic_ns`) at most for the build of the index file at `path` that another process runs (or another
+    index of this one), on its lease, which the build lets go of when it ends: the write lock of the file is never waited for. Whether
+    the build ended (the lease is let go of again at once: the search that waited does not build)."""
+    left = (until - time.monotonic_ns()) / 1e9
+    if left <= 0:
+        return False
+    lease = FileLock(lease_of(path))
+    if not lease.acquire(timeout=left):
+        return False
+    lease.release()
+    return True
 
 
 def build_state(path: Path) -> str | None:
