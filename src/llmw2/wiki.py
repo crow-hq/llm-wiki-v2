@@ -1386,7 +1386,10 @@ class Wiki:
             raise InputError("empty question")
         began = time.monotonic_ns()  # the wait on a build in the background counts from here (`NoteSearch._building`)
         with self._search.index.looked():  # one look at the index's file for the queue (`_pending`) and the search
-            found = self._search.find(self.store, query, k, where, [self._pending_hit(p) for p in self._pending(where)], began)
+            # the queue once the index is synced (and the wait on a build over): the file says which of the entries' notes it has
+            found = self._search.find(
+                self.store, query, k, where, lambda building: [self._pending_hit(p) for p in self._pending(where, building)], began
+            )
         hits = Hits(Hit(rel, title, summary, i) for i, (rel, title, summary) in enumerate(found, 1))
         hits.partial = found.partial
         return hits
@@ -1402,22 +1405,29 @@ class Wiki:
         it: a search embeds the notes that have none yet."""
         self._search.complete(self.store)
 
-    def _pending(self, where: dict[str, Any] | None = None) -> list[Pending]:
-        """The entries of the journal a search shows (`Hub.searchable`), less those whose note the index has; none, and no file made,
-        when the bundle has no journal."""
+    def _pending(self, where: dict[str, Any] | None = None, building: bool | None = None) -> list[Pending]:
+        """The entries of the journal a search shows (`Hub.searchable`), less those whose note the index has, and those done whose note
+        is no longer on disk; none, and no file made, when the bundle has no journal. `building`: whether the index is being built
+        (None: whether its file is not complete now); only then are the entries done that no search showed among them."""
         journal = self.cfg.bundle / J.JOURNAL_DIR
         if self._hub is None and not (journal.is_dir() and any(journal.glob("*.wal"))):
             return []
         from llmw2.searchindex import LISTING_LOOK
 
         hub = self._journal()
-        shown = hub.searchable(LISTING_LOOK)  # the journal is looked at as often as the files of the wiki
+        if building is None:
+            building = not self._search.index.ready()
+        shown = hub.searchable(LISTING_LOOK, building)  # the journal is looked at as often as the files of the wiki
         notes = [p.note for p in shown if p.note]
         if notes:
             have = self._search.indexed(notes)
             if have:
                 hub.unshow([p.id for p in shown if p.note in have])
                 shown = [p for p in shown if p.note not in have]
+            gone = [p.id for p in shown if p.note and not (self.store.root / p.note).is_file()]  # deleted, or moved since
+            if gone:
+                dropped = hub.unshow_gone(gone)
+                shown = [p for p in shown if p.id not in dropped]
         return [p for p in shown if not where or fields_match(p.fields, where)]
 
     def _pending_hit(self, p: Pending) -> SearchPending:

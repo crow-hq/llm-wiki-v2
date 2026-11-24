@@ -251,7 +251,7 @@ class NoteSearch:
         query: str,
         k: int,
         where: dict[str, Any] | None = None,
-        pending: Sequence[Pending] = (),
+        pending: Sequence[Pending] | Callable[[bool], Sequence[Pending]] = (),
         began: int | None = None,
     ) -> Found:
         """The best `k` notes of the wiki (those `where` keeps, if given: a filter on `fields`) as (path, title, summary), from the
@@ -265,8 +265,10 @@ class NoteSearch:
         `pending`: texts that are not notes yet, as (path, title, summary, the count of their words), already filtered by `where`.
         Each is scored by its words as one more note of the index would be (`SearchIndex.scored`: the notes' scores do not change)
         and comes before the first note it scores higher than, a note first at the same score and the texts in the order given among
-        themselves; then the first `k`. `began` (`time.monotonic_ns`): when the search began, for the wait on a build (`_building`);
-        None: now."""
+        themselves; then the first `k`. Or a function that gives them from whether the index is being built, called once the wait on a
+        build is over (`_building`) and the index synced, so that what it asks the index (which of the entries' notes it has) is said by
+        the file this search reads. `began`
+        (`time.monotonic_ns`): when the search began, for the wait on a build (`_building`); None: now."""
         began = time.monotonic_ns() if began is None else began
         with self._lock, self.index.looked():  # one look at the index's file for the whole search
             return self._find(store, query, k, where, pending, began)
@@ -449,7 +451,13 @@ class NoteSearch:
                 self._recent.update(got)
 
     def _find(
-        self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None, pending: Sequence[Pending], began: int
+        self,
+        store: WikiStore,
+        query: str,
+        k: int,
+        where: dict[str, Any] | None,
+        pending: Sequence[Pending] | Callable[[bool], Sequence[Pending]],
+        began: int,
     ) -> Found:
         self._root = store.root
         exact = exact_expressions(query)
@@ -463,6 +471,7 @@ class NoteSearch:
         # one run: a damaged file found by a step starts them all again
         def words() -> tuple[list[tuple[str, float]], list[float], dict[str, str], list[str], list[Pending]]:
             index.sync(store, self._entry, wait=False, build=not building)  # while it is built: what its lots committed, no listing
+            queue = pending(building) if callable(pending) else pending  # asked once the file is synced: which notes of the entries it has
             mine: list[Pending] = []
             shadow: set[str] = set()
             if recent:  # a note written since is taken as it is now, in place of the file's row; one the file holds as it is, from the file
@@ -472,7 +481,7 @@ class NoteSearch:
                         shadow.add(rel)
                         if entry is not None and (not where or fields_match(entry[2], where)):
                             mine.append(entry[0])
-            extra = [*mine, *pending]
+            extra = [*mine, *queue]
             pool = max(k, EXACT_POOL)
             ranked, others = index.scored(query, pool + len(shadow), where, [p[3] for p in extra])
             ranked = [(rel, s) for rel, s in ranked if rel not in shadow][:pool]

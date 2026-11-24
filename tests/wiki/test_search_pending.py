@@ -6,10 +6,13 @@ the index has its note, or until a purge forgets it; nothing of it goes in the i
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
 import threading
+import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +21,9 @@ import pytest
 from llmw2 import InputError, Wiki
 from llmw2 import filer as F
 from llmw2 import searchindex as SI
+from llmw2.bundle.filelock import FileLock
 from tests.wiki.test_remember import make
+from tests.wiki.test_search_background import HOLDER, _env
 from tests.wiki.test_search_index import _age
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -253,4 +258,201 @@ def test_a_pending_path_of_an_entry_forgotten_or_unknown_is_not_found_and_gives_
             w.read_note(path)
         assert "NW-4471" not in str(e.value) and "narwhal" not in str(e.value)
     assert w.read_note(f"pending:{again.id}").rel == again.note
+    w.close()
+
+
+FILES = r"""
+import sys
+from pathlib import Path
+from llmw2 import Wiki, WikiConfig
+from llmw2.models.usage import UsageTracker
+from tests.wiki.fakes import ContentLLM
+w = Wiki(WikiConfig(bundle=Path(sys.argv[1]), mode="classic"), llm=ContentLLM(UsageTracker()))
+r = w.remember(sys.argv[2], key="narwhal", title="Narwhal")
+w.drain(60)  # filed and done
+print(r.id, r.note, flush=True)
+w.close()
+"""
+
+
+def test_an_entry_filed_before_a_process_looked_is_found_while_another_process_builds_the_index(bundle: Path) -> None:
+    """A process remembers an entry and files it while another process builds the index (its lots do not hold the note: it began
+    before). The first search of a process that had not looked at the journal reads the entry open and done at once: it shows it,
+    as it shows one it saw open, until the index has its note; `ask` and `read_note` too."""
+    w, _ = make(bundle)
+    for i in range(3):
+        w.store.write_note(
+            w.store.load(), title=f"Whale {i}", summary=f"s{i}", body=f"whale of the sea number {i}", tags=[], source={"resource": f"/r{i}"}
+        )
+    _age(bundle)
+    w._stop_filer()  # this process files nothing, and no search of it looked at the journal
+    lease = SI.lease_of(bundle / SI.INDEX_FILE)
+    lease.parent.mkdir(parents=True, exist_ok=True)
+    script = bundle.parent / "holder.py"
+    script.write_text(HOLDER, encoding="utf-8")
+    holder = subprocess.Popen(
+        [sys.executable, str(script), str(lease)], env=_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    )
+    try:
+        assert holder.stdout is not None and holder.stdout.readline().strip() == "held"  # another process builds: no lot yet
+        p = subprocess.run([sys.executable, "-c", FILES, str(bundle), NARWHAL], capture_output=True, text=True, env=_env(), timeout=120)
+        assert p.returncode == 0, p.stderr[-2000:]
+        ident, note = p.stdout.split()
+        assert (bundle / note).is_file()
+
+        hits = w.search("narwhal tusk", 8)  # the first search of this process
+        assert hits.partial is not None and paths(w, "narwhal tusk") == [f"pending:{ident}"] == [h.path for h in hits]
+        assert w.read_note(f"pending:{ident}").body == NARWHAL
+        assert not w._journal().entries[ident].text  # the copy shown holds the text, the journal's entry no more
+    finally:
+        holder.kill()
+        holder.wait(30)
+    probe = FileLock(lease)
+    end = time.monotonic() + 30
+    while not probe.try_acquire():  # Windows lets go of a dead process's locks a moment after it ended
+        assert time.monotonic() < end
+        time.sleep(0.05)
+    probe.release()
+    whole = w.search("narwhal tusk", 8)  # this process builds the index, small enough to be waited for (the entry may be a hit this once)
+    assert whole.partial is None and note in [h.path for h in whole]
+    assert paths(w, "narwhal tusk") == [note] and w._journal().shown == {}  # then its note alone: the copy went
+    w.close()
+
+
+FALCON = "topic: birds-1\nThe purple falcon hides code PF-9931 under its wing."
+
+
+@contextlib.contextmanager
+def built_elsewhere(bundle: Path) -> Iterator[None]:
+    """Another process holds the build of the index (its lease says no start): every search of this one is partial, from no lot."""
+    lease = SI.lease_of(bundle / SI.INDEX_FILE)
+    lease.parent.mkdir(parents=True, exist_ok=True)
+    script = bundle.parent / "holder.py"
+    script.write_text(HOLDER, encoding="utf-8")
+    holder = subprocess.Popen(
+        [sys.executable, str(script), str(lease)], env=_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    )
+    try:
+        assert holder.stdout is not None and holder.stdout.readline().strip() == "held"
+        yield
+    finally:
+        holder.kill()
+        holder.wait(30)
+
+
+def filed_falcon(bundle: Path) -> tuple[Wiki, str, str]:
+    """A memory remembered and filed by this process, which never searched: (the wiki, the entry's id, its note)."""
+    w, _ = make(bundle)
+    w.store.write_note(w.store.load(), title="Whale", summary="s", body="whale of the sea", tags=[], source={"resource": "/r"})
+    _age(bundle)
+    r = w.remember(FALCON, key="falcon", title="Falcon")
+    w.drain(60)
+    assert r.note and (bundle / r.note).is_file()
+    return w, r.id, r.note
+
+
+def never_again(w: Wiki, ident: str) -> None:
+    """The memory deleted is not shown, nor read, as `pending:<id>`, and no copy of its text stays in the process."""
+    for _ in range(2):
+        assert f"pending:{ident}" not in paths(w, "purple falcon")
+    with pytest.raises(FileNotFoundError):
+        w.read_note(f"pending:{ident}")
+    hub = w._journal()
+    assert ident not in hub.shown and not hub.kept and not (ident in hub.entries and hub.entries[ident].text)
+
+
+@pytest.mark.parametrize("how", ["delete_note", "delete_folder", "clear"])
+def test_a_memory_whose_note_was_deleted_before_any_search_is_not_shown_while_the_index_is_built(bundle: Path, how: str) -> None:
+    w, ident, note = filed_falcon(bundle)
+    with built_elsewhere(bundle):
+        if how == "delete_note":
+            w.delete_note(note)
+        elif how == "delete_folder":
+            w.delete_folder(note.rpartition("/")[0])
+        else:
+            w.clear()
+        hub = w._journal()
+        assert ident not in hub.kept and not hub.entries[ident].text  # the delete's tombstone let the text go, before any search
+        never_again(w, ident)
+    w.close()
+
+
+FILES_AND_DELETES = r"""
+import os, sys
+from pathlib import Path
+from llmw2 import Wiki, WikiConfig
+from llmw2.models.usage import UsageTracker
+from tests.wiki.fakes import ContentLLM
+w = Wiki(WikiConfig(bundle=Path(sys.argv[1]), mode="classic"), llm=ContentLLM(UsageTracker()))
+r = w.remember(sys.argv[2], key="falcon", title="Falcon")
+w.drain(60)
+w._stop_filer()
+w.delete_note(r.note)  # its tombstone is left to the next process: no filer, and this one does not close
+print(r.id, flush=True)
+os._exit(0)
+"""
+
+
+def test_a_process_that_reads_a_delete_still_pending_does_not_show_the_memory(bundle: Path) -> None:
+    w, _ = make(bundle)
+    w.store.write_note(w.store.load(), title="Whale", summary="s", body="whale of the sea", tags=[], source={"resource": "/r"})
+    _age(bundle)
+    w._stop_filer()  # this process files nothing, and no search of it looked at the journal
+    with built_elsewhere(bundle):
+        p = subprocess.run(
+            [sys.executable, "-c", FILES_AND_DELETES, str(bundle), FALCON], capture_output=True, text=True, env=_env(), timeout=120
+        )
+        assert p.returncode == 0, p.stderr[-2000:]
+        ident = p.stdout.strip()
+        hub = w._journal()
+        hub.refresh()  # one look: the entry, its filing, its done and the tombstone of the delete, still pending
+        assert hub.forgets()
+        never_again(w, ident)
+    w.close()
+
+
+def test_a_memory_whose_note_moved_is_its_note_alone(bundle: Path) -> None:
+    w, ident, note = filed_falcon(bundle)
+    w.create_area("aviary", "Birds kept.")
+    moved = w.move_note(note, "/aviary").rel
+    assert paths(w, "purple falcon") == [moved] and paths(w, "purple falcon") == [moved]
+    assert ident not in w._journal().shown
+    w.close()
+
+
+def test_a_memory_whose_note_moved_while_the_index_is_built_is_not_shown_at_its_old_path(bundle: Path) -> None:
+    w, ident, note = filed_falcon(bundle)
+    with built_elsewhere(bundle):
+        w.create_area("aviary", "Birds kept.")
+        w.move_note(note, "/aviary")
+        for _ in range(2):
+            assert f"pending:{ident}" not in paths(w, "purple falcon")
+        assert ident not in w._journal().shown
+    w.close()
+
+
+def test_with_the_index_whole_the_texts_kept_are_let_go_unread(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    w = seeded(bundle)  # the index is whole
+    r = w.remember(FALCON, key="falcon", title="Falcon")
+    w._filer_stopped = False
+    w.drain(60)  # filed, never shown: its text is kept for a search
+    assert w._journal().entries[r.id].text
+    made: list[str] = []
+    real = F.Pending.of
+    monkeypatch.setattr(F.Pending, "of", staticmethod(lambda ident, *a: made.append(ident) or real(ident, *a)))
+    assert paths(w, "purple falcon") == [r.note]
+    hub = w._journal()
+    assert made == [] and not hub.kept and not hub.entries[r.id].text  # no copy made, the text gone
+    w.close()
+
+
+def test_the_texts_kept_for_a_search_stay_within_their_bytes(bundle: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    texts = [f"{FALCON} Number {i}." for i in range(4)]  # as long as each other
+    monkeypatch.setattr(F, "KEPT_BYTES", 2 * len(texts[0].encode()))
+    w, _ = make(bundle)
+    ids = [w.remember(text, key=f"falcon-{i}").id for i, text in enumerate(texts)]
+    w.drain(60)  # filed in order, never shown: the texts of the last two stay
+    hub = w._journal()
+    assert hub.kept_bytes <= F.KEPT_BYTES and list(hub.kept) == ids[2:]
+    assert [bool(hub.entries[i].text) for i in ids] == [False, False, True, True]
     w.close()

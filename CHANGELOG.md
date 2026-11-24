@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the wiki, before its users come, and a call that may last minutes does not fit a request or a tool call (`status` says how far a
   build got).
 
+### Fixed
+
+- While the search index is being built, a memory filed by another process before this one looked at the journal is found:
+  `search`, `ask` and `read_note` show it as `pending:<id>` until the index has its note, as they show one still queued. It was
+  found by neither: the entry was closed and its text dropped, and the index being built did not hold its note yet. A memory whose
+  note was deleted (`delete_note`, `delete_folder`, `clear`) or forgotten (`purge`) is never shown again.
+
 ## [2.0.0rc1] - 2026-11-23
 
 ### Upgrading from 1.x

@@ -86,6 +86,7 @@ ENTRY_OVERHEAD = 1024  # bytes an entry costs in the journal besides its text (i
 AHEAD = 2  # entries the filer keeps prepared or being prepared, as a multiple of `cfg.concurrency`: a slow summary at the head does not
 # leave the slots empty while the filer waits for it (`Filer._prefetch`)
 CLOSED_KEPT = 4096  # entries done that a process remembers, for the duplicates and the receipts
+KEPT_BYTES = J.SEGMENT_SIZE  # the texts of entries done that no search showed, kept for one while the index is built (`Hub._unshown`)
 DISK_LOOK = 1.0  # seconds a look at the free space of the disk is believed
 FORGET_GROUP = 1.0  # seconds the filer lets a delete's tombstone (`journal`) wait, so that the deletes of a run share one seal
 FORGET_WAIT = 30.0  # seconds `purge` waits for the filer that holds the lease to complete its tombstone, before it says "pending"
@@ -221,6 +222,8 @@ class Hub:
         self.compact_stopped: tuple[int, int] | None = None  # (segment, bytes) when the guard of the compaction held it back
         self.files_done: set[str] = set()  # tombstones whose files and undo log this process purged: a look again does the rest only
         self.shown: dict[str, Pending] = {}  # the entries `searchable` gives, kept after they close until the index has their note
+        self.kept: OrderedDict[str, int] = OrderedDict()  # entries done that no search showed, whose text stays (`_unshown`): its bytes
+        self.kept_bytes = 0
         self.filer: Filer | None = None
         self.refs = 0
         self.prepared = False
@@ -251,6 +254,8 @@ class Hub:
                     self.let_through.clear()
                     self.errors.clear()
                     self.shown.clear()
+                    self.kept.clear()
+                    self.kept_bytes = 0
                     self.mine.clear()  # its entries were of the other journal: none of them is open in this one
                     self._folds += 1
             if not records:
@@ -392,6 +397,11 @@ class Hub:
         e = Entry(ident, "", "", "", "", None, {}, "", str(rec.meta.get("at", "")), None, rec.seg, forget=dict(forget))
         e.cost = Hub.entry_cost(rec.size)
         self.entries[ident] = e
+        if forget.get("journal"):  # a delete's (`Wiki._mark_journal`): no text of an entry done before it is shown or kept any more
+            self._drop_kept(list(self.kept))
+            for done in [i for i in self.shown if i not in self.entries or self.entries[i].closed]:
+                del self.shown[done]
+            self._shown_list = None
         for other in list(self.entries.values()):
             if other.forget is not None or other.forgotten or (isinstance(upto, int) and other.seg >= upto):
                 continue
@@ -432,27 +442,71 @@ class Hub:
         self.closed_total += 1
         if e.failed is not None and not e.forgotten:
             return  # an entry given up is kept, text included: the compaction carries it forward, and it counts in the queue limit
-        e.text = ""  # what a closed entry no longer needs
+        if self._unshown(e):
+            self._keep(e)
+        else:
+            self._drop_kept([e.id])
+            e.text = ""  # what a closed entry no longer needs
         self.closed_ids[e.id] = None
         while len(self.closed_ids) > CLOSED_KEPT:
             old, _ = self.closed_ids.popitem(last=False)
+            self._drop_kept([old])
             gone = self.entries.pop(old, None)
             if gone is not None and self.by_sig.get(gone.sig) == old:
                 del self.by_sig[gone.sig]
 
+    def _unshown(self, e: Entry) -> bool:
+        """An entry done whose filing made or met a note, and that no search of this process showed: read done in one look of the
+        journal (by a process that began after it), or seen open by one that did not search before it was done. A search shows it
+        while the index is being built (its note may not be in it yet), as it shows an entry it saw open (`searchable`)."""
+        filed = bool(e.filed and e.filed.get("note"))
+        return filed and e.done and not e.forgotten and e.forget is None and e.failed is None and e.id not in self.shown
+
+    def _keep(self, e: Entry) -> None:
+        """Keep the text of an entry `_unshown` for the next search; the oldest go past `KEPT_BYTES` in all (and with their entry)."""
+        if e.id in self.kept:
+            return
+        size = len(e.text.encode("utf-8", errors="surrogatepass"))
+        self.kept[e.id] = size
+        self.kept_bytes += size
+        while self.kept_bytes > KEPT_BYTES:
+            self._drop_kept([next(iter(self.kept))])
+
+    def _drop_kept(self, ids: list[str]) -> None:
+        """The texts kept for these entries go (an entry that is not done keeps its own)."""
+        for ident in ids:
+            size = self.kept.pop(ident, None)
+            if size is None:
+                continue
+            self.kept_bytes -= size
+            e = self.entries.get(ident)
+            if e is not None and e.closed and e.failed is None:
+                e.text = ""
+
     # -- what the entries are -----------------------------------------------------------------------------------
 
-    def searchable(self, look: float) -> list[Pending]:
+    def searchable(self, look: float, building: bool = False) -> list[Pending]:
         """The entries a search shows, after reading what is new: every entry open (not given up, forgotten or a tombstone), and every
         one shown before that was filed since (`F`, `D`): the caller keeps it while its index lacks the note (`unshow` once it has it;
         the entry's own text goes when it is done, this copy stays). A tombstone drops the copy of each entry it forgets. The journal is
         read when the shared tail hint says it moved (a `remember` of any process on the machine), else at most once every `look`
-        seconds (a writer the hint does not show: another segment, no hint). In the order they were acknowledged, then of their ids."""
+        seconds (a writer the hint does not show: another segment, no hint). In the order they were acknowledged, then of their ids.
+        `building`: the index is being built; then also the entries done that no search of this process showed (`_unshown`), whose
+        note it may lack; else their texts go, not looked at."""
         now = time.monotonic()
         if self.journal.moved_since(self.pos) or now - self._searched_at >= look:
             self.refresh()
             self._searched_at = now
         with self.cond:
+            if self.kept:
+                if building:
+                    for ident in self.kept:
+                        e = self.entries.get(ident)
+                        if e is not None and e.text and e.filed and self._unshown(e):
+                            title = e.title or next((line.strip() for line in e.text.splitlines() if line.strip()), "")
+                            self.shown[ident] = Pending.of(ident, title, e.text, dict(e.fields), str(e.filed["note"]), e.at)
+                    self._shown_list = None
+                self._drop_kept(list(self.kept))
             if self._shown_list is not None and self._shown_list[0] == self._folds:
                 return list(self._shown_list[1])  # nothing read since: the same entries, not looked at again one by one
             for e in self.entries.values():
@@ -482,6 +536,16 @@ class Hub:
             for ident in ids:
                 self.shown.pop(ident, None)
             self._shown_list = None
+
+    def unshow_gone(self, ids: list[str]) -> set[str]:
+        """Entries whose note is no longer on disk (deleted, or moved: the index has it where it went): those done are shown no more,
+        one still open stays. Which went."""
+        with self.cond:
+            gone = {i for i in ids if (e := self.entries.get(i)) is None or e.closed}
+            for ident in gone:
+                self.shown.pop(ident, None)
+            self._shown_list = None
+            return gone
 
     @staticmethod
     def age(e: Entry) -> float:
