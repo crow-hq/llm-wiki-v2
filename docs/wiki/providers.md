@@ -185,6 +185,12 @@ served by Ollama on your machine. Nothing leaves the computer and nothing is pai
   and may file a few notes differently. With a small writer and classifier on one Ollama, filing 40 documents one by one
   took about 7% longer than release 1.0.5 with `OKF_JOINT_MATCH_RELATE=false` and about 18% longer with it on, with folders
   and answers as good or better: measure both on a sample of your documents and keep the faster.
+- **A short reply for the routing fallback.** When the classifier is unsure where a note goes, the writer picks the
+  folder with a short JSON reply. A small local writer may ramble in that reply's `reasoning` up to the cap of a
+  decision, which only costs time: `crow.fallback_reply_tokens` (`OKF_FALLBACK_REPLY_TOKENS`) caps it, for example at
+  400 tokens. A reply cut there is asked once more, shorter, and if it is cut again the classifier's best path decides.
+  Leave it unset with a hosted writer: some providers reason at length in that reply, and there a reply cut twice stops
+  the ingest.
 - **One request at a time: `concurrency` 1 for `remember`.** The filer of `remember` prepares the next entries ahead
   (`concurrency` 8 by default), which pays when the models answer several requests at once. An Ollama that serves one
   request at a time (`OLLAMA_NUM_PARALLEL=1`) queues those preparations ahead of the routing of the first entries, so they

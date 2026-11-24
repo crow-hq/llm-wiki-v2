@@ -164,6 +164,7 @@ class SettingsChanges(BaseModel):
     crow_k: str | None = None
     crow_rerank: str | None = None  # "true" or "false"
     crow_joint_match_relate: str | None = None  # "true" or "false"
+    crow_fallback_reply_tokens: str | None = None  # tokens; "" for none (the cap of a decision)
     # How each model is called (a number as text, "" for the default)
     temperature: str | None = None
     seed: str | None = None

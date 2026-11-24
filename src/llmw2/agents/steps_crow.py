@@ -420,14 +420,17 @@ def _route_fallback(
     """§5.3: the LLM chooses among the folders the classifier explored, or opens a new one.
 
     A writer on Ollama whose reply fails (see `Librarian.local_writer`) does not stop the ingest: the note goes where the
-    classifier's best path ends (`guess`), or into a new top-level folder when there is none."""
+    classifier's best path ends (`guess`), or into a new top-level folder when there is none.
+    The reply's output cap is the one of a decision, or `crow.fallback_reply_tokens` when set."""
+    cap = ctx.cfg.crow.fallback_reply_tokens
     try:
         out = ctx.ask_json(
             "librarian/route_fallback",
             FallbackRoute,
             folders=_fallback_menu(ctx, root, visited),
             note=routing_state(ctx, cand),
-            reply_chars=classic.DECIDE_CHARS,
+            reply_chars=classic.DECIDE_CHARS if cap is None else None,
+            max_tokens=cap,
         )
     except ModelError as e:
         if ctx.cfg.llm.provider != "ollama" or not isinstance(e, ReplyInvalid):

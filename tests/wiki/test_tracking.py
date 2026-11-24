@@ -319,6 +319,9 @@ def test_decision_hash_tells_two_seeds_and_two_pins_apart(tmp_path: Path) -> Non
     assert len(seeds) == 4 and len(pins) == 4
 
 
+IRRELEVANT_CROW = ("joint_match_relate", "fallback_reply_tokens")  # in IRRELEVANT
+
+
 def crow_variant(name: str) -> CrowConfig:
     default = CrowConfig.model_fields[name].default
     if isinstance(default, str):  # a choice: the other one
@@ -328,13 +331,14 @@ def crow_variant(name: str) -> CrowConfig:
     return CrowConfig(**{name: default + 1 if isinstance(default, int) else round(default / 2, 4)})
 
 
-@pytest.mark.parametrize("name", [n for n in CrowConfig.model_fields if n != "joint_match_relate"])  # that one is in IRRELEVANT
+@pytest.mark.parametrize("name", [n for n in CrowConfig.model_fields if n not in IRRELEVANT_CROW])
 def test_decision_hash_changes_with_each_crow_threshold_beam_and_k(tmp_path: Path, name: str) -> None:
     assert digest(tmp_path, crow=crow_variant(name)) != digest(tmp_path)
 
 
 IRRELEVANT = {
     "crow-joint-match-relate": {"crow": CrowConfig(joint_match_relate=False)},  # one request or two: the same questions, the same decisions
+    "crow-fallback-reply-tokens": {"crow": CrowConfig(fallback_reply_tokens=400)},  # an output cap, as for every call
     "llm-api-key": {"llm": LLMConfig(api_key="another-secret")},
     "llm-base-url": {"llm": LLMConfig(base_url="https://gateway.test/v1")},
     "llm-timeout": {"llm": LLMConfig(timeout=7)},

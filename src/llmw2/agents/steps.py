@@ -111,16 +111,27 @@ class StepContext:
     relate_ahead: crow.RelateAhead | None = field(default=None, repr=False)
 
     def ask_json(
-        self, prompt: str, schema: type[T], *, reply_chars: int | None = None, language_of: str | None = None, **values: object
+        self,
+        prompt: str,
+        schema: type[T],
+        *,
+        reply_chars: int | None = None,
+        max_tokens: int | None = None,
+        language_of: str | None = None,
+        **values: object,
     ) -> T:
         """Render `prompt` with `values` and ask for a JSON reply.
 
         `reply_chars` is about how long the reply should be (default: a note, `effective_note_chars`); it sets the
-        output cap, and a reply cut by it is asked once more, shorter. `language_of`: the text whose language the note
-        is written in (see `_language_line`). Neither is a prompt value: a prompt cannot have a variable of that name.
+        output cap, and a reply cut by it is asked once more, shorter. `max_tokens`: the output cap itself, in tokens,
+        in place of the one `reply_chars` gives and free of its floor; give one of the two, not both. `language_of`: the
+        text whose language the note is written in (see `_language_line`). These three are not prompt values: a prompt
+        cannot have a variable with one of their names.
         """
+        if reply_chars is not None and max_tokens is not None:
+            raise ValueError("ask_json takes reply_chars or max_tokens, not both")
         system = self.prompts.render(self.system_prompt)
-        cap = reply_tokens(self.cfg.effective_note_chars if reply_chars is None else reply_chars)
+        cap = max_tokens if max_tokens is not None else reply_tokens(self.cfg.effective_note_chars if reply_chars is None else reply_chars)
         user = self.prompts.render(prompt, **self._values(values)) + self._language_line(prompt, language_of)
         return self.llm.json(system, user, schema, op=prompt, max_tokens=cap)
 
@@ -344,7 +355,7 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
     `summarize`, the size of the state routing reads (`state_chars`, `STATE_VERSION`), how much one
     call reads and how long a note may be (`effective_read_chars`, `effective_note_chars`, and `note_length` unless fixed),
     `SUMMARY_VERSION`, and `relate_rare_values`, `answer_conflicts` and `strict_new_folders` when switched off, `link_scope` and
-    `overflow_folder` when set. Keys, addresses, timeouts, `crow.joint_match_relate`,
+    `overflow_folder` when set. Keys, addresses, timeouts, `crow.joint_match_relate`, output caps (`crow.fallback_reply_tokens`),
     attempts, other sizes, concurrency and logs do not change the decisions: not in it.
     """
     decisive = {
@@ -355,7 +366,8 @@ def decision_hash(steps: Steps, cfg: WikiConfig, prompts: Prompts) -> str:
         "temperature": cfg.llm.temperature,
         "seed": cfg.llm.seed,
         "pin_provider": cfg.llm.pin_provider,
-        "crow": cfg.crow.model_dump(exclude={"joint_match_relate"}),  # how many requests ask the questions decides nothing
+        # how many requests ask the questions decides nothing; an output cap neither, as for every call (see `models.llm`)
+        "crow": cfg.crow.model_dump(exclude={"joint_match_relate", "fallback_reply_tokens"}),
         "fallback_menu_chars": crow.FALLBACK_MENU_CHARS,  # the menu limit is a constant outside the hashed step functions
         "match_top": crow.MATCH_TOP,  # so are the caps on the candidates of match and relate
         "relate_top": crow.RELATE_TOP,

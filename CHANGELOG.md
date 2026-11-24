@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the HTTP API or the MCP tools: it is a step for whoever runs
   the wiki, before its users come, and a call that may last minutes does not fit a request or a tool call (`status` says how far a
   build got).
+- `crow.fallback_reply_tokens` (`OKF_FALLBACK_REPLY_TOKENS`, or `crow_fallback_reply_tokens` in the settings): the output cap,
+  in tokens, of the reply of CROW's routing fallback, the call where the writer picks a folder when the classifier is unsure.
+  Unset by default, which keeps the cap of a decision and the same requests as before for every provider. A small local
+  writer that rambles in the reply's `reasoning` stops sooner with a cap such as 400, under the floor of 1024 that every other
+  call keeps. A reply cut at it is asked once more, shorter; cut again, on Ollama the classifier's best path decides, while
+  with any other provider the ingest stops, so leave it unset with a hosted writer. `StepContext.ask_json` takes `max_tokens`,
+  the output cap itself, in place of `reply_chars`; giving both raises `ValueError`.
 
 ### Fixed
 

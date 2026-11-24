@@ -253,6 +253,11 @@ class CrowConfig(BaseModel):
     rerank: bool = True  # CROW retrieval: the classifier reorders the search's notes after the first (False: the search's order)
     # ingestion: for a note the document may become, match asks relate's questions in its own request (False: two requests)
     joint_match_relate: bool = True
+    # ingestion: the output cap, in tokens, of the routing fallback's reply, free of the floor of the other calls (None: the cap of
+    # a decision). The reply is a short JSON, but a small local writer may ramble in its `reasoning` up to the cap, which only
+    # costs time. A reply cut at it is asked once more, shorter; cut again, on Ollama the classifier's best path decides, while
+    # with any other provider the ingest stops. So it is for small local writers: some hosted models reason at length there.
+    fallback_reply_tokens: int | None = Field(None, gt=0)
 
     @model_validator(mode="before")
     @classmethod
