@@ -180,6 +180,20 @@ served by Ollama on your machine. Nothing leaves the computer and nothing is pai
   a batch in code instead of asking the writer for a plan; `llm.note_steps` writes a note in short steps that code
   checks; `llm.note_language` keeps the note in the language of the source. Try them on a sample of your documents and
   keep what helps: they are off by default because a strong writer does better without them.
+- **Match and relate apart, with a small classifier.** By default `match` and `relate` share one classifier request for a
+  new note (`crow.joint_match_relate`): it saves money with a hosted classifier, but a small local one gains no time from it
+  and may file a few notes differently. With a small writer and classifier on one Ollama, filing 40 documents one by one
+  took about 7% longer than release 1.0.5 with `OKF_JOINT_MATCH_RELATE=false` and about 18% longer with it on, with folders
+  and answers as good or better: measure both on a sample of your documents and keep the faster.
+- **One request at a time: `concurrency` 1 for `remember`.** The filer of `remember` prepares the next entries ahead
+  (`concurrency` 8 by default), which pays when the models answer several requests at once. An Ollama that serves one
+  request at a time (`OLLAMA_NUM_PARALLEL=1`) queues those preparations ahead of the routing of the first entries, so they
+  are filed later (about 30 s later at the median on 40 documents) while the whole is not slower. With `OKF_CONCURRENCY=1`
+  nothing is prepared ahead and each entry is filed within a second or two of release 1.0.5's time. `ingest` and `sync`
+  file one document at a time in any case.
+- **Build the search index before many users search.** After upgrading from 1.x, or on a copy without `.llmw2/cache`, the
+  first search builds the index in the background and searches are slower and may be partial until it is done; run
+  `llmwiki2 index` first (it returns when the index is whole).
 - **Check the result.** Ask a few questions whose answers you know, and look at where the notes went before filing
   everything.
 
