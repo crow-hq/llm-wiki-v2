@@ -308,7 +308,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lease also says when it began. Every search made meanwhile, in any process of the machine, waits for the build until 4.75 seconds
   after it began, and never past 4.75 seconds after the search itself began (one that began before the build waits no longer), so a
   small wiki is answered whole, as by release 1.0.5, and the rest of the five seconds a first search may take is left to its answer;
-  the searches of one process run one at a time, so one queued behind others adds their answers to its time. It waits on the lease,
+  the searches of one process run one at a time, so one queued behind others adds their answers to its time. The bound is on the
+  wait, not on the answer: with many processes starting at once on one machine the answer after the wait can take longer (30
+  processes opening a 5,000-note wiki together on a laptop: one first search of 6.6 s in one run of three). It waits on the lease,
   never on the write lock of the file, and one whose lease does not say when it began is not waited for. `close` waits for the build
   it stops 4.75 seconds at most. Past that wait, until the file is built whole, a search answers at once, without reading the notes
   or waiting for the build, from the notes its lots committed (each lot is durable), the notes the process wrote since its first
