@@ -246,7 +246,13 @@ class NoteSearch:
             return [by_rel[rel] for rel in picked[:k]]
 
     def find(
-        self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None = None, pending: Sequence[Pending] = ()
+        self,
+        store: WikiStore,
+        query: str,
+        k: int,
+        where: dict[str, Any] | None = None,
+        pending: Sequence[Pending] = (),
+        began: int | None = None,
     ) -> Found:
         """The best `k` notes of the wiki (those `where` keeps, if given: a filter on `fields`) as (path, title, summary), from the
         index on disk. While the index is being built (`_building`) they come from what its lots committed so far, with the notes this
@@ -259,9 +265,11 @@ class NoteSearch:
         `pending`: texts that are not notes yet, as (path, title, summary, the count of their words), already filtered by `where`.
         Each is scored by its words as one more note of the index would be (`SearchIndex.scored`: the notes' scores do not change)
         and comes before the first note it scores higher than, a note first at the same score and the texts in the order given among
-        themselves; then the first `k`."""
+        themselves; then the first `k`. `began` (`time.monotonic_ns`): when the search began, for the wait on a build (`_building`);
+        None: now."""
+        began = time.monotonic_ns() if began is None else began
         with self._lock, self.index.looked():  # one look at the index's file for the whole search
-            return self._find(store, query, k, where, pending)
+            return self._find(store, query, k, where, pending, began)
 
     def indexed(self, rels: Sequence[str]) -> set[str]:
         """Which of `rels` the index file holds (none while there is no index file); while the file is being built, also those this
@@ -339,11 +347,13 @@ class NoteSearch:
     def _building(self, store: WikiStore, until: int | None = None) -> bool:
         """Whether the index file is being built (not built whole yet): the search then reads what the build's lots committed (they are
         durable), with the notes this process wrote since (`_recent`, from then on), and says it is partial. Starts the build (`Build`)
-        when no process of the machine builds it. Every search waits for the build until `BUILD_WINDOW` after it began, whichever process
-        runs it (the time is in its lease), so a small wiki is answered whole, as before; past that, or when the lease does not say when
-        the build began, it answers at once. `until` (`time.monotonic_ns`): the end of the wait of this search, once it waited for a build
-        that ended without the file whole (one cut short: the next one is not waited for longer). Never waits for the write lock of the
-        file."""
+        when no process of the machine builds it. Every search waits for the build until `BUILD_WINDOW` after the build began, whichever
+        process runs it (the time is in its lease), so a small wiki is answered whole, as before; past that, or when the lease does not
+        say when the build began, it answers at once. `until` (`time.monotonic_ns`): the end of the wait of this search, `BUILD_WINDOW`
+        after the search began (`Wiki.search`, once the wiki is open; None: from now, as each search of `ask`), so that one that began
+        before the build (in the journal, the lock or the lease) waits no longer than that from its own start; it is lowered once the
+        search waited for a build that ended without the file whole (one cut short: the next one is not waited for longer). Never waits
+        for the write lock of the file."""
         from llmw2.searchindex import BUILD_WINDOW, Build, build_began, wait_build
 
         index = self.index
@@ -362,6 +372,7 @@ class NoteSearch:
                 return False
             build = None  # it ended and another process took the file back since: build again
         window = int(BUILD_WINDOW * 1e9)
+        until = time.monotonic_ns() + window if until is None else until
         if build is None and index.path is not None:
             build = Build(index.path, store, self._entry)
             try:
@@ -375,11 +386,11 @@ class NoteSearch:
                 build = None
                 began = build_began(index.path)
                 if began is not None:
-                    end = began + window if until is None else min(began + window, until)
+                    end = min(began + window, until)
                     if wait_build(index.path, end):
                         return self._building(store, end)
         if build is not None:  # this process builds it
-            end = build.began + window if until is None else min(build.began + window, until)
+            end = min(build.began + window, until)
             if build.wait(max(0.0, (end - time.monotonic_ns()) / 1e9)) and (build.failed or index.ready()):
                 return self._building(store, end)
         if self._recent is None:
@@ -411,12 +422,14 @@ class NoteSearch:
                 self._recent.update(got)
 
     def _find(
-        self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None, pending: Sequence[Pending]
+        self, store: WikiStore, query: str, k: int, where: dict[str, Any] | None, pending: Sequence[Pending], began: int
     ) -> Found:
         self._root = store.root
         exact = exact_expressions(query)
         index = self.index
-        building = self._building(store)
+        from llmw2.searchindex import BUILD_WINDOW
+
+        building = self._building(store, began + int(BUILD_WINDOW * 1e9))
         with self._recent_lock:
             recent = dict(self._recent or {}) if building else {}
 

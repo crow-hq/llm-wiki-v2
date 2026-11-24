@@ -4,8 +4,9 @@
 """The first build of the search index in the background (`searchindex.Build`): the searches made meanwhile answer at once from what its
 lots committed, the notes the process wrote since and the entries not filed, and say they are partial (`Hits.partial`, `Answer.partial`,
 the line of the MCP tools); once the file is built the answers are those of the index whole. Within `BUILD_WINDOW` from the start of the
-build every search waits for it, in any process: a build that ends by then is answered whole. One process builds, a writer's notes are in
-the file when it is done, a build cut by a crash goes on from its lots, and no search reads the notes or waits for the write lock."""
+build every search waits for it, in any process, and never past `BUILD_WINDOW` from its own start: a build that ends by then is
+answered whole. One process builds, a writer's notes are in the file when it is done, a build cut by a crash goes on from its lots, and
+no search reads the notes or waits for the write lock."""
 
 from __future__ import annotations
 
@@ -813,3 +814,75 @@ def test_close_waits_for_a_build_that_marked_the_file_complete_and_still_closes_
         _index_file(tmp_path).unlink()  # nothing holds the file
     finally:
         release.set()
+
+
+def test_a_search_that_began_before_the_build_waits_no_longer_than_the_window_from_its_own_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A search that began before the build (while the wiki was opened or listed) waits for it until `BUILD_WINDOW` after its own
+    start, not after the build's: it never takes the window on top of what came before. The wait it asks for is recorded, none slept."""
+    monkeypatch.setattr(si, "BUILD_WINDOW", 5.0)
+    wiki = _random_wiki(tmp_path, 20)
+    _no_index(tmp_path)
+    gate = Gate(monkeypatch)
+    waits: list[float] = []
+    monkeypatch.setattr(si.Build, "wait", lambda build, timeout: waits.append(timeout) or False)
+    w = Wiki(wiki.cfg, llm=wiki.llm)
+    try:
+        began = time.monotonic_ns() - int(4.5e9)  # the search began 4.5 s before the build
+        found = w._search.find(w.store, "alpha river", 8, began=began)
+        build = w._search._build
+        assert build is not None and build.began > began
+        assert found.partial is not None and len(waits) == 1
+        assert waits[0] <= (began + int(5e9) - build.began) / 1e9 <= 0.5  # 5 s from the search's start, not 5 s from the build's
+    finally:
+        gate.open.set()
+        w.close()
+
+
+def test_a_search_waits_for_another_process_no_longer_than_the_window_from_its_own_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same when another process builds: the wait on its lease ends `BUILD_WINDOW` after the search began, though the lease says the
+    build began later (the clock of the lease is patched, the wait recorded)."""
+    monkeypatch.setattr(si, "BUILD_WINDOW", 5.0)
+    wiki = _random_wiki(tmp_path, 20)
+    _no_index(tmp_path)
+    w = Wiki(wiki.cfg, llm=wiki.llm)
+    began = time.monotonic_ns() - int(4e9)  # the search began 4 s before the build of the other process
+    ends: list[int] = []
+    monkeypatch.setattr(si.Build, "start", lambda build: False)  # another process holds the lease
+    monkeypatch.setattr(si, "build_began", lambda path: began + int(4e9))
+    monkeypatch.setattr(si, "wait_build", lambda path, until: ends.append(until) or False)
+    found = w._search.find(w.store, "alpha river", 8, began=began)
+    assert found.partial is not None and w._search._build is None
+    assert ends == [began + int(5e9)]  # not the build's start + 5 s
+    w.close()
+
+
+def test_wiki_search_counts_the_wait_from_its_own_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`Wiki.search` takes the time it began and passes it on: the wait on another process's build ends `BUILD_WINDOW` after that time,
+    not after the moment `NoteSearch.find` was entered (the clock of `Wiki.search` is patched 4 s back, the wait recorded)."""
+    import llmw2.wiki as wiki_module
+
+    monkeypatch.setattr(si, "BUILD_WINDOW", 5.0)
+    wiki = _random_wiki(tmp_path, 20)
+    _no_index(tmp_path)
+    w = Wiki(wiki.cfg, llm=wiki.llm)
+    began = time.monotonic_ns() - int(4e9)
+
+    class Clock:  # `time` in the module of `Wiki`, but for when `search` began
+        def __getattr__(self, name: str) -> Any:
+            return getattr(time, name)
+
+        def monotonic_ns(self) -> int:
+            return began
+
+    ends: list[int] = []
+    monkeypatch.setattr(wiki_module, "time", Clock())
+    monkeypatch.setattr(si.Build, "start", lambda build: False)  # another process holds the lease
+    monkeypatch.setattr(si, "build_began", lambda path: began + int(4e9))
+    monkeypatch.setattr(si, "wait_build", lambda path, until: ends.append(until) or False)
+    hits = w.search("alpha river", 8)
+    assert hits.partial is not None and ends == [began + int(5e9)]
+    w.close()

@@ -74,11 +74,14 @@ LISTING_LOOK = 1.0
 # sequence) p99 54, max 57; one row a filing p99 33. 88 covers those, and stays within three pages of 512 even at one row a
 # generation (some 1.5 KB at most)
 RECENT_IDS = 88
-# seconds from the start of a build in the background in which every search waits for it, in whatever process of the machine: a build
-# that ends within them is answered as before, from the file whole; past them a search answers at once from what the file holds so far,
-# marked partial (`NoteSearch.find`). The 5 s a first search may take (requirement B6 of the robots' table): a small wiki is answered
-# whole, a large one in time
-BUILD_WINDOW = 5.0
+# seconds a search waits for a build in the background, in whatever process of the machine: never past this long after the build
+# began, nor past this long after the search itself began (`Wiki.search`, once the wiki is open: one that began before the build, in
+# the journal, the lock or the lease, does not wait the window on top of that; `ask` counts each of its searches from its own start).
+# A build that ends within them is answered as before, from the file whole; past them a search answers at once from what the file
+# holds so far, marked partial (`NoteSearch.find`). Requirement B6 of the robots' table is a first
+# search within 5 s, the answer included: the partial answer after the wait was measured at p99 16-22 ms and 195 ms at most on 10k
+# notes, so 4.75 s leaves 250 ms for it and for the steps of the search before the wait (journal, lock), above the worst measured
+BUILD_WINDOW = 4.75
 PAGE_SIZE = 512  # a changed note touches pages at random: small pages write fewer bytes (measured at 512, 1024, 2048, 4096)
 _K1, _B = lexical._K1, lexical._B
 _MASK = (1 << 64) - 1

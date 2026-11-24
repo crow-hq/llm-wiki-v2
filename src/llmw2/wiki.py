@@ -1364,13 +1364,16 @@ class Wiki:
         The words of the notes are kept in an index file of the bundle (`.llmw2/cache/search-v<schema>.sqlite`), shared by every process on
         the wiki: a search lists the wiki's files and reads only the notes new or changed since. The file is a cache, never the
         notes themselves: delete it, or let it be damaged, and the next search builds it again, in the background: one process of the
-        machine builds it, by lots each durable once written. Every search waits for the build until five seconds after it began, in
-        any process of the machine (on its lease, never on the write lock of the file), so a small wiki is answered whole. Past those
-        five seconds, until it is built whole, a search answers at once from the notes its lots hold, the notes this process wrote since
-        and the entries not filed, and the list it returns (`Hits`, a list of `Hit`) says so in `partial` (`Partial`: notes indexed so
-        far, of the notes listed); once it is built, `partial` is None and the answers are those of the index whole. `status` says how
-        far the build got. A caller that does not look at `partial` takes such a list for a whole one: notes may be missing from it, and
-        its order is that of the notes indexed so far.
+        machine builds it, by lots each durable once written. Every search waits for the build until `BUILD_WINDOW` (4.75 s) after it
+        began, in any process of the machine (on its lease, never on the write lock of the file), and never past that long after the
+        search itself began (here, once the wiki is open), so a small wiki is answered whole and the wait ends at most 4.75 s after
+        the search began, the rest of the 5 s a first search may take left to its answer. The searches of one process run one at a
+        time: one queued behind others adds their answers to its time. Past that wait, until it is built whole, a search answers at
+        once from the notes its lots hold, the notes this process wrote since and the entries not filed, and the list it returns
+        (`Hits`, a list of `Hit`) says so in `partial` (`Partial`: notes indexed so far, of the notes listed); once it is built,
+        `partial` is None and the answers are those of the index whole. `status` says how far the build got. A caller that does not
+        look at `partial` takes such a list for a whole one: notes may be missing from it, and its order is that of the notes indexed
+        so far.
 
         What `remember` keeps is found before it is filed, by every process: an entry of the journal whose note the index does not
         have yet is a hit of path `pending:<id>` (`read_note` reads it), titled by its title or first line, its first 200 characters
@@ -1381,8 +1384,9 @@ class Wiki:
         """
         if not query.strip():
             raise InputError("empty question")
+        began = time.monotonic_ns()  # the wait on a build in the background counts from here (`NoteSearch._building`)
         with self._search.index.looked():  # one look at the index's file for the queue (`_pending`) and the search
-            found = self._search.find(self.store, query, k, where, [self._pending_hit(p) for p in self._pending(where)])
+            found = self._search.find(self.store, query, k, where, [self._pending_hit(p) for p in self._pending(where)], began)
         hits = Hits(Hit(rel, title, summary, i) for i, (rel, title, summary) in enumerate(found, 1))
         hits.partial = found.partial
         return hits
