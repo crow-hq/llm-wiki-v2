@@ -126,6 +126,7 @@ have it set `X-Author`, and the log then says who, as far as the proxy does.
 | `raw_items()` | the wiki's own raw copies as `Item`s for `rebuild`: an origin from its latest copy, a copy with no origin once per text |
 | `ask(question, where=None)` | answer from the notes, found by `search` (the first 16, reordered by the CROW classifier unless `crow.rerank` is off) and read up to `crow.k`; when `search` finds nothing, the LLM navigates the folders as in classic mode; returns an `Answer`. `where` (a dict, field to value) restricts it to the notes whose `fields` hold all of them, compared as text; a field that is a list holds a value when one of its items is equal to it |
 | `search(query, k=8, where=None)` | the best `k` notes, with no model call of the library; returns a list of `Hit` (`path`, `title`, `summary`, `rank`). `where` restricts it as in `ask`; an empty query raises `InputError`; see [Search without a model](#search-without-a-model) |
+| `build_index()` | build the search index and return once it is whole. `llmwiki2 index` runs it: see [Search without a model](#search-without-a-model) |
 | `tree()` | the folder tree, read from disk: `Folder` objects with `.notes` and `.subfolders` |
 | `create_folder(parent, name, description, *, routable=True)` | make a folder by hand; `parent` is `"/"` or `"/finance"`. With `routable=False` it is closed to automatic filing |
 | `set_routable(path, value)` | close (`False`) or open (`True`) a folder to automatic filing; see [Keeping areas apart](#keeping-areas-apart) |
@@ -197,6 +198,15 @@ embeds only the notes that are new or changed; the vectors of text that no longe
 another size than the query's is embedded again. When the embedder is the one built from the configuration, the key includes its model, so changing the
 model embeds the notes again (the vectors of the old model are dropped). An embedder you pass as a callable has no
 known model: if you change it for one with the same vector size, delete the file. `wiki.clear()` deletes it.
+
+The words of the notes are kept in `.llmw2/cache/search-v<schema>.sqlite`. When that file is not built whole (a fresh copy of a
+wiki, an upgrade that changed its format, a file lost), the first search builds it in the background, one process of the machine
+at a time; until it is done a search waits a few seconds at most and then answers from the notes indexed so far, and says so
+(`Hits.partial`). Before opening a large wiki to many users, run `llmwiki2 index` (exit code 0 once the index is whole) or
+`wiki.build_index()` (it returns once the index is whole; `OSError` when the file cannot be written); from then on no search is
+partial. It is the same build, so it waits for one already
+running in another process and goes on from what a stopped one wrote. Embeddings are not part of it: a search embeds the notes
+that have no vector yet.
 
 ### Asking several wikis
 

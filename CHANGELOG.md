@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrading from 1.x
+
+- Before opening an upgraded wiki to many users, run `llmwiki2 index` (or `Wiki.build_index()`): the search index changed format, so
+  without it the first search builds it in the background and, on a large wiki, the searches made meanwhile wait up to 4.75 seconds
+  and then answer partial. The step returns, with exit code 0, once the index is whole; from then on no search is partial. The same
+  holds for a fresh copy of a wiki without `.llmw2/cache`.
+
+### Added
+
+- `llmwiki2 index` and `Wiki.build_index()`: build the search index and return once it is whole,
+  however long that takes. It is the build in the background, not a second one: it starts it when no process of the machine builds
+  the file, waits on the lease of the one that does, and goes on from the lots of one that stopped. The searches of the process go on
+  meanwhile; with the index already whole it returns at once. When the index file cannot be written (a folder that cannot be
+  written, a full disk), it raises `OSError` and the command exits with 2: an index kept in memory is not reported as built. Not in
+  the HTTP API or the MCP tools: it is a step for whoever runs
+  the wiki, before its users come, and a call that may last minutes does not fit a request or a tool call (`status` says how far a
+  build got).
+
 ## [2.0.0rc1] - 2026-11-23
 
 ### Upgrading from 1.x

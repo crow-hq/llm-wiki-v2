@@ -1391,6 +1391,17 @@ class Wiki:
         hits.partial = found.partial
         return hits
 
+    def build_index(self) -> None:
+        """Build the search index and return once it is whole, however long that takes. The step to run before a wiki is opened to
+        many users (`llmwiki2 index`): after an upgrade that changed the index's format, on a fresh copy of a wiki, or once the index
+        file is lost; from then on no search is partial and none waits for a build. It is the build the first search starts in the
+        background (`search`), never a second one: this process builds the file, or waits for the process of the machine that builds
+        it, and goes on from its lots if that one stops. Run while users search, it only ends their partial answers sooner. With the
+        index already whole, it returns at once. `OSError` when the index file cannot be written (a folder that cannot be written, a
+        full disk, a file where the folder goes): the index would be kept in memory only. The vectors of an `embedder` are not part of
+        it: a search embeds the notes that have none yet."""
+        self._search.complete(self.store)
+
     def _pending(self, where: dict[str, Any] | None = None) -> list[Pending]:
         """The entries of the journal a search shows (`Hub.searchable`), less those whose note the index has; none, and no file made,
         when the bundle has no journal."""

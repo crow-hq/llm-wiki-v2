@@ -359,6 +359,18 @@ class SearchIndex:
         except sqlite3.Error:
             return 0
 
+    @property
+    def in_memory(self) -> bool:
+        """Whether this process keeps the index in memory only (no file given, or one it could not use): nothing of it is on disk."""
+        return self._mem is not None
+
+    def seal(self, store: WikiStore, read: Reader) -> None:
+        """Make a file built whole (`sync`) complete: list the wiki once more, waiting for the writers' locks, so that a note written
+        before its writer saw the mark "built" (a writer leaves its notes to the build until then, `update`) is in the file; then mark
+        it complete, and the searches read it whole (`ready`). The end of every build, in the background (`Build`) or not."""
+        self.sync(store, read)
+        self.run(lambda: self._mark_built(self._open(), "complete"))
+
     def ready(self) -> bool:
         """Whether a search reads this index whole now: its file is complete (`meta` "complete": built whole, then the notes its writers
         left to the build put in, `Build`); an index in memory is built by its sync, as before. One row read, no lock waited for; a file
@@ -1558,10 +1570,7 @@ class Build:
         try:
             self._done = index.notes()
             index.sync(self._store, read)
-            # once more now that the file is marked built, the writers' locks waited for (this is no reader): the notes its writers
-            # left to the build until they saw the mark; then the file is complete, and the searches read it whole
-            index.sync(self._store, read)
-            index.run(lambda: index._mark_built(index._open(), "complete"))
+            index.seal(self._store, read)  # the writers' locks waited for (this is no reader), then complete
         except _Stopped:
             pass
         except Exception as e:

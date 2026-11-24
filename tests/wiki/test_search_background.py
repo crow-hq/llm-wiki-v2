@@ -11,6 +11,7 @@ no search reads the notes or waits for the write lock."""
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -885,4 +886,178 @@ def test_wiki_search_counts_the_wait_from_its_own_start(tmp_path: Path, monkeypa
     monkeypatch.setattr(si, "wait_build", lambda path, until: ends.append(until) or False)
     hits = w.search("alpha river", 8)
     assert hits.partial is not None and ends == [began + int(5e9)]
+    w.close()
+
+
+def _counted_builds(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+    """The builds this process makes (`_Building`), counted as they are made."""
+    made: list[object] = []
+    real = si._Building.__init__
+
+    def counted(self: si._Building, *args: Any) -> None:
+        made.append(self)
+        real(self, *args)
+
+    monkeypatch.setattr(si._Building, "__init__", counted)
+    return made
+
+
+def _building_index(w: Wiki, out: list[None]) -> threading.Thread:
+    t = threading.Thread(target=lambda: out.append(w.build_index()), daemon=True)
+    t.start()
+    return t
+
+
+def test_build_index_returns_once_the_file_is_whole_and_the_searches_go_on_meanwhile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(si, "BUILD_WINDOW", 0.05)
+    monkeypatch.setattr(si, "BATCH", 10)
+    wiki = _random_wiki(tmp_path, 60)
+    _no_index(tmp_path)
+    gate = Gate(monkeypatch, after=25)  # two lots committed; the build holds the write lock in the third
+    made = _counted_builds(monkeypatch)
+    w = Wiki(wiki.cfg, llm=wiki.llm)
+    out: list[None] = []
+    t = _building_index(w, out)
+    assert gate.reached.wait(60)
+    during = w.search("alpha river", 8)  # the index's lock is not held while the step waits: the search answers, partial
+    assert during.partial == Partial(20, 60)
+    assert t.is_alive() and out == []  # held at the gate, the build cannot end: the step has not returned
+    gate.open.set()
+    t.join(60)
+    assert not t.is_alive() and out == [None] and len(made) == 1  # the build the step started is the one the search found
+    assert w._search.index.ready() and si.build_state(_index_file(tmp_path)) is None
+    other = Wiki(wiki.cfg, llm=wiki.llm)  # another process opening the wiki now: whole, and nothing built
+    every = [n.rel for n in other.store.load().all_notes()]
+    for q, where in QUERIES:
+        within = None if where is None else [rel for rel in every if rel.startswith(where["team"] + "/")]
+        hits = other.search(q, 8, where)
+        assert hits.partial is None and _paths(hits) == _expected(other, q, 8, within=within)
+    other.build_index()
+    assert len(made) == 1  # already whole: at once, no build
+    assert _rows(_index_file(tmp_path)) == _fresh_rows(w)
+    other.close()
+    w.close()
+
+
+BUILDER_PROC = textwrap.dedent(
+    """
+    import sys, threading
+    from pathlib import Path
+    from llmw2 import Wiki, WikiConfig
+    from llmw2 import searchindex as si
+    from llmw2.models.usage import UsageTracker
+    from llmw2.search import NoteSearch
+    from tests.wiki.fakes import FakeLLM
+    si.BATCH = 10
+    si.BUILD_WINDOW = 0.0
+    real, reads = NoteSearch._entry, []
+    def entry(ns, rel, path, stamp):
+        if threading.current_thread().name == "llmw2-index-build":
+            reads.append(rel)
+            if len(reads) == 15:  # one lot committed; it holds the write lock in the second
+                print("building", flush=True)
+                if sys.stdin.readline().strip() == "die":
+                    import os
+                    os._exit(9)
+        return real(ns, rel, path, stamp)
+    NoteSearch._entry = entry
+    w = Wiki(WikiConfig(bundle=Path(sys.argv[1]), mode="classic"), llm=FakeLLM(UsageTracker()))
+    w.search("alpha")
+    assert w._search._build is not None and w._search._build.wait(120) and not w._search._build.failed
+    print(len(reads), flush=True)
+    w.close()
+    """
+)
+
+
+@pytest.mark.parametrize("ends", ["finishes", "dies"])
+def test_build_index_waits_for_the_build_of_another_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ends: str) -> None:
+    """Another process builds the file: the step does not build a second time, it waits on that process's lease; when that process
+    finishes, the step returns with the file whole and no build of its own; when it dies, the step takes the build over from its lots
+    (only the notes they do not hold are read)."""
+    monkeypatch.setattr(si, "BATCH", 10)
+    wiki = _random_wiki(tmp_path, 40)
+    _no_index(tmp_path)
+    script = tmp_path / "builder.py"
+    script.write_text(BUILDER_PROC, encoding="utf-8")
+    proc = subprocess.Popen(
+        [sys.executable, str(script), str(tmp_path / "wiki")], env=_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    )
+    out: list[None] = []
+    try:
+        assert proc.stdout is not None and proc.stdout.readline().strip() == "building"
+        made = _counted_builds(monkeypatch)
+        reads: list[str] = []
+        real = NoteSearch._entry
+
+        def entry(ns: NoteSearch, rel: str, path: str, stamp: tuple[int, int, int]) -> tuple[str, str, str, str] | None:
+            if threading.current_thread().name == BUILDER:
+                reads.append(rel)
+            return real(ns, rel, path, stamp)
+
+        monkeypatch.setattr(NoteSearch, "_entry", entry)
+        waits = Waits(monkeypatch)
+        w = Wiki(wiki.cfg, llm=wiki.llm)
+        t = _building_index(w, out)
+        waits.reach(1)  # on the lease of the other process
+        assert t.is_alive() and out == [] and made == []
+        assert proc.stdin is not None
+        proc.stdin.write("die\n" if ends == "dies" else "go on\n")
+        proc.stdin.flush()
+        t.join(120)
+        said, _ = proc.communicate(timeout=120)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(30)
+    assert not t.is_alive() and out == [None]
+    if ends == "finishes":
+        assert proc.returncode == 0 and said.split() == ["40"]
+        assert made == [] and reads == []  # it built nothing: the other process did
+    else:
+        assert proc.returncode == 9
+        assert len(made) == 1 and len(reads) == 30  # one lot of ten was committed by the dead process: the rest only
+    assert w._search.index.ready()
+    hits = w.search("alpha river", 8)
+    assert hits.partial is None and _paths(hits) == _expected(w, "alpha river", 8)
+    assert _rows(_index_file(tmp_path)) == _fresh_rows(w)
+    w.close()
+
+
+def test_build_index_builds_the_file_by_a_sync_when_the_build_in_the_background_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wiki = _random_wiki(tmp_path, 20)
+    _no_index(tmp_path)
+
+    def broken(self: si._Building, *args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("no build here")
+
+    monkeypatch.setattr(si._Building, "sync", broken)
+    w = Wiki(wiki.cfg, llm=wiki.llm)
+    w.build_index()
+    assert w._search._background is False and w._search.index._built
+    assert w._search.index.ready() and not w._search.index.in_memory  # complete on disk, as a build in the background ends
+    assert si.build_state(_index_file(tmp_path)) is None
+    with closing(sqlite3.connect(_index_file(tmp_path))) as db:
+        assert db.execute("SELECT 1 FROM meta WHERE k = 'complete'").fetchone() is not None
+    assert _rows(_index_file(tmp_path)) == _fresh_rows(w)
+    hits = w.search("alpha river", 8)
+    assert hits.partial is None and _paths(hits) == _expected(w, "alpha river", 8)
+    w.close()
+
+
+def test_build_index_raises_when_the_index_can_only_be_kept_in_memory(tmp_path: Path) -> None:
+    """A file where the folder of the index goes: the index of this process is kept in memory only, nothing is on disk for the others,
+    and the step says so instead of returning as if the index were built."""
+    wiki = _random_wiki(tmp_path, 20)
+    cache = _index_file(tmp_path).parent
+    shutil.rmtree(cache, ignore_errors=True)
+    cache.write_text("not a folder", encoding="utf-8")
+    w = Wiki(wiki.cfg, llm=wiki.llm)
+    with pytest.raises(OSError, match="kept in memory only"):
+        w.build_index()
+    assert w._search.index.in_memory and cache.is_file()
     w.close()

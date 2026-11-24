@@ -140,6 +140,11 @@ def main(argv: list[str] | None = None) -> int:
     search.add_argument("-k", type=int, default=8, help="how many notes (default 8)")
     search.add_argument("--where", action="append", metavar="KEY=VALUE", help="only the notes whose fields have this value (repeatable)")
     search.add_argument("--json", action="store_true", help="print the hits as JSON")
+    sub.add_parser(
+        "index",
+        help="build the search index and return once it is whole (exit 0): run it after upgrading from 1.x, or on a fresh copy, "
+        "before opening the wiki to many users, so that no search is partial",
+    )
     move = sub.add_parser("move", help="move a note into another folder; its links follow")
     move.add_argument("note", help="the note's path, e.g. finance/pricing.md")
     move.add_argument("folder", help='the folder to file it in, e.g. /sourcing ("/" is the top level)')
@@ -632,6 +637,9 @@ def _run(wiki: Wiki, args: argparse.Namespace) -> int:
             print(json.dumps([h.to_dict() for h in hits], indent=2))
         for h in [] if args.json else hits:
             print(f"{h.rank}. {h.path} — {h.title}" + (f": {h.summary}" if h.summary else ""))
+    elif args.command == "index":
+        wiki.build_index()
+        print("search index complete")
     elif args.command == "move":
         print(f"moved: /{wiki.move_note(args.note, args.folder).rel}")
     elif args.command == "describe":

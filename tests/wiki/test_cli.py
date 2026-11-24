@@ -587,3 +587,42 @@ def test_mcp_serves_the_memory_over_stdio_with_the_files_of_this_computer(
     assert run(bundle, "mcp") == 0
 
     assert served == [(True, "made"), (True, "stdio"), (True, "closed")]  # on, whatever the settings say; closed with its short drain
+
+
+def test_index_builds_the_search_index_and_exits_0_once_it_is_whole(
+    made: list[dict[str, Any]], bundle: Path, llm: FakeLLM, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from llmw2.searchindex import INDEX_FILE, build_state
+
+    ingest_one(bundle, llm)
+    for suffix in ("", "-wal", "-shm"):  # a fresh copy: no index file
+        Path(f"{bundle / INDEX_FILE}{suffix}").unlink(missing_ok=True)
+    calls = len(llm.calls)
+    capsys.readouterr()
+
+    assert run(bundle, "index") == 0
+
+    assert capsys.readouterr().out == "search index complete\n"
+    assert build_state(bundle / INDEX_FILE) is None and (bundle / INDEX_FILE).is_file()
+    assert len(llm.calls) == calls
+    assert run(bundle, "search", "revenue booked") == 0
+    assert capsys.readouterr().out.startswith(f"1. {NOTE} — Revenue recognition")
+
+
+def test_index_exits_2_when_the_index_cannot_be_written(
+    made: list[dict[str, Any]], bundle: Path, llm: FakeLLM, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import shutil
+
+    from llmw2.searchindex import INDEX_FILE
+
+    ingest_one(bundle, llm)
+    cache = (bundle / INDEX_FILE).parent
+    shutil.rmtree(cache, ignore_errors=True)
+    cache.write_text("not a folder", encoding="utf-8")  # the index can be kept in memory only
+    capsys.readouterr()
+
+    assert run(bundle, "index") == 2
+
+    out = capsys.readouterr()
+    assert "complete" not in out.out and "kept in memory only" in out.err

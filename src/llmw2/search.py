@@ -344,6 +344,33 @@ class NoteSearch:
             self._recent = None
         self.index.close()
 
+    def complete(self, store: WikiStore) -> None:
+        """Return once the index file is built whole (`ready`), however long that takes: the step to run before a wiki is opened to its
+        users. It is the build in the background (`Build`: its lease, its lots), never a second one: this process starts it when no
+        process of the machine builds the file, or waits on the lease of the one that does, and goes on from its lots if that one stops
+        (the lease let go of, its lots stay). The index's lock is held only for a look at a time: the searches of this process go on
+        meanwhile, partial as ever. When the build in the background cannot run here (`_background`), the file is built by a sync, as
+        the searches then do, and made complete as a build in the background ends (`SearchIndex.seal`). `OSError` when the file cannot
+        be used, so that the index is kept in memory only: nothing would be on disk for the other processes."""
+        from llmw2.searchindex import BUILD_WINDOW, wait_build
+
+        while True:
+            with self._lock:
+                if not self._building(store, time.monotonic_ns()):  # the end of its wait is now: it starts the build or finds it, no more
+                    if not self._background:
+                        self.index.sync(store, self._entry)
+                        if not self.index.in_memory:
+                            self.index.seal(store, self._entry)
+                    if self.index.in_memory:
+                        raise OSError(f"the search index cannot be written at {self.index.path}: it is kept in memory only (see the log)")
+                    return
+                build = self._build
+            path = self.index.path
+            if build is not None:
+                build.wait(BUILD_WINDOW)
+            elif path is not None:  # another process builds it: its lease is let go of when it ends, or when it dies
+                wait_build(path, time.monotonic_ns() + int(BUILD_WINDOW * 1e9))
+
     def _building(self, store: WikiStore, until: int | None = None) -> bool:
         """Whether the index file is being built (not built whole yet): the search then reads what the build's lots committed (they are
         durable), with the notes this process wrote since (`_recent`, from then on), and says it is partial. Starts the build (`Build`)
