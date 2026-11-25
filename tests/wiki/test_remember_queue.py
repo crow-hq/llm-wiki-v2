@@ -640,7 +640,7 @@ def test_a_job_and_a_person_in_one_process_are_two_writers(bundle: Path, monkeyp
     try:
         kept, refusal = fill_as(server, "import-job", "job", 100)
         assert kept == 56 and refusal is not None and "'import-job'" in str(refusal) and "keeps 56 entries" in str(refusal)
-        assert fill_as(server, "marco", "person", 7) == (7, None)
+        assert fill_as(server, "ada", "person", 7) == (7, None)
         assert len(open_entries(bundle)) == 63
     finally:
         server.close()
@@ -653,7 +653,7 @@ def test_the_calls_of_a_process_that_name_no_author_are_one_writer(bundle: Path,
         assert fill_as(server, None, "a", 40)[0] == 40
         kept, refusal = fill_as(server, None, "b", 40)  # another call naming none: the same writer, already busy
         assert kept == 16 and refusal is not None and "name no author" in str(refusal)
-        assert fill_as(server, "marco", "person", 3) == (3, None)  # a writer that names itself still has the last places
+        assert fill_as(server, "ada", "person", 3) == (3, None)  # a writer that names itself still has the last places
     finally:
         server.close()
 

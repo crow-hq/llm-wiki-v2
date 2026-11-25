@@ -400,8 +400,9 @@ def test_a_load_while_another_agent_removes_a_folder_leaves_it_out(tmp_path: Pat
 
 
 def test_a_search_while_another_process_writes_at_every_read_does_not_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A writer that writes more often than a search reads (a fast filer, at W5k) made every attempt stale: after six, "the search
-    index cannot be rebuilt". The search reads again inside one state of the file, whatever is written meanwhile."""
+    """A writer that writes more often than a search reads (a fast filer, on a wiki of thousands of notes) made every attempt
+    stale: after six, "the search index cannot be rebuilt". The search reads again inside one state of the file, whatever is
+    written meanwhile."""
     wiki = build(tmp_path)
     other = Wiki(wiki.cfg, llm=ContentLLM(UsageTracker()))  # another process: its own index and connection
     real = SI.SearchIndex._postings
@@ -488,7 +489,7 @@ def test_a_reader_that_listed_a_moment_ago_does_not_list_again_because_another_p
 @pytest.mark.parametrize("other_writes", [False, True])
 def test_a_note_gone_while_a_writer_holds_the_index_stays_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, other_writes: bool) -> None:
     """A note deleted while another process holds the index's write lock (a purge whose hook failed: "index" in `pending`) is left out
-    by a reader (D1); it stays out at the next listing that finds the files as they were, and after another process wrote the index
+    by a reader; it stays out at the next listing that finds the files as they were, and after another process wrote the index
     (the reader reads its state again): no title nor summary of it comes back."""
     wiki = build(tmp_path)
     gone = paths(wiki.search("common", k=8))[0]
