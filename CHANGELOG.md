@@ -49,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `{"status": "done", "queue", "failed", "warnings"}` in place of the note. The other jobs of the client's models (`recall`,
   `forget`, `rebuild`, `remember_file`, `sync_folder`) are unchanged, and their wiki is closed when they end, which completes the
   journal's part of a `forget`.
+- With the client's models, the client answers the `decide` requests itself, as the `write` ones, with no tool and no subagent.
+  The `how` asked Claude Code to hand each one to a Haiku subagent, and also to use no tool, and Claude Code mostly answered them
+  itself; when it did start the subagents, a filing took longer and cost more, since a subagent's own context outweighs a short
+  decision.
 
 ### Fixed
 

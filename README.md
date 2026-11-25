@@ -139,11 +139,11 @@ from your disk: `remember_file` and `sync_folder`. Which models do the work is a
 - **This wiki's settings** (the default on the page). OpenRouter or a local model, with Jev or Laya deciding, file the memories; the
   client only calls the memory.
 - **Claude or GPT for everything** (the default in `setup`). The memory hands the client every model call it makes, while CROW runs as always.
-  Claude Code decides with a Haiku subagent and writes with its own model; Codex uses its own. It runs on the client's
+  Claude Code and Codex decide and write with their own model. It runs on the client's
   plan, with no key in the wiki. The requests carry your documents' text to the client: it is told to read it as data
   and to answer without tools, but that is an instruction, not a sandbox (see Security in the memory guide).
 - **Hybrid.** The client's model writes, and the wiki's classifier (Jev through OpenRouter, or Ollama or Laya on your
-  computer) decides: fewer round trips than the above, and no Haiku subagents.
+  computer) decides: fewer round trips than the above, and no decision for the client.
 
 ### Many agents, short processes
 

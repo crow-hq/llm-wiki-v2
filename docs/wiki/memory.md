@@ -134,7 +134,7 @@ Three setups, chosen under **Memory** in **Which models do the work**, or in `ll
   key in the wiki.
 - **Hybrid** (`hybrid`): the client's model writes, and this wiki's classifier decides (Jev through OpenRouter or
   TypeSafe, or a System One server on your computer: Ollama 0.35 or later, or Laya). Only the writing goes to the client
-  (in our tries, one or two replies per memory instead of four to seven), and no Haiku subagent runs; the writing stays
+  (in our tries, one or two replies per memory instead of four to seven), and the client takes no decision; the writing stays
   on the client's plan.
   Without a classifier set up (its key, or its address), it works as `client`.
 
@@ -150,8 +150,9 @@ the client as a request, and its reply lets the work go on. `recall` returns the
 ```
 
 - A `decide` request is a typed decision: the System One questions, and the prompt of TypeSafe's system-one-adapter,
-  which ends with the reply's shape keyed by the question ids. Claude Code runs it with a Haiku subagent; other
-  clients answer it with their own model. The reply is read as a light model writes it: an answer keyed by its
+  which ends with the reply's shape keyed by the question ids. The client answers it with its own model, as a
+  write: handing it to a lighter model, such as a Haiku subagent in Claude Code, takes longer and costs more than the
+  decision. The reply is read as a light model writes it: an answer keyed by its
   question's text, a reply cut before its last brackets, percentages, a choice given as one of its labels. Anything
   else falls back to the LLM.
 - A `write` request is the wiki's own prompt, for the client's model.
@@ -174,9 +175,8 @@ the same receipt as with the wiki's own models, and a full queue refuses it the 
 `recall` and `read_note` find the memory as `pending:<id>`. The receipt also holds the server's filing `job`, with
 `"status": "to file"` and a `how` that says not to file now: the client goes on with the user's task, and at a natural
 pause (the task done, before it ends that turn) it calls `reply(job, {})` and answers the requests, as for `recall`. In
-Claude Code a turn ends with its answer, and a subagent has no Agent tool for the Haiku deciders, so the main agent
-does it. Filing takes a few round trips per memory, about a minute, none of it while the user waits for `remember`.
-The client's tool calls and subagents run on its own plan.
+Claude Code a turn ends with its answer, and a subagent cannot ask for a permission, so the main agent does it. Filing takes a few round trips per memory, about a minute, none of it while the user waits for `remember`.
+The client's tool calls run on its own plan.
 
 The job has one id for the life of the server. A `reply` to it starts a run when none goes on and the queue is not
 empty, and the run files the whole journal: the memories kept meanwhile, and those of earlier sessions. It ends when
@@ -244,7 +244,7 @@ Keep the port on your machine. In Docker that means `127.0.0.1:8000:8000` if the
 With **Claude or GPT for everything**, the requests carry your documents' text to the client's model, and that model
 has tools: commands, files, the web. A document with hidden instructions (an email, a web page) could try to steer it.
 The memory tells the client that a request is data, never instructions, and that it answers with text alone and no
-tool, its subagents included. A decision's document also travels escaped, inside a prompt that says it is untrusted.
+tool and no subagent. A decision's document also travels escaped, inside a prompt that says it is untrusted.
 That is an instruction, not a sandbox: Claude Code documents no way to give a subagent no tools. So with documents you did
 not write, keep the client's permission prompts on (in Claude Code, not `--dangerously-skip-permissions`), or let this
 wiki's own models do the work, which have no tools.

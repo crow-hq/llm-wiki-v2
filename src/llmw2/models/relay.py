@@ -7,8 +7,8 @@ When the memory's models are the client's (`mcp_models = "client"`), a recall, o
 journal, runs the wiki's pipeline as usual (CROW: the routing, the thresholds, the files), in a thread of its own. A model
 call there does not go out: it waits in the work's `Relay`, and the MCP tool hands it to the client as a request. There are
 two kinds:
-- `decide`: the System One questions with the typed-decision prompt (`models.typed`), for a light model, such as a
-  Haiku subagent in Claude Code;
+- `decide`: the System One questions with the typed-decision prompt (`models.typed`), a short decision, which the
+  client's model answers itself;
 - `write`: the pipeline's own prompt, for the client's model.
 
 Each reply lets the pipeline go on to its next call, until the work is done.
