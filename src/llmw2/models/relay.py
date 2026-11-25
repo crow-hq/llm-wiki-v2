@@ -3,9 +3,10 @@
 
 """Models whose calls the MCP client answers, so that its own plan does the memory's model work: no key, no other process.
 
-When the memory's models are the client's (`mcp_models = "client"`), a remember or a recall runs the wiki's pipeline as
-usual (CROW: the routing, the thresholds, the files), in a thread of its own. A model call there does not go out: it
-waits in the work's `Relay`, and the MCP tool hands it to the client as a request. There are two kinds:
+When the memory's models are the client's (`mcp_models = "client"`), a recall, or the filing of what remember kept in the
+journal, runs the wiki's pipeline as usual (CROW: the routing, the thresholds, the files), in a thread of its own. A model
+call there does not go out: it waits in the work's `Relay`, and the MCP tool hands it to the client as a request. There are
+two kinds:
 - `decide`: the System One questions with the typed-decision prompt (`models.typed`), for a light model, such as a
   Haiku subagent in Claude Code;
 - `write`: the pipeline's own prompt, for the client's model.
@@ -68,11 +69,14 @@ class Relay:
 
     `run` starts the work in a thread. Its model calls wait in `call` until `answer` brings their replies, and `next`
     hands the tool those not handed out yet. A call left without a reply for `patience` seconds fails with ModelError,
-    as a model that does not answer would, and so does every call after it, at once: the client is gone.
+    as a model that does not answer would, and so does every call after it, at once: the client is gone. Its request ids are
+    `prefix` and a count: works that share a job id (the runs of the filing job of a server) each have their own prefix, so that a
+    late reply to one that ended is never taken for another's.
     """
 
-    def __init__(self, patience: float = PATIENCE) -> None:
+    def __init__(self, patience: float = PATIENCE, prefix: str = "r") -> None:
         self.patience = patience
+        self.prefix = prefix
         self.ended: float | None = None  # time.monotonic() when the work ended
         self.result: Any = None
         self.error: BaseException | None = None
@@ -107,7 +111,7 @@ class Relay:
         with self._changed:
             if self._gone:  # CROW falls back to the LLM when a decision fails: that call must not wait as long again
                 raise ModelError(f"{CLIENT} stopped replying: the {step} request was not sent")
-            request = Request(f"r{next(self._ids)}", kind, step, system, prompt)
+            request = Request(f"{self.prefix}{next(self._ids)}", kind, step, system, prompt)
             self._asked[request.id] = request
             self._changed.notify_all()
             self._changed.wait_for(lambda: request.id in self._replies or self._gone, timeout=self.patience)
@@ -119,6 +123,17 @@ class Relay:
             self._gone = True
             self._changed.notify_all()  # the calls still waiting fail now too
             raise ModelError(f"{CLIENT} did not reply to the {step} request within {self.patience:.0f} s")
+
+    def stop(self) -> None:
+        """The client is not coming back for this work (its server ends): the calls waiting fail now, and every call after, at once."""
+        with self._changed:
+            self._gone = True
+            self._changed.notify_all()
+
+    def join(self, timeout: float) -> bool:
+        """Wait up to `timeout` seconds for the work to end; whether it did."""
+        with self._changed:
+            return self._changed.wait_for(lambda: self.done, timeout=timeout)
 
     def next(self, timeout: float) -> list[Request]:
         """From the tool: the calls not handed out yet, as soon as there are some.

@@ -90,8 +90,8 @@ approval_mode = "approve"
 | Tool | What it does | Returns |
 |---|---|---|
 | `recall(question, where?)` | Answers from the wiki, as **Ask** does: the classifier picks the folders and notes, and the LLM answers from them. `where` (field to value) keeps only the notes whose `fields` have all of them; it is a filter, not an access control. Read-only. | `{"answer", "notes"}`: the answer cites its notes as `[path.md]` |
-| `remember(text, title?, key?)` | Keeps the text at once in the wiki's journal and files it in the background like a note written on the page: it goes in the right folder, or is merged into the note on the same subject, and is linked to related notes. `search` finds it at once, `recall` reads it, and `read_note` reads `pending:<id>` (then the note it went in). `key` names the memory: the same key with a new text is a new version of it. If the queue of memories waiting to be filed stays full for a second, nothing is kept and it says so in one line (NOT saved, what to tell the user, when to try again). With the client's models it is filed before the tool returns, as a job. | `{"action": "queued", "note": "", "folder": "", "related": [], "saved": true, "id", "key", "state"}` (saved: on disk, found at once; `state` "filed": in its note; the same text again once filed: `"unchanged"` with its note and folder); a full queue: an error of the tool (`isError`) whose text says NOT saved, with `{"action": "not_saved", "note": "", "folder": "", "related": [], "saved": false, "retry_after_s", "queue", "queue_limit", "oldest_s", "message"}` as structured content; with the client's models `{"action", "note", "folder", "related", "key"}`, and `deviated` (a count) with `deviations` (each note, the root it went to, `p_none`, `p_root`) when the limit on top-level folders sent the note to the likeliest existing folder instead of a new one |
-| `status()` | What `remember` kept that is still waiting to be filed, and whether the memory is filing it; `warnings` also names the notes the limit on top-level folders sent to an existing folder. Read-only. | `{"queue", "queue_limit", "filing", "failed", "oldest_s", "filer", "last_error", "journal_bytes", "disk_free", "warnings"}` |
+| `remember(text, title?, key?)` | Keeps the text at once in the wiki's journal and files it in the background like a note written on the page: it goes in the right folder, or is merged into the note on the same subject, and is linked to related notes. `search` finds it at once, `recall` reads it, and `read_note` reads `pending:<id>` (then the note it went in). `key` names the memory: the same key with a new text is a new version of it. If the queue of memories waiting to be filed stays full for a second, nothing is kept and it says so in one line (NOT saved, what to tell the user, when to try again). With the client's models it is kept and answered the same way, at once, and the filing is a job the client answers later (see [How the client does it](#how-the-client-does-it)). | `{"action": "queued", "note": "", "folder": "", "related": [], "saved": true, "id", "key", "state"}` (saved: on disk, found at once; `state` "filed": in its note; the same text again once filed: `"unchanged"` with its note and folder); a full queue: an error of the tool (`isError`) whose text says NOT saved, with `{"action": "not_saved", "note": "", "folder": "", "related": [], "saved": false, "retry_after_s", "queue", "queue_limit", "oldest_s", "message"}` as structured content; with the client's models the same receipt, with `job`, `"status": "to file"` and `how`: the server's filing job; its refusal too has `job`, as only the client files what waits |
+| `status()` | What `remember` kept that is still waiting to be filed, and whether the memory is filing it; `warnings` also names the notes the limit on top-level folders sent to an existing folder. Read-only. | `{"queue", "queue_limit", "filing", "failed", "oldest_s", "filer", "last_error", "journal_bytes", "disk_free", "warnings"}`, and with the client's models `job` (the server's filing job) while the queue is not empty |
 | `forget(key? \| id?, confirm)` | Takes out for good a memory `remember` kept, by its key or the id of its receipt (`pending:<id>` too), queued or filed, every version, with the notes written from it, as `llmwiki2 purge`; a full queue never holds it. Cannot be undone, so it does nothing unless `confirm` is `true`. | what went: `notes`, `sources`, `entries`…, and `pending` (empty when no file holds the text any more) |
 | `search(query, k?, where?)` | The notes that best match a query, as `Wiki.search` finds them (BM25, and the embedder when the settings have one), with no model call and no answer written: for a client that reads the notes itself with `read_note`. `k` from 1 to 50 (8). Read-only. | a list of `{"path", "title", "summary", "rank"}` |
 | `read_note(path)` | One note in full: title, summary and body. Read-only. | the note's text |
@@ -141,8 +141,8 @@ Three setups, chosen under **Memory** in **Which models do the work**, or in `ll
 ### How the client does it
 
 CROW runs as it always does: the routing, the thresholds, the files. Only the model calls change. Each one is handed to
-the client as a request, and its reply lets the work go on. `recall` and `remember` return the first requests and a
-`job`; `reply(job, {request id: reply})` returns the next ones, until the result comes:
+the client as a request, and its reply lets the work go on. `recall` returns the first requests and a `job`;
+`reply(job, {request id: reply})` returns the next ones, until the result comes:
 
 ```json
 {"job": "3f2a9c1e", "status": "needs replies", "how": "…", "requests": [
@@ -169,7 +169,35 @@ else the product in its `User-Agent`. The memory answers statelessly, so the han
 is seldom there when a tool is called: expect the `User-Agent`. The name is **declared, not verified**; it is a record,
 not a login.
 
-A memory takes a few round trips: about a minute. The client's tool calls and subagents run on its own plan.
+`remember` does not wait for the client's models. It keeps the text in the journal and answers in milliseconds with
+the same receipt as with the wiki's own models, and a full queue refuses it the same way. From then on `search`,
+`recall` and `read_note` find the memory as `pending:<id>`. The receipt also holds the server's filing `job`, with
+`"status": "to file"` and a `how` that says not to file now: the client goes on with the user's task, and at a natural
+pause (the task done, before it ends that turn) it calls `reply(job, {})` and answers the requests, as for `recall`. In
+Claude Code a turn ends with its answer, and a subagent has no Agent tool for the Haiku deciders, so the main agent
+does it. Filing takes a few round trips per memory, about a minute, none of it while the user waits for `remember`.
+The client's tool calls and subagents run on its own plan.
+
+The job has one id for the life of the server. A `reply` to it starts a run when none goes on and the queue is not
+empty, and the run files the whole journal: the memories kept meanwhile, and those of earlier sessions. It ends when
+the queue is empty, with `{"status": "done", "queue", "failed", "warnings"}` (the counts of `status`, whose warnings
+name the notes the limit on top-level folders sent to an existing folder), or when another process holds the
+journal's lease (`"filer": "other"`): then the run ends `done` with the queue it leaves to that process, which may not
+be empty. A `reply` with nothing to file answers `done` at once.
+`status` gives the `job` while the queue is not empty, after a restart too, and a refusal for a full queue gives it as
+well, since only the client files what waits.
+
+Until the client replies, nothing is filed and nothing waits on the client. Once a run goes on, the section it files
+waits for the client's replies, up to 5 minutes for each: meanwhile the page, and another process that writes to the
+wiki, wait for that section. A `forget` or a `delete_note` stops the run going on, if any, so that it never waits for
+a client that does not answer meanwhile: what the run was filing stays queued, and the next `reply` starts again. A
+run ends at the first failure, with its error, and the memories stay queued for the next `reply`: a request left
+unanswered for 5 minutes, or a reply that is not what was asked (one that cannot be read, or a write that lacks what
+its step needs, such as an empty title). The latter is the client's failure, not the memory's: the first six of one
+memory, in a server, are tried again; after those they count as the memory's own failures, and three of those set it
+aside, as with any model. When the server
+ends, its run stops, and what it did not file stays in the journal for the next session, or for a server with the
+wiki's own models. Between two processes on one wiki, the one that holds the journal's lease files, once.
 
 The page's own filing (files dropped on it) keeps using the wiki's own models, as no client is there to ask. The memory
 files through CROW whichever models do it.

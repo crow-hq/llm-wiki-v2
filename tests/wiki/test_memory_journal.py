@@ -450,7 +450,7 @@ def test_forget_refuses_what_it_cannot_do_and_changes_nothing(wiki: Wiki, argume
     assert len(notes(wiki.cfg.bundle)) == 1
 
 
-def test_with_the_clients_models_remember_files_now_under_its_key_and_forget_takes_it_out(
+def test_with_the_clients_models_remember_keeps_it_under_its_key_and_forget_takes_it_out(
     bundle: Path, llm: FakeLLM, classifier: FakeClassifier
 ) -> None:
     # ARRANGE
@@ -459,12 +459,12 @@ def test_with_the_clients_models_remember_files_now_under_its_key_and_forget_tak
 
     # ACT
     kept, _ = through(memory, "remember", {"text": "Revenue is booked on delivery.", "key": "rev-1"}, client)
+    filed = [n.relative_to(bundle).as_posix() for n in notes(bundle)]
     gone, _ = through(memory, "forget", {"key": "rev-1", "confirm": True}, client)
 
-    # ASSERT
-    assert kept.structured_content["status"] == "done" and kept.structured_content["action"] == "created"
-    assert kept.structured_content["key"] == "rev-1"
-    assert gone.structured_content["status"] == "done" and gone.structured_content["notes"] == [kept.structured_content["note"]]
+    # ASSERT: the job played to its end, the queue empty
+    assert kept.structured_content["status"] == "done" and kept.structured_content["queue"] == 0 and len(filed) == 1
+    assert gone.structured_content["status"] == "done" and gone.structured_content["notes"] == filed
     assert notes(bundle) == [] and leftovers(bundle, "Revenue is booked on delivery") == []
 
 
@@ -473,14 +473,16 @@ def test_with_the_clients_models_a_memory_given_no_key_is_forgotten_by_the_key_i
 ) -> None:
     # ARRANGE
     memory = Memory(lambda: client_wiki(bundle, llm, classifier))
-    kept, _ = through(memory, "remember", {"text": "Revenue is booked on delivery."}, client)
+    key = one(memory, "remember", {"text": "Revenue is booked on delivery."}).structured_content["key"]
+    through(memory, "reply", {"job": memory.job, "replies": {}}, client)
+    filed = [n.relative_to(bundle).as_posix() for n in notes(bundle)]
 
     # ACT
-    gone, _ = through(memory, "forget", {"key": kept.structured_content["key"], "confirm": True}, client)
+    gone, _ = through(memory, "forget", {"key": key, "confirm": True}, client)
 
     # ASSERT
-    assert kept.structured_content["key"].startswith("text:")
-    assert gone.structured_content["status"] == "done" and gone.structured_content["notes"] == [kept.structured_content["note"]]
+    assert key.startswith("text:") and len(filed) == 1
+    assert gone.structured_content["status"] == "done" and gone.structured_content["notes"] == filed
     assert notes(bundle) == [] and leftovers(bundle, "Revenue is booked on delivery") == []
 
 

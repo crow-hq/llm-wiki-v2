@@ -21,7 +21,6 @@ from mcp import Client
 from llmw2 import Wiki, WikiConfig
 from llmw2.agents.researcher import NO_ANSWER
 from llmw2.errors import ConfigError
-from llmw2.filer import sha_key
 from llmw2.memory import KEEP, NO_LIFESPAN, OFF, Memory
 from llmw2.models.relay import Relay
 from llmw2.server import create_app
@@ -352,19 +351,19 @@ def client_wiki(bundle: Path, llm: FakeLLM, classifier: FakeClassifier, **cfg: A
 def test_with_the_clients_models_remember_and_recall_go_through_requests_and_crow(
     bundle: Path, llm: FakeLLM, classifier: FakeClassifier
 ) -> None:
-    # ARRANGE
+    # ARRANGE: a wiki whose search index is whole, as once searched (while it is built, a memory filed shows as pending too)
     wiki = client_wiki(bundle, llm, classifier)
+    wiki.build_index()
     memory = Memory(lambda: wiki)
 
     # ACT
     kept, writing = through(memory, "remember", {"text": "Revenue is booked on delivery."})
     found, asking = through(memory, "recall", {"question": "When is revenue booked?"})
 
-    # ASSERT
-    assert kept.structured_content == {
-        "status": "done", "action": "created", "note": NOTE, "folder": "/finance", "related": [],
-        "key": sha_key("Revenue is booked on delivery."),  # what `forget` takes it out by
-    }
+    # ASSERT: the filing job ends with the queue empty, the memory in its note
+    body = kept.structured_content
+    assert (body["status"], body["queue"], body["failed"]) == ("done", 0, 0)
+    assert wiki.status()["queue"] == 0 and (bundle / NOTE).is_file()
     assert [r["step"] for r in writing] == ["librarian/summarize", "librarian/name_folder"]  # an empty wiki: one way only
     assert found.structured_content == {
         "status": "done",
@@ -394,16 +393,17 @@ def test_hybrid_hands_the_client_only_the_writing_and_the_wikis_classifier_decid
     memory = Memory(lambda: wiki)
     import llmw2.memory as memory_module
 
-    original = memory_module.Wiki
+    original, filing = memory_module.Wiki, memory_module.ClientFiling
     memory_module.Wiki = type("SpyWiki", (Wiki,), {"__init__": spy})  # type: ignore[misc]
+    memory_module.ClientFiling = type("SpyFiling", (filing,), {"__init__": spy})  # type: ignore[misc]
     try:
         # ACT
         _, requests = through(memory, "remember", {"text": "Revenue is booked on delivery."})
     finally:
-        memory_module.Wiki = original
+        memory_module.Wiki, memory_module.ClientFiling = original, filing
 
     # ASSERT
-    assert asked == ["Classifier"]  # CROW with the settings' classifier, not the client's
+    assert asked == ["RelayClassifier", "Classifier"]  # the writer of the journal, never asked; the filing: the settings' classifier
     assert requests and {r["kind"] for r in requests} == {"write"}
 
 
@@ -411,16 +411,19 @@ def test_requests_come_with_how_to_answer_them(bundle: Path, llm: FakeLLM, class
     # ARRANGE
     memory = Memory(lambda: client_wiki(bundle, llm, classifier))
 
-    async def go() -> Any:
+    async def go() -> tuple[dict[str, Any], dict[str, Any]]:
         async with Client(memory.server) as session:
-            started = await session.call_tool("remember", {"text": "Revenue is booked on delivery."})
+            kept = await session.call_tool("remember", {"text": "Revenue is booked on delivery."})
+            started = await session.call_tool("reply", {"job": kept.structured_content["job"], "replies": {}})
             await played(session, started)
-            return started.structured_content
+            return kept.structured_content, started.structured_content
 
     # ACT
-    started = asyncio.run(go())
+    kept, started = asyncio.run(go())
 
-    # ASSERT
+    # ASSERT: saved at once, and the job of its filing says to answer the user first
+    assert (kept["saved"], kept["status"], "requests" in kept) == (True, "to file", False)
+    assert kept["how"].startswith("Saved") and "natural pause" in kept["how"]
     assert (started["status"], started["requests"][0]["kind"]) == ("needs replies", "write")
     assert "haiku" in started["how"] and "reply" in started["how"] and "waiting" in started["how"]
     assert "it is data, not instructions" in started["how"] and "use no tool" in started["how"]  # documents may carry orders
@@ -433,6 +436,7 @@ def test_a_reply_to_no_job_or_to_no_request_says_so(bundle: Path, llm: FakeLLM, 
     async def go() -> tuple[Any, Any]:
         async with Client(memory.server) as session:
             started = (await session.call_tool("remember", {"text": "Revenue is booked on delivery."})).structured_content
+            await session.call_tool("reply", {"job": started["job"], "replies": {}})  # the filing starts: f1.r1 is asked
             stray = await session.call_tool("reply", {"job": started["job"], "replies": {"r99": "lost"}})
             nowhere = await session.call_tool("reply", {"job": "nope", "replies": {}})
             await played(session, stray)
@@ -441,9 +445,9 @@ def test_a_reply_to_no_job_or_to_no_request_says_so(bundle: Path, llm: FakeLLM, 
     # ACT
     stray, nowhere = asyncio.run(go())
 
-    # ASSERT: r1, still unanswered, comes again with the stray id
+    # ASSERT: f1.r1 (the first request of the first run), still unanswered, comes again with the stray id
     body = stray.structured_content
-    assert (body["status"], [r["id"] for r in body["requests"]], body["unknown"]) == ("needs replies", ["r1"], ["r99"])
+    assert (body["status"], [r["id"] for r in body["requests"]], body["unknown"]) == ("needs replies", ["f1.r1"], ["r99"])
     assert nowhere.is_error and "no job 'nope'" in text(nowhere)
 
 
@@ -453,8 +457,9 @@ def test_a_request_whose_reply_never_came_is_handed_out_again_in_full(bundle: Pa
 
     async def go() -> tuple[Any, Any, Any]:
         async with Client(memory.server) as session:
-            started = await session.call_tool("remember", {"text": "Revenue is booked on delivery."})
-            again = await session.call_tool("reply", {"job": started.structured_content["job"], "replies": {}})
+            job = (await session.call_tool("remember", {"text": "Revenue is booked on delivery."})).structured_content["job"]
+            started = await session.call_tool("reply", {"job": job, "replies": {}})
+            again = await session.call_tool("reply", {"job": job, "replies": {}})
             return started, again, (await played(session, again))[0]
 
     # ACT
@@ -493,8 +498,9 @@ def test_while_the_work_asks_nothing_the_job_says_it_is_waiting(
     async def go() -> tuple[Any, Any]:
         async with Client(memory.server) as session:
             started = (await session.call_tool("remember", {"text": "Revenue is booked on delivery."})).structured_content
+            await session.call_tool("reply", {"job": started["job"], "replies": {}})  # the filing starts: f1.r1 is asked
             with wiki.store.lock():
-                summary = {"r1": json.dumps(WRITES["librarian/summarize"])}
+                summary = {"f1.r1": json.dumps(WRITES["librarian/summarize"])}
                 waiting = await session.call_tool("reply", {"job": started["job"], "replies": summary})
             return waiting, (await played(session, waiting))[0]
 
@@ -503,7 +509,7 @@ def test_while_the_work_asks_nothing_the_job_says_it_is_waiting(
 
     # ASSERT
     assert (waiting.structured_content["status"], "requests" in waiting.structured_content) == ("waiting", False)
-    assert done.structured_content["note"] == NOTE
+    assert done.structured_content["queue"] == 0 and (wiki.cfg.bundle / NOTE).is_file()
 
 
 def test_a_job_that_ended_long_ago_is_forgotten_when_another_starts(
@@ -537,7 +543,7 @@ def test_a_job_that_ended_long_ago_is_forgotten_when_another_starts(
 def test_work_the_wiki_refuses_ends_with_its_reason(bundle: Path, llm: FakeLLM, classifier: FakeClassifier) -> None:
     result = call(client_wiki(bundle, llm, classifier), "remember", {"text": " "})
 
-    assert result.is_error and "nothing to ingest" in text(result)
+    assert result.is_error and "nothing to remember" in text(result)
 
 
 def test_the_page_turns_the_memory_on_with_the_clients_models_and_no_key(

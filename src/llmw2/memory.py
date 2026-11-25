@@ -8,7 +8,8 @@
 
 Its tools are served over Streamable HTTP, at /mcp of the wiki's own server:
 - `recall`: a question, answered with the notes the answer cites;
-- `remember`: a text, kept at once and filed like any note in the background (with the client's models, before it returns);
+- `remember`: a text, kept at once and filed like any note in the background (with the client's models, by the server's
+  filing job, which the client answers at a natural pause);
 - `status`: what `remember` kept that is still waiting to be filed;
 - `forget`: a memory `remember` kept, by its key or its id, taken out for good with what was written from it;
 - `search`: the notes that best match a query, with no model call;
@@ -30,9 +31,11 @@ Two transports: Streamable HTTP at /mcp of the wiki's server (`llmwiki2 serve`, 
 
 Whose models do that work is the setting `mcp_models`:
 - "wiki": this wiki's own models (OpenRouter, a local model, Jev or Laya), and the client only calls the memory;
-- "client": the client's models, on its own plan, with no key. `recall` and `remember` start the work, and its model
-  calls come back to the client as requests (see models.relay). Claude Code answers a decision with a Haiku subagent
-  and writes with its own model; `reply` hands the answers over until the result comes.
+- "client": the client's models, on its own plan, with no key. `recall` starts the work, and its model calls come back to
+  the client as requests (see models.relay). Claude Code answers a decision with a Haiku subagent and writes with its own
+  model; `reply` hands the answers over until the result comes. `remember` keeps the text in the journal and answers at
+  once, as with the wiki's models; its result also names the server's filing job (`Memory.job`), which a `reply` to it
+  starts while the queue is not empty, and which files the whole queue with the client's models.
 - "hybrid": the client's model writes, and this wiki's classifier (Jev through OpenRouter, or a local Laya or Ollama)
   takes the decisions: only the writing comes back to the client as requests, and no decision does.
   Without a classifier ready in the settings it works as "client".
@@ -52,12 +55,14 @@ __copyright__ = (
 )
 
 import inspect
+import itertools
 import threading
 import time
 import uuid
+from collections import Counter
 from collections.abc import AsyncGenerator, Callable, Iterable
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Annotated, Any, TypeVar, cast
 
@@ -78,10 +83,9 @@ from llmw2.agents.librarian import IngestResult
 from llmw2.agents.researcher import Answer
 from llmw2.batch import BatchReport, deviations
 from llmw2.bundle.files import extract_text
-from llmw2.bundle.origin import Origin
-from llmw2.errors import FailedBacklog, InputError, QueueFull, WikiError
-from llmw2.filer import PENDING, Receipt, sha_key
-from llmw2.models.relay import LLM_CONFIG, Relay, RelayClassifier, RelayLLM, relayed
+from llmw2.errors import FailedBacklog, InputError, ModelError, QueueFull, ReplyInvalid, StepError, WikiError
+from llmw2.filer import PENDING, Entry, Filer, Receipt
+from llmw2.models.relay import CLIENT, LLM_CONFIG, Relay, RelayClassifier, RelayLLM, relayed
 from llmw2.models.usage import UsageTracker
 from llmw2.search import Hits
 from llmw2.sources import LocalFolderSource, SyncReport, sync
@@ -107,7 +111,8 @@ conversation, in the user's language.{files}
 - To reorganize when the user asks ("move…", "sposta…", "rinomina…", "cancella…"): `folders` lists the folders, then \
 `move_note`, `describe_folder`, `rename_area`, `merge_areas`, `delete_note`; `forget` for what `remember` kept. Delete, \
 forget or merge only what the user asked for; when unsure, ask first.
-- When `recall` or `remember` returns requests instead of a result, the memory works with your models: follow its `how`.
+- When `recall` returns requests instead of a result, the memory works with your models: follow its `how`. Then \
+`remember` saves at once and gives a `job` that files what waits: call `reply` with it at a natural pause, as its `how` says.
 Never store secrets: keys, passwords, tokens."""
 # With the files of this computer (stdio): the documents the user points at.
 FILES = """
@@ -128,7 +133,30 @@ HOW = (
     "way yourself. A write request is for you: answer its prompt as its system text asks, with exactly what it asks "
     "for (often one JSON object) and nothing else. Requests given together can be answered at the same time."
 )
+# What `remember` adds to its receipt when the client's models file it. In Claude Code a turn ends with its answer, and a
+# subagent has no Agent tool for the Haiku deciders nor a way to ask a permission: the main agent files, at a pause it picks.
+LATER = (
+    "Saved: the memory is on disk, and search, recall and read_note find it at once as pending:<id>. Do not file it now: "
+    "go on with the user's task. Filing it in its note is left to your models, with this job, which files every memory "
+    "that waits (one filing for many remembers): at a natural pause, such as when the task at hand is done and before you "
+    "end that turn, call reply with this job and {} and follow the how it returns until its status is done. status names "
+    "the job while memories wait. Until then it stays saved and found, and nothing is lost if it is never filed."
+)
+# What a full queue adds to its refusal when the client's models file: the memories that wait are filed by the client only.
+FILE_FIRST = (
+    " The memories that wait are filed by your models only: call reply with `job` and {} and follow its how, then remember "
+    "again."
+)
+# Invalid replies of the client for one entry, in this server, that are tried again before they count as the entry's own failures
+# (three of those set it aside, as with any model): a client that answers badly costs a retry, not the memory.
+CLIENT_TRIES = 6
+# What the writer's replies make, which `ClientFiling` checks (`StepError` naming the step): the client writes them in "hybrid" too,
+# while the wiki's own classifier, and the routing that the code builds from the decisions, make none of them.
+WRITER_STEPS = frozenset({"summarize", "merge", "name_folder"})
 WAIT = 50.0  # seconds a tool waits for the work's next requests: under the 60 s that a client such as Codex gives a tool
+# seconds `forget` and `delete_note` wait for the run of the filing job to stop (`Memory.pause`) before their own job: with WAIT,
+# under the 60 s of a tool too; a run that has not stopped by then only makes the purge wait for it, within that job
+PAUSE = 5.0
 # seconds `remember` waits for room in the queue of entries to file, then answers NOT saved with when to try again: a tool call that
 # hangs looks like a stuck assistant, so it stays under the second an agent expects of a tool (B3), not WAIT
 REMEMBER_WAIT = 1.0
@@ -155,6 +183,15 @@ class Memory:
         self._jobs: dict[str, Relay] = {}  # the work going on with the client's models, by job id
         self._jobs_lock = threading.Lock()
         self._queued = False  # a `remember` of this server went to the journal: `close` gives it a short drain
+        # With the client's models: the filing job of this server, the same id for its whole life; its run going on, if any; the
+        # wiki that writes `remember`'s entries (for the wiki `wiki()` gave, see `writer`); and the client's invalid replies by entry
+        # (`ClientFiling`). Under `_run_lock`.
+        self.job = uuid.uuid4().hex[:8]
+        self._run: Run | None = None
+        self._writer: tuple[Wiki, Wiki] | None = None
+        self._invalid: Counter[str] = Counter()
+        self._runs = itertools.count(1)  # the runs of the job, whose request ids each have a prefix of their own (`Relay`)
+        self._run_lock = threading.Lock()
         # WARNING: the SDK sets the level of the whole process's logging, and INFO would log every request.
         instructions = INSTRUCTIONS.format(files=FILES if local_files else "")
         self.server: MCPServer = MCPServer("llm-wiki", instructions=instructions, version=__version__, log_level="WARNING")
@@ -195,30 +232,37 @@ class Memory:
             subject; a model writes the note and links related ones, after the call returns. Returns {action: queued, note: "",
             folder: "", related: [], saved: true, id, key, state}: saved means on disk, and from then on `search` and `recall`
             find it, as `pending:<id>` until it is filed (state "filed": in its note), and `read_note` reads it; `status` says
-            what is still waiting. When the queue of memories to file stays full for a second it fails (an error of the tool) with
-            {action: not_saved, saved: false, retry_after_s, message}: NOT saved, nothing kept. Then reply to the user in this
-            turn: say it is not saved yet and when to try again (retry_after_s); call remember at most once more before you
-            reply, and do not wait for the queue with `status`.
+            what is still waiting (with your models, and the `job` that files it). When the queue of memories to file stays full
+            for a second it fails (an error of the tool) with {action: not_saved, saved: false, retry_after_s, message}: NOT
+            saved, nothing kept. Then reply to the user in this turn: say it is not saved yet and when to try again
+            (retry_after_s); call remember at most once more before you reply, and do not wait for the queue with `status`.
             The same text again, or the same key and text, returns the first one's receipt (once filed, action unchanged with
             its note). `forget` takes it out by its key or id, even when the queue is full. Adds or merges, never deletes.
             Never store secrets.
-            With your models, it returns a `job` with requests instead: answer them with `reply`; it is filed when it ends.
+            With your models, the same receipt comes at once with this server's filing `job`, `status` "to file" and `how`:
+            the filing is left to your models, at a natural pause; until then it stays saved and found.
             """
             by, wiki = author_of(ctx), self.live()
-            if wiki.cfg.mcp_models != "wiki":  # the client's models: filed now, as a job; the key is the text's origin
-                origin = Origin("remember", "", key) if key else None
-                named = key or sha_key(text)  # what `forget` takes it out by, as for a receipt
-                return self.run(lambda w: {**filed(w.ingest(text, title=title or None, origin=origin, author=by)), "key": named})
+            client = wiki.cfg.mcp_models != "wiki"  # the client's models: the same entry, filed by the job of this server (`file`)
+            writer = self.writer(wiki) if client else wiki
+
             def keep() -> dict[str, Any]:
                 try:
-                    return queued(wiki.remember(text, title=title or None, key=key or None, author=by, timeout=REMEMBER_WAIT))
+                    receipt = writer.remember(text, title=title or None, key=key or None, author=by, timeout=REMEMBER_WAIT)
                 except QueueFull as e:  # nothing written: said so, as a result a 1.0.5 client reads too
-                    return not_saved(e)
+                    body = not_saved(e)
+                    if client and not isinstance(e, FailedBacklog):  # what waits is filed only when the client replies
+                        body |= {"job": self.job, "message": body["message"] + FILE_FIRST}
+                    return body
+                kept = queued(receipt)
+                if client and receipt.state in ("queued", "filing"):
+                    return {**kept, "job": self.job, "status": "to file", "how": LATER}
+                return kept
 
             kept = guarded(keep)
             if not kept["saved"]:  # an error of the tool, so that a client that judges by isError never counts it as done
                 return cast(dict[str, Any], refused(kept))  # the SDK passes a CallToolResult through as it is
-            self._queued = True
+            self._queued = self._queued or not client  # the wiki's own models drain at `close`; the client's are gone by then
             return kept
 
         @tool(server, DELETES)
@@ -251,10 +295,15 @@ class Memory:
             returns new requests, or {status: "done", ...} with the result the first tool would have given. A job's result
             is kept 10 minutes after it ends.
             """
+            if job == self.job:
+                return self.file(replies)
             with self._jobs_lock:
                 relay = self._jobs.get(job)
             if relay is None:
-                raise ToolError(f"no job {job!r}: it was never started, or it ended over {KEEP / 60:.0f} minutes ago")
+                raise ToolError(
+                    f"no job {job!r}: it was never started, or it ended over {KEEP / 60:.0f} minutes ago, or it belongs to a server "
+                    "before this one: `status` gives the job that files the memories waiting"
+                )
             return self.progress(job, relay, relay.answer(replies))
 
         @tool(server, READ_ONLY)
@@ -435,6 +484,7 @@ class Memory:
             """
             if confirm is not True:
                 raise ToolError(f"deleting {path} cannot be undone: if the user asked for it, call it with confirm=true")
+            self.pause()
             if path.strip().startswith(PENDING):
                 # a memory not filed yet, as `search` shows it: a client of the release before deletes what it found; forgotten as
                 # `forget` by its id does, with what a delete returns and what `forget` returns, and `forgot`: the entry
@@ -454,9 +504,13 @@ class Memory:
             one, use `read_note` with its `pending:<id>`. No model call, nothing changed. Returns {queue, queue_limit, filing,
             failed, oldest_s, filer, last_error, journal_bytes, disk_free, warnings}: `warnings` says in words what needs a look,
             and names the notes the limit on top-level folders sent to an existing folder instead of a new one. Filing goes on
-            by itself: there is nothing for you to start.
+            by itself: there is nothing for you to start. With your models, `job` is the job that files what waits: call
+            `reply` with it at a natural pause.
             """
-            return guarded(lambda: for_client(self.live().status()))
+            wiki = self.live()
+            client = wiki.cfg.mcp_models != "wiki"
+            st = guarded(lambda: for_client(wiki.status(), client))
+            return {**st, "job": self.job} if client and st["queue"] else st
 
         @tool(server, DELETES)
         def forget(
@@ -480,6 +534,7 @@ class Memory:
             key, ident = key or None, (id or "").removeprefix(PENDING) or None
             if (key is None) == (ident is None):
                 raise ToolError("give the memory's key or its id: one of the two")
+            self.pause()
             if ident is not None:
                 return self.forget_id(ident, ctx)
             named, by = str(key), author_of(ctx)
@@ -529,20 +584,90 @@ class Memory:
         wiki = self.live()
         if wiki.cfg.mcp_models == "wiki":
             return guarded(lambda: work(wiki))
-        relay, tracker = Relay(), UsageTracker()  # the client's plan pays: nothing to count here
-        if wiki.cfg.mcp_models == "hybrid" and wiki.cfg.classifier.ready:
-            # The client writes and the wiki's own classifier decides: only the writing comes back as requests.
-            cfg = wiki.cfg.model_copy(update={"mode": "crow", "llm": LLM_CONFIG.model_copy()})
-            client_wiki = Wiki(cfg, llm=RelayLLM(relay, tracker))
-        else:
-            client_wiki = Wiki(relayed(wiki.cfg), llm=RelayLLM(relay, tracker), classifier=RelayClassifier(relay, tracker))
+        relay = Relay()
+        client_wiki = with_client(wiki, relay)
+        job = self.register(relay)
+
+        def done() -> dict[str, Any]:
+            # closed at its end: a purge's part of the journal (the seal, `O`) is completed there when no filer holds the lease
+            with client_wiki:
+                return work(client_wiki)
+
+        relay.run(done)
+        return self.progress(job, relay)
+
+    def register(self, relay: Relay) -> str:
+        """A new job's id, for `reply` to find its relay by."""
         job = uuid.uuid4().hex[:8]
         with self._jobs_lock:
             now = time.monotonic()  # the jobs that ended long ago are forgotten, their result with them
             self._jobs = {j: r for j, r in self._jobs.items() if r.ended is None or now - r.ended < KEEP}
             self._jobs[job] = relay
-        relay.run(lambda: work(client_wiki))
-        return self.progress(job, relay)
+        return job
+
+    # -- `remember` with the client's models -------------------------------------------------------------------------
+
+    def writer(self, wiki: Wiki) -> Wiki:
+        """The wiki that writes `remember`'s entries to the journal for `wiki` (the one `wiki()` gave) when the client's models file
+        them: on the same folder, with no filer of its own (`Wiki._stop_filer`), so that writing an entry never starts filing with
+        models nobody answers; the job of this server files them (`file`). One per `wiki`, kept so that the journal is read once,
+        not at each call."""
+        with self._run_lock:
+            if self._writer is not None and self._writer[0] is wiki:
+                return self._writer[1]
+            old, self._writer = self._writer, None
+            relay, tracker = Relay(), UsageTracker()  # its models are never called: `remember` calls none, in hybrid too
+            made = Wiki(relayed(wiki.cfg), llm=RelayLLM(relay, tracker), classifier=RelayClassifier(relay, tracker))
+            made._stop_filer()
+            self._writer = (wiki, made)
+        if old is not None:
+            old[1].close()
+        return made
+
+    def file(self, replies: dict[str, str]) -> dict[str, Any]:
+        """`reply` to this server's filing job: the replies go to its run, and a run starts when none goes on and the queue is not
+        empty, so the job is never stuck, after a restart or with a full queue. Until a reply, no filer waits on a client that may
+        never answer, holding the lease and the wiki. A run that ended with an error says it once; the next reply starts another.
+        Done with an empty queue: the counts of `status`."""
+        with self._run_lock:
+            run = self._run
+            if run is not None and run.relay.done and (run.relay.error is None or run.told):
+                run = self._run = None
+            if run is None:
+                wiki = self.live()
+                if not wiki.status()["queue"]:
+                    return {"status": "done", **counts(wiki.status())}
+                hub = wiki._journal()
+                with hub.cond:  # the count of the entries no longer open (set aside, forgotten, filed elsewhere) goes
+                    still = {e.id for e in hub.open_entries()}
+                for gone in [i for i in self._invalid if i not in still]:
+                    del self._invalid[gone]
+                relay = Relay(prefix=f"f{next(self._runs)}.r")  # a late reply to a run that ended is `unknown` to this one
+                filing = cast(ClientFiling, with_client(wiki, relay, ClientFiling))
+                filing.invalid = self._invalid
+                run = self._run = Run(relay)
+                relay.run(lambda: drained(filing, relay))
+        unknown = run.relay.answer(replies)
+        try:
+            return self.progress(self.job, run.relay, unknown)
+        except ToolError:
+            run.told = True
+            raise
+
+    def pause(self, timeout: float = PAUSE) -> None:
+        """Before a delete or a forget: the run of the filing job, if one goes on, stops (the calls waiting for the client fail at once,
+        what its section did is undone, the lease is let go), so that the purge does not wait for a client that is not answering
+        meanwhile. Its entries stay queued; the next `reply` starts again, with no error to read, not even that of a run that had
+        ended before (what it failed to file may be what the purge takes out)."""
+        with self._run_lock:
+            run = self._run
+            if run is None:
+                return
+            run.told = True
+            if run.relay.done:
+                return
+        run.relay.stop()
+        run.relay.join(timeout)
 
     def live(self) -> Wiki:
         """The wiki, while the settings turn the memory on. Off, the tool answers how to start it (a work already started goes on)."""
@@ -579,7 +704,13 @@ class Memory:
         """At the server's end: what its `remember` queued is filed for up to `timeout` seconds, unless another process files it.
 
         What is not done by then stays in the journal, and the next process on the wiki files it; a client that ends the server
-        sooner loses nothing either. Nothing to do when this server queued nothing."""
+        sooner loses nothing either. Nothing to do when this server queued nothing. With the client's models nothing is drained,
+        as the client is gone: the run of the filing job stops, and what it did not file stays in the journal."""
+        self.pause()
+        with self._run_lock:
+            writer, self._writer = self._writer, None
+        if writer is not None:
+            writer[1].close()
         if not self._queued:
             return
         try:
@@ -611,6 +742,77 @@ class Memory:
             await JSONResponse({"detail": NO_LIFESPAN}, status_code=503)(scope, receive, send)
         else:
             await self.app(scope, receive, send)
+
+
+@dataclass(eq=False)
+class Run:
+    """A run of the filing job of a server (`Memory.file`): its relay, and whether its error was said already, or was the server's
+    own doing (`Memory.pause`): then the next reply starts another run."""
+
+    relay: Relay
+    told: bool = False
+
+
+class ClientFiling(Wiki):
+    """The wiki that files the journal with the client's models. A reply of the client that is not what was asked is the client's
+    failure, not the entry's: one that cannot be read (`ReplyInvalid`), or a write that lacks what its step needs (a `StepError` of
+    one of `WRITER_STEPS`, such as an empty title). The first `CLIENT_TRIES` of one entry, in this server, are tried again (a `ModelError`,
+    which the filer retries) instead of counting as the entry's attempts, three of which set it aside. Any other `StepError` comes from
+    the wiki's side (its settings, its classifier in "hybrid", the routing) and counts as usual."""
+
+    invalid: Counter[str]  # the client's invalid replies by entry, kept by the server across its runs
+
+    def _work_on(self, entry: Entry, filer: Filer) -> None:
+        try:
+            super()._work_on(entry, filer)
+        except (ReplyInvalid, StepError) as e:
+            if isinstance(e, StepError) and e.step not in WRITER_STEPS:
+                raise
+            self.invalid[entry.id] += 1
+            if self.invalid[entry.id] > CLIENT_TRIES:
+                raise
+            raise ModelError(f"{CLIENT} replied with something that is not what was asked, to be tried again: {e}") from e
+        self.invalid.pop(entry.id, None)  # filed: nothing to count any more
+
+
+def drained(wiki: Wiki, relay: Relay) -> dict[str, Any]:
+    """The work of a run of the filing job: the journal's queue drained with the client's models (the filer of this process, with
+    its lease, so that an entry is filed once whatever the process), until it is empty, and the counts of `status`. A run ends too
+    when another process holds the lease and files what waits, and at the first failure of a filing, with its error: the entries
+    stay queued, saved, and the next reply starts another run. Its wiki is closed before its end is said."""
+    try:
+        while True:
+            try:
+                wiki.drain(WAIT)
+            except TimeoutError:
+                st = wiki.status()
+                if st["filing"] is None and st["filer"] != "running":  # this process does not get the lease: another files
+                    return {**counts(st), "filer": "other"}
+                continue
+            if not (st := wiki.status())["queue"]:
+                return counts(st)
+    except WikiError as e:
+        raise WikiError(f"{e}. The memories stay saved in the journal: call reply with this job and {{}} to file them again") from e
+    finally:
+        relay.stop()
+        wiki.close()
+
+
+def counts(st: dict[str, Any]) -> dict[str, Any]:
+    """What a run of the filing job ends with: the queue, the entries set aside, and the warnings of `status` (they name the notes the
+    limit on top-level folders sent to an existing folder)."""
+    return {"queue": st["queue"], "failed": st["failed"], "warnings": for_client(st, True)["warnings"]}
+
+
+def with_client(wiki: Wiki, relay: Relay, kind: type[Wiki] | None = None) -> Wiki:
+    """`wiki` with the client's models, whose calls `relay` hands to the client, as a `kind` (a `Wiki`). In hybrid, with a classifier
+    ready in the settings, the client writes and the wiki's own classifier decides: only the writing comes back as requests."""
+    make = kind or Wiki
+    tracker = UsageTracker()  # the client's plan pays: nothing to count here
+    if wiki.cfg.mcp_models == "hybrid" and wiki.cfg.classifier.ready:
+        cfg = wiki.cfg.model_copy(update={"mode": "crow", "llm": LLM_CONFIG.model_copy()})
+        return make(cfg, llm=RelayLLM(relay, tracker))
+    return make(relayed(wiki.cfg), llm=RelayLLM(relay, tracker), classifier=RelayClassifier(relay, tracker))
 
 
 def tool(server: MCPServer, annotations: ToolAnnotations) -> Callable[[F], F]:
@@ -686,16 +888,18 @@ def queued(receipt: Receipt) -> dict[str, Any]:
 NO_FILER = "no filer is running: drain() starts one"  # the end of the warning of `Wiki.status`, which names a call of the library
 
 
-def for_client(st: dict[str, Any]) -> dict[str, Any]:
+def for_client(st: dict[str, Any], client: bool = False) -> dict[str, Any]:
     """`Wiki.status` as an MCP client reads it: no warning names a call that the client cannot make. The server files by itself (the
-    next `remember` starts its filer, or the process that holds the wiki files)."""
+    next `remember` starts its filer, or the process that holds the wiki files); with the client's models (`client`), the filing job
+    of the server does, once the client replies to it."""
     queue = st.get("queue")
-    st["warnings"] = [
-        f"{queue} memories are waiting to be filed; filing resumes automatically, and nothing is lost or needs doing"
-        if isinstance(w, str) and w.endswith(NO_FILER)
-        else w
-        for w in st.get("warnings", [])
-    ]
+    said = (
+        f"{queue} memories are saved and waiting to be filed with your models: at a natural pause, call reply with `job` and {{}}; "
+        "nothing is lost meanwhile"
+        if client
+        else f"{queue} memories are waiting to be filed; filing resumes automatically, and nothing is lost or needs doing"
+    )
+    st["warnings"] = [said if isinstance(w, str) and w.endswith(NO_FILER) else w for w in st.get("warnings", [])]
     return st
 
 

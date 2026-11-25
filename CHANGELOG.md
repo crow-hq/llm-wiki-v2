@@ -32,6 +32,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with any other provider the ingest stops, so leave it unset with a hosted writer. `StepContext.ask_json` takes `max_tokens`,
   the output cap itself, in place of `reply_chars`; giving both raises `ValueError`.
 
+### Changed
+
+- With the client's models (`mcp_models` "client" or "hybrid", what `llmwiki2 setup` picks for Claude Code and Codex), the MCP
+  `remember` answers in milliseconds, as with the wiki's own models: the text goes to the journal, with the same receipt (`saved`,
+  `id`, `key`, `state`) and the same refusal when the queue is full, and `search`, `recall` and `read_note` find it at once as
+  `pending:<id>`. It filed the text before it returned, and the client's model answered four to seven requests first, about a
+  minute. The receipt now also holds the server's filing `job`, with `"status": "to file"` and a `how` that says to file at a
+  natural pause, not now. A `reply` to that job starts a run while the queue is not empty, which files the whole journal with the
+  client's models, earlier sessions' memories included. `status` gives the job while the queue is not empty, after a restart
+  too, and so does a refusal for a full queue. Until the client replies, nothing waits on it; once a run goes on, the page and
+  other processes wait for the client on the section it files, and a `forget` or a `delete_note` stops the run rather than wait
+  for the client. A reply that is not what was asked (one that cannot be read, or a write that lacks what its step needs) costs
+  the memory a retry, not one of its three attempts, for its first six such replies in a server. Incompatible for a caller that
+  reads the result from code: the result of `remember` is the receipt (`note` empty until filed), and its job ends with
+  `{"status": "done", "queue", "failed", "warnings"}` in place of the note. The other jobs of the client's models (`recall`,
+  `forget`, `rebuild`, `remember_file`, `sync_folder`) are unchanged, and their wiki is closed when they end, which completes the
+  journal's part of a `forget`.
+
 ### Fixed
 
 - While the search index is being built, a memory filed by another process before this one looked at the journal is found:
