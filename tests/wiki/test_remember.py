@@ -580,3 +580,38 @@ def test_the_filer_that_reads_the_entry_before_the_call_returns_files_it_with_th
     finally:
         b.close()
         a.close()
+
+
+def test_threads_that_first_use_a_wiki_together_leave_no_journal_open_after_close(bundle: Path) -> None:
+    """Eight threads make the first `remember` of a new wiki at once: they take one reference to the hub, so `close` gives the journal
+    back and a new wiki on the folder opens its own."""
+    for trial in range(5):
+        root = bundle.parent / f"race-{trial}"
+        wiki, _ = make(root)
+        start = threading.Barrier(8)
+        receipts: list[Any] = []
+        errors: list[BaseException] = []
+
+        def one(
+            n: int,
+            wiki: Wiki = wiki,
+            start: threading.Barrier = start,
+            receipts: list[Any] = receipts,
+            errors: list[BaseException] = errors,
+        ) -> None:
+            start.wait()
+            try:
+                receipts.append(wiki.remember(f"topic: race-{n}\nThread {n} keeps this.", key=f"k{n}", timeout=None))
+            except BaseException as e:  # shown by the assertion below
+                errors.append(e)
+
+        threads = [threading.Thread(target=one, args=(n,)) for n in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        wiki.drain()
+        wiki.close()
+        assert errors == [] and len(receipts) == 8
+        key = os.path.normcase(os.path.realpath(root))
+        assert key not in F._hubs

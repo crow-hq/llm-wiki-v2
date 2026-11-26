@@ -298,6 +298,7 @@ class Wiki:
         self.store.on_written = lambda written: self._search.written(self.store, written)
         self._preparing = threading.BoundedSemaphore(cfg.concurrency)
         self._hub: Hub | None = None  # the journal of this bundle in this process, taken by the first `remember`, `status` or `drain`
+        self._hub_lock = threading.Lock()  # threads that first use the wiki together take one reference to the hub, not one each
         self._closed = False
         self._filer_stopped = False  # `_stop_filer` was called: a `remember` here writes the entry and does not start a filer
         self._inited = False
@@ -318,8 +319,10 @@ class Wiki:
         if self._hub is not None:
             with contextlib.suppress(Exception):  # what is left is completed by the next holder of the lease
                 self._finish_journal()
-            release(self._hub)
-            self._hub = None
+            with self._hub_lock:
+                hub, self._hub = self._hub, None
+            if hub is not None:
+                release(hub)
         self._search.close()
         self.llm.close()
         if self.classifier is not None:
@@ -354,9 +357,13 @@ class Wiki:
     # -- remember: keep now, file in the background ---------------------------------------------------------------
 
     def _journal(self) -> Hub:
-        if self._hub is None:
-            self._hub = hub_for(self.cfg.bundle)
-        return self._hub
+        hub = self._hub
+        if hub is None:
+            with self._hub_lock:
+                if self._hub is None:
+                    self._hub = hub_for(self.cfg.bundle)
+                hub = self._hub
+        return hub
 
     def _start_filer(self) -> None:
         """Start the thread that files the entries (a no-op if this process has one, or if `_stop_filer` was called)."""

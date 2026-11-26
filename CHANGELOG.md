@@ -56,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Threads that make the first `remember`, `status` or `drain` of a new `Wiki` at the same time take one reference to the journal
+  of the folder, not one each. Before, `close` gave back only one: the journal stayed open in the process, and a new `Wiki` on the
+  same folder got it back, so after a restore of the folder in the same process a `remember` returned its receipt and the memory
+  was never filed.
 - While the search index is being built, a memory filed by another process before this one looked at the journal is found:
   `search`, `ask` and `read_note` show it as `pending:<id>` until the index has its note, as they show one still queued. It was
   found by neither: the entry was closed and its text dropped, and the index being built did not hold its note yet. A memory whose
